@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 from mace.cluster import job_efficiency as job_eff
 from mace.cluster import progress as progress_mod
 from mace.cluster import reader, recoveryview
+from mace.cluster import totals as totals_mod
 from mace.recovery.slurm_limits import format_walltime, parse_walltime
 
 NOT_MEASURED = job_eff.NOT_MEASURED
@@ -331,6 +332,20 @@ def job(job_id: str, refresh: bool = False, live: bool = False, use_engine: bool
         res["progress"] = None
         res["progress_note"] = ("The output is not readable here" if os.path.exists(out)
                                 else "No output yet" if state in ("PENDING", "CONFIGURING") else "No output found")
+    # 1.1.6: the queue wait (SLURM's start estimate), the rest of the array, the rest of the workflow
+    try:
+        import time as _time
+        jd = files.get("job_dir") or (os.path.dirname(out) if out else None)
+        jd_ok = jd and (access.get("out") in ("in_root", "other_root", "readable") or owned(os.path.realpath(jd)))
+        arr_acct = {}
+        if res.get("array_tasks"):
+            arr_acct = reader.sacct_for([str(res["array_tasks"]["array_job"])], tag=tag)
+        res["totals"] = totals_mod.totals(res, row, reader.squeue_own(tag=tag).value or [], arr_acct,
+                                          _time.time(), job_dir=Path(jd) if jd_ok else None,
+                                          out=Path(out) if readable else None)
+    except Exception as exc:
+        res["totals"] = []
+        res["totals_error"] = f"{type(exc).__name__}: {exc}"
     return res
 
 

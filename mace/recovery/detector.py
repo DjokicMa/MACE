@@ -37,6 +37,7 @@ pd = get_pandas() if PANDAS_AVAILABLE else None
 from mace.database.materials import MaterialDatabase
 from mace.utils.file_manager import CrystalFileManager
 from mace.completion_checker import determine_completed_subtype
+from mace.utils.calc_detection import empty_cube_reason, orbitals_missing_reason
 from mace.recovery import opt_restart, screened_hybrid
 from mace.utils import crystal_errors
 
@@ -276,6 +277,10 @@ class CrystalErrorDetector:
             'charge_potential_complete': {
                 'patterns': ["CHARGE DENSITY", "ELECTROSTATIC POTENTIAL", "ECHG CALCULATION", "POTC CALCULATION"],
                 'calc_type': 'CHARGE+POTENTIAL'
+            },
+            'orbitals_complete': {
+                'patterns': ["FINISHED ORBITAL PRINTING"],
+                'calc_type': 'ORBITALS'
             }
         }
         
@@ -430,6 +435,32 @@ class CrystalErrorDetector:
                     result['completion_type'] = next(
                         (name for name, info in self.completion_patterns.items()
                          if info['calc_type'] == calc_type), completion_type)
+                    # An ORBITALS run is complete only with its Molden files
+                    # (CRYSTAL can end normally after an ORBITALS input error)
+                    missing = (orbitals_missing_reason(output_file)
+                               if calc_type == 'ORBITALS' and output_file is not None else None)
+                    if missing:
+                        result['status'] = 'error'
+                        result['error_type'] = 'orbitals_no_files'
+                        result['error_details'].append({
+                            'pattern': 'no <deck>_orb*.molden', 'line': None,
+                            'severity': 'high', 'description': missing})
+                        result['recoverable'] = False
+                        result['recovery_hints'] = [
+                            'Resubmitting the same deck writes no file either: check the '
+                            'ORBITALS records of the .d3 (ICAR and ILOC on lines of their own)']
+                    empty = (empty_cube_reason(output_file)
+                             if calc_type == 'CHARGE+POTENTIAL' and output_file is not None else None)
+                    if empty:
+                        result['status'] = 'error'
+                        result['error_type'] = 'cube_empty'
+                        result['error_details'].append({
+                            'pattern': 'empty <deck>_DENS/_POT/_SPIN.CUBE', 'line': None,
+                            'severity': 'high', 'description': empty})
+                        result['recoverable'] = False
+                        result['recovery_hints'] = [
+                            'Resubmitting the same deck writes the same empty cube: from a '
+                            'two-component molecule, run the charge density from the scalar SCF']
                     return
                     
         # If no completion found, check if calculation is still running

@@ -53,7 +53,7 @@ except Exception:
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
 from mace.workflow.context import new_workflow_id
-from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
+from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config, opt2d3_default_transport_config
 from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
 from mace.utils.piped_answers import read_answer, stop_if_out_of_step
 
@@ -130,6 +130,78 @@ except ImportError as e:
                 ui.warn("Warning: DummyFileCreator not available - will use fallback dummy files")
 
 
+# Steps that cannot start from a two-component (SOC) run. CRYSTAL23 has no
+# geometry optimization or frequency calculation in 2c (manual p. 166), and
+# properties from a 2c wavefunction are only those of manual sec. 6.4
+# (p. 183), which has no BOLTZTRA (TRANSPORT) and no POT3/POTC (POTENTIAL).
+_NOT_FROM_A_SOC_RUN = ("OPT", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
+# ...of which these are errors, not warnings: CRYSTAL23 crashes on them in
+# 2c rather than refusing them (ORBITALS: NEWK segfaults, spec sec. 6).
+_NEVER_FROM_A_SOC_RUN = ("ORBITALS",)
+
+
+def _soc_refusal() -> str:
+    from mace.orbitals.kchoice import SOC_REFUSAL
+    return SOC_REFUSAL
+
+
+def soc_plan_problems(sequence: List[str],
+                      step_configs: Dict[str, Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+    """(errors, warnings) about the SOC steps of a workflow plan.
+
+    An error: a step other than a single point asks for "soc": true - CRYSTAL
+    runs SOC as a 2c-SCF single point only (manual p. 166), and the deck
+    writer would refuse it. A warning: a step that cannot start from a SOC run
+    has a SOC SP as its source - for OPT and FREQ the step straight before it
+    (OPT and SP steps provide the geometry), for TRANSPORT and
+    CHARGE+POTENTIAL the nearest SP or OPT before it (whose wavefunction they
+    read); such a step would inherit SOC and be refused, or be a properties
+    run CRYSTAL does not do in 2c. An ORBITALS step after a SOC SP is an
+    error: CRYSTAL23 crashes on it (mace.orbitals.kchoice.SOC_REFUSAL).
+    """
+    errors, warnings = [], []
+    soc_steps = set()
+    for key, cfg in (step_configs or {}).items():
+        if not isinstance(cfg, dict) or cfg.get("soc") is not True:
+            continue
+        step = key.rsplit("_", 1)[0]
+        base = step.rstrip("0123456789") or step
+        if base != "SP":
+            errors.append(f"{key}: SOC is only for single-point (SP) steps; CRYSTAL23 has "
+                          f"no {base} calculation in a two-component SCF (manual p. 166)")
+        else:
+            soc_steps.add(step)
+    for i, after in enumerate(sequence[1:], start=1):
+        base = after.rstrip("0123456789") or after
+        before = sequence[i - 1]
+        if base in _NOT_FROM_A_SOC_RUN and base not in ("OPT", "FREQ"):
+            # A properties step reads the wavefunction of the nearest SP or
+            # OPT before it, not of the step before it (the engine's
+            # _find_dependency_in_sequence): SP, BAND, DOSS, TRANSPORT takes
+            # TRANSPORT from the SP.
+            before = next((s for s in reversed(sequence[:i])
+                           if (s.rstrip("0123456789") or s) in ("SP", "OPT")), before)
+        if before in soc_steps and base in _NEVER_FROM_A_SOC_RUN:
+            errors.append(f"{after} follows the SOC step {before}: {_soc_refusal()}")
+        elif before in soc_steps and base in _NOT_FROM_A_SOC_RUN:
+            warnings.append(f"{after} follows the SOC step {before}: CRYSTAL23 cannot run "
+                            f"{base} from a two-component SCF (manual pp. 166, 183), so "
+                            f"it will be refused if generated from {before}")
+    return errors, warnings
+
+
+def plan_soc_problems(plan: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """soc_plan_problems of a saved plan: its step configurations, and a CIF
+    start's first step, whose SOC is in the conversion settings."""
+    sequence = list(plan.get("workflow_sequence") or [])
+    cfgs = dict(plan.get("step_configurations") or {})
+    conv = plan.get("cif_conversion_config")
+    if sequence and isinstance(conv, dict) and conv.get("soc") is True:
+        key = f"{sequence[0]}_1"
+        cfgs[key] = dict(cfgs.get(key) or {}, soc=True)
+    return soc_plan_problems(sequence, cfgs)
+
+
 def _report_plan_functionals(plan: Dict[str, Any]) -> None:
     """Write a plan's functionals as CRYSTAL23 keywords (1.1.1 plans hold
     prose spellings) and say what changed or cannot be used."""
@@ -141,11 +213,11 @@ def _report_plan_functionals(plan: Dict[str, Any]) -> None:
 
 
 
-def _site_plan_resources():
+def _site_plan_resources(calc_type=None):
     """account / module (/ partition / python_modules) for a new plan (mace/submission/site.py)."""
     from mace.submission import site
     try:
-        return site.plan_resources()
+        return site.plan_resources(calc_type=calc_type)
     except site.SiteConfigError as exc:
         ui.err(f"Error: {exc}")
         raise SystemExit(2)
@@ -156,13 +228,39 @@ def _site_account():
     return site.account()
 
 
-def _site_overlay(resources, kind):
-    """``resources`` with the site's [resources] job size (site.overlay_resources)."""
+def _site_overlay(resources, kind, calc_type=None, auto=None):
+    """``resources`` with the site's [resources] job size and walltime, and
+    [resources.<TYPE>] for ``calc_type`` (site.overlay_resources); below
+    them the size-aware suggestion ``auto``."""
     from mace.submission import site
     try:
-        return site.overlay_resources(resources, site.load(), kind)
+        return site.overlay_resources(resources, site.load_resolved(), kind, calc_type, auto)
     except site.SiteConfigError:
         return resources
+
+
+def _folder_walltime(kind):
+    """The walltime a project folder's mace-folder.toml sets for ``kind``, or None."""
+    from mace.submission import site
+    try:
+        return site.folder_walltime(site.load_resolved(), kind)
+    except site.SiteConfigError:
+        return None
+
+
+def queue_defaults(max_jobs, reserve):
+    """(max_jobs, reserve) a plan's job scripts carry when nobody chose
+    them: the site's queue budget plus its reserve (site.resolve_queue: the
+    callback keeps max_jobs - reserve queued); the built-in 950/50 when the
+    site says nothing."""
+    from mace.submission import site
+    try:
+        s = site.load()
+        account = site.resolve_account(s)[0]
+        mj, rs, _src = site.resolve_queue(s, account)
+    except Exception:
+        return max_jobs, reserve
+    return mj, rs
 
 
 def clamp_queue_config(max_jobs, reserve):
@@ -273,23 +371,27 @@ class WorkflowPlanner:
                 "generates": ["charge_density", "electrostatic_potential"],
                 # Note: Runs sequentially after BAND/DOSS, not in parallel
             },
+            "ORBITALS": {
+                "name": "Orbitals (Molden files)",
+                "depends_on": ["SP", "OPT"],  # Requires wavefunction from SP or OPT
+                "generates": ["orbitals"],
+            },
         }
 
         # Numbered calculations (OPT2, SP2, etc.) are handled dynamically
         # They have the same dependencies as their base types
 
-        # Predefined workflow templates
-        self.workflow_templates = {
-            "basic_opt": ["OPT"],
-            "opt_sp": ["OPT", "SP"],
-            "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
-            "double_opt": ["OPT", "OPT2", "SP"],
-            "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
-            "transport_analysis": ["OPT", "SP", "TRANSPORT"],
-            "charge_analysis": ["OPT", "SP", "CHARGE+POTENTIAL"],
-            "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
-            "custom": "user_defined",
-        }
+        # Predefined workflow templates: the one list (constants.py). The
+        # menu keeps the numbers it always had (piped answers and the default
+        # "3" stay valid), so a template added later comes after "custom".
+        from mace.workflow.common.constants import WORKFLOW_TEMPLATES
+        menu = ["basic_opt", "opt_sp", "full_electronic", "double_opt", "complete",
+                "transport_analysis", "charge_analysis", "combined_analysis"]
+        self.workflow_templates = {k: list(WORKFLOW_TEMPLATES[k]) for k in menu}
+        self.workflow_templates["custom"] = "user_defined"
+        for k, seq in WORKFLOW_TEMPLATES.items():
+            if k not in self.workflow_templates:
+                self.workflow_templates[k] = list(seq)
 
     def display_welcome(self):
         """Display welcome message and overview"""
@@ -982,6 +1084,7 @@ class WorkflowPlanner:
                         "FREQ": "Vibrational Frequencies",
                         "TRANSPORT": "Transport Properties",
                         "CHARGE+POTENTIAL": "Charge Density & Electrostatic Potential",
+                        "ORBITALS": "Orbitals as Molden files",
                     }.get(base, base)
                     ui.info(f"  {i}. {calc_type} - {desc}")
                 ui.info("\nEnter number or type name directly")
@@ -1007,7 +1110,7 @@ class WorkflowPlanner:
                     else:
                         ui.err(f"Cannot add {calc} - check dependencies")
                 # Handle base calculations (OPT, SP, etc.) - auto-number them
-                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
@@ -1037,7 +1140,7 @@ class WorkflowPlanner:
                 calc = input("\nInsert calculation type: ").strip().upper()
 
                 # Handle numbered calculations
-                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
 
                     ui.info(f"\nCurrent sequence: {' → '.join(sequence)}")
@@ -1083,7 +1186,7 @@ class WorkflowPlanner:
     def _get_available_calc_types(self, current_sequence: List[str]) -> List[str]:
         """Get list of available calculation types with proper numbering"""
         available = []
-        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]
+        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]
 
         for base_type in base_types:
             # Count how many of this type already exist
@@ -1196,8 +1299,8 @@ class WorkflowPlanner:
         if base_type == "SP":
             # SP can be added at any time (no dependencies)
             return True
-        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
-            # BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL need at least one SP or OPT
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
+            # BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL/ORBITALS need at least one SP or OPT
             return any(
                 calc.startswith("SP") or calc.startswith("OPT") for calc in sequence
             )
@@ -1233,6 +1336,7 @@ class WorkflowPlanner:
         ui.info("  Complete: OPT SP BAND DOSS FREQ")
         ui.info("  Transport: OPT SP TRANSPORT")
         ui.info("  Charge analysis: OPT SP CHARGE+POTENTIAL")
+        ui.info("  Orbitals: OPT SP ORBITALS")
         ui.info("  Double opt: OPT OPT2 SP")
         ui.info("\nAdvanced patterns:")
         ui.info("  SP-first: SP BAND DOSS")
@@ -1321,6 +1425,11 @@ class WorkflowPlanner:
             elif calc_type.startswith("CHARGE+POTENTIAL"):
                 # Charge+Potential calculations
                 config = self.configure_analysis_step("CHARGE+POTENTIAL", i + 1)
+                step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.startswith("ORBITALS"):
+                # Orbitals as Molden files (ORBITALS, ORBITALS2, etc.)
+                config = self.configure_analysis_step("ORBITALS", i + 1)
                 step_configs[f"{calc_type}_{i + 1}"] = config
 
             # Configure SLURM scripts for this step
@@ -1427,14 +1536,16 @@ class WorkflowPlanner:
         ui.info("         - Best for: Difficult convergence, custom requirements")
         ui.info("      3: Expert (full CRYSTALOptToD12.py integration)")
         ui.info("         - Best for: Complete control over all parameters")
+        ui.info("      4: Spin-orbit coupling (two-component SOC single point)")
+        ui.info("         - Inherits all settings, adds SOC (needs an ECP basis set)")
 
         invalid = 0
         while True:
             try:
-                level = int(input("    Enter level (0-3): ").strip())
-                if level in [0, 1, 2, 3]:
+                level = int(input("    Enter level (0-4): ").strip())
+                if level in [0, 1, 2, 3, 4]:
                     break
-                ui.info("    Please enter 0, 1, 2, or 3")
+                ui.info("    Please enter 0, 1, 2, 3 or 4")
             except ValueError:
                 ui.info("    Please enter a valid number")
             invalid += 1
@@ -1446,7 +1557,17 @@ class WorkflowPlanner:
             "customization_level": level,
         }
 
-        if level == 0:
+        if level == 4:
+            # Everything inherited, as level 0, plus "soc": true for the deck
+            # writer (Crystal_d12/soc_ecp.py).
+            config["inherit_settings"] = True
+            config["soc"] = True
+            ui.info(f"    {calc_type}: two-component SCF with spin-orbit coupling. The deck is")
+            ui.info("    refused unless every ECP is a spin-orbit ECP's scalar part;")
+            ui.info("    later OPT, FREQ, TRANSPORT, CHARGE+POTENTIAL and ORBITALS steps")
+            ui.info("    cannot start from a SOC run (manual pp. 166, 183; CRYSTAL23")
+            ui.info("    crashes on ORBITALS in 2c).")
+        elif level == 0:
             # Default: inherit all settings
             config["inherit_settings"] = True
         elif level == 1:
@@ -1784,15 +1905,7 @@ class WorkflowPlanner:
             # opt2d3's answers when Enter is pressed through it
             "BAND": opt2d3_default_band_config(),
             "DOSS": opt2d3_default_doss_config(),
-            "TRANSPORT": {
-                "calculation_type": "TRANSPORT",
-                "temperature_range": [100, 800, 50],
-                "mu_range": [-2.0, 2.0, 0.01],
-                "mu_reference": "fermi",
-                "mu_range_type": "auto_fermi",
-                "tdf_range": [-5.0, 5.0, 0.01],
-                "relaxation_time": 10
-            },
+            "TRANSPORT": opt2d3_default_transport_config(),
             "CHARGE+POTENTIAL": {
                 "calculation_type": "CHARGE+POTENTIAL",
                 "charge_config": {
@@ -1807,6 +1920,11 @@ class WorkflowPlanner:
                     "scale": 3,
                     "use_range": False
                 }
+            },
+            # opt2d3's answer when Enter is pressed: the band-edge k points
+            "ORBITALS": {
+                "calculation_type": "ORBITALS",
+                "kmesh": "band_edges"
             }
         }
         
@@ -1832,6 +1950,11 @@ class WorkflowPlanner:
             ui.info("    - 3D charge density and electrostatic potential grids")
             ui.info("    - 100x100x100 grid points")
             ui.info("    - Gaussian-compatible output format (cube files)")
+
+        elif calc_type == "ORBITALS":
+            ui.info("    - Every orbital, as Molden files")
+            ui.info("    - k points: Γ and the real k points of the band edges")
+            ui.info("      (NEWK IS 1, or IS 2 when an edge is off Γ; a molecule has none)")
             
         return config
     
@@ -1970,10 +2093,11 @@ class WorkflowPlanner:
                 ]
             
             # Temperature range
+            # floats, as opt2d3 reads them (TRANGE "100.0 800.0 50.0")
             config["temperature_range"] = [
-                self.get_safe_integer_input("\n  Min temperature (K) [100]: ", 100),
-                self.get_safe_integer_input("  Max temperature (K) [800]: ", 800),
-                self.get_safe_integer_input("  Temperature step (K) [50]: ", 50),
+                float(self.get_safe_float_input("\n  Min temperature (K) [100]: ", 100.0, min_val=1)),
+                float(self.get_safe_float_input("  Max temperature (K) [800]: ", 800.0, min_val=1)),
+                float(self.get_safe_float_input("  Temperature step (K) [50]: ", 50.0, min_val=1)),
             ]
             
             # Relaxation time
@@ -2016,6 +2140,23 @@ class WorkflowPlanner:
             fmt_choice = input("  Select format [1]: ").strip() or "1"
             format_map = {"1": "GAUSSIAN", "2": "XCRYSDEN", "3": "CRYSTAL"}
             config["output_format"] = format_map[fmt_choice]
+
+        elif calc_type == "ORBITALS":
+            ui.info(f"\n  Advanced {calc_type} configuration:")
+            ui.info("\n  k points to write (every orbital at each):")
+            ui.info("    1. Γ and the real k points of the band edges (default)")
+            ui.info("    2. Γ only (IS 1, one file)")
+            ui.info("    3. All real k points (IS 2)")
+            ui.info("    4. Custom shrinking factor IS (1D only above 2: complex k points")
+            ui.info("       are not usable in 2D/3D)")
+            k_choice = self._ask_menu_choice("  Select k points [1]: ", ["1", "2", "3", "4"], "1")
+            config["kmesh"] = {"1": "band_edges", "2": "gamma", "3": "all_real",
+                               "4": "custom"}[k_choice]
+            if config["kmesh"] == "custom":
+                config["is"] = self.get_safe_integer_input("  Shrinking factor IS [2]: ", 2)
+                if config["is"] > 2:
+                    ui.warn("  IS above 2 writes complex k points: a 2D or 3D material's deck "
+                            "is refused at generation (its complex-k files fail validation)")
         
         return config
 
@@ -3884,7 +4025,7 @@ class WorkflowPlanner:
 
         if base_type in ["OPT", "SP", "FREQ"]:
             return ["submitcrystal23.sh"]
-        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             return ["submit_prop.sh"]
         else:
             return ["submitcrystal23.sh"]  # Default
@@ -3898,6 +4039,8 @@ class WorkflowPlanner:
         default_resources = self.get_default_resources(script_name, calc_type)
 
         ui.info(f"        Default resources for {calc_type}:")
+        if getattr(self, "last_auto", None):
+            ui.info(f"          Suggested from the inputs' size ([resources] auto): {self.last_auto['reason']}")
         ui.info(f"          Cores: {default_resources['ntasks']}")
 
         # Add calculation-specific resource explanations
@@ -4003,7 +4146,7 @@ class WorkflowPlanner:
                 "scratch_dir": "$SCRATCH/crys23",
                 # account, CRYSTAL module (resolved once, now) and the site's
                 # partition / Python modules: mace/submission/site.py
-                **_site_plan_resources(),
+                **_site_plan_resources(calc_type),
             }
         elif script_name == "submit_prop.sh":
             # The properties built-ins (PROPERTIES_NTASKS cores, PROPERTIES_MEMORY
@@ -4016,7 +4159,7 @@ class WorkflowPlanner:
                 "scratch_dir": "$SCRATCH/crys23/prop",
                 # account, CRYSTAL module (resolved once, now) and the site's
                 # partition / Python modules: mace/submission/site.py
-                **_site_plan_resources(),
+                **_site_plan_resources(calc_type),
             }
         else:
             # Default fallback
@@ -4031,14 +4174,41 @@ class WorkflowPlanner:
                 "account": _fallback_account("general"),
             }
 
-        # the site's [resources] job size, when set (mace/submission/site.py)
-        if script_name in ("submitcrystal23.sh", "submit_prop.sh"):
-            base_resources = _site_overlay(base_resources, "scf" if script_name == "submitcrystal23.sh" else "prop")
-
         # Apply calculation-specific scaling from workflows.yaml
         scaled_resources = self.apply_calc_type_scaling(base_resources, calc_type)
+        # a project folder's walltime (mace-folder.toml [submit]) is a chosen value, never scaled
+        if script_name in ("submitcrystal23.sh", "submit_prop.sh"):
+            wt = _folder_walltime("scf" if script_name == "submitcrystal23.sh" else "prop")
+            if wt:
+                scaled_resources["walltime"] = wt
+
+        # the site's [resources] job size and walltime ([resources.<TYPE>]
+        # for this step's type), when set: the values as set, never scaled
+        # (mace/submission/site.py)
+        # Below them, when the site turned size-aware suggestions on for this
+        # type ([resources] auto), the job size the plan's inputs suggest.
+        self.last_auto = None
+        if script_name in ("submitcrystal23.sh", "submit_prop.sh"):
+            kind = "scf" if script_name == "submitcrystal23.sh" else "prop"
+            self.last_auto = self._auto_suggestion(kind, calc_type)
+            scaled_resources = _site_overlay(scaled_resources, kind, calc_type, self.last_auto)
 
         return scaled_resources
+
+    def _auto_suggestion(self, kind: str, calc_type: str):
+        """The size-aware suggestion for a ``calc_type`` step from the plan's
+        inputs (``auto_inputs``: decks or CIFs), when the site turned them on;
+        cached per type."""
+        inputs = getattr(self, "auto_inputs", None)
+        if not inputs:
+            return None
+        cache = self.__dict__.setdefault("_auto_cache", {})
+        key = (kind, calc_type.rstrip("0123456789"))
+        if key not in cache:
+            from mace.submission import site
+            basis = (getattr(self, "auto_cif_config", None) or {}).get("basis_set")
+            cache[key] = site.auto_for_inputs(inputs, kind, key[1], basis=basis if isinstance(basis, str) else None)
+        return cache[key]
 
     def apply_calc_type_scaling(
         self, resources: Dict[str, Any], calc_type: str
@@ -4681,6 +4851,9 @@ class WorkflowPlanner:
         # a plan without them (made before site settings) changes nothing
         from mace.submission.site import customize_workflow_text
         content_str = customize_workflow_text(content_str, resources)
+        # the step's own node features: one --constraint directive (executor.py)
+        from mace.workflow.executor import apply_constraint
+        content_str = apply_constraint(content_str, resources)
         
         # Replace hardcoded callback parameters with configured values
         # Pattern: --max-jobs 250 --reserve 30 --max-submit 5
@@ -4769,6 +4942,15 @@ class WorkflowPlanner:
         with open(plan_file, "r") as f:
             plan = json.load(f)
         _report_plan_functionals(plan)
+
+        soc_errors, soc_warnings = plan_soc_problems(plan)
+        for message in soc_warnings:
+            ui.warn(f"Warning: {message}")
+        if soc_errors:
+            for message in soc_errors:
+                ui.err(message)
+            ui.err(f"Not executing {plan_file}")
+            return
 
         ui.info("Workflow execution summary:")
         ui.info(f"  Input files: {len(plan['input_files']['cif'])} CIFs, {len(plan['input_files']['d12'])} D12s")
@@ -4951,7 +5133,10 @@ class WorkflowPlanner:
             "max_recovery_attempts": 3 # Error recovery attempts
         }
         
-        # never more than this user's MaxSubmitJobs allows (site.clamp_queue)
+        # the site's queue budget, never more than this user's MaxSubmitJobs
+        # allows (site.resolve_queue, site.clamp_queue)
+        default_config["max_jobs"], default_config["reserve_slots"] = queue_defaults(
+            default_config["max_jobs"], default_config["reserve_slots"])
         default_config["max_jobs"], default_config["reserve_slots"] = self._clamp_queue(
             default_config["max_jobs"], default_config["reserve_slots"])
         ui.info("Default queue management settings:")
@@ -5036,10 +5221,20 @@ class WorkflowPlanner:
             first_calc_type = workflow_sequence[0] if workflow_sequence else "OPT"
             cif_config = self.setup_cif_conversion(input_files["cif"], first_calc_type)
 
-        # Step 4: Configure workflow steps
+        # Step 4: Configure workflow steps (the inputs size the job offers
+        # when the site turned size-aware suggestions on: [resources] auto)
+        self.auto_inputs = list(input_files["d12"]) + list(input_files["cif"])
+        self.auto_cif_config = cif_config
         step_configs = self.configure_workflow_steps(
             workflow_sequence, bool(input_files["cif"])
         )
+        soc_errors, soc_warnings = soc_plan_problems(workflow_sequence, step_configs)
+        for message in soc_warnings:
+            ui.warn(f"Warning: {message}")
+        if soc_errors:
+            for message in soc_errors:
+                ui.err(message)
+            return
         
         # Step 4.5: Choose workflow isolation mode
         ui.info("\nStep 4.5: Workflow Isolation Settings")
@@ -5089,7 +5284,8 @@ class WorkflowPlanner:
             "post_completion_action": post_completion_action,
             "queue_management": queue_config,
             "execution_settings": {
-                "max_concurrent_jobs": 200,
+                # none: workflows share the user-wide queue budget ([queue] in site.toml)
+                "max_concurrent_jobs": None,
                 "enable_material_tracking": True,
                 "auto_progression": True,
             },

@@ -45,6 +45,7 @@ try:
     from mace.workflow.executor import WorkflowExecutor
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.database.materials import MaterialDatabase
+    from mace.workflow.common.constants import WORKFLOW_TEMPLATES, WORKFLOW_TEMPLATE_DESCRIPTIONS
 except ImportError as e:
     print(f"Error importing MACE modules: {e}")
     print("Please ensure all MACE modules are properly installed")
@@ -97,8 +98,23 @@ Workflow Templates:
                            help="Execute a saved workflow plan")
     mode_group.add_argument("--quick-start", "-q", action="store_true",
                            help="Quick start with minimal configuration")
-    mode_group.add_argument("--status", "-s", action="store_true",
-                           help="Show status of running workflows")
+    mode_group.add_argument("--status", "-s", nargs="?", const=True, default=False, metavar="ID",
+                           help="List the workflows of the folder and their state (as --list); with a workflow ID, that "
+                                "workflow's steps per material (add --json for JSON)")
+    mode_group.add_argument("--list", action="store_true",
+                           help="List the workflows planned in the folder (--work-dir) and their state")
+    mode_group.add_argument("--spec", metavar="SPEC",
+                           help="A workflow spec (JSON): check it, or write its plan with --write-plan")
+    mode_group.add_argument("--pause", metavar="ID",
+                           help="Pause a workflow: completions are recorded, nothing new is submitted")
+    mode_group.add_argument("--resume", metavar="ID",
+                           help="Resume a paused workflow and start the steps held meanwhile")
+    mode_group.add_argument("--cancel", metavar="ID",
+                           help="Cancel a workflow: stop its progression and scancel its own "
+                                "queued/running jobs (lists them and asks first; --yes skips the question)")
+    mode_group.add_argument("--process", metavar="ID",
+                           help="Start the next steps of a workflow whose completion step did not run "
+                                "(what the job callback would have done), for this workflow only")
     mode_group.add_argument("--show-templates", "-T", action="store_true",
                            help="Show available workflow templates")
 
@@ -106,20 +122,39 @@ Workflow Templates:
     parser.add_argument("--cif-dir", "-c", help="Directory containing CIF files (for quick start)")
     parser.add_argument("--d12-dir", "-d", help="Directory containing D12 files (for quick start)")
     parser.add_argument("--workflow", "-w", default="full_electronic",
-                       choices=["basic_opt", "opt_sp", "opt_sp_freq", "full_electronic", "double_opt",
-                               "complete", "transport_analysis", "charge_analysis", "combined_analysis"],
+                       choices=list(WORKFLOW_TEMPLATES),
                        help="Workflow template for quick start")
 
     # Common options
-    parser.add_argument("--work-dir", "-W", default=".", help="Working directory")
+    parser.add_argument("--work-dir", "-W", default=None, help="Working directory (default: the current "
+                        "directory; for --spec of decks, the decks' folder)")
     parser.add_argument("--db-path", "-D", default="materials.db", help="Database path")
-    parser.add_argument("--max-jobs", "-j", type=int, default=200, help="Maximum concurrent jobs")
+    parser.add_argument("--max-jobs", "-j", type=int, default=None,
+                        help="At most N of this workflow's jobs queued at once (default: none; all "
+                             "workflows share your queue budget)")
     parser.add_argument("--array", action="store_true",
                         help="Submit the first step as SLURM job arrays: materials whose job scripts ask for exactly the same resources share one array, one task per material. Later steps are submitted per material as each job completes, as always.")
     parser.add_argument("--max-running", metavar="N", type=int,
                         help="With --array: at most N tasks of each array run at once (--array=0-M%%N). The limit is per array; recovery resubmissions are normal jobs and are not limited.")
     
+    parser.add_argument("--write-plan", action="store_true",
+                        help="With --spec: write the plan (and, for decks, its job scripts)")
+    parser.add_argument("--json", action="store_true",
+                        help="With --status ID, --list, --spec, --pause/--resume/--cancel/--process: one JSON document on stdout")
+    parser.add_argument("--yes", "-y", action="store_true",
+                        help="With --cancel: do not ask before canceling the listed jobs")
+
     args = parser.parse_args()
+    work_dir_given = args.work_dir is not None
+    if args.work_dir is None:
+        args.work_dir = "."
+    if args.write_plan and not args.spec:
+        parser.error("--write-plan goes with --spec")
+    if args.yes and not args.cancel:
+        parser.error("--yes goes with --cancel")
+    if args.json and not (args.list or args.spec or args.pause or args.resume or args.cancel or args.process
+                          or args.status):
+        parser.error("--json goes with --status, --list, --spec, --pause, --resume, --cancel or --process")
     if args.max_running is not None and not args.array:
         parser.error("--max-running limits the tasks of a job array; use it with --array")
     if args.max_running is not None and args.max_running < 1:
@@ -133,8 +168,28 @@ Workflow Templates:
         run_execute_mode(args)
     elif args.quick_start:
         run_quick_start_mode(args)
+    elif isinstance(args.status, str) or args.list or args.spec or args.pause or args.resume \
+            or args.cancel or args.process:
+        from mace.workflow import commands
+        folder = Path(args.work_dir).resolve()
+        if isinstance(args.status, str):
+            rc = commands.cmd_status(folder, args.status, args.json)
+        elif args.list:
+            rc = commands.cmd_list(folder, args.json)
+        elif args.spec:
+            rc = commands.cmd_spec(args.spec, folder, args.db_path, args.write_plan, args.json,
+                                   work_dir_given=work_dir_given)
+        elif args.pause:
+            rc = commands.cmd_pause(folder, args.pause, args.json)
+        elif args.resume:
+            rc = commands.cmd_resume(folder, args.resume, args.json)
+        elif args.process:
+            rc = commands.cmd_process(folder, args.process, args.json)
+        else:
+            rc = commands.cmd_cancel(folder, args.cancel, args.json, args.yes)
+        sys.exit(rc)
     elif args.status:
-        run_status_mode(args)
+        sys.exit(run_status_mode(args))
     elif args.show_templates:
         show_workflow_templates()
     
@@ -215,17 +270,7 @@ def run_quick_start_mode(args):
     print(f"Selected workflow: {args.workflow}")
     
     # Create quick workflow plan
-    workflow_templates = {
-        "basic_opt": ["OPT"],
-        "opt_sp": ["OPT", "SP"],
-        "opt_sp_freq": ["OPT", "SP", "FREQ"],
-        "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
-        "double_opt": ["OPT", "OPT2", "SP"],
-        "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
-        "transport_analysis": ["OPT", "SP", "TRANSPORT"],
-        "charge_analysis": ["OPT", "SP", "CHARGE+POTENTIAL"],
-        "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"]
-    }
+    workflow_templates = WORKFLOW_TEMPLATES
     
     sequence = workflow_templates[args.workflow]
     
@@ -248,8 +293,10 @@ def run_quick_start_mode(args):
     executor.execute_workflow_plan(plan_file)
 
 
-def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
-    """Get SLURM configuration for quick start mode"""
+def _get_quick_slurm_config(calc_type: str, step_num: int, inputs=None, basis=None) -> Dict[str, Any]:
+    """Get SLURM configuration for quick start mode (``inputs``: the plan's
+    decks or CIFs, which size the job when the site turned size-aware
+    suggestions on: [resources] auto)"""
     import os
     from pathlib import Path
     
@@ -274,7 +321,8 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
             "BAND": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
             "DOSS": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
             "TRANSPORT": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
-            "CHARGE+POTENTIAL": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"}
+            "CHARGE+POTENTIAL": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
+            "ORBITALS": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "1:00:00"}
         }
     
     resources = default_resources.get(base_type, default_resources.get("OPT"))
@@ -282,7 +330,7 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
     # when set), stored in the plan once: mace/submission/site.py
     from mace.submission import site
     try:
-        stored = site.plan_resources()
+        stored = site.plan_resources(calc_type=base_type)
     except site.SiteConfigError as exc:
         print(f"Error: {exc}")
         raise SystemExit(2)
@@ -293,7 +341,11 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
         stored.pop("module")
     resources = {**resources, **stored}
     # the site's [resources] job size, when set (memory in the site's form)
-    resources = site.overlay_resources(resources, site.load(), "scf" if script_name == "submitcrystal23.sh" else "prop")
+    kind = "scf" if script_name == "submitcrystal23.sh" else "prop"
+    auto = site.auto_for_inputs(inputs, kind, base_type, basis=basis) if inputs else None
+    if auto:
+        print(f"  {calc_type}: suggested from the inputs' size ([resources] auto): {auto['reason']}")
+    resources = site.overlay_resources(resources, site.load_resolved(), kind, base_type, auto)
     
     return {
         "scripts": {
@@ -312,22 +364,14 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
 
 def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
     """Get basic D3 configuration for quick start mode"""
-    from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
+    from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config, opt2d3_default_transport_config
     configs = {
         # opt2d3's answers when Enter is pressed through it, as the engine
         # default and the planner's Basic BAND use: the same parent gets the
         # same deck by every route
         "BAND": opt2d3_default_band_config(),
         "DOSS": opt2d3_default_doss_config(),
-        "TRANSPORT": {
-            "calculation_type": "TRANSPORT",
-            "temperature_range": [100, 800, 50],
-            "mu_range": [-2.0, 2.0, 0.01],
-            "mu_reference": "fermi",
-            "mu_range_type": "auto_fermi",
-            "tdf_range": [-5.0, 5.0, 0.01],
-            "relaxation_time": 10
-        },
+        "TRANSPORT": opt2d3_default_transport_config(),
         "CHARGE+POTENTIAL": {
             "calculation_type": "CHARGE+POTENTIAL",
             "charge_config": {
@@ -342,6 +386,11 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
                 "scale": 3.0,
                 "use_range": False
             }
+        },
+        # opt2d3's answer when Enter is pressed: the band-edge k points
+        "ORBITALS": {
+            "calculation_type": "ORBITALS",
+            "kmesh": "band_edges"
         }
     }
     return configs.get(calc_type, {})
@@ -380,32 +429,35 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
     step_configs = {}
     for i, calc_type in enumerate(sequence):
         step_num = i + 1
+        # a numbered repeat (OPT2, OPT3, SP2, BAND2, ...) is configured as
+        # its base type
+        base_type = calc_type.rstrip("0123456789") or calc_type
         
         if (calc_type == "OPT" or calc_type == "SP") and i == 0 and input_type == "cif":
             step_configs[f"{calc_type}_{step_num}"] = {"source": "cif_conversion"}
-        elif calc_type in ["OPT", "OPT2"]:
+        elif base_type == "OPT":
             step_configs[f"{calc_type}_{step_num}"] = {
                 "calculation_type": "OPT",
                 "source": "CRYSTALOptToD12.py",
                 "inherit_settings": True
             }
-        elif calc_type == "SP":
+        elif base_type == "SP":
             step_configs[f"{calc_type}_{step_num}"] = {
                 "calculation_type": "SP",
                 "source": "CRYSTALOptToD12.py",
                 "inherit_settings": True
             }
-        elif calc_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             # All D3 calculations now use CRYSTALOptToD3.py
             step_configs[f"{calc_type}_{step_num}"] = {
-                "calculation_type": calc_type,
+                "calculation_type": base_type,
                 "source": "CRYSTALOptToD3.py",
                 "requires_wavefunction": True,
                 "d3_calculation": True,
                 "d3_config_mode": "basic",
-                "d3_config": _get_basic_d3_config_for_quick_start(calc_type)
+                "d3_config": _get_basic_d3_config_for_quick_start(base_type)
             }
-        elif calc_type == "FREQ":
+        elif base_type == "FREQ":
             step_configs[f"{calc_type}_{step_num}"] = {
                 "calculation_type": "FREQ",
                 "source": "CRYSTALOptToD12.py",
@@ -419,7 +471,8 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
             }
         
         # Add SLURM configuration for each step
-        slurm_config = _get_quick_slurm_config(calc_type, step_num)
+        slurm_config = _get_quick_slurm_config(calc_type, step_num, input_files,
+                                               default_cif_config.get("basis_set") if input_type == "cif" else None)
         step_configs[f"{calc_type}_{step_num}"]["slurm_config"] = slurm_config
     
     # Create plan
@@ -449,34 +502,15 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
 
 
 def run_status_mode(args):
-    """Show status of running workflows and jobs"""
-    print("MACE Workflow Status")
-    print("=" * 60)
-    
-    # Check database for active workflows
-    db = MaterialDatabase(args.db_path)
-    
-    # Get recent calculations
-    print("Recent calculations:")
-    recent_calcs = db.get_recent_calculations(limit=20)
-    
-    if recent_calcs:
-        print(f"{'ID':<10} {'Material':<20} {'Type':<8} {'Status':<12} {'Started':<20}")
-        print("-" * 80)
-        for calc in recent_calcs:
-            calc_id = calc.get('calc_id', 'N/A')[:8]
-            material_id = calc.get('material_id', 'N/A')[:18]
-            calc_type = calc.get('calc_type', 'N/A')
-            status = calc.get('status', 'N/A')
-            started = calc.get('start_time', 'N/A')[:19] if calc.get('start_time') else 'N/A'
-            
-            print(f"{calc_id:<10} {material_id:<20} {calc_type:<8} {status:<12} {started:<20}")
-    else:
-        print("No recent calculations found")
-    
-    # Check queue manager status
-    print(f"\nFor detailed queue status, run:")
-    print(f"  python mace.py queue --status")
+    """``mace workflow --status`` without an ID: the workflows planned in
+    the folder and their state (as ``--list``), read-only (no database is
+    created or changed)."""
+    from mace.workflow import commands
+    rc = commands.cmd_list(Path(args.work_dir).resolve(), args.json)
+    if not args.json:
+        print("\nOne workflow's steps per material: mace workflow --status <ID>"
+              "\nAll your jobs and their ETA:      mace status")
+    return rc
 
 
 def show_workflow_templates():
@@ -484,44 +518,8 @@ def show_workflow_templates():
     print("Available Workflow Templates")
     print("=" * 60)
     
-    templates = {
-        "basic_opt": {
-            "sequence": ["OPT"],
-            "description": "Basic geometry optimization only"
-        },
-        "opt_sp": {
-            "sequence": ["OPT", "SP"],
-            "description": "Geometry optimization followed by single point calculation"
-        },
-        "opt_sp_freq": {
-            "sequence": ["OPT", "SP", "FREQ"],
-            "description": "Optimization, single point, then vibrational frequencies"
-        },
-        "full_electronic": {
-            "sequence": ["OPT", "SP", "BAND", "DOSS"],
-            "description": "Complete electronic structure characterization"
-        },
-        "double_opt": {
-            "sequence": ["OPT", "OPT2", "SP"],
-            "description": "Two-stage optimization for difficult convergence cases"
-        },
-        "complete": {
-            "sequence": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
-            "description": "Complete characterization including vibrational analysis"
-        },
-        "transport_analysis": {
-            "sequence": ["OPT", "SP", "TRANSPORT"],
-            "description": "Transport properties calculation (conductivity, Seebeck)"
-        },
-        "charge_analysis": {
-            "sequence": ["OPT", "SP", "CHARGE+POTENTIAL"],
-            "description": "Charge density and electrostatic potential analysis"
-        },
-        "combined_analysis": {
-            "sequence": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
-            "description": "Electronic structure with transport properties"
-        }
-    }
+    templates = {name: {"sequence": seq, "description": WORKFLOW_TEMPLATE_DESCRIPTIONS.get(name, "")}
+                 for name, seq in WORKFLOW_TEMPLATES.items()}
     
     for name, info in templates.items():
         sequence_str = " → ".join(info["sequence"])
@@ -538,7 +536,8 @@ def show_workflow_templates():
         "DOSS": "Density of states calculation",
         "FREQ": "Vibrational frequency calculation",
         "TRANSPORT": "Transport properties (conductivity, Seebeck coefficient)",
-        "CHARGE+POTENTIAL": "Charge density and electrostatic potential"
+        "CHARGE+POTENTIAL": "Charge density and electrostatic potential",
+        "ORBITALS": "Orbitals as Molden files (NEWK + ORBITALS)"
     }
     
     for calc_type, description in calc_types.items():

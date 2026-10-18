@@ -26,7 +26,7 @@ Two levels, matching what the flag was given:
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mace.workflow.common.constants import WORKFLOW_TEMPLATES
 from mace.utils import ui
@@ -54,8 +54,15 @@ def _mint_workflow_id(base_dir=None) -> str:
 
 def _template_plan(planner, sequence: List[str], input_dir: Path,
                    input_files: List[Path], workflow_id: str,
-                   max_jobs: int, walltime: Optional[str] = None) -> Dict[str, Any]:
-    """Quick-start's plan builder, fed existing decks instead of CIFs."""
+                   max_jobs: int, walltime: Optional[str] = None,
+                   customize: Optional[Callable[[Dict[str, Any], str], None]] = None,
+                   ) -> Dict[str, Any]:
+    """Quick-start's plan builder, fed existing decks instead of CIFs.
+
+    ``customize(plan, workflow_id)`` (a workflow spec's step settings and
+    resources, mace/workflow/spec.py) changes the plan after the walltime and
+    before the job scripts are written; without it the plan is the
+    template's."""
     from mace.run_mace import create_quick_workflow_plan
 
     args = SimpleNamespace(max_jobs=max_jobs, work_dir=str(planner.work_dir))
@@ -65,14 +72,18 @@ def _template_plan(planner, sequence: List[str], input_dir: Path,
     # directives into workflow_scripts/*.sh.
     if walltime:
         _apply_walltime(plan["step_configurations"], walltime)
+    if customize is not None:
+        customize(plan, workflow_id)
 
     # Creating the planner turned this directory into a workflow root, so the
     # queue manager now resolves SLURM templates out of workflow_scripts/
     # instead of the plain submitcrystal23.sh generator. Materialize them, or
     # the very first submission dies with "Submit script not found".
     # never more than this user's SLURM MaxSubmitJobs allows (site.clamp_queue)
-    from mace.workflow.planner import clamp_queue_config
+    from mace.workflow.planner import clamp_queue_config, queue_defaults
     queue_config = dict(DEFAULT_QUEUE_CONFIG)
+    queue_config["max_jobs"], queue_config["reserve_slots"] = queue_defaults(
+        queue_config["max_jobs"], queue_config["reserve_slots"])
     queue_config["max_jobs"], queue_config["reserve_slots"] = clamp_queue_config(
         queue_config["max_jobs"], queue_config["reserve_slots"])
     planner.copy_and_customize_scripts(plan["step_configurations"], workflow_id,
@@ -87,7 +98,9 @@ def _interactive_plan(planner, sequence: List[str], input_dir: Path,
                       max_jobs: int, walltime: Optional[str] = None) -> Dict[str, Any]:
     """The planner's real prompts, minus the CIF/first-step questions."""
     # has_cifs=False makes step 1 "use the existing D12 files as-is", which is
-    # exactly true here — the user built them.
+    # exactly true here — the user built them. The decks size the job offers
+    # when the site turned size-aware suggestions on ([resources] auto).
+    planner.auto_inputs = list(input_files)
     step_configs = planner.configure_workflow_steps(sequence, False)
     queue_config = planner.configure_queue_management()
     # An explicit --walltime wins over whatever the prompts collected, and must
@@ -134,9 +147,11 @@ def _apply_walltime(step_configs: Dict[str, Any], walltime: str) -> None:
 
 
 def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
-                        progress: str, max_jobs: int = 200,
+                        progress: str, max_jobs: Optional[int] = None,
                         walltime: Optional[str] = None,
                         job_arrays: Optional[Dict[str, Any]] = None,
+                        sequence: Optional[List[str]] = None,
+                        customize: Optional[Callable[[Dict[str, Any], str], None]] = None,
                         ) -> Tuple[Path, str, List[str]]:
     """Write a workflow plan covering ``input_files`` and what follows them.
 
@@ -149,6 +164,9 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
         max_jobs: concurrent-job ceiling recorded in the plan.
         job_arrays: the plan's job_arrays setting (`mace submit --array`), the
             same key `mace workflow --array` writes.
+        sequence: a custom step sequence instead of the template's (a
+            workflow spec); ``progress`` is then only its name.
+        customize: see ``_template_plan`` (template mode only).
 
     Returns:
         ``(plan_file, workflow_id, sequence)``.
@@ -160,7 +178,7 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
 
     work_dir = Path(work_dir).resolve()
     interactive = progress.strip().lower() == "interactive"
-    if not interactive and progress not in WORKFLOW_TEMPLATES:
+    if not interactive and sequence is None and progress not in WORKFLOW_TEMPLATES:
         raise ValueError(
             f"Unknown workflow template '{progress}'. "
             f"Choose one of: {', '.join(available_templates())}, or 'interactive'.")
@@ -177,9 +195,9 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
         plan = _interactive_plan(planner, sequence, input_dir, input_files,
                                  workflow_id, max_jobs, walltime)
     else:
-        sequence = list(WORKFLOW_TEMPLATES[progress])
+        sequence = list(sequence if sequence is not None else WORKFLOW_TEMPLATES[progress])
         plan = _template_plan(planner, sequence, input_dir, input_files,
-                              workflow_id, max_jobs, walltime)
+                              workflow_id, max_jobs, walltime, customize=customize)
 
     # Mint the id HERE and write it into the plan. Quick-start plans carry no
     # workflow_id and let the executor mint one; there is no executor in this
@@ -224,3 +242,78 @@ def describe_plan(plan_file: Path, workflow_id: str, sequence: List[str]) -> Non
     ui.info(f"  Workflow ID: {workflow_id}")
     ui.info(f"  Sequence:    {' → '.join(sequence)}")
     ui.info("  Completed steps will progress according to this plan.")
+
+
+def read_launch_plan(plan_file) -> Dict[str, Any]:
+    """The plan `mace submit --progress-plan` is given: a deck-start plan
+    with its workflow id (`mace workflow --spec SPEC --write-plan`)."""
+    import json
+    path = Path(plan_file)
+    try:
+        plan = json.loads(path.read_text())
+    except OSError as e:
+        raise ValueError(f"cannot read the plan {path}: {e}")
+    except ValueError as e:
+        raise ValueError(f"{path} is not a workflow plan (not JSON: {e})")
+    if not isinstance(plan, dict) or not plan.get("workflow_id") or not plan.get("workflow_sequence"):
+        raise ValueError(f"{path} is not a workflow plan with a workflow id "
+                         f"(write one with `mace workflow --spec SPEC --write-plan`)")
+    if plan.get("input_type") != "d12":
+        raise ValueError(f"{path} starts from CIFs; launch it with `mace workflow --execute {path}`")
+    return plan
+
+
+def check_launch_plan(plan: Dict[str, Any], plan_file, base_dir: Path,
+                      decks: List[Path]) -> Tuple[Path, str, List[str]]:
+    """Refuse what would break the workflow: a plan outside this folder's
+    workflow_configs/ (the callbacks would not find it), decks the plan does
+    not list, or a plan that was launched already."""
+    workflow_id = plan["workflow_id"]
+    from mace.workflow.planner import plan_soc_problems
+    soc_errors, _soc_warnings = plan_soc_problems(plan)
+    if soc_errors:
+        raise ValueError("; ".join(soc_errors))
+    expected = (Path(base_dir).resolve() / "workflow_configs"
+                / f"workflow_plan_{workflow_id[len('workflow_'):]}.json")
+    if Path(plan_file).resolve() != expected:
+        raise ValueError(f"the plan of {workflow_id} must be {expected} (the job callbacks look "
+                         f"for it there); write it in this folder with --work-dir")
+    listed = {str(Path(f).resolve()) for f in (plan.get("input_files") or {}).get("d12") or []}
+    extra = [Path(d).name for d in decks if str(Path(d).resolve()) not in listed]
+    if extra:
+        raise ValueError(f"the plan does not list {', '.join(extra)}; submit the decks it was "
+                         f"written for")
+    db = Path(base_dir).resolve() / f".mace_context_{workflow_id}" / "materials.db"
+    if db.is_file():
+        import sqlite3
+        try:
+            with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+                n = conn.execute("SELECT COUNT(*) FROM calculations").fetchone()[0]
+        except sqlite3.Error:
+            n = 0
+        if n:
+            raise ValueError(f"{workflow_id} was launched already ({n} calculation(s) recorded); "
+                             f"write a new plan to start again")
+    return expected, workflow_id, list(plan["workflow_sequence"])
+
+
+def own_step_scripts(plan: Dict[str, Any], base_dir: Path) -> Dict[str, Path]:
+    """The job-script templates the first submission of ``plan`` must use:
+    the workflow's own copy (``.mace_context_<id>/workflow_scripts``), by the
+    queue manager's key (``submitcrystal23_opt`` for
+    ``submitcrystal23_opt_1.sh``), earliest step first. The folder's
+    ``workflow_scripts/`` holds the templates of the plan written last, which
+    is another workflow's when two plans were written before either was
+    launched."""
+    from mace.workflow.context import workflow_scripts_dir
+    own = workflow_scripts_dir(base_dir, plan.get("workflow_id") or "")
+    steps = plan.get("step_configurations") or {}
+    out: Dict[str, Path] = {}
+    for i, calc_type in enumerate(plan.get("workflow_sequence") or []):
+        scripts = (((steps.get(f"{calc_type}_{i + 1}") or {}).get("slurm_config") or {})
+                   .get("scripts") or {})
+        for script in scripts.values():
+            name = script.get("step_specific_name") if isinstance(script, dict) else None
+            if name and name.endswith(".sh") and (own / name).is_file():
+                out.setdefault(name[:-3].rsplit("_", 1)[0], own / name)
+    return out

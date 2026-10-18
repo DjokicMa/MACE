@@ -2,6 +2,11 @@
 
     mace site [--json] [--refresh] [--init]
     mace site check [--partition P] [--account A] [--kind scf|prop|both] [--no-sbatch] [--json]
+    mace site set KEY VALUE        (e.g. mace site set resources.ntasks 16)
+    mace site unset KEY
+    mace site set --folder [DIR] KEY VALUE    (a project folder's mace-folder.toml)
+    mace site unset --folder [DIR] KEY
+    mace site suggest DECK... [--type T] [--json]
 
 Shows the site.toml MACE reads, every value with where it comes from
 (``env MACE_...``, ``site.toml`` or ``built-in``), the CRYSTAL module the job
@@ -38,11 +43,24 @@ def build_parser() -> argparse.ArgumentParser:
                     "MACE 1.2 or later (mace run runs decks on the node you are on). "
                     "mace site check tests the settings against this cluster, with sbatch --test-only.",
         epilog="Example: mace site --init, then edit the [slurm] account line, then mace site check. "
+               "Or: mace site set resources.ntasks 16; mace site set resources.properties.ntasks 14; "
+               "mace site set resources.FREQ.walltime 3-00:00:00; mace site unset resources.ntasks. "
                "See docs/cli.md, section Site settings.")
-    p.add_argument("action", nargs="?", choices=("show", "check"), default="show",
+    p.add_argument("action", nargs="?", choices=("show", "check", "set", "unset", "suggest"), default="show",
                    help="show (default): the settings and where each comes from; check: test them here "
                         "(SLURM, account, partition, job size, CRYSTAL, MPI, Python, scratch, and a dry "
-                        "submission with sbatch --test-only; exit 0 ok, 1 warnings, 2 failed)")
+                        "submission with sbatch --test-only; exit 0 ok, 1 warnings, 2 failed); "
+                        "set KEY VALUE / unset KEY: change one setting in your site.toml (created when "
+                        "absent), keeping its comments; KEY is table.key, e.g. resources.ntasks, "
+                        "resources.properties.mem, resources.OPT.walltime, slurm.account; "
+                        "suggest DECK...: the job size MACE suggests for each deck from its size (AOs, "
+                        "k-points, spins, type) and why, also when [resources] auto is off")
+    p.add_argument("words", nargs="*", metavar="KEY [VALUE]", help="set / unset: the key (and the value)")
+    p.add_argument("--folder", nargs="?", const=".", metavar="DIR",
+                   help="set / unset: change the project folder's mace-folder.toml instead (DIR, default "
+                        "here), as the GUI's Settings > Save to this folder does; KEY is table.key, e.g. "
+                        "plots.energy_window -3,5; units.energy meV; submit.walltime 1-00 (see docs/cli.md, "
+                        "section Folder settings from the shell)")
     p.add_argument("--json", action="store_true", help="print the same as JSON")
     p.add_argument("--refresh", action="store_true",
                    help="forget the cached CRYSTAL module choice, Python module check and SLURM answers "
@@ -53,6 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--account", metavar="A", help="check: test this account instead of the settings' one")
     p.add_argument("--kind", choices=("scf", "prop", "both"), default="both",
                    help="check: the job scripts to test (Pcrystal, Pproperties or both; default both)")
+    p.add_argument("--type", metavar="T", dest="calc_type",
+                   help="suggest: size the decks as this calculation type (OPT, SP, FREQ, BAND, DOSS, ...)")
     p.add_argument("--no-sbatch", action="store_true",
                    help="check: write the job scripts and read them with bash -n, but do not ask sbatch; "
                         "the scripts are kept for reading")
@@ -69,9 +89,9 @@ def _source_text(res: dict) -> str:
 
 
 def _src(v: dict) -> str:
-    """'built-in', 'site.toml: <path>', 'group: <path>' or 'env MACE_...'."""
+    """'built-in', 'site.toml: <path>', 'group: <path>', 'folder: <path>' or 'env MACE_...'."""
     src = v.get("source") or "built-in"
-    if v.get("origin") and src in ("site.toml", "group"):
+    if v.get("origin") and src in ("site.toml", "group", "folder"):
         return f"{src}: {v['origin']}"
     return src
 
@@ -80,6 +100,18 @@ def _res_text(r: dict) -> str:
     v = r["value"]
     flag = "--mem" if v["mem_form"] == "mem" else "--mem-per-cpu"
     return f"--ntasks={v['ntasks']} -N {v['nodes']} --cpus-per-task={v['cpus_per_task']} {flag}={v['mem']}"
+
+
+def _type_src_text(t: dict) -> str:
+    """Where each value of a calculation type's job size comes from."""
+    groups: dict = {}
+    for key, s in (t.get("set") or {}).items():
+        where = s["source"] if s["source"].startswith("env") else s["table"]
+        groups.setdefault(where, []).append(key)
+    if not groups:
+        return "built-in"
+    text = "; ".join(f"{', '.join(keys)} from {where}" for where, keys in groups.items())
+    return text + ("; others built-in" if len(t["set"]) < 5 else "")
 
 
 def _fit_text(r: dict) -> str:
@@ -117,6 +149,32 @@ def render(d: dict) -> List[str]:
     if res:
         lines.append(f"  Resources:   {_res_text(res['scf'])}  ({_src(res['scf'])}{_fit_text(res['scf'])})")
         lines.append(f"  Properties:  {_res_text(res['prop'])}  ({_src(res['prop'])}{_fit_text(res['prop'])})")
+    walls = d.get("walltime") or {}
+    if any(w.get("set") for w in walls.values()):
+        scf, prop = walls["scf"], walls["prop"]
+        if (scf["value"], _src(scf)) == (prop["value"], _src(prop)):
+            lines.append(f"  Walltime:    {scf['value']}, every job  ({_src(scf)})")
+        else:
+            lines.append(f"  Walltime:    {scf['value']}  ({_src(scf)}); properties {prop['value']}  ({_src(prop)})")
+    by_type = d.get("resources_by_type") or {}
+    if any(t.get("own") for t in by_type.values()):
+        lines.append("  By calculation type ([resources.<TYPE>] wins over [resources.properties] and [resources]):")
+        for name, t in by_type.items():
+            lines.append(f"    {name:<17}{_res_text(t)} -t {t['walltime']}  ({_type_src_text(t)})")
+    auto = d.get("auto") or {}
+    if auto:
+        on = [t for t, v in auto.items() if v]
+        lines.append(f"  Suggestions: {'on for ' + ', '.join(on) if on else 'off'} ([resources] auto: job size from "
+                     "each deck's size, below the values you set; mace site suggest DECK shows one)")
+    fo = d.get("folder")
+    if fo:
+        wt = fo.get("walltime") or {}
+        lines.append(f"  Folder:      {fo['path']}  (its [submit] table; site.toml [folders] allows "
+                     f"{', '.join(fo.get('allow') or []) or 'nothing'})")
+        if wt:
+            lines.append("  Walltime:    " + ", ".join(f"{'CRYSTAL' if k == 'scf' else 'properties'} {v}"
+                                                       for k, v in sorted(wt.items(), key=lambda kv: kv[0] != "scf"))
+                         + "  (folder)")
     mpi = d.get("mpi")
     if mpi:
         how = mpi["launcher"] + (f" --mpi={mpi['srun_mpi']}" if mpi.get("srun_mpi") else "")
@@ -191,8 +249,165 @@ def render(d: dict) -> List[str]:
     return lines
 
 
+def _folder_edit(action: str, folder: str, words: List[str]) -> int:
+    """`mace site set|unset --folder DIR KEY [VALUE]`: the folder's
+    mace-folder.toml through the GUI's writer (folder_settings.write) and its
+    refusals (folder_settings.save_target); a [submit] value the site's
+    [folders] rules would ignore is refused too."""
+    import os
+    import tempfile
+    from pathlib import Path
+    from mace.utils import folder_settings as F
+    want = 2 if action == "set" else 1
+    if len(words) != want:
+        usage = ("mace site set --folder [DIR] KEY VALUE" if action == "set"
+                 else "mace site unset --folder [DIR] KEY")
+        print(f"mace site: usage: {usage} (e.g. plots.energy_window -3,5)", file=sys.stderr)
+        return 2
+    key = words[0]
+    d = Path(folder).expanduser()
+    if not d.is_dir():
+        print(f"mace site: {d} is not a folder", file=sys.stderr)
+        return 2
+    table, name = key.rsplit(".", 1) if "." in key else ("", key)
+    try:
+        if key not in F.KEYS:
+            raise ValueError(f"{key} is not a folder setting (docs/cli.md lists them)")
+        target, why = F.save_target(d)
+        if why:
+            raise ValueError(why)
+        sets, unsets = {}, []
+        if action == "set":
+            value = F.value_from_text(key, words[1])
+            bad = F.check_value(key, value)
+            if bad is None and F.KEYS[key]["type"] == "path":
+                bad = F.check_path(target.parent, value)
+            if bad:
+                raise ValueError(f"{key} {bad}")
+            sets[key] = value
+        else:
+            if key not in (F.read(target).values if target.exists() else {}):
+                print(f"mace site: {key} is not set in {target}", file=sys.stderr)
+                return 1
+            unsets.append(key)
+        if key.startswith("submit."):
+            # the site's [folders] rules, as mace submit applies them: the file as it would be, read by site.load
+            old = target.read_text(encoding="utf-8") if target.exists() else F.TEMPLATE
+            fd, tmp = tempfile.mkstemp(prefix=".mace-folder-check.", suffix=".toml", dir=str(target.parent))
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(F.edit_text(old, sets, unsets))
+                os.chmod(tmp, 0o644)
+                env = {**os.environ, F.ENV: tmp}
+                tag = f"[submit] {key[len('submit.'):]} is ignored: "
+                for w in site.load(env=env).warnings:
+                    if tag in w:
+                        raise ValueError(f"{key}: {w.split(tag, 1)[1]}")
+            finally:
+                os.unlink(tmp)
+        existed = target.exists()
+        F.write(target, sets, unsets)
+    except (ValueError, OSError, site.SiteConfigError) as exc:
+        print(f"mace site: {exc}", file=sys.stderr)
+        return 2
+    if not existed:
+        print(f"Created {target}")
+    if action == "set":
+        print(f"Set [{table}] {name} = {F.toml_value(sets[key])} in {target}")
+    else:
+        print(f"Removed [{table}] {name} from {target}")
+    return 0
+
+
+def _edit(args) -> int:
+    if getattr(args, "folder", None) is not None:
+        return _folder_edit(args.action, args.folder, args.words)
+    from mace.submission import site_edit
+    want = 2 if args.action == "set" else 1
+    if len(args.words) != want:
+        usage = "mace site set KEY VALUE" if args.action == "set" else "mace site unset KEY"
+        print(f"mace site: usage: {usage} (e.g. resources.ntasks, resources.OPT.walltime)", file=sys.stderr)
+        return 2
+    try:
+        _, lines = site_edit.edit(args.words[0], args.words[1] if want == 2 else None, unset=args.action == "unset")
+    except (site_edit.EditError, site.SiteConfigError, OSError) as exc:
+        print(f"mace site: {exc}", file=sys.stderr)
+        return 1 if "is not set" in str(exc) or "nothing to unset" in str(exc) else 2
+    print("\n".join(lines))
+    return 0
+
+
+def suggest_lines(entries: List[dict]) -> List[str]:
+    """The text of `mace site suggest`."""
+    lines = []
+    for e in entries:
+        name = e["deck"]
+        lines.append(f"{name}  ({e['calc_type'] or 'type unknown'})")
+        s = e.get("suggestion")
+        if s:
+            mem = f"--mem-per-cpu={s['mem_per_cpu']}" if s["calc_type"] in site.SCF_TYPES else f"--mem={s['mem']}"
+            lines.append(f"  Suggested:  --ntasks={s['ntasks']} {mem} -t {s['walltime']}")
+            lines.append(f"  Why:        {s['reason']}")
+            inp = s.get("inputs") or {}
+            src = inp.get("source") or ""
+            approx = inp.get("approx") or []
+            lines.append(f"  Sized from: {src}" + (f" (estimated: {', '.join(approx)})" if approx else ""))
+        if e.get("error"):
+            lines.append(f"  {e['error']}")
+        a = e.get("applies")
+        if a:
+            flag = "--mem" if a["mem_form"] == "mem" else "--mem-per-cpu"
+            state = ("on: mace submit uses it below the values you set" if e["auto"] else
+                     "off: mace site set resources.auto true (or resources.<TYPE>.auto true) turns it on")
+            lines.append(f"  Job script: --ntasks={a['ntasks']} {flag}={a['mem']} -t {a['walltime']}  "
+                         f"([resources] auto {state})")
+    return lines
+
+
+def _suggest(args) -> int:
+    if not args.words:
+        print("mace site: usage: mace site suggest DECK... [--type T] [--json]", file=sys.stderr)
+        return 2
+    try:
+        entries = site.suggest_decks(args.words, calc_type=args.calc_type)
+    except site.SiteConfigError as exc:
+        print(f"mace site: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(entries, indent=1, sort_keys=True, default=str))
+    else:
+        print("\n".join(suggest_lines(entries)))
+    return 0 if all(e.get("suggestion") for e in entries) else 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] in ("set", "unset") and not {"-h", "--help"} & set(argv[1:]):
+        # the value is taken as written, even one that starts with -- (slurm.extra --exclusive)
+        words = argv[1:]
+        folder = None
+        if words and (words[0] == "--folder" or words[0].startswith("--folder=")):
+            # --folder [DIR]: DIR is there when one word more than KEY [VALUE] follows
+            if words[0].startswith("--folder="):
+                folder, words = words[0].split("=", 1)[1] or ".", words[1:]
+            else:
+                words = words[1:]
+                folder = "."
+                if len(words) > (2 if argv[0] == "set" else 1):
+                    folder, words = words[0], words[1:]
+        if words and words[0] == "--":
+            words = words[1:]
+        return _edit(argparse.Namespace(action=argv[0], words=words, folder=folder))
+    # suggest DECK... --json: options among the deck names
+    args = (build_parser().parse_intermixed_args(argv) if argv and argv[0] == "suggest"
+            else build_parser().parse_args(argv))
+    if args.action in ("set", "unset"):
+        return _edit(args)
+    if args.action == "suggest":
+        return _suggest(args)
+    if args.words:
+        print(f"mace site: unexpected arguments: {' '.join(args.words)}", file=sys.stderr)
+        return 2
     if args.action == "check":
         from mace.submission import site_check
         kinds = ("scf", "prop") if args.kind == "both" else (args.kind,)

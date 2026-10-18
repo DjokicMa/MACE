@@ -29,6 +29,7 @@ from datetime import datetime
 import threading
 
 from mace.queue.slurm_ids import note_submission as _note_submission
+from mace.queue import budget
 from mace.workflow.common.constants import PROPERTIES_MEMORY
 
 # The job-script generators (submitcrystal23.sh, submit_prop.sh): one copy, in
@@ -107,6 +108,32 @@ def _site_memory_line(line, resources):
     from mace.submission import site
     return site.memory_line(line, resources)
 
+
+# a SLURM constraint expression (node features and & | , [ ] * ! ( ) :)
+CONSTRAINT_RE = re.compile(r"^[A-Za-z0-9._,\-\[\]&|()!*:]{1,256}$")
+_CONSTRAINT_LINE_RE = re.compile(r"""^echo ['"]#SBATCH (?:--constraint=|-C )""")
+
+
+def apply_constraint(content: str, resources: Optional[Dict[str, Any]]) -> str:
+    """The step's own ``constraint`` (a workflow spec's resources.constraint)
+    as the template's one ``#SBATCH --constraint=`` directive: it replaces
+    any constraint the template or the site put there and goes after the
+    last directive, as a node exclusion does. Without one (or with a value
+    SLURM would not take, e.g. a hand-edited plan) the text is unchanged."""
+    value = (resources or {}).get('constraint')
+    if not value or not CONSTRAINT_RE.match(str(value)):
+        return content
+    lines = [l for l in content.split('\n') if not _CONSTRAINT_LINE_RE.match(l)]
+    last = -1
+    for i, line in enumerate(lines):
+        if line.startswith("echo '#SBATCH") or line.startswith('echo "#SBATCH'):
+            last = i
+    if last < 0:
+        return content
+    lines.insert(last + 1, f"echo '#SBATCH --constraint={value}' >> $1.sh")
+    return '\n'.join(lines)
+
+
 class WorkflowExecutor:
     """
     Executes planned workflows with full configuration management and error handling.
@@ -117,6 +144,7 @@ class WorkflowExecutor:
     
     def __init__(self, work_dir: str = ".", db_path: str = "materials.db"):
         self.work_dir = Path(work_dir).resolve()
+        self._held: List[str] = []        # first-step materials held under the queue budget
         
         # Check for active context and use its paths if available
         ctx = get_current_context()
@@ -355,6 +383,11 @@ class WorkflowExecutor:
                              f"echo '#SBATCH --exclude={node_exclusion}' >> $1.sh")
                 content = '\n'.join(lines)
 
+        # A step's own node features (a spec's resources.constraint): every
+        # job of the step is built from this template, so the first
+        # submission, the next steps and recovery all carry it.
+        content = apply_constraint(content, script_config.get('resources'))
+
         # Apply any additional customizations
         if 'customizations' in script_config:
             for customization in script_config['customizations']:
@@ -428,6 +461,16 @@ class WorkflowExecutor:
             ui.warn(f"Plan step {msg}")
         for err in fn_errs:
             ui.err(f"Plan step {err}")
+        # a step CRYSTAL23 cannot run from a SOC single point (ORBITALS
+        # crashes on a two-component wavefunction): refused before anything
+        # is submitted, whichever route launched the plan
+        from mace.workflow.planner import plan_soc_problems
+        soc_errors, _soc_warnings = plan_soc_problems(plan)
+        if soc_errors:
+            for message in soc_errors:
+                ui.err(message)
+            ui.err(f"Not executing {plan_file}")
+            return
 
         # Use workflow_id from plan, or generate new one if missing/None —
         # and write it back so every later consumer of this plan dict
@@ -598,7 +641,7 @@ class WorkflowExecutor:
         if not workflow_sequence:
             validation_errors.append("Empty workflow sequence")
         else:
-            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']
             for calc_type in workflow_sequence:
                 # Planner legitimately emits numbered types (OPT2, SP2, BAND3...)
                 base_type = calc_type.rstrip('0123456789')
@@ -615,15 +658,15 @@ class WorkflowExecutor:
         execution_settings = plan.get('execution_settings', {})
         if 'max_concurrent_jobs' in execution_settings:
             max_jobs = execution_settings['max_concurrent_jobs']
-            if not isinstance(max_jobs, int) or max_jobs <= 0:
+            if max_jobs is not None and (not isinstance(max_jobs, int) or max_jobs <= 0):
                 validation_errors.append(f"Invalid max_concurrent_jobs: {max_jobs}")
 
         # 6. Validate queue management configuration
         queue_config = plan.get('queue_management', {})
         if queue_config:
             max_jobs = queue_config.get('max_jobs', 200)
-            if not isinstance(max_jobs, int) or max_jobs <= 0 or max_jobs > 1000:
-                validation_errors.append(f"Invalid queue max_jobs: {max_jobs} (must be 1-1000)")
+            if not isinstance(max_jobs, int) or max_jobs <= 0:
+                validation_errors.append(f"Invalid queue max_jobs: {max_jobs} (must be a positive number)")
 
         # Report validation results
         if validation_errors:
@@ -655,8 +698,9 @@ class WorkflowExecutor:
                     "with `mace engine --action process`)")
 
         # Max concurrent jobs
-        max_concurrent = execution_settings.get('max_concurrent_jobs', 200)
-        ui.info(f"   • Max concurrent jobs: {max_concurrent}")
+        max_concurrent = budget.normalize_cap(execution_settings.get('max_concurrent_jobs'))
+        ui.info(f"   • Max concurrent jobs: "
+                f"{max_concurrent if max_concurrent else 'none (shares your queue budget, mace queue status)'}")
 
     def _execute_workflow_plan_impl(self, plan: Dict[str, Any], workflow_id: str, isolation_mode: str = 'isolated'):
         """Internal implementation of workflow execution"""
@@ -812,7 +856,20 @@ class WorkflowExecutor:
         step_dir = workflow_dir / f"step_001_{first_step}"
         
         print(f"\nExecuting Step 1: {first_step}")
+        self._held = []
         submitted_jobs = self.execute_step(plan, workflow_id, first_step, 1, d12_files, step_dir)
+        if self.db is not None:
+            budget.register(self.db.db_path, workflow_id,
+                            (plan.get('execution_settings') or {}).get('max_concurrent_jobs'))
+        if self._held:
+            cfg = budget.resolve(quiet=True)
+            ui.info(f"Submitted {len(submitted_jobs)}, held {len(self._held)} ({cfg.describe()}); "
+                    f"the held ones start as slots free up")
+            if self.db is not None:
+                try:
+                    budget.drain(dbs=[self.db.db_path], out=ui.info, quiet=True)
+                except Exception as e:
+                    ui.warn(f"Queue drain skipped: {e}")
         
         if submitted_jobs:
             ui.ok(f"Successfully submitted {len(submitted_jobs)} {first_step} calculations")
@@ -872,6 +929,8 @@ class WorkflowExecutor:
             if calc_id:
                 submitted_jobs.append(calc_id)
                 ui.ok(f"  Submitted {material_id}: Job ID {calc_id}")
+            elif self._held and self._held[-1] == material_id:
+                ui.info(f"  Held {material_id}: submitted as queue slots free up")
             else:
                 ui.err(f"  Failed to submit {material_id}")
                 
@@ -972,8 +1031,21 @@ class WorkflowExecutor:
                                                  'array_dir': str(p.array_dir.resolve())}})
             self.db.update_array_rows(rows)
 
+        def hold_overflow(rest, reason='budget'):
+            # tasks the queue budget has no room for: held rows, each with
+            # its own job script, which a queue drain submits as a single job
+            for m in rest:
+                calc_id, material_id, calc_dir, _ = m.data['prep']
+                budget.hold_row(budget.RowRef(str(Path(self.db.db_path).resolve()), calc_id,
+                                              {'output_file': str(calc_dir / f"{material_id}.out")}),
+                                reason, ['sbatch'] + [str(Path(m.script).resolve())],
+                                Path(calc_dir).resolve())
+                self._held.append(material_id)
+                ui.info(f"  Held {material_id}: submitted as queue slots free up")
+
         try:
-            subs = job_array.submit_prepared(prepared, record_rows) if prepared else []
+            subs = job_array.submit_prepared(prepared, record_rows, on_overflow=hold_overflow) \
+                if prepared else []
         except (job_array.ArrayRefusal, job_array.ArraySubmitError) as e:
             ui.err(f"Error: {e}")
             fail([m.data['prep'] for m in members] + singles_pre, str(e))
@@ -985,7 +1057,13 @@ class WorkflowExecutor:
         for m, reason in singles:
             calc_id, material_id, calc_dir, _ = m.data['prep']
             ui.info(f"  {material_id}: {reason}")
-            job_id = self._sbatch_in(calc_dir, m.script.name)
+            budget.clear_last()
+            with budget.row(self.db.db_path, calc_id, output_file=str(calc_dir / f"{material_id}.out")):
+                job_id = self._sbatch_in(calc_dir, m.script.name)
+            if not job_id and (budget.last_outcome() or budget.Outcome('failed')).held:
+                self._held.append(material_id)
+                ui.info(f"  Held {material_id}: submitted as queue slots free up")
+                continue
             if job_id:
                 self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id,
                                                   output_file=str(calc_dir / f"{material_id}.out"))
@@ -997,7 +1075,13 @@ class WorkflowExecutor:
             # exactly as execute_step submits it: the generator again, then sbatch
             script_file = self.generate_individual_slurm_script(
                 calc_d12_file, calc_type, material_id, calc_dir, workflow_id, step_num)
-            job_id = self.submit_slurm_job(script_file, calc_dir)
+            budget.clear_last()
+            with budget.row(self.db.db_path, calc_id, output_file=str(calc_dir / f"{material_id}.out")):
+                job_id = self.submit_slurm_job(script_file, calc_dir)
+            if not job_id and (budget.last_outcome() or budget.Outcome('failed')).held:
+                self._held.append(material_id)
+                ui.info(f"  Held {material_id}: submitted as queue slots free up")
+                continue
             if job_id:
                 self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id,
                                                   output_file=str(calc_dir / f"{material_id}.out"))
@@ -1013,14 +1097,11 @@ class WorkflowExecutor:
         original_cwd = os.getcwd()
         try:
             os.chdir(calc_dir)
-            result = subprocess.run(['sbatch', script_name], capture_output=True, text=True)
-            if result.returncode == 0:
-                _note_submission()
-                for line in result.stdout.strip().split('\n'):
-                    if 'Submitted batch job' in line:
-                        return line.split()[-1]
-            else:
-                ui.err(f"SLURM submission failed: {result.stderr}")
+            outcome = budget.sbatch(['sbatch', script_name], calc_dir)   # _note_submission() inside
+            if outcome.submitted:
+                return outcome.job_id
+            if not outcome.held:
+                ui.err(f"SLURM submission failed: {outcome.message}")
         finally:
             os.chdir(original_cwd)
         return None
@@ -1103,8 +1184,11 @@ class WorkflowExecutor:
             d12_file, calc_type, material_id, calc_dir, workflow_id, step_num
         )
         
-        # Submit job
-        job_id = self.submit_slurm_job(script_file, calc_dir)
+        # Submit job (through the user-wide queue budget: a job that does not
+        # fit leaves the row held, and a queue drain submits it later)
+        budget.clear_last()
+        with budget.row(self.db.db_path, calc_id, output_file=str(calc_dir / f"{material_id}.out")):
+            job_id = self.submit_slurm_job(script_file, calc_dir)
         
         if job_id:
             # Update calculation with SLURM job ID
@@ -1114,10 +1198,15 @@ class WorkflowExecutor:
                 output_file=str(calc_dir / f"{material_id}.out")
             )
             return job_id
-        else:
-            # Mark as failed
-            self.db.update_calculation_status(calc_id, 'failed', error_message="SLURM submission failed")
+        outcome = budget.last_outcome()
+        if outcome is not None and outcome.held:
+            self._held.append(material_id)
             return None
+        # Mark as failed, with SLURM's own message
+        msg = f"SLURM submission failed: {outcome.message}" if outcome and outcome.message \
+            else "SLURM submission failed"
+        self.db.update_calculation_status(calc_id, 'failed', error_message=msg)
+        return None
             
     def generate_individual_slurm_script(self, d12_file: Path, calc_type: str, 
                                        material_id: str, calc_dir: Path, 
@@ -1136,7 +1225,7 @@ class WorkflowExecutor:
         elif base_type in ['SP', 'FREQ']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
             # All D3 property calculations use the same template
             specific_template = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
             generic_template = "submit_prop.sh"
@@ -1265,36 +1354,6 @@ class WorkflowExecutor:
         
         return script_content
         
-    def submit_slurm_job(self, script_file: Path, calc_dir: Path) -> str:
-        """Submit SLURM job and return job ID"""
-        original_cwd = os.getcwd()
-        
-        try:
-            os.chdir(calc_dir)
-            
-            result = subprocess.run(
-                ['sbatch', script_file.name],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode == 0:
-                _note_submission()
-                # Extract job ID from sbatch output
-                for line in result.stdout.strip().split('\n'):
-                    if 'Submitted batch job' in line:
-                        return line.split()[-1]
-            else:
-                ui.err(f"SLURM submission failed: {result.stderr}")
-
-        except Exception as e:
-            ui.err(f"Error submitting job: {e}")
-
-        finally:
-            os.chdir(original_cwd)
-            
-        return None
-        
     def extract_core_material_name(self, d12_file: Path) -> str:
         """Extract the core material name using smart suffix removal"""
         # Use the same logic as create_material_id_from_file for consistency
@@ -1330,7 +1389,7 @@ class WorkflowExecutor:
         elif base_type in ['SP', 'FREQ']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
             # All D3 property calculations use the same template
             specific_template = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
             generic_template = "submit_prop.sh"
@@ -1598,7 +1657,9 @@ fi'''
                 # A script generator: it writes <job_name>.sh, which is this
                 # very file, so it runs from a separate copy.
                 ui.info(f"  Running script generator locally: {script_file.name}")
-                result = run_script_generator(script_file.name, job_name, os.getcwd())
+                here = os.getcwd()
+                result = budget.run_generator(
+                    lambda env: run_script_generator(script_file.name, job_name, here, env=env), here)
                 
                 if result.returncode == 0:
                     if 'Submitted batch job' in result.stdout:      # the template ran sbatch itself
@@ -1615,40 +1676,22 @@ fi'''
                     generated_script = calc_dir / f"{job_name}.sh"
                     if generated_script.exists():
                         ui.info(f"  Found generated script: {generated_script.name}")
-                        result = subprocess.run(
-                            ['sbatch', generated_script.name],
-                            capture_output=True,
-                            text=True
-                        )
-                        if result.returncode == 0:
-                            _note_submission()
-                            output_lines = result.stdout.strip().split('\n')
-                            for line in output_lines:
-                                if 'Submitted batch job' in line:
-                                    job_id = line.split()[-1]
-                                    return job_id
+                        outcome = budget.sbatch(['sbatch', generated_script.name], calc_dir)  # _note_submission()
+                        if outcome.submitted:
+                            return outcome.job_id
+                        if not outcome.held:
+                            ui.err(f"SLURM submission failed: {outcome.message}")
                 else:
                     ui.err(f"Error running script generator: {result.stderr}")
                     
             else:
                 # This is a regular SLURM script - submit directly
                 ui.info(f"  Submitting SLURM script directly: {script_file.name}")
-                result = subprocess.run(
-                    ['sbatch', script_file.name],
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode == 0:
-                    _note_submission()
-                    # Extract job ID from sbatch output
-                    output_lines = result.stdout.strip().split('\n')
-                    for line in output_lines:
-                        if 'Submitted batch job' in line:
-                            job_id = line.split()[-1]
-                            return job_id
-                else:
-                    ui.err(f"SLURM submission failed: {result.stderr}")
+                outcome = budget.sbatch(['sbatch', script_file.name], calc_dir)   # _note_submission() inside
+                if outcome.submitted:
+                    return outcome.job_id
+                if not outcome.held:
+                    ui.err(f"SLURM submission failed: {outcome.message}")
 
         except Exception as e:
             ui.err(f"Error submitting job: {e}")
@@ -1658,6 +1701,32 @@ fi'''
             
         return None
         
+    def _picked_cif_dir(self, plan: Dict[str, Any], workflow_id: str) -> Path:
+        """The folder NewCifToD12 converts: the plan's input directory when
+        its CIFs are exactly the plan's ``input_files.cif``, else a staged
+        copy of only those files (a spec or the GUI builder picked a subset:
+        the others are not converted or submitted)."""
+        input_dir = Path(plan['input_directory'])
+        listed = [Path(f) for f in ((plan.get('input_files') or {}).get('cif') or [])]
+        if not listed:
+            return input_dir
+        try:
+            in_folder = {p.resolve() for p in input_dir.iterdir()
+                         if p.is_file() and p.suffix.lower() == '.cif'}
+        except OSError:
+            in_folder = set()
+        picked = [(f if f.is_absolute() else input_dir / f) for f in listed]
+        if {p.resolve() for p in picked} == in_folder:
+            return input_dir
+        staged = self.temp_dir / f"{workflow_id}_cifs"
+        if staged.exists():
+            shutil.rmtree(staged)
+        staged.mkdir(parents=True)
+        for f in picked:
+            shutil.copy2(f, staged / f.name)
+        ui.info(f"    Converting the {len(picked)} picked CIF(s) of {input_dir}")
+        return staged
+
     def convert_cifs_with_config(self, plan: Dict[str, Any], workflow_id: str):
         """Convert CIF files using saved configuration"""
         cif_config = plan.get('cif_conversion_config')
@@ -1684,11 +1753,12 @@ fi'''
         else:
             script_path = Path(__file__).parent.parent.parent / "Crystal_d12" / "NewCifToD12.py"
         
+        cif_dir = self._picked_cif_dir(plan, workflow_id)
         conversion_cmd = [
             sys.executable, str(script_path),
             "--batch",
             "--options_file", str(cif_config_file),
-            "--cif_dir", plan['input_directory'],
+            "--cif_dir", str(cif_dir),
             "--output_dir", str(cif_output_dir)
         ]
         
@@ -1880,7 +1950,7 @@ fi'''
             ui.info(f"  Created material_id: {material_id} from {input_file.name}")
             
             # Check if this is a D3 calculation
-            is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']
             
             if is_d3_calc:
                 # For D3 calculations, we need to handle submission differently
@@ -2354,6 +2424,9 @@ fi'''
             crystal_opt_config["method_modifications"] = config["method_modifications"]
         if "basis_modifications" in config:
             crystal_opt_config["basis_modifications"] = config["basis_modifications"]
+        if config.get("soc") is True:
+            # A planned two-component SOC single point
+            crystal_opt_config["soc"] = True
         
         with open(temp_config, 'w') as f:
             json.dump(crystal_opt_config, f)
@@ -2707,8 +2780,8 @@ fi'''
             return
             
         # Find input files for this step
-        # D3 calculations (BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL) use .d3 files
-        if calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        # D3 calculations (BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL, ORBITALS) use .d3 files
+        if calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
             input_files = list(step_dir.glob("*.d3"))
             file_type = "D3"
         else:
@@ -2790,6 +2863,19 @@ This workflow is managed by MACE. Use these commands to monitor your workflow:
 
 ## Quick Commands
 
+### Workflow Progress
+```bash
+cd {}
+# The workflows planned in this folder, with their IDs and state
+mace workflow --list
+# One workflow's steps per material (add --json for JSON)
+mace workflow --status <ID>
+# Hold its progression (completions are recorded, nothing new is submitted)
+mace workflow --pause <ID>
+# Continue it (starts the steps held while it was paused)
+mace workflow --resume <ID>
+```
+
 ### Check Workflow Status
 ```bash
 # View status of all calculations
@@ -2846,7 +2932,7 @@ python $MACE_HOME/mace/workflow/engine.py --action status
 - All other functionality requires running scripts directly from MACE installation
 - The workflow uses an isolated database in .mace_context_workflow_*/
 - If MACE_HOME is not set, replace $MACE_HOME with the path to your MACE installation
-""".format(workflow_dir, workflow_dir, workflow_dir, workflow_dir)
+""".format(workflow_dir, workflow_dir, workflow_dir, workflow_dir, workflow_dir)
             
             readme_path = workflow_dir / "WORKFLOW_MONITORING.md"
             with open(readme_path, 'w') as f:

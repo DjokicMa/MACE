@@ -201,9 +201,12 @@ class MaterialMonitor:
                 # stays whole, commas included.
                 status_counts = Counter()
                 total = 0
+                sentinel = None
                 for line in lines:
                     if line.strip():
                         parts = split_squeue_line(line, 4)
+                        if len(parts) >= 4 and parts[3].strip() == 'mace-drain':
+                            sentinel = parts[0]
                         ids = expand_queue_id(parts[0])
                         n = 1 if isinstance(ids, Truncated) else max(len(ids), 1)
                         total += n
@@ -214,6 +217,7 @@ class MaterialMonitor:
                 queue['total_jobs'] = total
                             
                 queue['by_status'] = dict(status_counts)
+                queue['sentinel'] = sentinel
                 
                 # Check for potential issues
                 pending_jobs = status_counts.get('PENDING', 0)
@@ -240,7 +244,15 @@ class MaterialMonitor:
         except Exception as e:
             queue['status'] = 'warning'
             queue['issues'].append(f'Queue check unavailable: {e}')
-            
+        # the user-wide queue budget and the jobs held under it (mace queue status)
+        try:
+            from mace.queue import budget
+            cfg = budget.resolve(quiet=True)
+            queue['budget'] = {'budget': cfg.budget, 'limit': cfg.limit, 'reserve': cfg.reserve,
+                               'source': cfg.source}
+            queue['held'] = budget.held_summary(self.db_path)
+        except Exception:
+            queue.setdefault('held', {})
         return queue
         
     def _check_file_system_health(self) -> Dict[str, any]:
@@ -494,6 +506,14 @@ class MaterialMonitor:
             f"{queue.get('total_jobs', 0)} jobs"
             f" · {queue.get('by_status', {})}"
         )
+        if queue.get('budget'):
+            queue_detail += f" · budget {queue['budget']['budget']}"
+        if queue.get('held'):
+            queue_detail += (f" · held {sum(queue['held'].values())} ("
+                             + ", ".join(f"{k}: {v}" for k, v in sorted(queue['held'].items())) + ")")
+        if queue.get('sentinel'):
+            queue_detail += f" · mace-drain job {queue['sentinel']}"
+
         if queue.get('issues'):
             queue_detail += " · " + " · ".join(queue['issues'])
         rows.append(ui.StatusRow("QUEUE", self._state_for(queue.get('status', 'unknown')), queue_detail))
@@ -599,6 +619,12 @@ class MaterialMonitor:
         print(f"QUEUE: {queue_status_color}{queue['status'].upper()}\033[0m")
         print(f"  Total jobs: {queue['total_jobs']}")
         print(f"  By status: {queue['by_status']}")
+        if queue.get('budget'):
+            print(f"  Queue budget: {queue['budget']['budget']}")
+        if queue.get('held'):
+            print(f"  Held: {sum(queue['held'].values())} {queue['held']}")
+        if queue.get('sentinel'):
+            print(f"  mace-drain job: {queue['sentinel']}")
         if queue['issues']:
             for issue in queue['issues']:
                 print(f"  ⚠️  {issue}")

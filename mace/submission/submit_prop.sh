@@ -225,6 +225,14 @@ if ! cp "$DIR/$JOB.d3" "$scratch/$JOB/INPUT" || ! cp "$DIR/$JOB.f9" "$scratch/$J
   exit 1
 fi
 cd "$scratch/$JOB" || { echo "ERROR: cannot enter $scratch/$JOB. Not running CRYSTAL."; exit 1; }
+# ORBITALS writes its Molden files under the root name in the record after
+# it. MACE writes ${JOB}_orb there; a deck renamed since (a workflow step, a
+# copy by hand) still names the old one, so the staged copy is given the root
+# of this job and the files come back as ${JOB}_orb*.molden. Decks without
+# ORBITALS are staged as they are.
+if grep -qiE "^[[:space:]]*ORBITALS[[:space:]]*$" INPUT; then
+  sed -i "/^[[:space:]]*ORBITALS[[:space:]]*$/I{n;s/.*/${JOB}_orb/}" INPUT
+fi
 
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/Pproperties" 2>&1 >& "$DIR/${JOB}.out"
 #srun $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& "$DIR/${JOB}.out"
@@ -246,6 +254,13 @@ I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/Pprope
 [ -f DENS_CUBE.DAT ] && cp DENS_CUBE.DAT "$DIR/${JOB}_DENS.CUBE"
 [ -f POT_CUBE.DAT ] && cp POT_CUBE.DAT "$DIR/${JOB}_POT.CUBE"
 [ -f SPIN_CUBE.DAT ] && cp SPIN_CUBE.DAT "$DIR/${JOB}_SPIN.CUBE"
+# ORBITALS: ${JOB}_orb.molden (a molecule) or one ${JOB}_orb_<n>_K<ijk>_real.molden
+# (and _complex.molden) per k point, these exact names only; moved, not
+# copied (a dense k mesh is thousands of files against the scratch file
+# quota); the per-rank fort.*.peN files stay here
+for f in "${JOB}"_orb*.molden; do
+  [ -f "$f" ] && [[ "${f#"${JOB}"_orb}" =~ ^(_[0-9]+_K[0-9]+_(real|complex))?\.molden$ ]] && mv "$f" "$DIR/"
+done
 
 # ADDED: Auto-submit new jobs when this one completes
 # Check multiple possible locations for queue managers

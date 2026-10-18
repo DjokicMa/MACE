@@ -483,7 +483,13 @@ _STAGING_START = '# OPTGEOM RESTART'
 _GUESSP_START = '# GUESSP restart'
 _INPUT_COPY_RE = re.compile(r'^cp "?\$DIR/\$JOB\.d12"?\s+"?\$scratch/\$JOB/INPUT"?[ \t]*$', re.M)
 _OLD_GUESSP_IF = 'if grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then'
-_NEW_GUESSP_IF = 'if [ -z "$RESTART_KEEPS_FORT20" ] && ' + _OLD_GUESSP_IF[3:]
+# The current template's line: it stands aside for RESTART, and matches the
+# GUESSP record only, not GUESSPSO, GUESSPNOSO, GUESSPAT or GUESSPATNC.
+_NEW_GUESSP_IF = ('if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE '
+                  '"^[[:space:]]*GUESSP[[:space:]]*$" "$scratch/$JOB/INPUT" 2>/dev/null; then')
+# The line of the 1.1.4 and 1.1.5 templates: it stands aside for RESTART but
+# matches every record starting with GUESSP.
+_PREV_GUESSP_IF = 'if [ -z "$RESTART_KEEPS_FORT20" ] && ' + _OLD_GUESSP_IF[3:]
 
 
 def restart_staging_block(template_text: Optional[str] = None) -> Optional[str]:
@@ -528,12 +534,14 @@ def _with_twocompon_guess(text: str, template_text: Optional[str]) -> Tuple[str,
     if _TWOCOMPON_GUESS_START in text:
         return text, False
     code = [l.strip() for l in text.splitlines()]
-    if code.count(_NEW_GUESSP_IF) != 1:
+    # the current line, or the one a 1.1.4 script has (kept as it is)
+    line = next((l for l in (_NEW_GUESSP_IF, _PREV_GUESSP_IF) if code.count(l) == 1), None)
+    if line is None or sum(code.count(l) for l in (_NEW_GUESSP_IF, _PREV_GUESSP_IF)) != 1:
         return text, False
     branch = twocompon_guess_branch(template_text)
     if branch is None:
         return text, False
-    at = text.index(_NEW_GUESSP_IF)
+    at = text.index(line)
     return text[:at] + branch + text[at:], True
 
 
@@ -553,6 +561,13 @@ def refresh_restart_staging(script_text: str, template_text: Optional[str] = Non
     template's current one in its place. Either way a GUESSP staging without
     the TWOCOMPON branch (a two-component deck needs a one-component matrix,
     not its own .f9) gets it.
+
+    The template's last GUESSP branch, which stages $JOB.f20 (or the job's own
+    .f9) for GUESSPSO / GUESSPNOSO, is not added: a refreshed script runs only
+    the killed optimization it was written for (recovery saves it as that
+    job's own *_recovery_* script), and a two-component deck - the only kind
+    with those records - has no OPTGEOM (CRYSTAL23 manual p. 166; every MACE
+    deck writer refuses OPT and FREQ for a SOC deck).
     """
     block = restart_staging_block(template_text)
     if _STAGING_START in script_text:

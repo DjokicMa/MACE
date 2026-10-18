@@ -80,6 +80,13 @@ except ImportError:          # pragma: no cover - imported as a bare module next
     envmodules = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(envmodules)
 try:
+    from mace.utils import folder_settings
+except ImportError:          # pragma: no cover - imported as a bare module next to mace/utils
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("folder_settings", Path(__file__).resolve().parents[1] / "utils" / "folder_settings.py")
+    folder_settings = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(folder_settings)
+try:
     from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
 except ImportError:          # pragma: no cover - imported as a bare module next to mace/workflow
     import importlib.util as _ilu
@@ -141,16 +148,32 @@ MAJOR_RE = re.compile(r"^[0-9]{1,3}$")
 PLACEHOLDERS = {"reason", "module", "host"}
 KNOWN = {"slurm": {"account", "partition", "qos", "constraint", "extra"},
          "modules": {"crystal", "crystal_minimum", "crystal_maximum", "python", "purge"},
-         "queue": {"max_jobs", "reserve"},
+         "queue": {"max_jobs", "reserve", "budget", "limit", "order", "followup_share", "sentinel"},
          "local_run": {"gateway_message", "module_message", "max_time"},
-         "resources": {"ntasks", "nodes", "cpus_per_task", "mem", "mem_per_cpu", "properties"},
+         "resources": {"ntasks", "nodes", "cpus_per_task", "mem", "mem_per_cpu", "walltime", "auto", "properties",
+                       "OPT", "SP", "FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"},
          "mpi": {"launcher", "srun_mpi", "env"},
          "paths": {"scratch"},
-         "crystal": {"bin_dir", "scf", "properties"}}
+         "crystal": {"bin_dir", "scf", "properties"},
+         "folders": {"allow", "partitions", "max_ntasks", "max_walltime"}}
 RESOURCE_KEYS = ("ntasks", "nodes", "cpus_per_task", "mem", "mem_per_cpu")
+# the keys of a [resources] level: the job size and the default walltime
+LEVEL_KEYS = RESOURCE_KEYS + ("walltime",)
+# a level may also turn size-aware suggestions on or off (resources_suggest.py)
+TABLE_KEYS = LEVEL_KEYS + ("auto",)
+# the calculation types a [resources.<TYPE>] table names (mace.utils.calc_detection:
+# d12_calc_type, PROPERTY_CALC_TYPES); a properties type also takes [resources.properties]
+SCF_TYPES = ("OPT", "SP", "FREQ")
+PROP_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
+RESOURCE_TYPES = SCF_TYPES + PROP_TYPES
+# a default walltime: D-HH:MM:SS, D-HH:MM, D-HH or HH:MM:SS (SLURM's forms without the
+# ambiguous MM and MM:SS); at most a year
+WALLTIME_RE = folder_settings.WALLTIME_RE      # D-HH:MM:SS, D-HH:MM, D-HH or HH:MM:SS (one rule for both files)
+MAX_WALLTIME_S = folder_settings.MAX_WALLTIME_S
 # the tables of the same file that `mace cluster` reads (mace/cluster/config.py),
-# and [gui] (gateway: the login host `mace gui` names in its tunnel hint)
-FOREIGN_TABLES = {"cluster", "quota", "scan", "devnodes", "gui"}
+# [gui] (gateway: the login host `mace gui` names in its tunnel hint) and [plots] (backend: the
+# renderer of mace plotting's band/DOS figures, plotly or matplotlib)
+FOREIGN_TABLES = {"cluster", "quota", "scan", "devnodes", "gui", "plots"}
 INVALID_ACCOUNT_TEXT = "Invalid account or account/partition combination"
 
 # ------------------------------------------------------------------ the layers
@@ -205,6 +228,7 @@ RESOURCE_LINES = {
              "ntasks": f"echo '#SBATCH --ntasks={PROPERTIES_NTASKS}' >> $1.sh",
              "nodes": "echo '#SBATCH -N 1' >> $1.sh",
              "memory": f"echo '#SBATCH --mem={PROPERTIES_MEMORY}' >> $1.sh"}}
+TEMPLATE_WALLTIME = {"scf": "7-00:00:00", "prop": "2:00:00"}
 TEMPLATE_RESOURCES = {"scf": {"ntasks": 32, "nodes": 1, "cpus_per_task": 1, "mem_form": "mem_per_cpu", "mem": "5G"},
                       "prop": {"ntasks": PROPERTIES_NTASKS, "nodes": 1, "cpus_per_task": 1, "mem_form": "mem", "mem": PROPERTIES_MEMORY}}
 # how the templates start CRYSTAL
@@ -244,9 +268,20 @@ INIT_TEXT = """\
 # cpus_per_task = 1                        # #SBATCH --cpus-per-task=...
 # mem_per_cpu   = "5G"                     # #SBATCH --mem-per-cpu=...  } set one of the two
 # mem           = "250G"                   # #SBATCH --mem=...          } (built-in: 5G per CPU, properties @PROP_MEM@)
+# walltime      = "24:00:00"               # #SBATCH -t ... (D-HH:MM:SS or HH:MM:SS; built-in: 7 days, properties 2 hours)
+# auto          = true                     # size each job from its deck (AOs, k-points, spins, type) below the
+#                                          # values set here; per type too: [resources.BAND] auto = true.
+#                                          # mace site suggest DECK shows a deck's suggestion and why
 [resources.properties]
 # ntasks = @PROP_NTASKS_PADDED@# the same keys, for Pproperties jobs only
 # mem    = "@PROP_MEM@"
+# A table per calculation type wins over [resources.properties] and [resources] (OPT, SP, FREQ,
+# BAND, DOSS, TRANSPORT, "CHARGE+POTENTIAL", ORBITALS), for example 16 cores for every job, 4 for properties
+# jobs and 64 cores for 3 days for frequencies:
+#   [resources]            ntasks = 16
+#   [resources.properties] ntasks = 4
+#   [resources.FREQ]       ntasks = 64, walltime = "3-00:00:00"
+# or from the shell: mace site set resources.FREQ.ntasks 64
 [mpi]
 # launcher = "mpirun"                      # or "srun" (srun reads the task count from SLURM)
 # srun_mpi = "pmix"                        # srun --mpi=...  (pmix, pmi2, pmix_v3, pmix_v4, none)
@@ -265,12 +300,23 @@ INIT_TEXT = """\
 [paths]
 # scratch = "/scratch/$USER"               # tried after $SCRATCH; only a directory every compute node shares
 [queue]
-# max_jobs = 950                           # jobs MACE keeps queued (default: your MaxSubmitJobs minus the reserve)
-# reserve  = 50                            # queue slots MACE leaves free for you
+# reserve  = 100                           # queue slots MACE never uses (urgent jobs of your own); budget = limit - reserve
+# max_jobs = 950                           # older form: budget = max_jobs - reserve (use budget instead)
+# budget   = 940                           # the most jobs MACE keeps queued (running + pending), all workflows together
+# limit    = 1040                          # your SLURM submit limit (default: read from SLURM, MaxSubmitJobs)
+# order    = "depth"                       # held jobs start: depth (next steps first), breadth (first steps first), mixed
+# followup_share = 0.75                    # order = "mixed": the share of free slots offered to next steps first
+# sentinel = true                          # false: no mace-drain job restarts held work when no MACE job is queued
 [local_run]
 # max_time = "4h"                          # longest mace run per deck (default: the node's ulimit -t; 1h55m on MSU HPCC)
 # gateway_message = "This is a login node ({reason}): CRYSTAL cannot run here. Log in to a compute or dev node first and rerun mace run."
 # module_message  = "the {module} module cannot be loaded on {host}; run mace run on a node where it loads"
+[folders]
+# what a project folder's mace-folder.toml [submit] table may set (mace site shows what a folder set):
+# allow = ["ntasks", "walltime", "partition"]   # the default; [] lets a folder set none of them
+# partitions = ["general"]                 # the partitions a folder may choose (default: none)
+# max_ntasks = 128                         # a folder's ntasks above this is ignored
+# max_walltime = "7-00:00:00"              # likewise its walltime
 """.replace("@PROP_NTASKS_PADDED@", f"{PROPERTIES_NTASKS:<32}").replace("@PROP_NTASKS@", str(PROPERTIES_NTASKS)).replace("@PROP_MEM@", PROPERTIES_MEMORY)
 
 
@@ -291,6 +337,12 @@ class Site:
     module_message: str = DEFAULTS["module_message"]
     max_jobs: int = DEFAULTS["max_jobs"]
     reserve: int = DEFAULTS["reserve"]
+    # [queue] budget, limit, order, followup_share, sentinel (mace/queue/budget.py)
+    queue_budget: Optional[int] = None
+    queue_limit: Optional[int] = None
+    queue_order: str = "depth"
+    queue_followup_share: float = 0.75
+    queue_sentinel: bool = True
     path: Optional[Path] = None
     exists: bool = False
     sources: Dict[str, str] = field(default_factory=dict)
@@ -302,15 +354,22 @@ class Site:
     python_executable: Optional[str] = None
     walltime_cap: Optional[int] = None        # seconds: the partition's MaxTime, when below a template's
     cap_partition: Optional[str] = None
+    # seconds: the partition's MaxTime, whatever its size (resolve, resolve_limit; None on
+    # MSU HPCC, without SLURM or without a limit): a folder's and a suggested walltime stay below it
+    max_time: Optional[int] = None
     notes: List[str] = field(default_factory=list)
     checks: Dict[str, Any] = field(default_factory=dict)
     # where each set value comes from (a path, an env name), for mace site
     origins: Dict[str, str] = field(default_factory=dict)
     group_paths: List[Path] = field(default_factory=list)
     group_owners: Dict[str, str] = field(default_factory=dict)
-    # [resources]: "" = both job kinds, "properties" = Pproperties jobs only;
-    # only the keys someone set
+    # [resources]: "" = both job kinds, "properties" = Pproperties jobs only,
+    # "OPT", "BAND", ... = that calculation type only; only the keys someone set
     res_raw: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {"": {}, "properties": {}})
+    # [resources] walltime per level (the same levels), as written
+    wall_raw: Dict[str, str] = field(default_factory=dict)
+    # [resources] auto per level: size-aware suggestions (resources_suggest.py)
+    auto_raw: Dict[str, bool] = field(default_factory=dict)
     # [mpi]
     launcher: str = "mpirun"
     srun_mpi: Optional[str] = None
@@ -328,16 +387,88 @@ class Site:
     module_purge: bool = True
     # [local_run] max_time (seconds)
     run_max_time: Optional[int] = None
+    # [folders]: what a project folder's mace-folder.toml [submit] table may set
+    folder_allow: Tuple[str, ...] = folder_settings.SITE_ALLOW_DEFAULT
+    folder_partitions: List[str] = field(default_factory=list)
+    folder_max_ntasks: Optional[int] = None
+    folder_max_walltime: Optional[int] = None         # seconds
+    # what the folder file set: its path, and the walltime per job kind ('scf', 'prop') in seconds
+    folder_path: Optional[Path] = None
+    folder_walltime: Dict[str, int] = field(default_factory=dict)
+    # the [resources] levels whose walltime a project folder set (Site.walltime caps those
+    # at the partition's MaxTime, as folder_walltime does)
+    folder_wall_levels: set = field(default_factory=set)
 
     def is_set(self, key: str) -> bool:
         """The value is the user's (site.toml, a group file, the environment)."""
         return self.sources.get(key, "built-in") != "built-in"
 
-    def effective_resources(self, kind: str) -> Dict[str, Any]:
-        """The job size of ``kind`` ('scf' / 'prop'): the template's numbers
-        with the keys someone set. ``mem_form`` is 'mem' or 'mem_per_cpu'."""
+    def levels(self, kind: str, calc_type: Optional[str] = None) -> List[str]:
+        """The [resources] levels of a ``kind`` job of ``calc_type``, lowest
+        first: [resources], [resources.properties] (properties jobs), then
+        [resources.<TYPE>] when the type is of this kind."""
+        out = ["", "properties"] if kind == "prop" else [""]
+        t = base_calc_type(calc_type)
+        if t and type_kind(t) == kind:
+            out.append(t)
+        return out
+
+    def typed(self, kind: str) -> List[str]:
+        """The calculation types of ``kind`` with a [resources.<TYPE>] value someone set."""
+        return [t for t in (PROP_TYPES if kind == "prop" else SCF_TYPES)
+                if self.res_raw.get(t) or t in self.wall_raw]
+
+    def walltime(self, kind: str, calc_type: Optional[str] = None,
+                 auto: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """The default walltime someone set for this job ([resources] walltime,
+        MACE_SLURM_WALLTIME), else the ``auto`` suggestion's (never above the
+        partition's MaxTime), else None: the template's own."""
+        found, at = None, None
+        for level in self.levels(kind, calc_type):
+            if level in self.wall_raw:
+                found, at = self.wall_raw[level], level
+        # a project folder's walltime: never above the partition's MaxTime
+        if at in self.folder_wall_levels and self.max_time and walltime_seconds(found) > self.max_time:
+            found = walltime_text(self.max_time)
+        if found is None and auto and auto.get("walltime"):
+            found = auto["walltime"]
+            if self.max_time and walltime_seconds(found) > self.max_time:
+                found = walltime_text(self.max_time)
+        return found
+
+    def auto(self, kind: str, calc_type: Optional[str] = None) -> bool:
+        """Size-aware suggestions are on for a ``kind`` job of ``calc_type``:
+        ``auto`` of the highest level that sets it ([resources.<TYPE>] over
+        [resources.properties] over [resources]); off by default."""
+        on = False
+        for level in self.levels(kind, calc_type):
+            if level in self.auto_raw:
+                on = self.auto_raw[level]
+        return on
+
+    def auto_types(self, kind: str) -> List[str]:
+        """The calculation types of ``kind`` whose suggestions are on."""
+        return [t for t in (PROP_TYPES if kind == "prop" else SCF_TYPES) if self.auto(kind, t)]
+
+    def _layers(self, kind: str, calc_type: Optional[str], auto: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """The [resources] layers of a job, lowest first: a size-aware
+        suggestion (``auto``), then the levels someone set."""
+        layers = [self.res_raw.get(level, {}) for level in self.levels(kind, calc_type)]
+        if auto:
+            mem_key = TEMPLATE_RESOURCES[kind]["mem_form"]
+            layer = {k: auto[k] for k in ("ntasks",) if auto.get(k)}
+            if auto.get(mem_key):
+                layer[mem_key] = auto[mem_key]
+            layers.insert(0, layer)
+        return layers
+
+    def effective_resources(self, kind: str, calc_type: Optional[str] = None,
+                            auto: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """The job size of ``kind`` ('scf' / 'prop'), for ``calc_type`` when
+        given: the template's numbers with a size-aware suggestion (``auto``)
+        and then the keys someone set. ``mem_form`` is 'mem' or 'mem_per_cpu'."""
         out = dict(TEMPLATE_RESOURCES[kind])
-        layers = [self.res_raw.get("", {})] + ([self.res_raw.get("properties", {})] if kind == "prop" else [])
+        layers = self._layers(kind, calc_type, auto)
         for layer in layers:
             for k in ("ntasks", "nodes", "cpus_per_task"):
                 if k in layer:
@@ -348,10 +479,12 @@ class Site:
                 out["mem_form"], out["mem"] = "mem_per_cpu", layer["mem_per_cpu"]
         return out
 
-    def resources_set(self, kind: str) -> Dict[str, Any]:
-        """Only the job-size keys someone set for ``kind`` (memory as mem_form/mem)."""
-        eff = self.effective_resources(kind)
-        layers = [self.res_raw.get("", {})] + ([self.res_raw.get("properties", {})] if kind == "prop" else [])
+    def resources_set(self, kind: str, calc_type: Optional[str] = None,
+                      auto: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Only the job-size keys someone set (or the ``auto`` suggestion
+        gives) for ``kind`` (memory as mem_form/mem)."""
+        eff = self.effective_resources(kind, calc_type, auto)
+        layers = self._layers(kind, calc_type, auto)
         keys = set().union(*[set(l) for l in layers])
         out = {k: eff[k] for k in ("ntasks", "nodes", "cpus_per_task") if k in keys}
         if keys & {"mem", "mem_per_cpu"}:
@@ -383,14 +516,230 @@ class Site:
         from mace.workflow.common.constants import SLURM_RESOURCE_DEFAULTS
         out = {}
         for k, v in SLURM_RESOURCE_DEFAULTS.items():
-            kind = "prop" if k in ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL") else "scf"
-            out[k] = overlay_resources({**v, "account": self.account}, self, kind)
+            out[k] = overlay_resources({**v, "account": self.account}, self, type_kind(k), k)
         return out
 
     @property
     def queue_text(self) -> str:
         """The completion callback's queue options for these limits."""
         return f"--max-jobs {self.max_jobs} --reserve {self.reserve} --max-submit {min(DEFAULTS['max_submit'], self.max_jobs)}"
+
+
+def base_calc_type(name: Optional[str]) -> Optional[str]:
+    """'OPT', 'SP', ..., 'CHARGE+POTENTIAL' for a calculation type ('sp2',
+    'BAND3' included), else None."""
+    t = str(name or "").strip().upper().rstrip("0123456789")
+    return t if t in RESOURCE_TYPES else None
+
+
+def type_kind(calc_type: str) -> str:
+    """'prop' for a properties type, else 'scf'."""
+    return "prop" if calc_type in PROP_TYPES else "scf"
+
+
+def deck_calc_type(path) -> Optional[str]:
+    """The calculation type of a .d12 or .d3 deck (mace.utils.calc_detection),
+    None when it cannot be read or told."""
+    try:
+        from mace.utils import calc_detection as cd
+    except ImportError:          # pragma: no cover - run as a bare module next to mace/utils
+        import importlib.util as _ilu
+        spec = _ilu.spec_from_file_location("calc_detection", Path(__file__).resolve().parents[1] / "utils"
+                                            / "calc_detection.py")
+        cd = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(cd)
+    p = Path(path)
+    try:
+        text = p.read_text(errors="replace")
+    except OSError:
+        return None
+    if p.suffix.lower() == ".d3":
+        return cd.d3_calc_type(cd.deck_records(text, is_d3=True)) or base_calc_type(cd.calc_type_from_filename(p))
+    return cd.d12_calc_type(cd.deck_records(text))
+
+
+def group_decks(folder, names: List[str], kind: str, env: Optional[Dict[str, str]] = None
+                ) -> Dict[Optional[str], List[str]]:
+    """{calculation type: deck names} of the decks in ``folder`` whose type has
+    a [resources.<TYPE>] table of its own; every other deck under None. Just
+    {None: names} when the settings have no such table (or cannot be read:
+    the caller's own check reports that)."""
+    try:
+        typed = load(env).typed(kind)
+    except SiteConfigError:
+        typed = []
+    if not typed:
+        return {None: list(names)}
+    out: Dict[Optional[str], List[str]] = {}
+    for name in names:
+        t = deck_calc_type(Path(folder) / name)
+        out.setdefault(t if t in typed else None, []).append(name)
+    # the other decks first, then the types in MACE's order (OPT, SP, FREQ, BAND, ...)
+    return {k: out[k] for k in sorted(out, key=lambda t: -1 if t is None else RESOURCE_TYPES.index(t))}
+
+
+# ------------------------------------------------------------------ size-aware suggestions
+def auto_key(auto: Dict[str, Any]) -> str:
+    """A short name for a suggestion's job size (generator file names)."""
+    import hashlib
+    text = json.dumps({k: auto.get(k) for k in ("ntasks", "mem_per_cpu", "mem", "walltime")}, sort_keys=True)
+    return hashlib.sha1(text.encode()).hexdigest()[:6]
+
+
+def auto_for(deck, kind: Optional[str] = None, calc_type: Optional[str] = None, site: Optional[Site] = None,
+             env: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
+    """The size-aware suggestion for ``deck`` when the site turned them on for
+    its type ([resources] auto, [resources.<TYPE>] auto), else None. A core
+    count someone set wins, and the memory and walltime then follow it. Never
+    raises: a deck MACE cannot size gets None (the other values apply)."""
+    try:
+        site = site if site is not None else load_resolved(env)
+        ct = base_calc_type(calc_type) or deck_calc_type(deck)
+        if not ct:
+            return None
+        kind = kind or type_kind(ct)
+        if type_kind(ct) != kind or not site.auto(kind, ct):
+            return None
+        from mace.submission import resources_suggest as rs
+        fixed = site.resources_set(kind, ct).get("ntasks")
+        return rs.suggest_for_deck(deck, site=site, env=env, calc_type=ct, ntasks=fixed)
+    except SiteConfigError:
+        return None
+    except Exception:          # pragma: no cover - a suggestion never stops a submission
+        return None
+
+
+def deck_groups(folder, names: List[str], kind: str, env: Optional[Dict[str, str]] = None
+                ) -> List[Tuple[Optional[str], Optional[Dict[str, Any]], List[str]]]:
+    """[(calculation type, suggestion, deck names)]: group_decks, with the
+    decks of a type whose size-aware suggestions are on split further by the
+    job size each deck gets. Just [(None, None, names)] when the settings
+    have neither [resources.<TYPE>] tables nor ``auto``."""
+    try:
+        site = load(env)
+        autos = site.auto_types(kind)
+        typed = site.typed(kind)
+    except SiteConfigError:
+        autos, typed = [], []
+    if not autos:
+        return [(t, None, n) for t, n in group_decks(folder, names, kind, env).items()]
+    resolve_limit(site, env)            # a suggestion's walltime: never above the partition's MaxTime
+    groups: Dict[Tuple[Optional[str], str], Tuple[Optional[Dict[str, Any]], List[str]]] = {}
+    for name in names:
+        t = deck_calc_type(Path(folder) / name)
+        auto = auto_for(Path(folder) / name, kind, t, site, env) if t in autos else None
+        key_t = t if (t in typed or auto) else None
+        key = (key_t, auto_key(auto) if auto else "")
+        groups.setdefault(key, (auto, []))[1].append(name)
+    order = sorted(groups, key=lambda k: (-1 if k[0] is None else RESOURCE_TYPES.index(k[0]),
+                                          int((groups[k][0] or {}).get("ntasks") or 0), k[1]))
+    return [(k[0], groups[k][0], groups[k][1]) for k in order]
+
+
+def auto_for_inputs(inputs, kind: str, calc_type: Optional[str], env: Optional[Dict[str, str]] = None,
+                    basis: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """auto_for for a plan step: one suggestion fitting every input (decks or
+    CIFs) of a ``calc_type`` step, when the site turned suggestions on for it."""
+    try:
+        site = load(env)
+        ct = base_calc_type(calc_type)
+        if not ct or type_kind(ct) != kind or not site.auto(kind, ct):
+            return None
+        resolve_limit(site, env)        # a suggestion's walltime: never above the partition's MaxTime
+        from mace.submission import resources_suggest as rs
+        fixed = site.resources_set(kind, ct).get("ntasks")
+        return rs.suggest_for_inputs(inputs, ct, site=site, env=env, basis=basis, ntasks=fixed)
+    except SiteConfigError:
+        return None
+    except Exception:          # pragma: no cover - a suggestion never stops planning
+        return None
+
+
+def suggest_decks(paths, env: Optional[Dict[str, str]] = None, calc_type: Optional[str] = None
+                  ) -> List[Dict[str, Any]]:
+    """`mace site suggest` and the GUI's Submit dialog (one function, the same
+    answer): per deck {deck, calc_type, auto (on for its type?), suggestion
+    (resources_suggest; also when auto is off), applies (what its job script
+    gets: ntasks, mem_form, mem, walltime, with the suggestion only when auto
+    is on), error}."""
+    from mace.submission import resources_suggest as rs
+    env = dict(os.environ if env is None else env)
+    site = load(env)
+    out = []
+    for p in paths:
+        p = Path(p)
+        entry: Dict[str, Any] = {"deck": str(p), "calc_type": None, "auto": False, "suggestion": None,
+                                 "applies": None, "error": None}
+        out.append(entry)
+        if not p.is_file():
+            entry["error"] = "not found"
+            continue
+        ct = base_calc_type(calc_type) or deck_calc_type(p)
+        entry["calc_type"] = ct
+        if not ct:
+            entry["error"] = "calculation type not known (not a .d12 or .d3 deck MACE reads)"
+            continue
+        kind = type_kind(ct)
+        entry["auto"] = site.auto(kind, ct)
+        try:
+            entry["suggestion"] = rs.suggest_for_deck(p, site=site, env=env, calc_type=ct)
+        except Exception as exc:       # pragma: no cover - reported, never raised
+            entry["error"] = f"could not size this deck: {exc}"
+        if entry["suggestion"] is None and not entry["error"]:
+            entry["error"] = "could not size this deck (no AO count from the deck or a parent .out)"
+        auto = auto_for(p, kind, ct, site, env) if entry["auto"] else None
+        eff = site.effective_resources(kind, ct, auto)
+        entry["applies"] = {"ntasks": eff["ntasks"], "mem_form": eff["mem_form"], "mem": eff["mem"],
+                            "walltime": site.walltime(kind, ct, auto) or TEMPLATE_WALLTIME[kind]}
+    return out
+
+
+def say_suggestion(auto: Optional[Dict[str, Any]], names: List[str], out=print) -> None:
+    """One line per suggestion group: the decks and the reason."""
+    if not auto:
+        return
+    shown = ", ".join(names[:3]) + (", ..." if len(names) > 3 else "")
+    out(f"  MACE: suggested job size for {shown}: {auto['ntasks']} cores, "
+        f"{auto['mem_per_cpu'] if auto['calc_type'] in SCF_TYPES else auto['mem']} "
+        f"{'per core' if auto['calc_type'] in SCF_TYPES else 'memory'}, {auto['walltime']} ([resources] auto)")
+    out(f"        {auto['reason']}")
+
+
+PIPED_GROUPS_ENV = "MACE_SUBMIT_PIPED_GROUPS"
+
+
+def piped_groups_refusal(groups, stdin=None) -> Optional[str]:
+    """Why ``mace submit -i`` cannot read its answers from a pipe here, or None.
+
+    With [resources.<TYPE>] tables or ``auto`` the decks of one kind are split
+    into groups, each asked its own resource prompts. MACE 1.1.5 asked one
+    set per kind, so an answer stream written for it lands on the wrong group
+    (an SP job with a BAND job's size) and is submitted. On a terminal the
+    prompts name the group; on a pipe the split is refused, naming the groups
+    in the order they are asked."""
+    stdin = sys.stdin if stdin is None else stdin
+    if len(groups) < 2 or os.environ.get(PIPED_GROUPS_ENV, "").strip() == "1":
+        return None
+    try:
+        if stdin.isatty():
+            return None
+    except (AttributeError, ValueError):
+        pass
+    order = []
+    for calc_type, auto, names in groups:
+        label = calc_type or "other decks"
+        if auto:
+            label += f" ({auto.get('ntasks')} cores suggested)"
+        shown = ", ".join(names[:3]) + (", ..." if len(names) > 3 else "")
+        order.append(f"  {len(order) + 1}. {label}: {shown}")
+    return ("mace submit -i is reading its answers from a pipe, but the site settings "
+            "([resources.<TYPE>] or auto) split these decks into "
+            f"{len(groups)} groups, each asked its own resource prompts, in this order:\n"
+            + "\n".join(order)
+            + "\nAnswers written for one set of prompts would be applied to the wrong group, so nothing "
+            "was submitted. Run it at a terminal, or leave out -i: the [resources.<TYPE>] tables "
+            "(and --walltime / --exclude-nodes) then size each group. A script that answers each "
+            f"group in this order sets {PIPED_GROUPS_ENV}=1.")
 
 
 # ------------------------------------------------------------------ config
@@ -560,6 +909,7 @@ def load(env: Optional[Dict[str, str]] = None) -> Site:
         else:
             site.group_paths.append(path)
         _apply_toml(site, data, path, tag)
+    _apply_folder(site, env)
     _apply_env(site, env)
     if site.srun_mpi and site.launcher != "srun":
         site.warnings.append(f"[mpi] srun_mpi = \"{site.srun_mpi}\" is ignored: it applies only with "
@@ -620,6 +970,21 @@ def _valid_mem(value: Any, source: str) -> str:
     if not isinstance(value, str) or not MEM_RE.fullmatch(value):
         raise _bad(source, "memory size (a number with K, M, G or T: \"3900M\", \"250G\")", value)
     return value
+
+
+def _valid_walltime(value: Any, source: str) -> str:
+    """A default walltime as SLURM reads it: D-HH:MM:SS, D-HH:MM, D-HH or HH:MM:SS."""
+    v = value.strip() if isinstance(value, str) else value
+    secs = folder_settings.walltime_seconds(v) if isinstance(v, str) else None     # the same rules as a folder's
+    if not secs:
+        raise _bad(source, 'walltime (D-HH:MM:SS, D-HH or HH:MM:SS, e.g. "24:00:00" or "2-00:00:00"; '
+                           'at most 366 days)', value)
+    return v
+
+
+def walltime_seconds(value: str) -> int:
+    """Seconds of a validated walltime (_valid_walltime)."""
+    return parse_walltime(value) or 0
 
 
 def _valid_qos(value: Any, source: str) -> str:
@@ -736,8 +1101,23 @@ def parse_duration(value: Any, source: str) -> int:
     return secs
 
 
+def level_name(level: str) -> str:
+    """The table of a [resources] level as site.toml spells it."""
+    if not level:
+        return "[resources]"
+    return f'[resources."{level}"]' if not re.fullmatch(r"[A-Za-z0-9_-]+", level) else f"[resources.{level}]"
+
+
 def _apply_resources(site: Site, table: Dict[str, Any], level: str, src: str, tag: str, origin: str) -> None:
-    name = "[resources]" if not level else "[resources.properties]"
+    name = level_name(level)
+    if "auto" in table:
+        site.auto_raw[level] = _valid_bool(table["auto"], f"{src}: {name} auto")
+        key = f"resources.{level + '.' if level else ''}auto"
+        site.sources[key], site.origins[key] = tag, origin
+    if "walltime" in table:
+        site.wall_raw[level] = _valid_walltime(table["walltime"], f"{src}: {name} walltime")
+        key = f"resources.{level + '.' if level else ''}walltime"
+        site.sources[key], site.origins[key] = tag, origin
     if "mem" in table and "mem_per_cpu" in table:
         raise SiteConfigError(f"{src}: {name} sets mem and mem_per_cpu; set mem or mem_per_cpu, not both; "
                               "nothing was generated")
@@ -768,13 +1148,13 @@ def _apply_toml(site: Site, data: Dict[str, Any], path: Path, tag: str = "site.t
         for k in keys:
             if k not in KNOWN[section]:
                 unknown.append(f"{section}.{k}")
-            elif section == "resources" and k == "properties":
+            elif section == "resources" and (k == "properties" or k in RESOURCE_TYPES):
                 if not isinstance(keys[k], dict):
-                    unknown.append("resources.properties")
+                    unknown.append(f"resources.{k}")
                     continue
                 for kk in keys[k]:
-                    if kk not in RESOURCE_KEYS:
-                        unknown.append(f"resources.properties.{kk}")
+                    if kk not in TABLE_KEYS:
+                        unknown.append(f"resources.{k}.{kk}")
     if unknown:
         site.warnings.append(f"{path}: unknown keys ignored: {', '.join(sorted(unknown))}")
 
@@ -826,6 +1206,24 @@ def _apply_toml(site: Site, data: Dict[str, Any], path: Path, tag: str = "site.t
             if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= 100000:
                 raise _bad(f"{src}: [queue] {key}", f"number ({low} to 100000)", v)
             _set(site, key, v, tag, origin)
+    for key, low in (("budget", 1), ("limit", 1)):
+        if key in queue:
+            v = queue[key]
+            if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= 100000:
+                raise _bad(f"{src}: [queue] {key}", f"number ({low} to 100000)", v)
+            _set(site, f"queue_{key}", v, tag, origin)
+    if "order" in queue:
+        v = queue["order"]
+        if not isinstance(v, str) or v.strip().lower() not in ("depth", "breadth", "mixed"):
+            raise _bad(f"{src}: [queue] order", "depth, breadth or mixed", v)
+        _set(site, "queue_order", v.strip().lower(), tag, origin)
+    if "followup_share" in queue:
+        v = queue["followup_share"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= float(v) <= 1:
+            raise _bad(f"{src}: [queue] followup_share", "number from 0 to 1", v)
+        _set(site, "queue_followup_share", float(v), tag, origin)
+    if "sentinel" in queue:
+        _set(site, "queue_sentinel", _valid_bool(queue["sentinel"], f"{src}: [queue] sentinel"), tag, origin)
     for key in ("gateway_message", "module_message"):
         if key in local:
             _set(site, key, _check_message(local[key], f"{src}: [local_run] {key}"), tag, origin)
@@ -833,9 +1231,11 @@ def _apply_toml(site: Site, data: Dict[str, Any], path: Path, tag: str = "site.t
         _set(site, "run_max_time", parse_duration(local["max_time"], f"{src}: [local_run] max_time"), tag, origin)
     res = table("resources")
     if res:
-        _apply_resources(site, {k: v for k, v in res.items() if k != "properties"}, "", src, tag, origin)
-        if isinstance(res.get("properties"), dict):
-            _apply_resources(site, res["properties"], "properties", src, tag, origin)
+        _apply_resources(site, {k: v for k, v in res.items() if k != "properties" and k not in RESOURCE_TYPES},
+                         "", src, tag, origin)
+        for level in ("properties",) + RESOURCE_TYPES:
+            if isinstance(res.get(level), dict):
+                _apply_resources(site, res[level], level, src, tag, origin)
     mpi = table("mpi")
     if "launcher" in mpi:
         _set(site, "launcher", _valid_launcher(mpi["launcher"], f"{src}: [mpi] launcher"), tag, origin)
@@ -856,6 +1256,124 @@ def _apply_toml(site: Site, data: Dict[str, Any], path: Path, tag: str = "site.t
         if key in crys:
             site.crystal_exe[kind] = _valid_exe(crys[key], f"{src}: [crystal] {key}")
             site.sources[f"crystal_exe.{kind}"], site.origins[f"crystal_exe.{kind}"] = tag, origin
+    folders = table("folders")
+    if "allow" in folders:
+        v = folders["allow"]
+        if not isinstance(v, list) or not all(x in FOLDER_ALLOWABLE for x in v):
+            raise _bad(f"{src}: [folders] allow", "list of " + ", ".join(FOLDER_ALLOWABLE), v)
+        _set(site, "folder_allow", tuple(v), tag, origin)
+    if "partitions" in folders:
+        v = folders["partitions"]
+        if not isinstance(v, list) or len(v) > 64 or not all(isinstance(x, str) and PARTITION_RE.fullmatch(x)
+                                                              and "," not in x for x in v):
+            raise _bad(f"{src}: [folders] partitions", "list of partition names", v)
+        _set(site, "folder_partitions", list(v), tag, origin)
+    if "max_ntasks" in folders:
+        _set(site, "folder_max_ntasks", _valid_int(folders["max_ntasks"], f"{src}: [folders] max_ntasks", "ntasks"),
+             tag, origin)
+    if "max_walltime" in folders:
+        v = folders["max_walltime"]
+        secs = folder_settings.walltime_seconds(v) if isinstance(v, str) else None
+        if not secs:
+            raise _bad(f"{src}: [folders] max_walltime", 'walltime (D-HH:MM:SS, D-HH or HH:MM:SS, e.g. '
+                                                        '"2-00:00:00")', v)
+        _set(site, "folder_max_walltime", secs, tag, origin)
+
+
+FOLDER_ALLOWABLE = ("ntasks", "walltime", "partition")
+
+
+def _folder_wall_level(site: Site, level: str, secs: int, tag: str, origin: str) -> None:
+    """A project folder's walltime as a [resources] level's (over site.toml's at that
+    level; a [resources.<TYPE>] table and MACE_SLURM_WALLTIME still win), so the
+    job scripts, -i and the planner all take it through Site.walltime."""
+    site.wall_raw[level] = walltime_text(secs)
+    site.folder_wall_levels.add(level)
+    key = f"resources.{level + '.' if level else ''}walltime"
+    site.sources[key], site.origins[key] = tag, origin
+
+
+def use_folder(folder) -> None:
+    """Read the mace-folder.toml of ``folder`` (the decks' folder of `mace
+    submit DIR`) instead of the working folder's, as the completion callback
+    that runs in that folder does."""
+    folder_settings.use_folder(folder)
+
+
+def say_warnings(env: Optional[Dict[str, str]] = None) -> None:
+    """Print the settings' warnings (an unknown mace-folder.toml key, a
+    [submit] value the site does not allow, ...) once per process, as `mace
+    site` lists them: a job must not silently get other values than the
+    folder file asks for. An invalid setting is left to the caller's load."""
+    try:
+        warnings = load(env).warnings
+    except SiteConfigError:
+        return
+    for w in warnings:
+        folder_settings.note(w)
+
+
+def _apply_folder(site: Site, env: Dict[str, str]) -> None:
+    """The [submit] table of a project folder's mace-folder.toml
+    (mace/utils/folder_settings.py), within what [folders] allows: job
+    size and walltime per job kind, and a partition from the site's list.
+    A value the site does not allow is ignored with a warning (never an
+    error: the folder's file is shared, the site's rules are the user's)."""
+    fs = folder_settings.load(env=env)
+    site.warnings += [w for w in fs.warnings]
+    sub = folder_settings.submit_values(fs)
+    if not sub:
+        return
+    path = fs.path
+    site.folder_path = path
+    tag, origin = "folder", str(path)
+
+    def refuse(key, why):
+        site.warnings.append(f"{path}: [submit] {key} is ignored: {why} (site.toml [folders]; mace site shows it)")
+    for level, kind, prefix in (("", "scf", ""), ("properties", "prop", "properties.")):
+        if prefix + "ntasks" in sub:
+            v = sub[prefix + "ntasks"]
+            cap = site.folder_max_ntasks
+            if "ntasks" not in site.folder_allow:
+                refuse(prefix + "ntasks", "the site does not let a folder set ntasks")
+            elif cap is not None and v > cap:
+                refuse(prefix + "ntasks", f"the site allows at most {cap}")
+            else:
+                site.res_raw.setdefault(level, {})["ntasks"] = v
+                key = f"resources.{level + '.' if level else ''}ntasks"
+                site.sources[key], site.origins[key] = tag, origin
+        if prefix + "walltime" in sub:
+            v = sub[prefix + "walltime"]
+            secs = folder_settings.walltime_seconds(v)
+            cap = site.folder_max_walltime
+            if "walltime" not in site.folder_allow:
+                refuse(prefix + "walltime", "the site does not let a folder set the walltime")
+            elif not secs:
+                refuse(prefix + "walltime", "it is not a walltime")
+            elif cap is not None and secs > cap:
+                refuse(prefix + "walltime", f"the site allows at most {walltime_text(cap)}")
+            else:
+                site.folder_walltime[kind] = secs
+                site.sources[f"walltime.{kind}"], site.origins[f"walltime.{kind}"] = tag, origin
+                _folder_wall_level(site, level, secs, tag, origin)
+    # the plain [submit] walltime also covers properties jobs unless they have their own: the
+    # folder's [submit.properties] walltime or site.toml's [resources.properties] walltime (as
+    # with ntasks, the plain value is the [resources] level, below [resources.properties])
+    if "scf" in site.folder_walltime and "prop" not in site.folder_walltime and "properties.walltime" not in sub \
+            and "properties" not in site.wall_raw:
+        site.folder_walltime["prop"] = site.folder_walltime["scf"]
+        site.sources["walltime.prop"], site.origins["walltime.prop"] = tag, origin
+        _folder_wall_level(site, "properties", site.folder_walltime["prop"], tag, origin)
+    if "partition" in sub:
+        v = sub["partition"]
+        if "partition" not in site.folder_allow:
+            refuse("partition", "the site does not let a folder choose the partition")
+        elif v not in site.folder_partitions:
+            refuse("partition", ("it is not one of the site's partitions for folders: "
+                                 + ", ".join(site.folder_partitions)) if site.folder_partitions
+                   else "the site lists no partitions a folder may choose")
+        else:
+            _set(site, "partition", v, tag, origin)
 
 
 ENV_RESOURCES = (("MACE_SLURM_NTASKS", "ntasks"), ("MACE_SLURM_NODES", "nodes"),
@@ -905,13 +1423,25 @@ def _apply_env(site: Site, env: Dict[str, str]) -> None:
     t = get("MACE_RUN_MAX_TIME")
     if t is not None:
         _set(site, "run_max_time", parse_duration(t, "MACE_RUN_MAX_TIME"), "env MACE_RUN_MAX_TIME", "MACE_RUN_MAX_TIME")
+    w = get("MACE_SLURM_WALLTIME")
+    if w is not None:                        # every job kind and calculation type
+        value = _valid_walltime(w, "MACE_SLURM_WALLTIME")
+        site.folder_wall_levels.clear()
+        for level in list(site.wall_raw):
+            del site.wall_raw[level]
+            key = f"resources.{level + '.' if level else ''}walltime"
+            site.sources.pop(key, None)
+            site.origins.pop(key, None)
+        site.wall_raw[""] = value
+        site.sources["resources.walltime"] = "env MACE_SLURM_WALLTIME"
+        site.origins["resources.walltime"] = "MACE_SLURM_WALLTIME"
     for name, key in ENV_RESOURCES:
         v = get(name)
         if v is None:
             continue
         value = _valid_mem(v, name) if key.startswith("mem") else _valid_int(v, name, key)
         drop = {"mem": "mem_per_cpu", "mem_per_cpu": "mem"}.get(key)
-        for level in ("", "properties"):         # both job kinds
+        for level in ["", *[l for l in site.res_raw if l]]:   # both job kinds, every calculation type
             raw = site.res_raw.setdefault(level, {})
             prefix = f"resources.{level + '.' if level else ''}"
             if level:
@@ -927,13 +1457,31 @@ def _apply_env(site: Site, env: Dict[str, str]) -> None:
                 site.origins.pop(prefix + drop, None)
 
 
-def overlay_resources(resources: Dict[str, Any], site: "Site", kind: str) -> Dict[str, Any]:
+def folder_walltime(site: "Site", kind: str) -> Optional[str]:
+    """The walltime a project folder's mace-folder.toml sets for ``kind``
+    ('scf' / 'prop'), as D-HH:MM:SS (no longer than the partition allows
+    when resolve() found a limit), else None."""
+    secs = site.folder_walltime.get(kind)
+    if not secs:
+        return None
+    if site.max_time and site.max_time < secs:
+        secs = site.max_time
+    return walltime_text(secs)
+
+
+def overlay_resources(resources: Dict[str, Any], site: "Site", kind: str,
+                      calc_type: Optional[str] = None, auto: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """An editor's resource dict (``-i``, the workflow planner) with the
-    [resources] keys someone set: ntasks, nodes, cpus_per_task and the
-    memory in the site's form (``memory_per_cpu`` or ``memory``, never both,
-    plus ``mem_form``). Unchanged when nothing is set."""
+    [resources] keys someone set (for ``calc_type`` when given: its
+    [resources.<TYPE>] table too; below them the size-aware suggestion
+    ``auto``): ntasks, nodes, cpus_per_task, the memory in the site's form
+    (``memory_per_cpu`` or ``memory``, never both, plus ``mem_form``) and the
+    walltime. Unchanged when nothing is set."""
     out = dict(resources)
-    s = site.resources_set(kind)
+    wall = site.walltime(kind, calc_type, auto)
+    if wall:
+        out["walltime"] = wall
+    s = site.resources_set(kind, calc_type, auto)
     for k in ("ntasks", "nodes", "cpus_per_task"):
         if k in s:
             out[k] = s[k]
@@ -1232,39 +1780,65 @@ def resolve_python(site: Site, env: Optional[Dict[str, str]] = None) -> Tuple[Op
     return exe, "this Python", note
 
 
-def queue_from_limit(limit: int) -> Tuple[int, int]:
-    """(max_jobs, reserve) for a MaxSubmitJobs: a 5% reserve (at least one)."""
-    reserve = max(1, limit // 20)
-    return limit - reserve, reserve
+def default_reserve(limit: int) -> int:
+    """The queue slots MACE leaves free when [queue] reserve is not set: 100
+    (a 1000-job limit or more), else a tenth of the limit (at least one)."""
+    return 100 if limit >= 1000 else max(1, limit // 10)
+
+
+def queue_from_limit(limit: int, reserve: Optional[int] = None) -> Tuple[int, int]:
+    """(max_jobs, reserve) of the completion callback for a MaxSubmitJobs:
+    max_jobs is the limit itself and the callback keeps max_jobs - reserve
+    jobs queued (the reserve is counted once). When that is the built-in
+    budget (900), the templates' own numbers (950, 50) say the same, and
+    the job scripts keep every byte."""
+    rs = min(default_reserve(limit) if reserve is None else reserve, max(0, limit - 1))
+    if limit - rs == DEFAULTS["max_jobs"] - DEFAULTS["reserve"]:
+        return DEFAULTS["max_jobs"], DEFAULTS["reserve"]
+    return limit, rs
 
 
 def resolve_queue(site: Site, account: Optional[str], env: Optional[Dict[str, str]] = None) -> Tuple[int, int, str]:
-    """(max_jobs, reserve, source) of the completion callback: the user's
-    own settings (site.toml, a group file), else the user's MaxSubmitJobs
-    (minus a 5% reserve), else the built-in."""
-    if site.is_set("max_jobs") or site.is_set("reserve"):
+    """(max_jobs, reserve, source) of the completion callback, which keeps
+    max_jobs - reserve jobs queued: [queue] budget (budget + reserve), the
+    user's own max_jobs/reserve (site.toml, a group file), else the user's
+    MaxSubmitJobs and the reserve, else the built-in."""
+    limit = None
+    if site.queue_budget is not None:
+        if site.is_set("reserve"):
+            rs = site.reserve
+        else:
+            limit = submit_limit(account, env)
+            rs = default_reserve(limit) if limit else default_reserve(site.queue_budget + 100)
+        src = site.sources.get("queue_budget")
+        return site.queue_budget + rs, rs, ("site.toml" if src == "site.toml" else "group")
+    if site.is_set("max_jobs"):
         return site.max_jobs, site.reserve, ("site.toml" if "site.toml" in (site.sources.get("max_jobs"),
                                                                            site.sources.get("reserve")) else "group")
-    limit = submit_limit(account, env)
+    limit = site.queue_limit or submit_limit(account, env)
     if limit is None or limit < 2:
+        if site.is_set("reserve"):
+            return site.max_jobs, site.reserve, ("site.toml" if site.sources.get("reserve") == "site.toml"
+                                                 else "group")
         return site.max_jobs, site.reserve, "built-in"
-    mj, rs = queue_from_limit(limit)
+    mj, rs = queue_from_limit(limit, site.reserve if site.is_set("reserve") else None)
     return mj, rs, f"MaxSubmitJobs {limit}"
 
 
 def clamp_queue(max_jobs: int, reserve: int, account: Optional[str], env: Optional[Dict[str, str]] = None
                 ) -> Tuple[int, int, str]:
-    """(max_jobs, reserve, note): lowered to fit this user's MaxSubmitJobs when
-    max_jobs + reserve would exceed it; never raised. Unknown limit: unchanged."""
+    """(max_jobs, reserve, note): lowered to this user's MaxSubmitJobs when
+    max_jobs exceeds it (the callback keeps max_jobs - reserve queued, so
+    the reserve is not added again); never raised. Unknown limit: unchanged."""
     try:
         limit = submit_limit(account, env)
     except Exception:
         limit = None
-    if limit is None or limit < 2 or max_jobs + reserve <= limit:
+    if limit is None or limit < 2 or max_jobs <= limit:
         return max_jobs, reserve, ""
-    mj, rs = queue_from_limit(limit)
-    return mj, rs, (f"MACE: your SLURM MaxSubmitJobs is {limit}; the workflow keeps at most {mj} jobs queued "
-                    f"with {rs} slots in reserve (not {max_jobs} and {reserve}).")
+    mj, rs = queue_from_limit(limit, reserve)
+    return mj, rs, (f"MACE: your SLURM MaxSubmitJobs is {limit}; the workflow keeps at most {mj - rs} jobs queued "
+                    f"with {rs} slots in reserve (not {max_jobs - reserve}).")
 
 
 def parse_walltime(value: str) -> Optional[int]:
@@ -1338,6 +1912,29 @@ def walltime_text(seconds: int) -> str:
     return f"{d}-{h:02d}:{m:02d}:{sec:02d}"
 
 
+def resolve_limit(site: Site, env: Optional[Dict[str, str]] = None) -> Tuple[Optional[int], Optional[str]]:
+    """(MaxTime in seconds, partition) of the partition ``site``'s jobs go to,
+    kept on ``site``: ``max_time`` always, ``walltime_cap`` when it is below
+    the templates' 7 days (their own -t line then asks for it). Not on MSU
+    HPCC: a submit plugin routes its jobs by walltime, so its default
+    partition's MaxTime is not the limit (recovery/slurm_limits.py)."""
+    env = dict(os.environ if env is None else env)
+    cap, part = (None, None) if msu_hpcc(env) else partition_limit(site.partition, env)
+    site.max_time, site.cap_partition = cap, part
+    site.walltime_cap = cap if cap is not None and cap < WALLTIME_LINES["scf"][2] else None
+    return cap, part
+
+
+def load_resolved(env: Optional[Dict[str, str]] = None) -> Site:
+    """``load()`` with the partition's MaxTime resolved (resolve_limit): the
+    site the resource editors overlay (-i, --exclude-*, the planner, the
+    quick-start), so a folder's or a suggested walltime stays below MaxTime.
+    SiteConfigError as load()."""
+    s = load(env)
+    resolve_limit(s, env)
+    return s
+
+
 def resolve(site: Site, env: Optional[Dict[str, str]] = None, out=print) -> Site:
     """``site`` with the built-in values checked against this cluster
     (account, Python modules, queue limits); each change is said once."""
@@ -1348,12 +1945,11 @@ def resolve(site: Site, env: Optional[Dict[str, str]] = None, out=print) -> Site
     site.python_executable = exe
     mj, rs, q_source = resolve_queue(site, acct, env)
     site.max_jobs, site.reserve = mj, rs
-    # (not on MSU HPCC: a submit plugin routes its jobs by walltime, so its
-    # default partition's MaxTime is not the limit - recovery/slurm_limits.py)
-    cap, part = (None, None) if msu_hpcc(env) else partition_limit(site.partition, env)
+    cap, part = resolve_limit(site, env)
     w_note = ""
-    if cap is not None and cap < WALLTIME_LINES["scf"][2]:
-        site.walltime_cap, site.cap_partition = cap, part
+    if site.folder_path and (site.folder_walltime or any(v == "folder" for v in site.sources.values())):
+        say_once(f"MACE: job settings from {site.folder_path} ([submit]; mace site shows them)", out)
+    if site.walltime_cap:
         w_note = (f"MACE: partition {part} allows at most {walltime_text(cap)}; job scripts whose default "
                   f"walltime is longer ask for {walltime_text(cap)}.")
     site.checks = {"account": a_status, "python": p_status, "queue": q_source,
@@ -1375,9 +1971,12 @@ def default_walltime(kind: str, default: str, env: Optional[Dict[str, str]] = No
         return default
     resolve(site, env, lambda t: out(f"  {t}"))
     want = parse_walltime(default)
-    if site.walltime_cap and want and site.walltime_cap < want:
-        return walltime_text(site.walltime_cap)
-    return default
+    folder = site.folder_walltime.get(kind)
+    if folder:
+        want = folder
+    if site.max_time and want and site.max_time < want:
+        return walltime_text(site.max_time)
+    return walltime_text(want) if folder else default
 
 
 def walltime_over_limit(value: str, env: Optional[Dict[str, str]] = None) -> Optional[str]:
@@ -1544,12 +2143,15 @@ def _scratch_shell(value: str) -> str:
 
 
 def customize_generator_text(text: str, kind: str, site: Site, resolution: Optional[Resolution],
-                             owned: Tuple[str, ...] = ()) -> Tuple[str, List[str], List[str]]:
+                             owned: Tuple[str, ...] = (), calc_type: Optional[str] = None,
+                             auto: Optional[Dict[str, Any]] = None) -> Tuple[str, List[str], List[str]]:
     """(text, changes, notes): the template ``text`` with this site's values
     in place of the default literals. Idempotent; a default literal that is
     missing (an edited template) is left alone with a note. ``owned`` names
-    the job-size lines an editor wrote itself (``ntasks``, ``memory``): they
-    are left as written."""
+    the job-size lines an editor wrote itself (``ntasks``, ``memory``,
+    ``walltime``): they are left as written. ``calc_type`` (OPT, BAND, ...)
+    adds its [resources.<TYPE>] table; ``auto`` a size-aware suggestion
+    (resources_suggest.py) below the values someone set."""
     lines = text.split("\n")
     changes: List[str] = []
     notes: List[str] = []
@@ -1610,7 +2212,7 @@ def customize_generator_text(text: str, kind: str, site: Site, resolution: Optio
                 anchor += 1
             changes.append("directives " + " ".join(w.split("'")[1][len("#SBATCH "):] for w in missing))
     # [resources]: the job size (the lines an editor wrote are its own)
-    rset = site.resources_set(kind)
+    rset = site.resources_set(kind, calc_type, auto)
     lit = RESOURCE_LINES.get(kind, {})
     done = []
     for key, fmt in (("cpus_per_task", "echo '#SBATCH --cpus-per-task={}' >> $1.sh"),
@@ -1712,14 +2314,23 @@ def customize_generator_text(text: str, kind: str, site: Site, resolution: Optio
                     lines[i:i] = guard
                     changes.append(f"scratch {site.scratch}")
                 break
-    # the default walltime, when the partition allows less
+    # the default walltime someone set ([resources] walltime): written as set
     wl = WALLTIME_LINES.get(kind)
-    if site.walltime_cap and wl and site.walltime_cap < wl[2]:
+    wall = site.walltime(kind, calc_type, auto)
+    if wall and wl and "walltime" not in owned and walltime_seconds(wall) != wl[2]:
         for i in range(len(lines) - 1):
             if lines[i].rstrip() == wl[0] and lines[i + 1].rstrip() == wl[1]:
-                d, rest = walltime_text(site.walltime_cap).split("-", 1)
+                lines[i], lines[i + 1] = f"time={wall}", "wall="        # timewall=$time$wall: as set
+                changes.append(f"walltime {wall}")
+                break
+    # the default walltime, when the partition allows less (not one someone set)
+    if not wall and site.walltime_cap and wl and site.walltime_cap < wl[2]:
+        want = site.walltime_cap
+        for i in range(len(lines) - 1):
+            if lines[i].rstrip() == wl[0] and lines[i + 1].rstrip() == wl[1]:
+                d, rest = walltime_text(want).split("-", 1)
                 lines[i], lines[i + 1] = f"time={d}", f"wall=-{rest}"
-                changes.append(f"walltime {walltime_text(site.walltime_cap)}")
+                changes.append(f"walltime {walltime_text(want)}")
                 break
     # the completion callback's queue limits
     queue = site.queue_text
@@ -1757,10 +2368,13 @@ def say_once(text: str, out=print) -> None:
 
 
 def generator_for(path, kind: Optional[str] = None, work_dir=None, env: Optional[Dict[str, str]] = None,
-                  parent_module: Optional[str] = None, out=print):
+                  parent_module: Optional[str] = None, out=print, calc_type: Optional[str] = None,
+                  auto: Optional[Dict[str, Any]] = None):
     """(generator path, cleanup, resolution): ``path`` itself when it is not
     a shipped template or nothing changes; otherwise a rewritten copy
-    ``.<stem>_site.<pid>.sh`` (mode 0700) in ``work_dir``, removed by
+    ``.<stem>_site.<pid>.sh`` (``.<stem>_site_<type>.<pid>.sh`` for a
+    calculation type with settings of its own, ``..._<type>_a<hash>...`` for
+    a size-aware suggestion ``auto``; mode 0700) in ``work_dir``, removed by
     ``cleanup()``. Raises SiteConfigError on invalid settings."""
     path = Path(path)
     shipped = is_shipped(path)
@@ -1772,13 +2386,17 @@ def generator_for(path, kind: Optional[str] = None, work_dir=None, env: Optional
     res = crystal_module(env, site, parent_module)
     resolve(site, env, lambda t: out(f"  {t}"))
     text = path.read_text()
-    new, changes, notes = customize_generator_text(text, kind, site, res)
+    new, changes, notes = customize_generator_text(text, kind, site, res, calc_type=calc_type, auto=auto)
     if res.source == "discovered" and res.note:
         say_once(f"  MACE: {res.note}", out)
     if new == text:
         return path, (lambda: None), res
     work = Path(work_dir) if work_dir else Path.cwd()
-    target = work / f".{path.stem}_site.{os.getpid()}.sh"
+    ct = base_calc_type(calc_type)
+    tag = f"_{re.sub(r'[^A-Za-z0-9]', '_', ct.lower())}" if ct and (ct in site.typed(kind) or auto) else ""
+    if auto:
+        tag += f"_a{auto_key(auto)}"
+    target = work / f".{path.stem}_site{tag}.{os.getpid()}.sh"
     fd = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o700)
     with os.fdopen(fd, "w") as fh:
         fh.write(new)
@@ -1792,7 +2410,8 @@ def generator_for(path, kind: Optional[str] = None, work_dir=None, env: Optional
 
 
 def customize_file_in_place(path, kind: str = "scf", env: Optional[Dict[str, str]] = None, out=print,
-                            owned: Tuple[str, ...] = ("ntasks", "memory")):
+                            owned: Tuple[str, ...] = ("ntasks", "memory", "walltime"),
+                            calc_type: Optional[str] = None, auto: Optional[Dict[str, Any]] = None):
     """Apply the site values to a temporary generator MACE wrote itself in
     this run (the ``-i``/walltime ``submitcrystal23_custom_<pid>.sh`` in its
     private temp folder): its location, and so its install pin, stay as
@@ -1805,7 +2424,8 @@ def customize_file_in_place(path, kind: str = "scf", env: Optional[Dict[str, str
     resolve(site, env, lambda t: out(f"  {t}"))
     p = Path(path)
     text = p.read_text()
-    new, changes, notes = customize_generator_text(text, kind, site, res, owned=owned)
+    new, changes, notes = customize_generator_text(text, kind, site, res, owned=owned, calc_type=calc_type,
+                                                   auto=auto)
     if res.source == "discovered" and res.note:
         say_once(f"  MACE: {res.note}", out)
     if new != text:
@@ -1924,6 +2544,11 @@ def describe(env: Optional[Dict[str, str]] = None, check_account: bool = False, 
     out["walltime_cap"] = ({"value": walltime_text(site.walltime_cap), "partition": site.cap_partition}
                            if site.walltime_cap else None)
     out["notes"] = list(site.notes)
+    if site.folder_path:
+        # a project folder's mace-folder.toml [submit] (only when there is one)
+        out["folder"] = {"path": str(site.folder_path),
+                         "walltime": {k: walltime_text(v) for k, v in site.folder_walltime.items()},
+                         "allow": list(site.folder_allow), "partitions": list(site.folder_partitions)}
     out["cluster"] = {"msu_hpcc": msu_hpcc(env), "host": host_names(env)[1]}
     out["messages"] = {k: {"value": site.message(k, env, reason="{reason}", module="{module}", host="{host}"),
                            "source": site.sources.get(k, "built-in")}
@@ -2089,6 +2714,21 @@ def describe_g(site: Site, env: Dict[str, str], refresh: bool = False, check_fit
         res[kind] = {"value": eff, "set": site.resources_set(kind), "source": src, "origin": origin,
                      "fit": fit(site, kind, env, refresh) if check_fit and slurm_here("sinfo", env) else None}
     out["resources"] = res
+    walls = {}
+    for kind in ("scf", "prop"):
+        keys = ["resources.walltime"] + (["resources.properties.walltime"] if kind == "prop" else [])
+        src, origin = _source(site, *reversed(keys))
+        wall = site.walltime(kind)
+        walls[kind] = {"value": wall or TEMPLATE_WALLTIME[kind], "set": wall is not None, "source": src,
+                       "origin": origin}
+    out["walltime"] = walls
+    out["resources_by_type"] = {
+        t: {"kind": type_kind(t), "value": site.effective_resources(type_kind(t), t),
+            "walltime": site.walltime(type_kind(t), t) or TEMPLATE_WALLTIME[type_kind(t)],
+            "set": type_sources(site, type_kind(t), t), "own": t in site.typed(type_kind(t))}
+        for t in RESOURCE_TYPES}
+    if site.auto_raw:                  # size-aware suggestions, only once someone set auto
+        out["auto"] = {t: site.auto(type_kind(t), t) for t in RESOURCE_TYPES}
     src, origin = _source(site, "launcher", "srun_mpi", "mpi_env")
     out["mpi"] = {"launcher": site.launcher, "srun_mpi": site.srun_mpi, "env": list(site.mpi_env),
                   "source": src, "origin": origin}
@@ -2107,8 +2747,36 @@ def describe_g(site: Site, env: Dict[str, str], refresh: bool = False, check_fit
     warns = []
     if any(site.effective_resources(k)["nodes"] > 1 for k in ("scf", "prop")):
         warns.append(MULTI_NODE_WARNING)
+    if site.max_time:
+        for level, wall in site.wall_raw.items():
+            if walltime_seconds(wall) <= site.max_time:
+                continue
+            if level in site.folder_wall_levels:
+                w = (f"{site.folder_path} ([submit]): walltime \"{wall}\" is above the "
+                     f"{walltime_text(site.max_time)} that partition {site.cap_partition} allows; MACE asks "
+                     f"for {walltime_text(site.max_time)}")
+                if w not in warns:
+                    warns.append(w)
+            else:
+                warns.append(f"{level_name(level)} walltime = \"{wall}\" is above the {walltime_text(site.max_time)} "
+                             f"that partition {site.cap_partition} allows; SLURM will refuse those jobs")
     out["g_warnings"] = warns
     return out
+
+
+def type_sources(site: Site, kind: str, calc_type: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """{key: {table, source, origin}} of the job-size keys and walltime someone
+    set for a ``kind`` job of ``calc_type`` (memory as ``mem``), the level
+    that wins for each."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for level in site.levels(kind, calc_type):
+        prefix = f"resources.{level + '.' if level else ''}"
+        for k in LEVEL_KEYS:
+            if site.sources.get(prefix + k, "built-in") != "built-in":
+                out["mem" if k == "mem_per_cpu" else k] = {"table": level_name(level), "source": site.sources[prefix + k],
+                                                           "origin": site.origins.get(prefix + k)}
+    order = ("ntasks", "nodes", "cpus_per_task", "mem", "walltime")
+    return {k: out[k] for k in order if k in out}
 
 
 MULTI_NODE_WARNING = ("nodes > 1: the job needs a scratch directory shared by all nodes ([paths] scratch) and an "
@@ -2184,12 +2852,13 @@ def detected_text(env: Optional[Dict[str, str]] = None) -> str:
 
 
 # ------------------------------------------------------------------ workflows
-def plan_resources(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def plan_resources(env: Optional[Dict[str, str]] = None, calc_type: Optional[str] = None) -> Dict[str, Any]:
     """The site values a workflow plan stores once, at plan time (on the
     login or dev node): account (None: no -A line), CRYSTAL module (resolved
     here), and the partition, Python modules or Python executable and queue
     limits when they are not the built-in ones. Every later step and callback
-    uses these stored values."""
+    uses these stored values. ``calc_type``: the step's type, whose
+    [resources.<TYPE>] nodes and cpus_per_task the plan stores."""
     site = load(env)
     res = crystal_module(env, site)
     resolve(site, env)
@@ -2208,18 +2877,18 @@ def plan_resources(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         out["python_executable"] = site.python_executable
     if site.queue_text != QUEUE_TEXT:
         out["queue_limits"] = [site.max_jobs, site.reserve]
-    out.update(plan_site_keys(site))
+    out.update(plan_site_keys(site, calc_type))
     return out
 
 
-def plan_site_keys(site: Site) -> Dict[str, Any]:
+def plan_site_keys(site: Site, calc_type: Optional[str] = None) -> Dict[str, Any]:
     """The [resources] (lines no workflow editor writes), [mpi], [paths],
     [crystal], [modules] purge and [slurm] qos/constraint/extra values a plan
     stores; only those that differ from the built-in ones."""
     out: Dict[str, Any] = {}
     sr = {}
     for kind in ("scf", "prop"):
-        rs = {k: v for k, v in site.resources_set(kind).items() if k in ("nodes", "cpus_per_task")}
+        rs = {k: v for k, v in site.resources_set(kind, calc_type).items() if k in ("nodes", "cpus_per_task")}
         if rs:
             sr[kind] = rs
     if sr:

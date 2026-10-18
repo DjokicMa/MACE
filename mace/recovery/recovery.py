@@ -1204,29 +1204,38 @@ class ErrorRecoveryEngine:
         
         # Clean up scratch space if enabled
         if config.get('cleanup_scratch', True):
-            work_dir = Path(calc.get('work_dir') or '')
-            if work_dir.exists():
-                try:
-                    # Remove large temporary files. NEVER delete wavefunction
-                    # files (.f9 / fort.9 / .f98 / fort.98) — they are the
-                    # restart data SP/BAND/DOSS need; the old '*.f*'/'fort.*'
-                    # patterns destroyed them.
-                    protected = {'.f9', '.f98'}
-                    protected_names = {'fort.9', 'fort.98', 'fort.20', 'fort.34'}
-                    for pattern in ['*.tmp', '*.scratch', 'fort.*']:
-                        for file_path in work_dir.glob(pattern):
-                            if (file_path.suffix.lower() in protected
-                                    or file_path.name.lower() in protected_names):
-                                continue
-                            if file_path.is_file() and file_path.stat().st_size > 100 * 1024 * 1024:  # > 100MB
-                                file_path.unlink()
-                                print(f"Removed large file: {file_path}")
-
-                except Exception as e:
-                    print(f"Error during cleanup: {e}")
+            try:
+                for file_path in self.cleanup_candidates(calc):
+                    file_path.unlink()
+                    print(f"Removed large file: {file_path}")
+            except Exception as e:
+                print(f"Error during cleanup: {e}")
 
         # Input is unchanged; cleanup only frees scratch space.
         return (Path(calc['input_file']), None)
+
+    @staticmethod
+    def cleanup_candidates(calc: Dict) -> List[Path]:
+        """The files cleanup_handler removes: temporary files over 100 MB in
+        the work folder. NEVER wavefunction files (.f9 / fort.9 / .f98 /
+        fort.98) — they are the restart data SP/BAND/DOSS need; the old
+        '*.f*'/'fort.*' patterns destroyed them."""
+        if not calc.get('work_dir'):
+            return []
+        work_dir = Path(calc['work_dir'])
+        if not work_dir.exists():
+            return []
+        protected = {'.f9', '.f98'}
+        protected_names = {'fort.9', 'fort.98', 'fort.20', 'fort.34'}
+        found = []
+        for pattern in ['*.tmp', '*.scratch', 'fort.*']:
+            for file_path in work_dir.glob(pattern):
+                if (file_path.suffix.lower() in protected
+                        or file_path.name.lower() in protected_names):
+                    continue
+                if file_path.is_file() and file_path.stat().st_size > 100 * 1024 * 1024:  # > 100MB
+                    found.append(file_path)
+        return found
         
     def create_recovery_calculation(self, original_calc: Dict, fixed_input_file: Path,
                                   recovery_config: Dict, fixed_job_script: Optional[Path] = None) -> str:
@@ -1337,17 +1346,54 @@ def main():
     parser.add_argument("--config", default=None,
                        help="Path to recovery configuration file (default: recovery_config.yaml "
                             "here, else the one shipped in mace/config)")
-    parser.add_argument("--db", default="materials.db",
-                       help="Path to materials database")
+    parser.add_argument("--db", default=None,
+                       help="Path to materials database (default: materials.db and the workflow "
+                            "databases .mace_context_*/materials.db here, or with --dir in that folder)")
     parser.add_argument("--max-recoveries", type=int, default=10,
-                       help="Maximum number of recoveries to attempt")
+                       help="Maximum number of calculations to resubmit in one run")
     parser.add_argument("--create-config", action="store_true",
                        help="Create default configuration file")
-    
+    # `mace recover` (action recover): fix and resubmit
+    parser.add_argument("--calc-id", action="append", default=[],
+                       help="Only this calculation (repeat or comma-separate for several)")
+    parser.add_argument("--dir", default=None,
+                       help="Only calculations whose work folder is inside this folder")
+    parser.add_argument("--errors", default=None,
+                       help="Only these error classes or types, comma-separated (oom, scf, "
+                            "time_limit, shrink, disk, opt_unconverged, ... or memory_error, ...)")
+    parser.add_argument("--dry-run", action="store_true",
+                       help="Show the files each fix would change (as diffs) and the sbatch "
+                            "command; change and submit nothing")
+    parser.add_argument("--yes", "-y", action="store_true",
+                       help="Apply the fixes and resubmit without asking")
+    parser.add_argument("--include-stale", action="store_true",
+                       help="With --yes: also resubmit jobs that ended more than "
+                            "MACE_RECOVER_MAX_AGE_DAYS (default 3) days ago")
+    parser.add_argument("--overwrite-sh", action="store_true",
+                       help="Write the job script again from the template when the fix leaves "
+                            "it alone (default: reuse the existing <job>.sh)")
+    parser.add_argument("--max-recovery-attempts", type=int, default=3,
+                       help="Recoveries allowed per calculation lineage, all errors together "
+                            "(default: 3, as the queue manager)")
+    parser.add_argument("--max-jobs", type=int, default=None,
+                       help="Keep at most N - reserve jobs queued, as mace manager "
+                            "(default: your queue budget, see mace queue status)")
+    parser.add_argument("--reserve", type=int, default=None,
+                       help="With --max-jobs: slots kept free (default: 0)")
+    parser.add_argument("--json", action="store_true",
+                       help="Print the plan (and results) as JSON")
+    parser.add_argument("--prepare-only", action="store_true",
+                       help="Only write the fixed inputs and job scripts and print the commands "
+                            "that submit them (the 1.1.5 behavior)")
+
     args = parser.parse_args()
-    
+
+    if args.action == 'recover' and not args.create_config and not args.prepare_only:
+        from mace.recovery.resubmit import run_recover
+        sys.exit(run_recover(args))
+
     # Initialize recovery engine
-    recovery_engine = ErrorRecoveryEngine(args.db, args.config)
+    recovery_engine = ErrorRecoveryEngine(args.db or "materials.db", args.config)
     
     if args.create_config or args.action == 'config':
         recovery_engine.save_default_config()
@@ -1391,7 +1437,8 @@ def main():
             
         # Add helpful hints
         print("\n=== Available Actions ===")
-        print("Run 'mace recover' to prepare fixed inputs and job scripts for failed calculations")
+        print("Run 'mace recover' to fix failed calculations and resubmit them "
+              "('mace recover --dry-run' shows the changes first)")
         print("Run 'mace recover --create-config' to create customizable recovery config")
                 
     elif args.action == 'recover':
@@ -1401,7 +1448,7 @@ def main():
         print_next_steps(recovery_engine.prepared)
 
 
-NOTHING_SUBMITTED = ("mace recover prepares fixed inputs and job scripts; it submits nothing. "
+NOTHING_SUBMITTED = ("mace recover --prepare-only prepares fixed inputs and job scripts; it submits nothing. "
                      "Submit them with mace submit (sbatch for a bumped job script), or let the queue "
                      "manager resubmit tracked runs.")
 

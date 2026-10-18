@@ -83,12 +83,46 @@ SCF_WINDOW, SCF_SIGMA = 10, 3.0
 SCF_HIGH_FLOOR = 8.0                 # high end at least 8x the low end
 SCF_PRIOR_HIGH = 30                  # dev p90 of cycles left: high end when the trend gives none
 SCF_TIME_LOW_FACTOR = 0.75
+METAL_HIGH_FACTOR = 1.5              # dev sweep 1, 1.5, 2, 3: the smallest with informative coverage 100 % on dev metals
 OPT_CYCLE_WINDOW = 5                 # next point's SCF cycles: [min-1, max+2] of the last 5 points
 FAIR_MAX_WIDTH = 3.0                 # "fair" needs a trend-bounded range at most 3x wide
 FREQ_LOW_FACTOR, FREQ_HIGH_FACTOR = 0.75, 1.5   # displacements left x mean so far (kept after the backtest)
 FREQ_OUTPUT_MIN_S = 30.0             # after the last displacement: <= 8.5 s in all 30 corpus runs
 DEFAULT_TOLDEE_SCF_FREQ = 1e-9       # FREQCALC's SCF default (CRYSTAL23 manual 8.1.3, p.212; the TOLDEE
                                      # table on p.130 says 10; every corpus FREQ deck sets TOLDEE 11)
+# IR/Raman by CPHF/CPKS (1.1.6; leave-one-family-out over the 9 corpus FREQ runs that print CP_DRIVER,
+# tests/cluster/test_cluster_eta.py::test_cphf_estimate_backtest): cycles per field direction from the
+# directions already done ([min - 1, max + 2], as for an optimization's SCF), the prior below before the
+# first finishes; time per CPHF cycle from the last 5 cycles x CP_TIME_LOW..CP_TIME_HIGH.
+CP_PRIOR_CYCLES = (3, 31)            # min-max cycles per direction over the corpus (9 runs, 33 directions)
+CP_TIME_LOW, CP_TIME_HIGH = 0.75, 1.5
+CP2_PER_CYCLE = (1.0, 1.6)           # CP2 cycle cost / CPKS cycle cost (1 corpus Raman run: 1.2)
+# the central point's SCF + gradient after the CPHF stages: 0.82-1.49 x the reference SCF (9/9 runs)
+CENTRAL_REF_LOW, CENTRAL_REF_HIGH = 0.75, 1.75
+TENSOR_HIGH_RATIO = 1.0              # IR/Raman tensors: <= 0.72 x the CPHF stage time (corpus; 0 for the 8 IR-only)
+# Properties blocks (1.1.6): a block's time from the block before it, as the ratio's min-max over the dev
+# half of the corpus (family split; tests/cluster/test_cluster_eta.py::test_properties_ratio_held_out):
+# DOSS from NEWK, POT3 from ECH3, BOLTZTRA (SMAT + TDF + BOLTZTRA) from NEWK. Wide, so "rough".
+PROP_RATIOS = {"DOSS": ("NEWK", 0.011, 1.45), "POT3": ("ECH3", 0.009, 0.27), "BOLTZTRA": ("NEWK", 26.0, 57.0)}
+PROP_BLOCKS = ("NEWK", "BAND", "DOSS", "ECH3", "POT3", "BOLTZTRA", "ECHG", "POTM", "EMDLDM", "SPOLBP", "PROF",
+               "PPAN", "PATO", "ANBD", "BWIDTH", "CLAS", "POLI", "XFAC", "DIEL", "TOPO", "ORBITALS")
+PROP_WORDS = {"NEWK": "Wave function at new k points (NEWK)", "BAND": "Band structure (BAND)",
+              "DOSS": "Density of states (DOSS)", "ECH3": "Charge density cube (ECH3)",
+              "POT3": "Electrostatic potential cube (POT3)", "BOLTZTRA": "Transport (BOLTZTRA)",
+              "ORBITALS": "Orbitals as Molden files (ORBITALS)"}
+# EOS, ELASTCON, ANHARM (1.1.6): no run of these in the corpus or on HPCC, so the counts follow the
+# CRYSTAL23 manual's defaults and every range is "rough": EOS 6 volumes (RANGE, p.284), ELASTCON 3
+# points per strain incl. the unstrained one (NUMDERIV, p.290; the strains come from CRYSTAL's symmetry
+# analysis, so their number is known only with DEFORM), ANHARM 7 X-H distances (26 with POINTS26, p.237).
+EOS_DEFAULT_POINTS = 6
+ELASTCON_DEFAULT_NUMDERIV = 3
+ANHARM_POINTS = (7, 26)
+MULTI_TIME_LOW, MULTI_TIME_HIGH = 0.75, 1.5   # units left x [min, max] of the finished units' times
+# "Possibly stalled" (1.1.6): no write to the output for STALL_FACTOR x the running stage's time per unit
+# (and at least STALL_MIN_S). In the finished corpus runs the longest silence between two timing lines
+# was at most 5.35 x the median of the 5 units before it (dev, 94 runs; held-out 6.85, 74 runs).
+STALL_FACTOR = 10.0
+STALL_MIN_S = 1800.0
 LEVELS_VERSION = 1
 MAX_SCRATCH_READ = 50 * 1024 * 1024
 DEFAULT_TOLDEE_OPT = 1e-7
@@ -102,7 +136,8 @@ _ENERGY_NCYC = re.compile(r"TOTAL ENERGY\((?:DFT|HF)\)\(AU\)\(\s*(\d+)\)")
 _STARTING = re.compile(r"EEEEEEEEEE STARTING\s+DATE\s+(\d+)\s+(\d+)\s+(\d+)\s+TIME\s+(\d+):(\d+):([\d.]+)")
 _CP_DIR = re.compile(r"ELECTRIC FIELD APPLIED ALONG CARTESIAN DIRECTION\s+([XYZ])\s*$")
 _CP2_DIR = re.compile(r"ELECTRIC FIELD APPLIED ALONG CARTESIAN DIRECTIONS\s+([XYZ]{2})\s*$")
-_CP_CYCLE = re.compile(r"^\s*CYCLE\s+(\d+)\s+(?:ALPHA|PSEUDO-ENERGY DERIVATIVE)\s.*DELTA\s+(\S+)")
+# (a large polarizability runs into the label: "ALPHA26707.745616", corpus Ag1Cl5)
+_CP_CYCLE = re.compile(r"^\s*CYCLE\s+(\d+)\s+(?:ALPHA|PSEUDO-ENERGY DERIVATIVE)\s*.*DELTA\s+(\S+)")
 _CP_TOL = re.compile(r"CP2?_DRIVER \*+ CONVERGENCE ON (?:ALPHA|PSEUDO DE):\s*10\*\*\s*(-?\d+)")
 _ROW_NCYC = re.compile(r"^\s+\d+\s+\S+\s+D[XYZ]\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\d+\s*$")
 _CRIT = re.compile(r"^\s*(MAX|RMS) (GRADIENT|DISPLAC\.)\s+(\S+)\s+THRESHOLD\s+(\S+)\s+CONVERGED\s+(YES|NO)")
@@ -480,6 +515,11 @@ def scf_progress(parsed: Dict[str, Any], lines: Sequence[str]) -> Dict[str, Any]
         hi = max(hi, math.ceil(SCF_HIGH_FLOOR * max(lo, 1)))
     else:
         hi, capped = max(lo, SCF_PRIOR_HIGH), True
+    if st != "met" and any("POSSIBLY CONDUCTING STATE" in l for l in lines):
+        # a metal (or a small gap): its SCF crawls more often than the trend says (held-out corpus: 74 %
+        # coverage against 95 % for insulators, every miss too short), so its high end is widened
+        hi = float(math.ceil(hi * METAL_HIGH_FACTOR))
+        out["flags"].append("metal")
     if maxcyc and len(cyc) + hi > maxcyc:
         hi = max(lo, maxcyc - len(cyc))
         out["flags"].append("maxcycle_cap")
@@ -776,6 +816,13 @@ def level_text(lv: Dict[str, Any]) -> str:
     if i == "total":
         if info.get("ended"):
             return f"Total: finished ({info['ended']})"
+        if info.get("stall"):
+            sl = info["stall"]
+            stalled = (f" - possibly stalled: no output for {_fmt_dur(sl['silence_s'])}, while "
+                       f"{sl['level'].lower()} took about {_fmt_dur(sl['per_unit_s'])} per step "
+                       f"(over {STALL_FACTOR:g}x that never happened in the finished corpus runs)")
+            info = {k: v for k, v in info.items() if k != "stall"}
+            return level_text({**lv, "info": info}) + stalled
         if lo_s is None or (hi_s is None and lo_s < 1):
             return f"Total: unknown ({lv['unknown_reason'] or 'no estimate yet'})"
         if hi_s is None:
@@ -858,17 +905,23 @@ def level_text(lv: Dict[str, Any]) -> str:
                 else "Raman (CPHF/CPKS, second order)")
         if st == "done":
             return f"{name}: done in {_fmt_dur(lv['done_s'])}"
-        if st == "pending":
-            return f"{name}: pending"
-        txt = f"{name}: field direction {info.get('direction', '?')} ({lv['current']} of {cnt['exact']})"
+        if st == "pending" or lv["current"] is None:
+            return f"{name}: pending, about {_span(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else f"{name}: pending"
+        txt = f"{name}: field direction {info.get('direction', '?')} ({lv['current']} of {info.get('directions') or cnt['exact']})"
         if info.get("cycle") is not None:
             txt += f", cycle {info['cycle']}"
             if i == "freq.cphf" and info.get("delta") is not None and info.get("tol") is not None:
                 txt += f", |DELTA| {_sci(abs(info['delta']))} vs {_sci(info['tol'])}"
-        return txt + _so_far(info, "in this stage")
+        txt += _so_far(info, "in this stage")
+        if cnt["low"] is not None and lo_s is not None and hi_s is not None:
+            per = f", ~{_fmt_dur(lv['per_unit_s'])} per cycle" if lv["per_unit_s"] else ""
+            txt += f"; about {_nspan(cnt['low'], cnt['high'])} cycles ({_span(lo_s, hi_s)}) left{per}"
+        return txt
     if i == "freq.tensors":
-        return {"done": f"IR/Raman tensors: done in {_fmt_dur(lv['done_s'])}",
-                "running": f"IR/Raman tensors: running{_so_far(info)}"}.get(st, "IR/Raman tensors: pending")
+        if st == "done":
+            return f"IR/Raman tensors: done in {_fmt_dur(lv['done_s'])}"
+        bound = f", at most about {_fmt_dur(hi_s)}" if hi_s is not None else ""
+        return f"IR/Raman tensors: running{_so_far(info)}{bound}" if st == "running" else f"IR/Raman tensors: pending{bound}"
     if i == "freq.central":
         if st == "restored":
             return "Central point: restored from FREQINFO.DAT (skipped)"
@@ -879,9 +932,12 @@ def level_text(lv: Dict[str, Any]) -> str:
                 return "Central point: restarting from FREQINFO.DAT"
             if info.get("scf_done"):
                 return "Central point (SCF + gradient): running, gradient"
+            est = f", about {_span(lo_s, hi_s)} left" if lo_s is not None and hi_s is not None else ""
             if lv["current"] is None:
-                return "Central point (SCF + gradient): running, before its first SCF cycle"
-            return f"Central point (SCF + gradient): running, SCF cycle {lv['current']}"
+                return f"Central point (SCF + gradient): running, before its first SCF cycle{est}"
+            return f"Central point (SCF + gradient): running, SCF cycle {lv['current']}{est}"
+        if lo_s is not None and hi_s is not None:
+            return f"Central point (SCF + gradient): pending, about {_span(lo_s, hi_s)}"
         return "Central point (SCF + gradient): pending"
     if i == "freq.displacements":
         total = cnt["exact"]
@@ -916,6 +972,27 @@ def level_text(lv: Dict[str, Any]) -> str:
         return f"Frequencies and output: about {_fmt_dur(hi_s)} or less"
     if i == "properties.block":
         return f"Running {lv['current']}" if st == "running" else "Finished"
+    if i in ("eos.units", "elastcon.units", "anharm.units"):
+        if st == "done":
+            return f"{lv['label']}: done ({info.get('done')} {cnt['unit']})"
+        of = f" of {cnt['exact']}" if cnt["exact"] else " (count unknown)"
+        head = f"{lv['label']}: {info.get('label', 'unit').lower()} {lv['current']}{of}"
+        if st == "pending":
+            return f"{lv['label']}: {cnt['exact'] or 'an unknown number of'} {cnt['unit']} pending"
+        if lo_s is not None and hi_s is not None:
+            return head + f", about {_span(lv['per_unit_s'] * MULTI_TIME_LOW, lv['per_unit_s'] * MULTI_TIME_HIGH)} each; {_span(lo_s, hi_s)} left (rough)"
+        return head + f" ({lv['unknown_reason']})"
+    if i in ("eos.preopt", "elastcon.preopt"):
+        return f"Preoptimization: done in {_fmt_dur(lv['done_s'])}" if st == "done" and lv["done_s"] else (
+            "Preoptimization: done" if st == "done" else "Preoptimization: running")
+    if i.startswith("properties."):
+        name = lv["label"]
+        if st == "done":
+            return f"{name}: done in {_fmt_dur(lv['done_s'])}" if lv["done_s"] is not None else f"{name}: done"
+        est = f"about {_span(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else ""
+        if st == "running":
+            return f"{name}: running{_so_far(info)}" + (f", {est} left" if est else "")
+        return f"{name}: pending" + (f", {est}" if est else "")
     return lv["label"]
 
 
@@ -961,6 +1038,17 @@ def total_level(stages: Sequence[Dict[str, Any]], ended: Optional[str] = None) -
     tot["remaining_s"] = {"low": low, "high": high}
     tot["basis"] = _total_basis(tot, rem)
     return tot
+
+
+def stall_check(stages: Sequence[Dict[str, Any]], silence_s: Optional[float]) -> Optional[Dict[str, Any]]:
+    """{"silence_s", "per_unit_s", "level"} when the output has been silent for STALL_FACTOR x the
+    running stage's time per unit (at least STALL_MIN_S), else None."""
+    if silence_s is None:
+        return None
+    run = next((lv for lv in stages if lv["depth"] == 1 and lv["status"] == "running" and lv.get("per_unit_s")), None)
+    if run is None or silence_s < max(STALL_MIN_S, STALL_FACTOR * run["per_unit_s"]):
+        return None
+    return {"silence_s": silence_s, "per_unit_s": run["per_unit_s"], "level": run["label"]}
 
 
 def _total_basis(tot: Dict[str, Any], rem: Sequence[Dict[str, Any]]) -> str:
@@ -1272,6 +1360,71 @@ def sp_levels(sp: Dict[str, Any], lines: Sequence[str], text: str, deck_text: st
     return [setup, scf, post]
 
 
+def cp_estimate(st: Dict[str, Any], lines: Sequence[str], tl: Sequence[Tuple[int, str, float]],
+                which: str = "cphf", running: bool = True) -> Dict[str, Any]:
+    """Cycles and time left in one CPHF/CPKS stage ("cphf": 3 directions,
+    "cp2": 6), from what it printed so far: the finished directions' cycle
+    counts give [min - 1, max + 2] cycles for each direction left (and the
+    running one, less the cycles it has done); before any direction
+    finished, CP_PRIOR_CYCLES. Time = cycles x the median of the last 5
+    cycle times x CP_TIME_LOW..CP_TIME_HIGH, plus each direction's setup
+    (its median so far). A pending CP2 is estimated from the CPKS stage."""
+    dirs = st["cp_dirs"] if which == "cphf" else st["cp2_dirs"]
+    n_total = 3 if which == "cphf" else 6
+    end = (st["cp2_driver"] if which == "cphf" and st["cp2_driver"] is not None else
+           (st["tensors"][0] if st["tensors"] else st["header"]))
+    bounds = [i for i, _ in dirs] + [end if end is not None else len(lines)]
+    counts, setups, cyc_t = [], [], []
+    for k, (i, _) in enumerate(dirs):
+        cyc = [c for c in st["cp_cycles"] if i < c[0] < bounds[k + 1]]
+        counts.append(len(cyc))
+        if cyc:
+            t0, t1 = _t_at(tl, i), _t_at(tl, cyc[0][0])
+            if t0 is not None and t1 is not None:
+                setups.append(t1 - t0)
+            ts = [_t_at(tl, c[0]) for c in cyc]
+            cyc_t += [b - a for a, b in zip(ts, ts[1:]) if a is not None and b is not None and b >= a]
+    out: Dict[str, Any] = {"low_cycles": None, "high_cycles": None, "per_cycle_s": None,
+                           "low_s": None, "high_s": None, "basis": "", "prior": False, "counts": counts}
+    finished = counts[:-1] if running else counts
+    cur = counts[-1] if running and counts else 0
+    n_left = n_total - len(dirs)                    # directions not started yet
+    if finished:
+        lo_d, hi_d = max(1, min(finished) - 1), max(finished) + 2
+        src = f"[min - 1, max + 2] of the {len(finished)} direction(s) done"
+    else:
+        lo_d, hi_d = CP_PRIOR_CYCLES
+        out["prior"] = True
+        src = f"{lo_d}-{hi_d} cycles per direction (corpus range; no direction finished yet)"
+    if running and dirs:
+        cur_lo, cur_hi = max(0, lo_d - cur), max(1, hi_d - cur)
+    else:
+        cur_lo = cur_hi = 0
+    out["low_cycles"], out["high_cycles"] = cur_lo + n_left * lo_d, cur_hi + n_left * hi_d
+    per = statistics.median(cyc_t[-TIME_WINDOW:]) if cyc_t else None
+    out["per_cycle_s"] = per
+    if per is not None:
+        setup = statistics.median(setups[1:] or setups) if setups else 0.0
+        out["low_s"] = out["low_cycles"] * per * CP_TIME_LOW
+        out["high_s"] = out["high_cycles"] * per * CP_TIME_HIGH + n_left * setup
+        out["basis"] = (f"{_nspan(out['low_cycles'], out['high_cycles'])} CPHF cycles left ({src}) x "
+                        f"{_fmt_dur(per)} per cycle x {CP_TIME_LOW}-{CP_TIME_HIGH}")
+    else:
+        out["basis"] = f"{_nspan(out['low_cycles'], out['high_cycles'])} CPHF cycles left ({src}); time per cycle after two cycles"
+    return out
+
+
+def cp2_from_cp(cp_counts: Sequence[int], cp_per: Optional[float]) -> Dict[str, Any]:
+    """A pending CP2 (Raman, 6 directions) from the finished CPKS stage."""
+    if not cp_counts or not cp_per:
+        return {"low_s": None, "high_s": None, "basis": ""}
+    lo_d, hi_d = max(1, min(cp_counts) - 1), max(cp_counts) + 2
+    return {"low_s": 6 * lo_d * cp_per * CP2_PER_CYCLE[0] * CP_TIME_LOW,
+            "high_s": 6 * hi_d * cp_per * CP2_PER_CYCLE[1] * CP_TIME_HIGH,
+            "basis": (f"6 directions x {lo_d}-{hi_d} cycles (the CPKS directions' [min - 1, max + 2]) x the CPKS "
+                      f"cycle time x {CP2_PER_CYCLE[0]}-{CP2_PER_CYCLE[1]} (second-order cycles cost more)")}
+
+
 def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], scratch: Optional[Path],
                 ended: Optional[str], notes: Sequence[Dict[str, Any]], start: Optional[float] = None,
                 now_ref: Optional[float] = None) -> List[Dict[str, Any]]:
@@ -1301,7 +1454,21 @@ def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], sc
     def took(a, b):
         ta, tb = _t_at(tl, a), _t_at(tl, b)
         return (tb - ta) if ta is not None and tb is not None and tb >= ta else None
-    open_hi = "IR/Raman (CPHF/CPKS) has no time estimate in this release"
+    open_hi = "IR/Raman (CPHF/CPKS) time per cycle is known after its first cycles"
+    cp_est: Dict[str, Any] = {}
+
+    def apply_cp(lv: Dict[str, Any], est: Dict[str, Any]) -> None:
+        lv["count"].update(low=est.get("low_cycles"), high=est.get("high_cycles"), unit="cycles")
+        lv["count"]["exact"] = lv["count"].get("exact")
+        lv["info"]["directions"] = lv["count"]["exact"]
+        lv["per_unit_s"] = est.get("per_cycle_s")
+        if est.get("low_s") is not None:
+            lv["remaining_s"] = {"low": est["low_s"], "high": est["high_s"]}
+            lv["confidence"] = "rough"
+            lv["unknown_reason"] = None
+        lv["basis"] = est.get("basis") or lv["basis"]
+        if est.get("prior"):
+            lv["flags"].append("prior")
     if st["preopt_points"]:
         lv = _level("freq.preopt", 1, "Preoptimization", status("preopt"), current=len(st["preopt_points"]),
                     unit="points", unknown_reason="preoptimization levels come in a later release",
@@ -1332,6 +1499,14 @@ def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], sc
         elif lv["status"] == "running":
             lv["current"] = 0
             lv["info"]["direction"] = "-"
+        if lv["status"] == "done":
+            lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+            cp_est["cphf"] = cp_estimate(st, lines, tl, "cphf", running=False)
+        elif lv["status"] == "running":
+            cp_est["cphf"] = cp_estimate(st, lines, tl, "cphf", running=True)
+            apply_cp(lv, cp_est["cphf"])
+            t0, t1 = _t_at(tl, st["cp_driver"]), _t_at(tl, len(lines) - 1)
+            lv["info"]["cp_elapsed_s"] = (t1 - t0) if t0 is not None and t1 is not None else 0.0
         so_far(lv, st["cp_driver"])
         out.append(lv)
         if st["raman"]:
@@ -1348,11 +1523,48 @@ def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], sc
                     lv["info"]["cycle"] = cyc[-1][1]
             elif lv["status"] == "running":
                 lv["current"], lv["info"]["direction"] = 0, "-"
+            if lv["status"] == "done":
+                lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+            elif lv["status"] == "running":
+                cp_est["cp2"] = cp_estimate(st, lines, tl, "cp2", running=True)
+                if cp_est["cp2"]["per_cycle_s"] is None and cp_est.get("cphf", {}).get("per_cycle_s"):
+                    # the first CP2 cycles: time per cycle from the CPKS stage until its own are known
+                    e = cp_est["cp2"]
+                    per = cp_est["cphf"]["per_cycle_s"]
+                    e["low_s"] = e["low_cycles"] * per * CP2_PER_CYCLE[0] * CP_TIME_LOW
+                    e["high_s"] = e["high_cycles"] * per * CP2_PER_CYCLE[1] * CP_TIME_HIGH
+                    e["basis"] += f" (time per cycle from the CPKS stage x {CP2_PER_CYCLE[0]}-{CP2_PER_CYCLE[1]})"
+                apply_cp(lv, cp_est["cp2"])
+            else:
+                c1 = cp_est.get("cphf") or {}
+                done_counts = c1.get("counts", [])[:-1] if status("cphf") == "running" else c1.get("counts", [])
+                e = cp2_from_cp(done_counts, c1.get("per_cycle_s"))
+                if e["low_s"] is not None:
+                    lv["remaining_s"] = {"low": e["low_s"], "high": e["high_s"]}
+                    lv["confidence"], lv["unknown_reason"], lv["basis"] = "rough", None, e["basis"]
+                else:
+                    lv["unknown_reason"] = "Raman (CPHF/CPKS, second order) is estimated once a CPKS direction finishes"
             so_far(lv, st["cp2_driver"])
             out.append(lv)
         lv = _level("freq.tensors", 1, "IR/Raman tensors", status("tensors"), unknown_reason=open_hi)
         if lv["status"] == "done" and st["tensors"]:
             lv["done_s"] = took(st["tensors"][0], st["header"])
+        if lv["status"] == "done":
+            lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+        else:
+            # bounded by the CPHF stages' time (corpus: <= 0.72 x; about 0 for IR only)
+            cp_done = sum(x["done_s"] or 0.0 for x in out if x["id"] in ("freq.cphf", "freq.cp2") and x["status"] == "done")
+            cp_left = [x["remaining_s"]["high"] for x in out if x["id"] in ("freq.cphf", "freq.cp2")
+                       and x["status"] != "done"]
+            elapsed_cp = sum(x["info"].get("cp_elapsed_s") or 0.0 for x in out if x["id"] in ("freq.cphf", "freq.cp2"))
+            if all(v is not None for v in cp_left):
+                cp_total = cp_done + elapsed_cp + sum(cp_left)
+                spent = (_t_at(tl, len(lines) - 1) or 0.0) - (_t_at(tl, st["tensors"][0]) or 0.0) \
+                    if lv["status"] == "running" and st["tensors"] else 0.0
+                lv["remaining_s"] = {"low": 0.0, "high": max(0.0, TENSOR_HIGH_RATIO * cp_total - max(0.0, spent))}
+                lv["confidence"], lv["unknown_reason"] = "rough", None
+                lv["basis"] = (f"at most {TENSOR_HIGH_RATIO:g} x the CPHF stages' time (corpus: 0.6-0.7 x with Raman, "
+                               f"about 0 for IR only)")
         so_far(lv, st["tensors"][0] if st["tensors"] else None)
         out.append(lv)
     cen = _level("freq.central", 1, "Central point", status("central"),
@@ -1371,6 +1583,18 @@ def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], sc
     elif cen["status"] == "running" and st["central_c0"] is not None:
         cen["current"] = sum(1 for i in range(st["central_c0"], len(lines)) if _CYC.match(lines[i])) - 1
         cen["info"]["scf_done"] = any(e > st["central_c0"] for e in st["scf_end"])
+    ref_s = took(st["ref_c0"], st["cp_driver"]) if st["cphf"] and st["ref_c0"] is not None else None
+    if ref_s and cen["status"] in ("pending", "running") and not st["restart"]:
+        # after IR/Raman by CPHF the central point redoes the reference SCF plus a gradient: 0.82-1.49 x
+        # the reference SCF's time in all 9 corpus runs
+        spent = 0.0
+        if cen["status"] == "running" and st["central_c0"] is not None:
+            spent = max(0.0, (_t_at(tl, len(lines) - 1) or 0.0) - (_t_at(tl, st["central_c0"]) or 0.0))
+        cen["remaining_s"] = {"low": max(0.0, CENTRAL_REF_LOW * ref_s - spent),
+                              "high": max(0.0, CENTRAL_REF_HIGH * ref_s - spent)}
+        cen["confidence"], cen["unknown_reason"] = "rough", None
+        cen["basis"] = (f"{CENTRAL_REF_LOW}-{CENTRAL_REF_HIGH} x the reference SCF ({_fmt_dur(ref_s)}): "
+                        f"0.82-1.49 x in all 9 corpus runs with CPHF")
     out.append(cen)
     total = fp.get("total")
     stage = fp.get("stage")
@@ -1418,6 +1642,200 @@ def freq_levels(fp: Dict[str, Any], st: Dict[str, Any], lines: Sequence[str], sc
     elif stage in ("frequencies", "intensities"):
         outp["status"] = "running"
     out.append(outp)
+    return out
+
+
+# ------------------------------------------------------------------ EOS, ELASTCON, ANHARM
+def deck_block(deck_text: str, key: str) -> Optional[List[str]]:
+    """The records of a keyword's block in a .d12 (from the line ``key`` to its END), upper-cased; None
+    when the deck has no such line."""
+    recs = [l.strip().upper() for l in (deck_text or "").splitlines()]
+    if key not in recs:
+        return None
+    i = recs.index(key)
+    out = []
+    for r in recs[i + 1:]:
+        if r.startswith("END"):
+            break
+        out.append(r)
+    return out
+
+
+def multi_kind(deck_text: str) -> Optional[str]:
+    for key, kind in (("EOS", "eos"), ("ELASTCON", "elastcon"), ("ANHARM", "anharm")):
+        if deck_block(deck_text, key) is not None:
+            return kind
+    return None
+
+
+def multi_plan(kind: str, deck_text: str) -> Dict[str, Any]:
+    """How many units (volumes, strained configurations, X-H distances) the
+    deck asks for, and whether a preoptimization comes first."""
+    blk = deck_block(deck_text, {"eos": "EOS", "elastcon": "ELASTCON", "anharm": "ANHARM"}[kind]) or []
+
+    def after(word: str) -> Optional[List[str]]:
+        if word in blk:
+            j = blk.index(word)
+            return blk[j + 1].split() if j + 1 < len(blk) else []
+        return None
+    preopt = "PREOPTGEOM" in blk
+    if kind == "eos":
+        rng = after("RANGE")
+        n = int(float(rng[2])) if rng and len(rng) >= 3 else EOS_DEFAULT_POINTS
+        return {"units": n, "unit": "volumes", "src": "RANGE" if rng else f"the default {EOS_DEFAULT_POINTS}",
+                "preopt": preopt, "marker": "opt", "label": "Volume"}
+    if kind == "elastcon":
+        nd = after("NUMDERIV")
+        ns = int(nd[0]) if nd else ELASTCON_DEFAULT_NUMDERIV
+        de = after("DEFORM")
+        strains = sum(1 for v in de[:6] if v == "1") if de else None
+        units = strains * (ns - 1) + 1 if strains else None
+        clamp = "CLAMPION" in blk
+        return {"units": units, "unit": "configurations", "per_strain": ns - 1, "strains": strains,
+                "src": (f"DEFORM: {strains} strain(s) x {ns - 1} strained points + the unstrained one" if strains else
+                        "the number of strains comes from CRYSTAL's symmetry analysis (set DEFORM to count them)"),
+                "preopt": preopt, "marker": "scf" if clamp else "opt", "label": "Strained configuration"}
+    pts = ANHARM_POINTS[1] if "POINTS26" in blk else ANHARM_POINTS[0]
+    return {"units": pts, "unit": "points", "src": "POINTS26" if pts == 26 else "the default 7",
+            "preopt": False, "marker": "scf", "label": "X-H distance"}
+
+
+def multi_levels(kind: str, deck_text: str, lines: Sequence[str], ended: Optional[str],
+                 start: Optional[float] = None, now_ref: Optional[float] = None) -> List[Dict[str, Any]]:
+    """EOS volumes, ELASTCON strained configurations, ANHARM X-H distances:
+    one unit ends at each "OPT END" (an optimization per unit) or "== SCF
+    ENDED" (CLAMPION, ANHARM); a preoptimization's OPT END is its own stage.
+    Time left = units left x [min, max] of the finished units' times x
+    MULTI_TIME_LOW..MULTI_TIME_HIGH, less the time in the running unit."""
+    plan = multi_plan(kind, deck_text)
+    tl = timings(lines)
+    marks = [i for i, l in enumerate(lines)
+             if (("OPT END" in l and "CONVERGED" in l or "OPT END - FAILED" in l) if plan["marker"] == "opt"
+                 else "== SCF ENDED" in l)]
+    out: List[Dict[str, Any]] = []
+    t0 = next((t for _, n, t in tl if n == "gordsh1"), 0.0)
+    words = {"eos": "Equation of state (EOS)", "elastcon": "Elastic constants (ELASTCON)",
+             "anharm": "Anharmonic X-H stretch (ANHARM)"}[kind]
+    pre_end = None
+    if plan["preopt"]:
+        pre_end = marks[0] if marks else None
+        lv = _level(f"{kind}.preopt", 1, "Preoptimization", "done" if pre_end is not None or ended else "running",
+                    unknown_reason="the preoptimization has no time estimate here", basis="")
+        if lv["status"] == "done":
+            lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+            lv["done_s"] = (_t_at(tl, pre_end) - t0) if pre_end is not None and _t_at(tl, pre_end) is not None else None
+        out.append(lv)
+        marks = marks[1:]
+    units = plan["units"]
+    done = len(marks)
+    lv = _level(f"{kind}.units", 1, words, "pending" if plan["preopt"] and pre_end is None and not ended else "running",
+                current=min(done + 1, units) if units else done + 1, unit=plan["unit"], exact=units,
+                flags=["untested"],
+                unknown_reason=(f"{plan['unit']} left unknown: {plan['src']}" if not units else
+                                f"time per {plan['unit'][:-1]} unknown until the first finishes"),
+                basis=f"{plan['unit']}: {plan['src']}; no run of this kind in the corpus (counts from the CRYSTAL23 manual)",
+                info={"done": done, "label": plan["label"]})
+    if ended:
+        lv["status"] = "done"
+        lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+    ts = [_t_at(tl, i) for i in marks]
+    begin = _t_at(tl, pre_end) if pre_end is not None else t0
+    durs = [b - a for a, b in zip([begin] + ts[:-1], ts) if a is not None and b is not None and b >= a]
+    if not ended and durs and units:
+        left = max(0, units - done)
+        last = ts[-1] if ts else begin
+        spent = 0.0
+        if start is not None and now_ref is not None and last is not None:
+            spent = max(0.0, now_ref - (start + last))
+        elif tl and last is not None:
+            spent = max(0.0, tl[-1][2] - last)
+        lo = max(0.0, left * min(durs) * MULTI_TIME_LOW - spent)
+        hi = max(lo, left * max(durs) * MULTI_TIME_HIGH - spent)
+        lv["remaining_s"] = {"low": lo, "high": hi}
+        lv["per_unit_s"] = statistics.median(durs)
+        lv["confidence"], lv["unknown_reason"] = "rough", None
+        lv["basis"] = (f"{left} {plan['unit']} left ({plan['src']}) x {_span(min(durs), max(durs))} each "
+                       f"(the {len(durs)} done) x {MULTI_TIME_LOW}-{MULTI_TIME_HIGH}; no run of this kind in the "
+                       f"corpus, so rough")
+    out.append(lv)
+    return out
+
+
+# ------------------------------------------------------------------ properties
+def properties_plan(deck_text: str, text: str) -> List[str]:
+    """The blocks a properties run asks for, in the deck's order (its .d3);
+    without a deck, what the output shows it is (DOSS: NEWK + DOSS; BAND;
+    ECH3 + POT3; BOLTZTRA: NEWK + BOLTZTRA; ORBITALS: NEWK + ORBITALS)."""
+    plan: List[str] = []
+    for line in (deck_text or "").splitlines():
+        w = line.strip().upper().split()
+        if w and w[0] in PROP_BLOCKS and w[0] not in plan:
+            plan.append(w[0])
+    if plan:
+        return plan
+    from mace.utils import calc_detection as cd
+    if cd.is_transport_output(text):
+        return ["NEWK", "BOLTZTRA"]
+    if cd.is_orbitals_output(text):
+        return ["NEWK", "ORBITALS"]
+    if cd.is_doss_output(text):
+        return ["NEWK", "DOSS"]
+    if cd.is_charge_potential_output(text):
+        return ["ECH3", "POT3"]
+    if cd.is_band_output(text):
+        return ["BAND"]
+    return []
+
+
+def properties_levels(lines: Sequence[str], text: str, deck_text: str, ended: Optional[str],
+                      start: Optional[float] = None, now_ref: Optional[float] = None) -> List[Dict[str, Any]]:
+    """One level per block of a properties run: done when CRYSTAL prints its
+    timing line ("NEWK TELAPSE ...", "ECH3 TELAPSE ..."), the first not done
+    running. DOSS, POT3 and BOLTZTRA are estimated from the block before them
+    (PROP_RATIOS); a block with no earlier block to scale from says how long
+    it has run."""
+    tl = timings(lines)
+    names = {}
+    for i, n, t in tl:
+        names.setdefault(n.split()[0] if n.split() else n, (i, t))
+    t0 = next((t for _, n, t in tl if n == "gordsh1"), None)
+    plan = properties_plan(deck_text, text) or [n for n in PROP_BLOCKS if n in names]
+    out: List[Dict[str, Any]] = []
+    prev_t, done_s, running_seen = t0, {}, False
+    last_t = tl[-1][2] if tl else None
+    for b in plan:
+        lv = _level(f"properties.{b.lower()}", 1, PROP_WORDS.get(b, b), "pending",
+                    unknown_reason=f"{PROP_WORDS.get(b, b)}: no earlier block to scale its time from",
+                    basis="")
+        hit = names.get(b)
+        if ended or hit is not None:
+            lv["status"] = "done"
+            if hit is not None and prev_t is not None:
+                lv["done_s"] = done_s[b] = max(0.0, hit[1] - prev_t)
+                prev_t = hit[1]
+            lv["remaining_s"] = {"low": 0.0, "high": 0.0}
+        elif not running_seen:
+            lv["status"] = "running"
+            running_seen = True
+            if start is not None and now_ref is not None and prev_t is not None:
+                lv["info"]["so_far_s"] = max(0.0, now_ref - (start + prev_t))
+        if b in PROP_RATIOS and lv["status"] != "done":
+            anchor, r_lo, r_hi = PROP_RATIOS[b]
+            a = done_s.get(anchor)
+            if a is not None:
+                spent = lv["info"].get("so_far_s") or (max(0.0, (last_t or 0) - (prev_t or 0))
+                                                       if lv["status"] == "running" else 0.0)
+                lv["remaining_s"] = {"low": max(0.0, r_lo * a - spent), "high": max(0.0, r_hi * a - spent)}
+                lv["confidence"], lv["unknown_reason"] = "rough", None
+                lv["basis"] = (f"{r_lo:g}-{r_hi:g} x {anchor} ({_fmt_dur(a)}): the ratio's range over the dev half "
+                               f"of the corpus")
+        out.append(lv)
+    if not out:
+        cur = tl[-1][1] if tl else "starting"
+        cur = "setup" if cur in ("gordsh1", "INPUT") else cur
+        out.append(_level("properties.block", 1, "Properties", "done" if ended else "running", current=cur,
+                          unknown_reason="properties runs of this kind have no time estimate",
+                          basis="which block runs; no estimate"))
     return out
 
 
@@ -1565,8 +1983,8 @@ def mode_of(text: str) -> str:
     if cd.is_optimization_output(text):
         return "opt"
     if cd.is_band_output(text) or cd.is_doss_output(text) or cd.is_transport_output(text) or \
-            cd.is_charge_potential_output(text):
-        return "properties"
+            cd.is_charge_potential_output(text) or "CRYSTAL - PROPERTIES - TYPE OF CALCULATION" in text[:400_000]:
+        return "properties"             # (the header: a properties run before its first block finishes)
     if "CYC " in text or "TOTAL ENERGY" in text or "SCF" in text:
         return "scf"
     return "unknown"
@@ -1647,7 +2065,20 @@ def _progress(out_path: Path, scratch_dir=None, job: Optional[Dict[str, Any]] = 
     start, start_src = run_start(lines, snap.get("mtime"), slurm_start) if slurm_start is not None else (None, None)
     now_ref = _time.time() if elapsed is not None else snap.get("mtime")
     stages: List[Dict[str, Any]] = []
-    if mode == "opt":
+    kind = multi_kind(deck_text) if mode in ("opt", "scf", "freq") else None
+    if kind:
+        mode = res["mode"] = kind
+        # each volume / strain ends with its own OPT END: only CRYSTAL's end of the whole run counts
+        if ended and "TOTAL CPU TIME" not in text[-20000:] and "EEEEEEEEEE TERMINATION" not in text:
+            ended = res["ended"] = None
+    if mode in ("eos", "elastcon", "anharm"):
+        stages = multi_levels(mode, deck_text, lines, ended, start=start,
+                              now_ref=now_ref if elapsed is not None else None)
+        u = stages[-1]
+        res.update(stage="end" if ended else mode, done=u["info"].get("done"), total=u["count"]["exact"])
+        res["summary"] = ("Finished" if ended else
+                          f"{u['info']['label']} {u['current']}" + (f" of {u['count']['exact']}" if u["count"]["exact"] else ""))
+    elif mode == "opt":
         parsed = parse_out(out_path, text, snap["size"])
         pts = parsed.get("points") or []
         finalrun = finalrun_from_deck(deck_text)
@@ -1702,15 +2133,28 @@ def _progress(out_path: Path, scratch_dir=None, job: Optional[Dict[str, Any]] = 
         stages = sp_levels(sp, lines, text, deck_text, ended,
                            threshold_notes(parsed.get("thresholds") or {}, "sp"))
     elif mode == "properties":
+        d3 = out_path.with_suffix(".d3")
+        d3_text = ""
+        if d3.is_file():
+            try:
+                d3_text = d3.read_text(errors="replace")
+            except OSError:
+                d3_text = ""
+        stages = properties_levels(lines, text, d3_text, ended, start=start,
+                                   now_ref=now_ref if elapsed is not None else None)
+        run = next((lv for lv in stages if lv["status"] == "running"), None)
         blocks = [name for _, name, _ in timings(lines)]
-        res.update(stage="end" if ended else (blocks[-1] if blocks else "starting"))
+        res.update(stage="end" if ended else (run["label"] if run else (blocks[-1] if blocks else "starting")))
         res["summary"] = "Finished" if ended else f"Running {res['stage']}"
-        stages = [_level("properties.block", 1, "Properties", "done" if ended else "running",
-                         current=res["stage"], unknown_reason="properties runs have no time estimate",
-                         basis="which block runs; no estimate")]
     if ended:
         res["summary"] = f"Ended ({ended})"
     total = total_level(stages, ended)
+    if elapsed is not None and not ended and snap.get("mtime"):
+        stall = stall_check(stages, max(0.0, _time.time() - snap["mtime"]))
+        if stall:
+            total["flags"].append("possibly_stalled")
+            total["info"]["stall"] = stall
+            res["stalled"] = stall
     res["levels_version"] = LEVELS_VERSION
     res["levels"] = _finish_levels([total] + stages)
     res["start"] = {"epoch": start, "source": start_src}

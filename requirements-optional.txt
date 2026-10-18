@@ -8,3 +8,6 @@ spglib<3
 phonopy<5
 # The GUI's browser tests need selenium and Firefox: see requirements-gui-test.txt
 # (test-only, not needed to run `mace gui`).
+# Excel export (`mace database --action export --format excel` and the GUI's
+# Database export); 3.1.5 tested. CSV, JSON, LaTeX and HTML need nothing extra.
+openpyxl<4

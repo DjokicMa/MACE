@@ -224,6 +224,151 @@ def early_stop_record(text: str) -> Optional[str]:
     return None
 
 
+# The two-component restarts (manual p. 173) are records of the TWOCOMPON
+# block and read fort.20, which submitcrystal23.sh stages from $JOB.f20 (and,
+# for GUESSPSO only, from the job's own non-empty $JOB.f9).
+_TWO_COMPONENT_GUESSES = ("GUESSPSO", "GUESSPNOSO")
+
+
+def _two_component_guess(text: str) -> Optional[str]:
+    inside = False
+    for line in split_lines(text)[1:]:
+        body = _LINE_SPLIT_RE.split(line)[0].strip().upper()
+        if not inside:
+            inside = body == "TWOCOMPON"
+        elif body in ("END", "ENDTWO"):
+            inside = False
+        elif body in _TWO_COMPONENT_GUESSES:
+            return body
+    return None
+
+
+def _misplaced_two_component_guess(text: str) -> Optional[str]:
+    """GUESSPSO or GUESSPNOSO when the deck has one outside every TWOCOMPON
+    block, or None."""
+    inside = False
+    for line in split_lines(text)[1:]:
+        body = _LINE_SPLIT_RE.split(line)[0].strip().upper()
+        if not inside:
+            if body == "TWOCOMPON":
+                inside = True
+            elif body in _TWO_COMPONENT_GUESSES:
+                return body
+        elif body in ("END", "ENDTWO"):
+            inside = False
+    return None
+
+
+def misplaced_2c_guess_problem(deck, text: Optional[str] = None) -> Optional[str]:
+    """Why a deck with GUESSPSO or GUESSPNOSO outside its TWOCOMPON block
+    (or in a deck without one) cannot run, or None. CRYSTAL stops on it at
+    input, whatever is staged: "ERROR **** READM2 **** KEYWORD GUESSPSO NOT
+    ALLOWED" (and GUESSPNOSO), measured on HPCC. No matrix fixes that, so
+    this holds for --nosubmit as well."""
+    if text is None:
+        try:
+            text = read_deck(Path(deck))
+        except OSError:
+            return None
+    record = _misplaced_two_component_guess(text)
+    if record is None:
+        return None
+    return (f"{record} is outside a TWOCOMPON block, and CRYSTAL stops on it there at input "
+            f"(\"ERROR **** READM2 **** KEYWORD {record} NOT ALLOWED\", measured on HPCC); "
+            f"the two-component restarts belong inside TWOCOMPON ... END (manual p. 173)")
+
+
+def restart_file_problem(deck, text: Optional[str] = None) -> Optional[str]:
+    """Why a deck asking for a two-component restart would stop for want of
+    its density matrix, or None. GUESSPSO needs ``<stem>.f20`` or a non-empty
+    ``<stem>.f9`` beside the deck, GUESSPNOSO ``<stem>.f20`` (what the job
+    script stages as fort.20 for each). A GUESSPSO or GUESSPNOSO outside the
+    TWOCOMPON block stops CRYSTAL whatever is staged (misplaced_2c_guess_problem)."""
+    deck = Path(deck)
+    if text is None:
+        try:
+            text = read_deck(deck)
+        except OSError:
+            return None
+    misplaced = misplaced_2c_guess_problem(deck, text)
+    if misplaced:
+        return misplaced
+    record = _two_component_guess(text)
+    if record is None:
+        return None
+    from mace.utils.calc_detection import missing_2c_matrix_note
+    f20, f9 = deck.with_suffix(".f20"), deck.with_suffix(".f9")
+    if f20.is_file() and f20.stat().st_size > 0:
+        return None
+    if record == "GUESSPSO" and f9.is_file() and f9.stat().st_size > 0:
+        return None
+    wanted = f"{f20.name} or a non-empty {f9.name}" if record == "GUESSPSO" else f20.name
+    return (f"{record} (manual p. 173) restarts from a density matrix read from fort.20, "
+            f"and there is no {wanted} next to the deck for the job script to stage; "
+            + missing_2c_matrix_note(record)
+            + ("" if record == "GUESSPSO" else
+               "; the job script stages only a .f20 for GUESSPNOSO"))
+
+
+# --------------------------------------------------------------------------
+# ORBITALS properties decks (.d3): no TESTPDIM for properties, so what is
+# known to fail is checked from the deck and its parent run
+# --------------------------------------------------------------------------
+_ORBITALS_STEM_RE = re.compile(r"_orbitals\d*$", re.IGNORECASE)
+
+
+def is_orbitals_deck(text: str) -> bool:
+    """A properties deck with an ORBITALS record."""
+    from mace.utils.calc_detection import deck_records
+    return "ORBITALS" in deck_records(text, is_d3=True)
+
+
+def orbitals_parent_run(deck) -> Optional[Path]:
+    """The SCF run an ORBITALS deck was written from, when it is beside it:
+    opt2d3 names the deck <base>_orbitals.d3 for <base>.out, <base>_sp.out or
+    <base>_opt.out (the .d12 when no .out is there)."""
+    deck = Path(deck)
+    base = _ORBITALS_STEM_RE.sub("", deck.stem)
+    if base == deck.stem:
+        return None
+    for name in (f"{base}.out", f"{base}_sp.out", f"{base}_opt.out", f"{base}_SP.out", f"{base}_OPT.out",
+                 f"{base}.d12", f"{base}_sp.d12", f"{base}_opt.d12"):
+        cand = deck.parent / name
+        if cand.is_file():
+            return cand
+    return None
+
+
+def orbitals_deck_problem(deck, text: Optional[str] = None) -> Optional[str]:
+    """Why an ORBITALS deck would fail, or None.
+
+    * ICAR and ILOC on one line: properties stops with FORMAT ERROR IN INPUT
+      DECK (and the serial program still exits 0), so no file is written;
+    * ILOC 1 (Wannier functions): the files are not usable;
+    * a two-component (SOC) parent: CRYSTAL23 crashes in NEWK/ORBITALS
+      (mace.orbitals.kchoice.SOC_REFUSAL).
+    """
+    from mace.orbitals.kchoice import SOC_REFUSAL, WANNIER_ROUTE
+    from mace.utils.calc_detection import is_two_component_run
+    if text is None:
+        text = read_deck(deck)
+    lines = [ln.strip() for ln in split_lines(text)]
+    for i, line in enumerate(lines):
+        if line.upper() != "ORBITALS":
+            continue
+        icar = lines[i + 2].split() if i + 2 < len(lines) else []
+        if len(icar) > 1:
+            return (f"ICAR and ILOC are on one line ({lines[i + 2]!r}) after ORBITALS: properties "
+                    f"stops with FORMAT ERROR IN INPUT DECK and writes no file. Put each on its own line")
+        iloc = lines[i + 3].split() if i + 3 < len(lines) else []
+        if iloc and iloc[0] not in ("0",):
+            return f"ORBITALS ILOC {iloc[0]}: {WANNIER_ROUTE}"
+    parent = orbitals_parent_run(deck)
+    if parent is not None and is_two_component_run(parent):
+        return f"{parent.name} is a two-component run: {SOC_REFUSAL}"
+    return None
+
+
 def uncheckable_reason(text: str, has_ext: bool = False) -> Optional[str]:
     """Why this deck cannot be pre-flighted in an isolated directory, or None.
 
@@ -252,6 +397,9 @@ def uncheckable_reason(text: str, has_ext: bool = False) -> Optional[str]:
                     "a throwaway pre-flight directory has no fort.34")
         if body == "GUESSP":
             return ("deck restarts from a previous density matrix (GUESSP reads "
+                    "fort.20); a throwaway pre-flight directory has no fort.20")
+        if body in _TWO_COMPONENT_GUESSES:
+            return (f"deck restarts from a previous density matrix ({body} reads "
                     "fort.20); a throwaway pre-flight directory has no fort.20")
     return None
 
@@ -554,6 +702,24 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
             "CR, LF and CRLF are mixed in this deck; refusing to normalize it, "
             "because the copy CRYSTAL saw would then differ from the file you submit")
 
+    # An ORBITALS properties deck: checked from its records and its parent
+    # run (TESTPDIM is an SCF record; nothing of a .d3 is run).
+    if deck.suffix.lower() == ".d3" and is_orbitals_deck(text):
+        problem = orbitals_deck_problem(deck, text)
+        if problem:
+            return PreflightResult(deck, FAIL, problem)
+        where = orbitals_parent_run(deck)
+        return PreflightResult(deck, SKIPPED,
+                               "ORBITALS deck: its records are fine" +
+                               (f" and {where.name} is one-component" if where else
+                                " (its parent run is not beside it, so a two-component parent was not checked)") +
+                               "; CRYSTAL was not run (TESTPDIM checks .d12 decks)")
+
+    # A 2c restart with no matrix to stage: the job would stop (FAIL).
+    missing = restart_file_problem(deck, text)
+    if missing:
+        return PreflightResult(deck, FAIL, missing)
+
     # These are all "the harness cannot check this deck", never "this deck is
     # bad" - the explanation IS the reason, so it reaches the report table.
     # The file the job script stages as fort.34 for an EXTERNAL deck: <stem>.ext,
@@ -781,10 +947,12 @@ def exit_code(results: Sequence[PreflightResult]) -> int:
 # CLI
 # --------------------------------------------------------------------------
 def collect_decks(paths: Sequence[str], recursive: bool = False) -> List[Path]:
-    """Resolve paths to .d12 files.
+    """Resolve paths to .d12 files (and ORBITALS .d3 decks).
 
     A directory yields its top-level .d12 files, matching how `mace submit`
     resolves a directory (os.listdir, not a walk); ``--recursive`` walks it.
+    Its .d3 decks with an ORBITALS record come too: those are checked from
+    their records and parent run (orbitals_deck_problem).
     """
     decks: List[Path] = []
     for raw in paths:
@@ -794,6 +962,13 @@ def collect_decks(paths: Sequence[str], recursive: bool = False) -> List[Path]:
         elif p.is_dir():
             it = sorted(p.rglob("*.d12")) if recursive else sorted(p.glob("*.d12"))
             decks.extend(d for d in it if d.is_file())
+            d3s = sorted(p.rglob("*.d3")) if recursive else sorted(p.glob("*.d3"))
+            for d in d3s:
+                try:
+                    if d.is_file() and is_orbitals_deck(read_deck(d)):
+                        decks.append(d)
+                except OSError:
+                    pass
         else:
             _say("err", f"Error: {raw} is not a valid file or directory")
     seen, unique = set(), []

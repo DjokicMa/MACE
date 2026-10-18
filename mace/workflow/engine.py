@@ -31,17 +31,24 @@ import threading
 
 # Define which calculations are optional (can fail without blocking workflow)
 # These calculations can fail without preventing the workflow from continuing
-OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
+OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS'}
 
 # Import MACE components
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
 from mace.queue.slurm_ids import note_submission as _note_submission
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context, new_workflow_id
-from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
+from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config, opt2d3_default_transport_config
 from mace.utils.settings_extractor import extract_input_settings
 from mace.workflow.plan_functionals import (normalize_plan_functionals,
                                             normalize_step_functionals)
+from mace.utils.calc_detection import set_orbitals_root, staged_2c_guess as _staged_2c_guess
+
+
+def deck_has_2c_guess(deck_path) -> bool:
+    """Whether a deck asks for a two-component restart (GUESSPSO/GUESSPNOSO),
+    which a 1c GUESSP restart must leave alone."""
+    return _staged_2c_guess(deck_path) is not None
 
 
 def _planless_progression_allowed() -> bool:
@@ -171,6 +178,68 @@ class WorkflowEngine:
             auto = auto.strip().lower() not in ('false', 'no', 'off', '0')
         return auto is False or auto == 0
 
+    # database statuses of a job still in the queue (submitted or running)
+    LIVE_STATUSES = ('submitted', 'pending', 'queued', 'running')
+
+    def _job_cap(self, workflow_id: Optional[str]) -> Optional[int]:
+        """The plan's ``execution_settings.max_concurrent_jobs`` (a spec's
+        ``execution.max_jobs``, the GUI builder's "Keep at most N of this
+        workflow's jobs queued"), or None."""
+        try:
+            plan = self._load_workflow_plan(workflow_id) or {}
+        except Exception:
+            return None
+        cap = (plan.get('execution_settings') or {}).get('max_concurrent_jobs')
+        # None unless set explicitly: the 200 every plan up to 1.1.5 stored
+        # whether or not the user chose it counts as unset (workflows share
+        # the user-wide queue budget, mace/queue/budget.py)
+        from mace.queue.budget import normalize_cap
+        return normalize_cap(cap)
+
+    def _live_workflow_jobs(self, workflow_id: str) -> int:
+        """The workflow's calculations this database lists as queued or
+        running (in a shared database only the rows stamped with its id)."""
+        own = self._is_own_database(workflow_id)
+        n = 0
+        for status in self.LIVE_STATUSES:
+            for row in self.db.get_calculations_by_status(status):
+                try:
+                    wid = json.loads(row.get('settings_json') or '{}').get('workflow_id')
+                except (TypeError, ValueError, AttributeError):
+                    wid = None
+                if wid == workflow_id or (own and not wid):
+                    n += 1
+        return n
+
+    def _held_by_job_cap(self, workflow_id: Optional[str], what: str) -> bool:
+        """True (and says so) when the workflow already has its plan's
+        maximum of jobs queued or running: the completion stays unprocessed,
+        and the next completion step of this workflow (or `mace workflow
+        --process`) starts its next steps once there is room."""
+        cap = self._job_cap(workflow_id)
+        if cap is None:
+            return False
+        live = self._live_workflow_jobs(workflow_id)
+        if live < cap:
+            return False
+        self._held_by_cap = True
+        print(f"{workflow_id} has {live} job(s) queued or running, its maximum (max_jobs {cap}): "
+              f"the next steps of {what} wait until one of them finishes.")
+        return True
+
+    def _held_by_control(self, workflow_id: Optional[str], what: str) -> bool:
+        """True (and says so) when ``mace workflow --pause/--cancel`` holds
+        the workflow: its control file next to the plan (control.py)."""
+        from mace.workflow.control import held_state
+        state = held_state(workflow_id, [getattr(self, 'base_work_dir', None), Path.cwd()])
+        if not state:
+            return False
+        print(f"{workflow_id} is {state} (mace workflow --{'pause' if state == 'paused' else 'cancel'}): "
+              f"{what} is recorded as completed and its next steps are not submitted.")
+        if state == "paused":
+            print(f"  To continue: mace workflow --resume {workflow_id} (in {getattr(self, 'base_work_dir', Path.cwd())})")
+        return True
+
     def _print_held_by_plan(self, workflow_id: str, what: str) -> None:
         db_path = getattr(self.db, 'db_path', None) or 'materials.db'
         print(f"The plan of {workflow_id} has auto_progression off: {what} is recorded as "
@@ -189,16 +258,26 @@ class WorkflowEngine:
         expert_path = step_cfg.get('expert_config_file')
         if not expert_path:
             return None
-        cand = Path(expert_path)
-        if not cand.exists():
-            cand = (self.base_work_dir / "workflow_configs"
-                    / f"expert_{calc_type.lower()}_configs" / cand.name)
-        if cand.exists():
+        cand = self._find_plan_config(expert_path, workflow_id, f"expert_{calc_type.lower()}_configs")
+        if cand is not None:
             print(f"  Using plan expert config for {calc_type}: {cand.name}")
             return cand
         print(f"  Warning: the plan's expert config for {calc_type} was not found "
               f"({expert_path}); using the step's other settings")
         return None
+
+    def _find_plan_config(self, expert_path: str, workflow_id: Optional[str],
+                          folder: str) -> Optional[Path]:
+        """A plan step's settings file: its path, else (a plan from another
+        machine, or a moved folder) the same name in this run's
+        workflow_configs/<folder>/ or in the spec's copies
+        (workflow_configs/spec_<id>/); None when none exists."""
+        cand = Path(expert_path)
+        tries = [cand, self.base_work_dir / "workflow_configs" / folder / cand.name]
+        if workflow_id:
+            from mace.workflow.spec import spec_dir
+            tries.append(spec_dir(self.base_work_dir, workflow_id) / cand.name)
+        return next((t for t in tries if t.exists()), None)
 
     def _build_numbered_calc_config(self, workflow_id: str, target_calc_type: str,
                                     target_base_type: str,
@@ -217,17 +296,42 @@ class WorkflowEngine:
             functional = str(mm['new_functional'])
             if mm.get('use_dispersion') and not functional.upper().endswith('-D3'):
                 functional += '-D3'
-            print(f"    Plan method modification: functional -> {functional}")
+            print(f"    Plan method modification: functional -> {functional}"
+                  + (" (D3 as the parent's)" if 'use_dispersion' not in mm else ""))
 
         opt_settings = (plan_cfg.get('optimization_settings')
                         if target_base_type == "OPT" else None)
+        # A planned two-component SOC single point ("soc": true), or a scalar
+        # step after a SOC parent ("soc": false; without it a deck derived
+        # from a SOC deck is one too). The deck writer refuses SOC for
+        # anything but a single point (CRYSTAL23 manual p. 166), so a plan
+        # asking for it on another step fails there, with its reason.
+        soc = plan_cfg.get('soc')
+        soc = soc if isinstance(soc, bool) else None
+        # The SOC deck options a plan step may name (the deck writer checks
+        # them): "soc_ecp", "soc_basis", the 2c restart "soc_guess" and the
+        # SMEAR width "smear" (hartree) and the SOC deck's FMIXING
+        # "soc_fmixing" (percent).
+        soc_options = {k: plan_cfg[k] for k in ('soc_ecp', 'soc_basis', 'soc_guess', 'smear', 'soc_fmixing')
+                       if plan_cfg.get(k) is not None}
 
-        if not functional and not opt_settings:
+        if not functional and not opt_settings and soc is None and not soc_options:
             return None
 
         config_data: Dict[str, Any] = {"calculation_type": target_base_type}
+        if soc is not None:
+            config_data["soc"] = soc
+            print(f"    Plan: {'two-component spin-orbit (SOC)' if soc else 'scalar'} "
+                  f"deck for {target_calc_type}")
+        if soc_options:
+            config_data.update(soc_options)
+            print(f"    Plan SOC options for {target_calc_type}: {soc_options}")
         if functional:
             config_data["functional"] = functional
+        if mm.get('new_functional') and 'use_dispersion' not in mm:
+            # no word on dispersion: the deck writer keeps the parent's D3
+            # (a follow-up preserves what the plan does not change)
+            config_data["method_modifications"] = {"new_functional": functional}
         if mm.get('use_dispersion'):
             config_data["dispersion"] = True
         if opt_settings:
@@ -345,7 +449,10 @@ class WorkflowEngine:
         slurm_script = slurm_scripts[0]
         
         # Re-submit the job
-        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir)
+        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir, calc_id)
+        if not job_id and self._was_held():
+            print(f"Retry of {calc_type} {calc_id} is held under the queue budget")
+            return None
         if job_id:
             # Update database with new submission
             self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
@@ -763,7 +870,10 @@ class WorkflowEngine:
         # job loaded, never a new probe
         try:
             from mace.submission import site
-            generator, site_cleanup, _ = site.generator_for(generator, None, calc_dir)
+            deck = calc_dir / f"{material_name}{'.d12' if gen_name == 'submitcrystal23.sh' else '.d3'}"
+            auto = site.auto_for(deck, None, base_type) if deck.is_file() else None
+            site.say_suggestion(auto, [deck.name])
+            generator, site_cleanup, _ = site.generator_for(generator, None, calc_dir, calc_type=base_type, auto=auto)
         except Exception as e:      # an invalid site setting: generate nothing
             print(f"  Generator not run: {e}")
             return None
@@ -1028,12 +1138,28 @@ fi'''
         else:  # G or no unit
             return float(value)
     
-    def _submit_calculation_to_slurm(self, script_path: Path, work_dir: Path) -> Optional[str]:
-        """Submit calculation to SLURM and return job ID"""
+    def _submit_calculation_to_slurm(self, script_path: Path, work_dir: Path,
+                                     calc_id: Optional[str] = None) -> Optional[str]:
+        """Submit calculation to SLURM and return job ID. Every sbatch goes
+        through the user-wide queue budget: a job that does not fit leaves
+        the row ``calc_id`` held (budget.last_outcome() says so) and a queue
+        drain submits it later."""
+        from mace.queue import budget
+        budget.clear_last()
+        with budget.row(getattr(self.db, 'db_path', None), calc_id):
+            return self._submit_calculation_to_slurm_gated(script_path, work_dir)
+
+    def _was_held(self) -> bool:
+        from mace.queue import budget
+        o = budget.last_outcome()
+        return bool(o is not None and o.held)
+
+    def _submit_calculation_to_slurm_gated(self, script_path: Path, work_dir: Path) -> Optional[str]:
         import subprocess
         import re
         import os
-        
+        from mace.queue import budget
+
         original_cwd = os.getcwd()
         try:
             os.chdir(work_dir)
@@ -1054,7 +1180,9 @@ fi'''
                 # A script generator: it writes <job_name>.sh, which is this
                 # very file, so it runs from a separate copy.
                 print(f"  Running script generator locally: {script_filename} with job name: {job_name}")
-                result = run_script_generator(script_filename, job_name, os.getcwd())
+                here = os.getcwd()
+                result = budget.run_generator(
+                    lambda env: run_script_generator(script_filename, job_name, here, env=env), here)
                 
                 if result.returncode == 0:
                     if 'Submitted batch job' in result.stdout:      # the template ran sbatch itself
@@ -1070,41 +1198,31 @@ fi'''
                     generated_script = work_dir / f"{job_name}.sh"
                     if generated_script.exists():
                         print(f"  Found generated script: {generated_script.name}")
-                        result = subprocess.run(
-                            ['sbatch', generated_script.name],
-                            capture_output=True,
-                            text=True
-                        )
-                        if result.returncode == 0:
-                            _note_submission()
-                            job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
-                            if job_id_match:
-                                return job_id_match.group(1)
+                        outcome = budget.sbatch(['sbatch', generated_script.name], work_dir)  # _note_submission()
+                        if outcome.submitted:
+                            return outcome.job_id
+                        if outcome.held:
+                            print(f"  Held under the queue budget ({budget.REASON_WORDS.get(outcome.reason)}): "
+                                  f"submitted as slots free up")
+                        else:
+                            print(f"Error submitting job: {outcome.message}")
                 else:
                     print(f"Error running script generator: {result.stderr}")
                     
             else:
                 # This is a regular SLURM script - submit directly
                 print(f"  Submitting SLURM script directly: {script_path.name}")
-                result = subprocess.run(
-                    ['sbatch', str(script_path)],
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode == 0:
-                    _note_submission()
-                    # Extract job ID from sbatch output
-                    output = result.stdout.strip()
-                    job_id_match = re.search(r'Submitted batch job (\d+)', output)
-                    if job_id_match:
-                        return job_id_match.group(1)
-                    else:
-                        print(f"Could not extract job ID from: {output}")
-                        return None
+                outcome = budget.sbatch(['sbatch', str(script_path)], work_dir)   # _note_submission() inside
+                if outcome.submitted:
+                    if not outcome.job_id:
+                        print(f"Could not extract job ID from: {outcome.stdout.strip()}")
+                    return outcome.job_id
+                if outcome.held:
+                    print(f"  Held under the queue budget ({budget.REASON_WORDS.get(outcome.reason)}): "
+                          f"submitted as slots free up")
                 else:
-                    print(f"Error submitting job: {result.stderr}")
-                    return None
+                    print(f"Error submitting job: {outcome.message}")
+                return None
                 
         finally:
             os.chdir(original_cwd)
@@ -1613,10 +1731,12 @@ fi'''
             )
             
             # Submit SP calculation
-            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, sp_step_dir)
+            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, sp_step_dir, sp_calc_id)
             if slurm_job_id:
                 self.db.update_calculation_status(sp_calc_id, 'submitted', slurm_job_id=slurm_job_id)
                 print(f"Generated and submitted SP calculation {sp_calc_id}: Job {slurm_job_id}")
+            elif self._was_held():
+                print(f"Generated SP calculation {sp_calc_id}: held, submitted as queue slots free up")
             else:
                 print(f"Generated SP calculation {sp_calc_id} but submission failed: {sp_final_location}")
             
@@ -1674,6 +1794,14 @@ fi'''
             print("CHARGE+POTENTIAL calculations require new CRYSTALOptToD3.py")
             return None
     
+    def generate_orbitals_from_sp(self, sp_calc_id: str) -> Optional[str]:
+        """Generate ORBITALS calculation from completed SP"""
+        if self._use_new_d3_generation():
+            return self.generate_d3_calculation_new(sp_calc_id, "ORBITALS")
+        else:
+            print("ORBITALS calculations require new CRYSTALOptToD3.py")
+            return None
+
     def _use_new_d3_generation(self) -> bool:
         """Check if we should use new CRYSTALOptToD3.py for D3 generation"""
         # Check if CRYSTALOptToD3.py is available
@@ -1686,7 +1814,7 @@ fi'''
         """
         Generate D3 calculation using new CRYSTALOptToD3.py script.
         
-        Supports BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL calculations.
+        Supports BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL and ORBITALS calculations.
         
         Args:
             source_calc_id: ID of source calculation (SP or OPT with wavefunction)
@@ -1766,15 +1894,15 @@ fi'''
             config_file = None
             expert_path = step_cfg.get('expert_config_file')
             if expert_path:
-                cand = Path(expert_path)
-                if not cand.exists():
-                    # The plan may carry an absolute path from another machine;
-                    # retry relative to this run's workflow_configs.
-                    cand = (self.base_work_dir / "workflow_configs"
-                            / "expert_d3_configs" / cand.name)
-                if cand.exists():
+                # The plan may carry an absolute path from another machine;
+                # retried by name in this run's workflow_configs.
+                cand = self._find_plan_config(expert_path, plan_workflow_id, "expert_d3_configs")
+                if cand is not None:
                     config_file = cand
                     print(f"  Using plan expert D3 config: {config_file.name}")
+                else:
+                    print(f"  Warning: the plan's expert config for {target_calc_type} was not "
+                          f"found ({expert_path}); using the step's other settings")
 
             # Expert, individual material handling: one opt2d3 configuration
             # per material, saved at planning time.
@@ -1848,6 +1976,10 @@ fi'''
             # Copy files to final location
             final_d3 = final_dir / f"{material_id}_{target_calc_type.lower()}.d3"
             shutil.copy2(d3_file, final_d3)
+            if re.sub(r"_?\d+$", "", target_calc_type) == "ORBITALS":
+                # the Molden root follows the deck's new name (the job script
+                # copies back <deck>_orb*.molden)
+                final_d3.write_text(set_orbitals_root(final_d3.read_text(), final_d3.stem))
             
             # Also copy the wavefunction file
             # CRYSTALOptToD3.py creates a wavefunction file with matching name
@@ -1903,15 +2035,7 @@ fi'''
             # opt2d3's answers when Enter is pressed through it
             "BAND": opt2d3_default_band_config(),
             "DOSS": opt2d3_default_doss_config(),
-            "TRANSPORT": {
-                "calculation_type": "TRANSPORT",
-                "temperature_range": [100, 800, 50],
-                "mu_range": [-2.0, 2.0, 0.01],
-                "mu_reference": "fermi",
-                "mu_range_type": "auto_fermi",
-                "tdf_range": [-5.0, 5.0, 0.01],
-                "relaxation_time": 10
-            },
+            "TRANSPORT": opt2d3_default_transport_config(),
             "CHARGE+POTENTIAL": {
                 "calculation_type": "CHARGE+POTENTIAL",
                 "charge_config": {
@@ -1926,6 +2050,11 @@ fi'''
                     "scale": 3,
                     "use_range": False
                 }
+            },
+            # opt2d3's answer when Enter is pressed: the band-edge k points
+            "ORBITALS": {
+                "calculation_type": "ORBITALS",
+                "kmesh": "band_edges"
             }
         }
         
@@ -1941,7 +2070,7 @@ fi'''
         base_type, calc_num = self._parse_calc_type(calc_type)
         
         # Determine step number based on calculation type
-        default_steps = {"BAND": 3, "DOSS": 4, "TRANSPORT": 5, "CHARGE+POTENTIAL": 6}
+        default_steps = {"BAND": 3, "DOSS": 4, "TRANSPORT": 5, "CHARGE+POTENTIAL": 6, "ORBITALS": 7}
         step_num = default_steps.get(base_type, 3)
         if calc_num > 1:
             step_num += (calc_num - 1) * 10
@@ -1992,13 +2121,21 @@ fi'''
         )
         
         # Submit job
-        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir)
+        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir, calc_id)
         if job_id:
             self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
             print(f"Submitted {calc_type} calculation: Job ID {job_id}, Calc ID {calc_id}")
             return calc_id
+        elif self._was_held():
+            # each fan-out job is admitted on its own: this one waits for a slot
+            print(f"Held {calc_type} calculation {calc_id}: submitted as queue slots free up")
+            return calc_id
         else:
-            self.db.update_calculation_status(calc_id, 'failed')
+            from mace.queue import budget
+            o = budget.last_outcome()
+            self.db.update_calculation_status(
+                calc_id, 'failed', error_message=(f"sbatch refused it: {o.message}" if o and o.message
+                                                  else "SLURM submission failed"))
             return None
         
     def generate_property_calculation(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
@@ -2058,7 +2195,7 @@ fi'''
             return None
             
         # Determine which script to use based on target type
-        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             # Use new CRYSTALOptToD3.py for all D3 calculation types
             return self.generate_d3_calculation_new(wavefunction_calc_id, target_calc_type)
         else:
@@ -2166,7 +2303,7 @@ fi'''
                         can_start = True
                         source_calc_id = opt_source  # Use highest completed OPT for FREQ generation
                     
-            elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
                 # D3 property calculations need a wavefunction from SP or OPT
                 # (_find_dependency_in_sequence resolves to the real provider).
                 prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
@@ -2206,7 +2343,7 @@ fi'''
                     # FREQ always uses generate_freq_from_opt with an OPT calculation
                     # source_calc_id should already be from an OPT due to fixed dependency logic
                     calc_id = self.generate_freq_from_opt(source_calc_id, planned_type)
-                elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
                     # Same new-vs-legacy gate as generate_band_from_sp/doss_from_sp
                     if self._use_new_d3_generation():
                         calc_id = self.generate_d3_calculation_new(source_calc_id, planned_type)
@@ -2279,8 +2416,14 @@ fi'''
             print("   use 'mace submit --progress' or 'mace workflow' to plan follow-up steps)")
             return new_calc_ids
 
+        if planned_sequence and self._held_by_control(workflow_id, f"{calc_type} {completed_calc_id}"):
+            return new_calc_ids
+
         if planned_sequence and self._auto_progression_off(workflow_id):
             self._print_held_by_plan(workflow_id, f"{calc_type} {completed_calc_id}")
+            return new_calc_ids
+
+        if planned_sequence and self._held_by_job_cap(workflow_id, f"{calc_type} {completed_calc_id}"):
             return new_calc_ids
 
         # Parse current calculation type to handle numbered types
@@ -2444,7 +2587,7 @@ fi'''
                                     print(f"Failed to generate optional {next_calc_type}, continuing...")
                                 else:
                                     print(f"CRITICAL: Failed to generate {next_calc_type}")
-                        elif next_base_type == "CHARGE+POTENTIAL":
+                        elif next_base_type in ("CHARGE+POTENTIAL", "ORBITALS"):
                             print(f"Generating {next_calc_type} from planned sequence...")
                             charge_potential_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
                             if charge_potential_calc_id:
@@ -2555,7 +2698,7 @@ fi'''
                     if band_calc_id:
                         new_calc_ids.append(band_calc_id)
                 
-        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             # These calculations are often terminal, but sometimes workflow continues.
             # None of them changes the geometry, so a later OPT is built from
             # the highest completed OPT (or SP), never from the step itself.
@@ -2800,7 +2943,7 @@ fi'''
         """
         base_type, _ = self._parse_calc_type(calc_type)
         
-        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             # Check for CRYSTALOptToD3.py script
             if 'crystal_to_d3' not in self.script_paths:
                 print(f"CRYSTALOptToD3.py script not found")
@@ -2883,7 +3026,7 @@ fi'''
                     return planned_sequence[i]
             return None
             
-        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
             # All D3 property calculations depend on SP or OPT (they consume the
             # fort.9 wavefunction) — NOT on whatever step happens to precede
             # them in the sequence. The old previous-step fallback made
@@ -2990,8 +3133,9 @@ fi'''
         for calc in all_calcs:
             if calc['calc_type'] == calc_type:
                 # Check if it's not in a terminal failed state that needs retry
-                # ('pending' = created but not yet submitted — still exists)
-                if calc['status'] in ['pending', 'submitted', 'running', 'completed']:
+                # ('pending' = created but not yet submitted, 'held' = waiting
+                # for a queue slot — both still exist)
+                if calc['status'] in ['pending', 'held', 'submitted', 'running', 'completed']:
                     return True
                 elif calc['status'] == 'failed':
                     # Could check if it's eligible for retry, but for now just say it exists
@@ -3046,7 +3190,7 @@ fi'''
                 dep_base, _ = self._parse_calc_type(dependency)
                 
                 # Special case: D3 calculations really need wavefunction
-                if base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL'] and dep_base == 'SP':
+                if base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS'] and dep_base == 'SP':
                     return False, dependency
                     
                 # For other cases, try to find alternative source
@@ -3183,6 +3327,14 @@ fi'''
         files_to_copy = [source_output_file, source_input_file]
         if original_input_file and original_input_file.exists():
             files_to_copy.append(original_input_file)
+        # A planned 2c restart ("soc_guess") reads the parent's density matrix:
+        # CRYSTALOptToD12 looks for <parent stem>.f9 next to the .out, and
+        # refuses the deck without it.
+        if self._get_plan_step_config(workflow_id, target_calc_type).get('soc_guess'):
+            from mace.workflow import guessp_chain
+            parent_f9 = guessp_chain.predecessor_f9(source_calc)
+            if parent_f9 is not None and parent_f9.stem == source_output_file.stem:
+                files_to_copy.append(parent_f9)
         
         work_dir = self.create_isolated_calculation_directory(
             material_id, f"{target_calc_type}_generation", files_to_copy
@@ -3466,6 +3618,12 @@ fi'''
             clean_name = f"{core_name}{suffix}.d12"
             final_location = step_dir / clean_name
             shutil.move(generated_input_file, final_location)
+            # A 2c restart deck (GUESSPSO/GUESSPNOSO) has its parent's matrix
+            # staged next to it as <deck stem>.f20; it moves with the deck,
+            # renamed to the job's name. Without it CRYSTAL stops on GUESSPSO
+            # (measured), so the step fails rather than leave such a deck.
+            if not self._move_staged_2c_guess(generated_input_file, final_location):
+                return None
             
             # Fix naming for numbered calculations if needed
             if target_num > 1:
@@ -3495,7 +3653,7 @@ fi'''
                 'parent_calc_id': source_calc_id
             }
             
-            if self._guessp_restart_enabled(workflow_id):
+            if self._guessp_restart_enabled(workflow_id) and not deck_has_2c_guess(final_location):
                 if self._stage_guessp_restart(source_calc, source_input_file,
                                               final_location, slurm_script_path,
                                               job_name):
@@ -3528,10 +3686,13 @@ fi'''
             
             # Submit if auto-submission is enabled
             if hasattr(self, 'auto_submit') and self.auto_submit:
-                job_id = self._submit_calculation_to_slurm(slurm_script_path, step_dir)
+                job_id = self._submit_calculation_to_slurm(slurm_script_path, step_dir, calc_id)
                 if job_id:
                     self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
                     print(f"Submitted {target_calc_type} calculation as job {job_id}: {final_location}")
+                elif self._was_held():
+                    print(f"Generated {target_calc_type} calculation {calc_id}: held, submitted as queue "
+                          f"slots free up")
                 else:
                     print(f"Generated {target_calc_type} calculation {calc_id} but submission failed: {final_location}")
             else:
@@ -3543,6 +3704,29 @@ fi'''
             # Clean up isolated directory
             shutil.rmtree(work_dir, ignore_errors=True)
             
+    @staticmethod
+    def _move_staged_2c_guess(generated_deck: Path, final_deck: Path) -> bool:
+        """Move the .f20 CRYSTALOptToD12 staged beside a 2c restart deck to
+        ``<final deck stem>.f20``. True when the deck asks for no 2c restart
+        or the file was moved; False (deck removed, reason printed) when the
+        deck asks for one and nothing was staged."""
+        from mace.utils.calc_detection import missing_2c_matrix_note, staged_2c_guess
+        staged = staged_2c_guess(final_deck)
+        if staged is None:
+            return True
+        record, _ = staged
+        source = Path(generated_deck).with_suffix('.f20')
+        target = Path(final_deck).with_suffix('.f20')
+        if not source.is_file() or source.stat().st_size == 0:
+            print(f"  {record}: no {source.name} was staged with {Path(generated_deck).name}; "
+                  f"{missing_2c_matrix_note(record)}, so "
+                  f"{Path(final_deck).name} is not kept")
+            Path(final_deck).unlink()
+            return False
+        shutil.move(str(source), str(target))
+        print(f"  {record}: the parent's density matrix moved with the deck as {target.name}")
+        return True
+
     def _guessp_restart_enabled(self, workflow_id: Optional[str]) -> bool:
         """The plan's opt-in ``execution_settings.guessp_restart`` (default off)."""
         plan = self._load_workflow_plan(workflow_id) if workflow_id else None
@@ -3714,7 +3898,7 @@ fi'''
             "workflow_complete": False
         }
         
-        calc_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT"]
+        calc_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "ORBITALS"]
         
         for calc_type in calc_types:
             type_calcs = [c for c in calculations if c['calc_type'] == calc_type]
@@ -3826,16 +4010,34 @@ fi'''
             return None
         return target
 
-    def process_completed_calculations(self) -> int:
+    def _is_own_database(self, workflow_id: str) -> bool:
+        """True when this engine's database is the workflow's own
+        (``.mace_context_<id>/materials.db``), where unstamped rows are its."""
+        path = getattr(self.db, 'db_path', None)
+        if not path:
+            return False
+        parent = Path(path).parent.name
+        return parent == f".mace_context_{workflow_id}" or parent.startswith(f"{workflow_id}_")
+
+    def process_completed_calculations(self, workflow_id: Optional[str] = None) -> int:
         """
         Process all recently completed calculations and trigger workflow steps.
-        
+
+        Args:
+            workflow_id: only the calculations of this workflow (``mace
+                workflow --resume``); None processes every one.
+
         Returns:
             Number of new workflow steps initiated
         """
-        # Get recently completed calculations that haven't been processed
-        completed_calcs = self.db.get_calculations_by_status('completed')
-        
+        # Get recently completed calculations that haven't been processed,
+        # oldest first: the material that finished first gets its next step
+        # first (the next steps are held and drained in that order)
+        completed_calcs = sorted(self.db.get_calculations_by_status('completed'),
+                                 key=lambda c: (c.get('completed_at') or c.get('created_at') or '',
+                                                c.get('created_at') or ''))
+        own_db = bool(workflow_id) and self._is_own_database(workflow_id)
+
         new_steps = 0
         for calc in completed_calcs:
             # Check if this calculation has already triggered workflow steps
@@ -3854,12 +4056,51 @@ fi'''
             # Held by the plan (auto_progression off): left unprocessed, so
             # `mace engine --action process` continues it later.
             held_id = settings.get('workflow_id') or os.environ.get('MACE_WORKFLOW_ID')
+            if workflow_id and held_id and held_id != workflow_id:
+                continue
+            # A shared database (the folder's materials.db) holds other runs
+            # too: only rows stamped with this workflow's id are its own.
+            if workflow_id and not settings.get('workflow_id') and not own_db:
+                continue
+            # Held by `mace workflow --pause/--cancel`: left unprocessed too.
+            if held_id and self._held_by_control(held_id, f"{calc['calc_type']} {calc['calc_id']}"):
+                continue
             if held_id and self._auto_progression_off(held_id):
                 self._print_held_by_plan(held_id, f"{calc['calc_type']} {calc['calc_id']}")
                 continue
-                
+            # Scoped to one workflow (`mace workflow --process/--resume`): a
+            # row of its own database without the stamp (the output scan
+            # records such rows) belongs to it, and the step generator
+            # finds the id through MACE_WORKFLOW_ID; with no plan to read,
+            # the row is left unprocessed so a later run can still start
+            # its next step.
+            env_patch = {}
+            if workflow_id and not settings.get('workflow_id') and own_db:
+                env_patch['MACE_WORKFLOW_ID'] = workflow_id
+                ctx_dir = Path(self.db.db_path).resolve().parent
+                if ctx_dir.name.startswith('.mace_context_'):
+                    env_patch['MACE_CONTEXT_DIR'] = str(ctx_dir)
+            if workflow_id and not self.get_workflow_sequence(held_id or workflow_id):
+                print(f"No workflow plan of {held_id or workflow_id} for {calc['calc_type']} "
+                      f"{calc['calc_id']}: left unprocessed.")
+                continue
+
             # Execute workflow step
-            new_calc_ids = self.execute_workflow_step(calc['material_id'], calc['calc_id'])
+            saved_env = {k: os.environ.get(k) for k in env_patch}
+            os.environ.update(env_patch)
+            self._held_by_cap = False
+            try:
+                new_calc_ids = self.execute_workflow_step(calc['material_id'], calc['calc_id'])
+            finally:
+                for k, v in saved_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+            if self._held_by_cap:
+                # the workflow's job maximum is reached: left unprocessed, a
+                # later completion step starts its next steps
+                continue
             
             if new_calc_ids:
                 new_steps += len(new_calc_ids)

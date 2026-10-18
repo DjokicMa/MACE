@@ -283,6 +283,11 @@ def job_text(v) -> str:
     if arr:
         by = ", ".join(f"{n} {st.lower()}" for st, n in sorted(arr["counts"].items()))
         out.append(f"Array {arr['array_job']}: {arr['total_in_queue']} task(s) in the queue" + (f" ({by})" if by else ""))
+    # 1.1.6: the queue wait (SLURM's estimate), the rest of the array, the rest of the workflow
+    for t in v.get("totals") or []:
+        out.append(t["text"])
+        if t.get("basis"):
+            out.append(f"  Based on: {t['basis']}")
     if v.get("live") and not (v["live"].get("rows") or []):
         out.append("Live use (sstat): " + ((v["live"].get("cache") or {}).get("error") or "no running steps"))
     out.append(f"More: {v['scontrol_command']}; in the GUI: Cluster view › Overview › Details.")

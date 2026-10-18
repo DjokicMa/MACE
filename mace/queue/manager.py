@@ -39,6 +39,7 @@ from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.database import dbsafety
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
+from mace.queue import budget
 from mace.utils import crystal_errors
 from mace.queue.slurm_ids import (
     ABSENT_WINDOW_SECONDS, Truncated, accounting_state_of_task, expand_queue_id,
@@ -47,7 +48,8 @@ from mace.queue.slurm_ids import (
     split_squeue_line, submissions, verified_array_task)
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
-    deck_records)
+    deck_records, empty_cube_reason, is_orbitals_output, orbitals_missing_reason, orbitals_molden_files,
+    two_component_guess)
 
 # Import lock manager for race condition prevention
 try:
@@ -75,6 +77,22 @@ def _array_search_dirs(manager, calc: Optional[Dict] = None) -> List[str]:
     if calc and calc.get('work_dir'):
         dirs.append(str(calc['work_dir']))
     return dirs
+
+
+def _orbitals_deck_refusal(deck) -> Optional[str]:
+    """Why an ORBITALS .d3 would fail (mace.submission.preflight's
+    orbitals_deck_problem), or None for any other deck."""
+    deck = Path(deck)
+    if deck.suffix.lower() != '.d3':
+        return None
+    from mace.submission.preflight import is_orbitals_deck, orbitals_deck_problem, read_deck
+    try:
+        text = read_deck(deck)
+    except OSError:
+        return None
+    if not is_orbitals_deck(text):
+        return None
+    return orbitals_deck_problem(deck, text)
 
 
 class EnhancedCrystalQueueManager:
@@ -316,13 +334,13 @@ class EnhancedCrystalQueueManager:
             elif calc_type == 'DOSS':
                 return str(self.script_paths.get('submit_prop_doss',
                           self.script_paths.get('submit_prop')))
-            elif calc_type in ['TRANSPORT', 'CHARGE+POTENTIAL']:
+            elif calc_type in ['TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
                 return str(self.script_paths.get('submit_prop'))
         else:
             # In repository context, use general scripts
             if calc_type in ['OPT', 'SP', 'FREQ']:
                 return str(self.script_paths.get('submitcrystal23'))
-            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
                 return str(self.script_paths.get('submit_prop'))
         
         return None
@@ -593,7 +611,7 @@ class EnhancedCrystalQueueManager:
 
         The records decide: a .d12 is OPT (OPTGEOM), FREQ (FREQCALC) or SP, a
         .d3 is TRANSPORT (BOLTZTRA), CHARGE+POTENTIAL (ECH3/POT3/ECHG/POTC),
-        DOSS or BAND. The file name only breaks a tie. MACE chains the type
+        ORBITALS, DOSS or BAND. The file name only breaks a tie. MACE chains the type
         into every follow-up name ("X_opt_..._optimized_sp_..._optimized",
         "..._optimized_charge+potential.d3"), so name substrings such as
         "_opt" read nearly every chained SP, FREQ and properties deck as OPT,
@@ -624,7 +642,7 @@ class EnhancedCrystalQueueManager:
                           material_id: str = None, prerequisite_calc_id: str = None,
                           job_script_override: Path = None,
                           carry_resources_from: Path = None,
-                          work_dir: Path = None) -> Optional[str]:
+                          work_dir: Path = None, stamp=None) -> Optional[str]:
         """
         Submit a calculation with material tracking.
 
@@ -642,17 +660,38 @@ class EnhancedCrystalQueueManager:
                 recovery so a fixed deck keeps the original job's resources.
             work_dir: The folder recorded for the calculation submitted
                 again (error recovery; create_calculation_folder).
+            stamp: ``stamp(calc_id, calc_type)`` writes the workflow settings
+                into the new row before it is submitted (the queue budget
+                reads the workflow's max_jobs from them).
 
         Returns:
             calc_id if successful, None if failed
         """
+        # A two-component restart (GUESSPSO/GUESSPNOSO) with no density
+        # matrix beside the deck would stop in CRYSTAL: not submitted.
+        from mace.submission.preflight import restart_file_problem
+        missing = restart_file_problem(d12_file)
+        if missing:
+            print(f"    Not submitting {Path(d12_file).name}: {missing}")
+            return None
+        # An ORBITALS deck known to fail (mace preflight's check): not submitted.
+        orbitals = _orbitals_deck_refusal(d12_file)
+        if orbitals:
+            print(f"    Not submitting {Path(d12_file).name}: {orbitals}")
+            return None
+
         material_id, calc_type, calc_dir, calc_input_file, calc_id = self._prepare_calculation(
             d12_file, calc_type, material_id, prerequisite_calc_id, work_dir=work_dir)
+        if stamp and calc_id:
+            stamp(calc_id, calc_type)
 
-        # Submit to SLURM
+        # Submit to SLURM (through the user-wide queue budget: a job that
+        # does not fit leaves this row held, and a drain submits it later)
         extra = {'carry_resources_from': carry_resources_from} if carry_resources_from else {}
-        slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
-                                            submit_script_override=job_script_override, **extra)
+        budget.clear_last()
+        with budget.row(self.db_path if self.enable_tracking else None, calc_id):
+            slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
+                                                submit_script_override=job_script_override, **extra)
 
         return self._record_submission(calc_id, calc_input_file, calc_dir, material_id,
                                        calc_type, slurm_job_id, job_script_override)
@@ -688,26 +727,27 @@ class EnhancedCrystalQueueManager:
                 )
                 
         # Create calculation folder (organized) or resolve in-place directory.
-        calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file,
-                                                  work_dir=work_dir)
-
-        # Determine file extension based on calculation type
-        is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
-        file_extension = '.d3' if is_d3_calc else '.d12'
+        # (a recovery resubmission passes the failed calculation's recorded folder: work_dir)
+        calc_dir, calc_input_file = self.submission_target(d12_file, calc_type, material_id, work_dir=work_dir)
 
         in_place = (not self.organize_outputs) and (not self.is_workflow_context)
-        if in_place:
-            # Submit the original file as-is: no copy, no rename, no extra subfolder.
-            calc_input_file = Path(d12_file).resolve()
-        else:
-            input_filename = f"{material_id}_{calc_type.lower()}{file_extension}"
-            calc_input_file = calc_dir / input_filename
+        if not in_place:
             # Copy input file to calculation directory. A recovery
             # resubmission can hand us the previous round's copy — the very
             # same path — and shutil then raised SameFileError, killing the
             # resubmission (phase-3 QA: 3,4^2T7_CA second memory bump).
             if Path(d12_file).resolve() != calc_input_file.resolve():
                 shutil.copy2(d12_file, calc_input_file)
+                # A 2c restart's staged matrix goes with its deck, renamed:
+                # the .f20, or for GUESSPSO without one the job's own .f9
+                # (what the job script stages as fort.20 for each).
+                staged = Path(d12_file).with_suffix('.f20')
+                own_f9 = Path(d12_file).with_suffix('.f9')
+                guess = two_component_guess(Path(d12_file).read_text(errors='replace'))
+                if staged.is_file() and guess:
+                    shutil.copy2(staged, calc_input_file.with_suffix('.f20'))
+                elif guess == 'GUESSPSO' and own_f9.is_file() and own_f9.stat().st_size > 0:
+                    shutil.copy2(own_f9, calc_input_file.with_suffix('.f9'))
         
         # Create calculation record
         calc_id = None
@@ -722,6 +762,22 @@ class EnhancedCrystalQueueManager:
             )
             print(f"    Enhanced QM: created calc_id='{calc_id}'")
         return material_id, calc_type, calc_dir, calc_input_file, calc_id
+
+    def submission_target(self, d12_file: Path, calc_type: str, material_id: str,
+                          work_dir: Path = None) -> Tuple[Path, Path]:
+        """(calculation folder, input file submitted) for a deck: the deck
+        itself in place, else <material_id>_<calc_type>.d12/.d3 in the
+        calculation folder (which the organized mode creates). ``work_dir``:
+        the folder recorded for a calculation being resubmitted (a workflow
+        step's own), as submit_calculation takes it."""
+        calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file,
+                                                  work_dir=work_dir)
+        if (not self.organize_outputs) and (not self.is_workflow_context):
+            # Submit the original file as-is: no copy, no rename, no extra subfolder.
+            return calc_dir, Path(d12_file).resolve()
+        is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']
+        file_extension = '.d3' if is_d3_calc else '.d12'
+        return calc_dir, calc_dir / f"{material_id}_{calc_type.lower()}{file_extension}"
 
     def _record_submission(self, calc_id, calc_input_file: Path, calc_dir: Path,
                            material_id: str, calc_type: str, slurm_job_id,
@@ -771,9 +827,27 @@ class EnhancedCrystalQueueManager:
             
             print(f"Submitted {calc_type} calculation for {material_id}: Job {slurm_job_id}")
             return calc_id
-        else:
-            print(f"Failed to submit calculation for {material_id}")
-            return None
+        outcome = budget.last_outcome()
+        if outcome is not None and outcome.held and self.enable_tracking and calc_id:
+            # Held under the queue budget: the row keeps the job script that
+            # a drain submits; it starts as slots free up.
+            if not job_script_override:
+                self._record_site_module(calc_id)
+            try:
+                submitted_script = Path(job_script_override) if job_script_override \
+                    else calc_dir / f"{calc_input_file.stem}.sh"
+                if submitted_script.exists():
+                    with self.db._get_connection() as conn:
+                        conn.execute("UPDATE calculations SET job_script = ? WHERE calc_id = ?",
+                                     (str(submitted_script), calc_id))
+            except Exception:
+                pass
+            why = budget.REASON_WORDS.get(outcome.reason, outcome.reason)
+            print(f"Held {calc_type} calculation for {material_id} ({why}): "
+                  f"it is submitted as queue slots free up")
+            return calc_id
+        print(f"Failed to submit calculation for {material_id}")
+        return None
             
     def _generate_batch_script(self, input_file: Path, work_dir: Path,
                                calc_type: str) -> Tuple[str, Optional[object]]:
@@ -803,7 +877,7 @@ class EnhancedCrystalQueueManager:
             job_name = input_file.stem
             script_path = Path(submit_script)
             print(f"  Running script generator: {script_path.name}")
-            site_gen, site_cleanup = self._site_generator(script_path, work_dir)
+            site_gen, site_cleanup = self._site_generator(script_path, work_dir, calc_type, input_file)
             if site_gen is None:
                 return 'single', None
             script_path = self._template_with_walltime(site_gen, work_dir) or site_gen
@@ -853,14 +927,11 @@ class EnhancedCrystalQueueManager:
         original_cwd = os.getcwd()
         try:
             os.chdir(work_dir)
-            result = subprocess.run(['sbatch', str(script)], capture_output=True, text=True)
-            if result.returncode == 0:
-                note_submission()
-                m = re.search(r'Submitted batch job (\d+)', result.stdout)
-                if m:
-                    return m.group(1)
-            else:
-                print(f"Error submitting batch file: {result.stderr}")
+            outcome = budget.sbatch(['sbatch', str(script)], work_dir)   # note_submission() inside
+            if outcome.submitted:
+                return outcome.job_id
+            if not outcome.held:
+                print(f"Error submitting batch file: {outcome.message}")
             return None
         finally:
             os.chdir(original_cwd)
@@ -885,7 +956,15 @@ class EnhancedCrystalQueueManager:
         from mace.submission import job_array
         results: List[Tuple[Optional[str], Optional[str]]] = []
         members, deferred, pending = [], [], []
+        from mace.submission.preflight import restart_file_problem
         for f in files:
+            # A two-component restart with no density matrix beside the deck
+            # would stop in CRYSTAL: not submitted (as in submit_calculation).
+            missing = restart_file_problem(f) or _orbitals_deck_refusal(f)
+            if missing:
+                print(f"    Not submitting {Path(f).name}: {missing}")
+                results.append((None, None))
+                continue
             try:
                 prep = self._prepare_calculation(Path(f))
             except Exception as e:
@@ -946,8 +1025,23 @@ class EnhancedCrystalQueueManager:
                         "submitted_time": datetime.now().isoformat()}
             self.save_legacy_status()
 
+        held_members = []
+
+        def hold_overflow(rest, reason='budget'):
+            # the tasks the queue budget has no room for: each row is held
+            # with its own job script, which a drain submits as a single job
+            for m in rest:
+                held_members.append(m)
+                if self.enable_tracking and m.calc_id:
+                    budget.hold_row(budget.RowRef(str(Path(self.db_path).resolve()), m.calc_id), reason,
+                                    ['sbatch'] + [str(Path(m.script).resolve())], Path(m.dir).resolve())
+                    with self.db._get_connection() as conn:
+                        conn.execute("UPDATE calculations SET job_script = ? WHERE calc_id = ?",
+                                     (str(m.script), m.calc_id))
+
         try:
-            subs = job_array.submit_prepared(prepared, record_rows) if prepared else []
+            subs = job_array.submit_prepared(prepared, record_rows, on_overflow=hold_overflow) \
+                if prepared else []
         except (job_array.ArrayRefusal, job_array.ArraySubmitError) as e:
             print(f"Error: {e}")
             hint = job_array.invalid_account_hint(str(e))
@@ -957,6 +1051,10 @@ class EnhancedCrystalQueueManager:
                   "are recorded without a job id.")
             return results + [(m.calc_id, None) for m in members] + \
                 [(p[4], None) for p in deferred]
+        if held_members:
+            print(f"Held {len(held_members)} calculation(s) under the queue budget "
+                  f"({budget.resolve(quiet=True).describe()}); they are submitted as slots free up")
+            results.extend((m.calc_id, None) for m in held_members)
         for p in subs:
             for i, m in enumerate(p.members):
                 material_id, calc_type = m.data['prep'][0], m.data['prep'][1]
@@ -965,30 +1063,42 @@ class EnhancedCrystalQueueManager:
         for m, reason in singles:
             material_id, calc_type, calc_dir, calc_input_file, calc_id = m.data['prep']
             print(f"  {calc_input_file.name}: {reason}")
-            job_id = self._sbatch_generated(Path(m.script), Path(calc_dir))
+            budget.clear_last()
+            with budget.row(self.db_path if self.enable_tracking else None, calc_id):
+                job_id = self._sbatch_generated(Path(m.script), Path(calc_dir))
             results.append((calc_id, job_id if self._record_submission(
                 calc_id, calc_input_file, calc_dir, material_id, calc_type, job_id) else None))
         for material_id, calc_type, calc_dir, calc_input_file, calc_id in deferred:
-            job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type)
+            budget.clear_last()
+            with budget.row(self.db_path if self.enable_tracking else None, calc_id):
+                job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type)
             results.append((calc_id, job_id if self._record_submission(
                 calc_id, calc_input_file, calc_dir, material_id, calc_type, job_id) else None))
         job_array.summarize(subs, singles, max_running)
         return results
 
-    def _site_generator(self, script_path: Path, work_dir: Path):
+    def _site_generator(self, script_path: Path, work_dir: Path, calc_type: Optional[str] = None,
+                        deck: Optional[Path] = None):
         """(generator, cleanup): MACE's own template with this site's account,
         partition and modules (mace/submission/site.py), as a copy beside the
         job when anything differs; any other script as it is. Inside a SLURM
         job (a completion callback) the CRYSTAL module is the one the job
         loaded, never a new probe. (None, cleanup) when a site setting is
-        invalid: nothing is generated."""
+        invalid: nothing is generated. ``calc_type`` adds its
+        [resources.<TYPE>] table; ``deck`` its size-aware suggestion when
+        the site turned them on ([resources] auto)."""
         self._last_site_resolution = None
         try:
             from mace.submission import site
         except ImportError:          # pragma: no cover
             return script_path, (lambda: None)
         try:
-            gen, cleanup, res = site.generator_for(script_path, None, work_dir)
+            auto = None
+            if deck is not None:
+                deck_path = Path(deck) if Path(deck).is_absolute() else Path(work_dir) / Path(deck).name
+                auto = site.auto_for(deck_path, None, calc_type)
+                site.say_suggestion(auto, [deck_path.name])
+            gen, cleanup, res = site.generator_for(script_path, None, work_dir, calc_type=calc_type, auto=auto)
         except site.SiteConfigError as e:
             print(f"Error: {e}")
             return None, (lambda: None)
@@ -1140,13 +1250,15 @@ class EnhancedCrystalQueueManager:
                 # the #SBATCH lines and then submits, so rewriting the generated
                 # file afterwards would be too late. Only the -t line is touched,
                 # leaving ntasks/memory/account from the template intact.
-                site_gen, site_cleanup = self._site_generator(script_path, work_dir)
+                site_gen, site_cleanup = self._site_generator(script_path, work_dir, calc_type, input_file)
                 if site_gen is None:
                     return None
                 try:
                     script_path = self._template_with_walltime(site_gen, work_dir) or site_gen
                     cmd = ['bash', str(script_path), job_name]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    # a generator that runs sbatch itself goes through the queue budget too
+                    result = budget.run_generator(
+                        lambda env: subprocess.run(cmd, capture_output=True, text=True, env=env), work_dir)
                 finally:
                     site_cleanup()
                 
@@ -1167,13 +1279,11 @@ class EnhancedCrystalQueueManager:
                             if carry:
                                 self._carry_resources(carry[0], carry[1], generated_script)
                             self._export_db_path(generated_script)
-                            cmd = ['sbatch', str(generated_script)]
-                            result = subprocess.run(cmd, capture_output=True, text=True)
-                            if result.returncode == 0:
-                                note_submission()
-                                job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
-                                if job_id_match:
-                                    return job_id_match.group(1)
+                            outcome = budget.sbatch(['sbatch', str(generated_script)], work_dir)  # note_submission()
+                            if outcome.submitted:
+                                return outcome.job_id
+                            if not outcome.held:
+                                print(f"Error submitting batch file: {outcome.message}")
                         return None
                 else:
                     print(f"Error running script generator: {result.stderr}")
@@ -1188,26 +1298,21 @@ class EnhancedCrystalQueueManager:
                 # (raising PermissionError that gets swallowed upstream, so recovery
                 # silently never resubmits). Submit via sbatch and parse the job id.
                 print(f"  Submitting SLURM batch file via sbatch: {script_path.name}")
-                cmd = ['sbatch', str(script_path)]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-
-                if result.returncode == 0:
-                    note_submission()
-                    job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
-                    if job_id_match:
-                        return job_id_match.group(1)
-                    else:
-                        print(f"Could not extract job ID from: {result.stdout.strip()}")
-                        return None
-                else:
-                    print(f"Error submitting batch file: {result.stderr}")
-                    return None
+                outcome = budget.sbatch(['sbatch', str(script_path)], work_dir)   # note_submission() inside
+                if outcome.submitted:
+                    if not outcome.job_id:
+                        print(f"Could not extract job ID from: {outcome.stdout.strip()}")
+                    return outcome.job_id
+                if not outcome.held:
+                    print(f"Error submitting batch file: {outcome.message}")
+                return None
 
             else:
                 # A self-submitting executable script (legacy path) - run it directly.
                 print(f"  Submitting SLURM script: {script_path.name}")
                 cmd = [str(script_path), job_name]
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = budget.run_generator(
+                    lambda env: subprocess.run(cmd, capture_output=True, text=True, env=env), work_dir)
 
                 if result.returncode == 0:
                     if 'Submitted batch job' in result.stdout:      # the script ran sbatch itself
@@ -1808,6 +1913,15 @@ class EnhancedCrystalQueueManager:
         print(f"Handling failed calculation: {calc_id} (SLURM state: {slurm_state})")
         calc, error_type, error_message = self._record_failure(calc['calc_id'], slurm_state, calc)
 
+        # `mace workflow --pause/--cancel`: the failure is recorded, nothing
+        # is resubmitted (after --resume, mace recover --calc-id runs it by hand).
+        held = self._workflow_hold(calc)
+        if held:
+            print(f"Workflow {held[0]} is {held[1]}: {calc['calc_id']} is recorded as failed and not "
+                  f"recovered now (mace workflow --resume {held[0]}, then mace recover --calc-id "
+                  f"{calc['calc_id']})")
+            return False
+
         # Attempt automatic error recovery
         if self.enable_error_recovery and self.error_recovery_engine:
             recovery_success = self.attempt_error_recovery(calc, error_type, error_message)
@@ -1973,6 +2087,19 @@ class EnhancedCrystalQueueManager:
                                   if l.strip().startswith('ERROR ****')), None)
             if crystal_error:
                 return "unknown_error", f"CRYSTAL: {crystal_error}"
+            # An ORBITALS run that ended normally without its Molden files
+            # (CRYSTAL can, after an ORBITALS input error)
+            try:
+                deck = Path(output_file).with_suffix('.d3').read_text(errors='ignore')
+                is_orb = d3_calc_type(deck_records(deck, is_d3=True)) == 'ORBITALS'
+            except OSError:
+                is_orb = is_orbitals_output(content)
+            missing = orbitals_missing_reason(output_file) if is_orb else None
+            if missing:
+                return "orbitals_no_files", missing
+            empty = empty_cube_reason(output_file)
+            if empty:
+                return "cube_empty", empty
             if 'MPI_ABORT' in content_upper:
                 return ("unknown_error",
                         "CRYSTAL stopped with MPI_Abort and printed no error: under Pcrystal an "
@@ -2018,29 +2145,37 @@ class EnhancedCrystalQueueManager:
         except Exception:
             return 0
 
-    def attempt_error_recovery(self, calc: Dict, error_type: str, error_message: str) -> bool:
+    # Error types with an automatic recovery. disk_space_error routes to the
+    # engine's cleanup_handler (frees scratch >100MB, protecting wavefunction
+    # files) -- previously 'DISK FULL' was lumped into io_error and excluded
+    # here, so the advertised disk-space recovery was unreachable.
+    # `mace recover` reads the same list.
+    RECOVERABLE_ERRORS = ('shrink_error', 'memory_error', 'convergence_error',
+                          'timeout_error', 'scf_error', 'disk_space_error',
+                          'opt_trust_radius_error', 'finalrun_loop',
+                          'opt_unconverged_error')
+
+    def attempt_error_recovery(self, calc: Dict, error_type: str, error_message: str,
+                               reuse_job_script: bool = False) -> bool:
         """
         Attempt automatic error recovery for a failed calculation.
-        
+
         Args:
             calc: Calculation record from database
             error_type: Type of error detected
             error_message: Error message details
-            
+            reuse_job_script: `mace recover`: when the fix leaves the job
+                script alone, submit the <job>.sh already beside the deck
+                instead of writing it again from the template (as `mace
+                submit` does without --overwrite-sh).
+
         Returns:
             bool: True if recovery was successful and job resubmitted, False otherwise
         """
         calc_id = calc['calc_id']
-        
-        # Check if error type is recoverable. disk_space_error routes to the
-        # engine's cleanup_handler (frees scratch >100MB, protecting wavefunction
-        # files) -- previously 'DISK FULL' was lumped into io_error and excluded
-        # here, so the advertised disk-space recovery was unreachable.
-        recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error',
-                              'timeout_error', 'scf_error', 'disk_space_error',
-                              'opt_trust_radius_error', 'finalrun_loop',
-                              'opt_unconverged_error']
-        if error_type not in recoverable_errors:
+
+        # Check if error type is recoverable.
+        if error_type not in self.RECOVERABLE_ERRORS:
             why = next((c.no_recovery for c in crystal_errors.ERROR_CLASSES
                         if c.error_type == error_type and c.no_recovery), None)
             print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}"
@@ -2093,6 +2228,7 @@ class EnhancedCrystalQueueManager:
                     calc,
                     fixed_input=recovery.get('fixed_input_file'),
                     fixed_job_script=recovery.get('fixed_job_script'),
+                    reuse_job_script=reuse_job_script,
                 ):
                     print(f"🚀 Successfully resubmitted recovered job for {calc_id}")
                     return True
@@ -2154,7 +2290,8 @@ class EnhancedCrystalQueueManager:
         except Exception as e:
             print(f"Warning: Could not update recovery attempt count for {calc_id}: {e}")
     
-    def resubmit_fixed_calculation(self, calc: Dict, fixed_input=None, fixed_job_script=None) -> bool:
+    def resubmit_fixed_calculation(self, calc: Dict, fixed_input=None, fixed_job_script=None,
+                                   reuse_job_script: bool = False) -> bool:
         """Resubmit a calculation after error recovery.
 
         Args:
@@ -2201,6 +2338,16 @@ class EnhancedCrystalQueueManager:
                                 break
                 if d12_file is None:
                     d12_file = d12_files[0]
+
+            if reuse_job_script and not fixed_job_script:
+                # The script the template would write already exists: submit
+                # it as it is (never replaced without --overwrite-sh).
+                _, target = self.submission_target(d12_file, calc.get('calc_type'),
+                                                   calc.get('material_id'), work_dir=work_dir)
+                existing = target.with_suffix('.sh')
+                if existing.is_file():
+                    print(f"  Reusing the existing job script {existing.name}")
+                    fixed_job_script = existing
 
             # Submit the calculation using existing submit logic
             # (submit_single_calculation never existed on this class —
@@ -2354,7 +2501,7 @@ class EnhancedCrystalQueueManager:
             'log': ['*.log', '*.err'],
             'property': ['*.dat', '*.csv'],
             'wavefunction': ['*.f9', 'fort.9'],
-            'plot': ['*.png', '*.pdf']
+            'plot': ['*.png', '*.pdf'],
         }
         
         for file_type, patterns in file_patterns.items():
@@ -2366,6 +2513,22 @@ class EnhancedCrystalQueueManager:
                         file_name=file_path.name,
                         file_path=str(file_path)
                     )
+        # ORBITALS: the Molden files this run wrote (an index only; the GUI and
+        # mace plotting read them, the database stores no grids). Only this
+        # calculation's own <stem>_orb... files: a folder-wide *.molden gave
+        # every calculation a row for every ORBITALS job's files.
+        run_file = calc.get('output_file') or calc.get('input_file')
+        if run_file and str(calc.get('calc_type') or '').upper().startswith('ORBITALS'):
+            run_path = Path(run_file)
+            if not run_path.is_absolute():
+                run_path = work_dir / run_path
+            for file_path in orbitals_molden_files(run_path):
+                self.db.add_file_record(
+                    calc_id=calc_id,
+                    file_type='orbitals',
+                    file_name=file_path.name,
+                    file_path=str(file_path)
+                )
                     
     def extract_and_store_input_settings(self, calc: Dict):
         """Extract input settings and store directly in materials database."""
@@ -2408,6 +2571,24 @@ class EnhancedCrystalQueueManager:
         # For now, just placeholder
         print(f"TODO: Extract properties from {calc['calc_id']}")
         
+    def _workflow_hold(self, calc: Dict):
+        """(workflow id, 'paused'|'canceled') when the calculation's workflow
+        is held by its control file (mace/workflow/control.py), else None."""
+        try:
+            settings = json.loads(calc.get('settings_json') or '{}')
+        except (json.JSONDecodeError, TypeError):
+            settings = {}
+        wid = (settings.get('workflow_id') if isinstance(settings, dict) else None) \
+            or os.environ.get('MACE_WORKFLOW_ID')
+        if not wid:
+            return None
+        try:
+            from mace.workflow.control import held_state
+            state = held_state(wid, [getattr(self, 'workflow_root', None), self.d12_dir, Path.cwd()])
+        except Exception:
+            return None
+        return (wid, state) if state else None
+
     def _belongs_to_workflow(self, calc: Dict) -> bool:
         """Whether ``calc`` was submitted as part of a planned workflow.
 
@@ -2914,41 +3095,74 @@ class EnhancedCrystalQueueManager:
                 self.extract_and_store_properties(fresh)
                 self.update_material_information(fresh)
 
+    def _completion_steps(self):
+        """The completion callback's own work: record results, recover
+        failures, progress the workflow (submissions are held by the caller
+        and drained afterwards)."""
+        # First, populate database with any completed jobs not yet tracked
+        if self.is_workflow_context:
+            self._populate_completed_jobs_from_outputs()
+
+        self.check_queue_status()
+
+        # Another job's optimization may be looping on FINALRUN: the
+        # completion callbacks are what runs in an unattended workflow.
+        self.recover_running_finalrun_loops()
+
+        # In workflow context, use workflow engine for progression instead of basic D12 processing
+        if self.is_workflow_context and self.workflow_enabled:
+            self._trigger_workflow_progression()
+            # A job array task holding the lock: its siblings, which end
+            # together with it, may have recorded their results while it
+            # ran; chain those too before letting go.
+            if verified_array_task():
+                self._trigger_workflow_progression()
+        else:
+            # Manual run: record status and stop. This used to fall through
+            # to process_new_d12_files(), which globs **/*.d12 and submits
+            # every deck with no DB record — so the SP/D3 the user had just
+            # generated by hand got submitted the moment an unrelated job
+            # finished. Keeping the queue fed is what `mace manager` and
+            # `--callback-mode submit_new` are for; both still do it. (Held
+            # jobs are still submitted: that is the queue drain, not progression.)
+            print("  Manual submission (no workflow plan) - status recorded, "
+                  "no follow-up jobs submitted.")
+
+    def _drain_queue(self):
+        """Submit held jobs (this database's and every active workflow's)
+        while the user-wide queue budget has room; never fails the callback."""
+        if not self.enable_tracking:
+            return
+        try:
+            # a short wait for the budget lock: its holder is submitting
+            # anyway, and a later completion or drain releases what is held
+            rep = budget.drain(dbs=[self.db_path], out=lambda m: print(m), timeout=20)
+        except Exception as e:
+            if dbsafety.is_busy(e):
+                raise
+            print(f"  Queue drain skipped: {e}")
+            return
+        released, held = len(rep.get("released") or []), sum((rep.get("held") or {}).values())
+        if not rep.get("lock", True):
+            print("  Queue drain skipped: another MACE process holds the queue budget lock")
+        elif released or held:
+            print(f"  Queue: submitted {released} held job(s); {held} still held "
+                  f"({rep.get('used')} of {rep.get('budget')} queued)")
+
     def _run_callback_check_locked(self, mode='completion'):
         """Internal callback implementation with lock protection."""
         print(f"\n=== Queue Manager Callback ({mode}) - {datetime.now()} ===")
         
         if mode == 'completion':
-            # Job completion callback - check status and trigger workflow progression
-            
-            # First, populate database with any completed jobs not yet tracked
-            if self.is_workflow_context:
-                self._populate_completed_jobs_from_outputs()
-            
-            self.check_queue_status()
-
-            # Another job's optimization may be looping on FINALRUN: the
-            # completion callbacks are what runs in an unattended workflow.
-            self.recover_running_finalrun_loops()
-            
-            # In workflow context, use workflow engine for progression instead of basic D12 processing
-            if self.is_workflow_context and self.workflow_enabled:
-                self._trigger_workflow_progression()
-                # A job array task holding the lock: its siblings, which end
-                # together with it, may have recorded their results while it
-                # ran; chain those too before letting go.
-                if verified_array_task():
-                    self._trigger_workflow_progression()
-            else:
-                # Manual run: record status and stop. This used to fall through
-                # to process_new_d12_files(), which globs **/*.d12 and submits
-                # every deck with no DB record — so the SP/D3 the user had just
-                # generated by hand got submitted the moment an unrelated job
-                # finished. Keeping the queue fed is what `mace manager` and
-                # `--callback-mode submit_new` are for; both still do it.
-                print("  Manual submission (no workflow plan) - status recorded, "
-                      "no follow-up jobs submitted.")
-            
+            # Job completion callback - check status and trigger workflow progression.
+            # Every job this callback makes (recovery resubmissions, next steps)
+            # is held first and then submitted by the queue drain below, in the
+            # [queue] order, together with the held work of every workflow.
+            with budget.deferred():
+                self._completion_steps()
+            if os.environ.get('SLURM_JOB_ID'):
+                budget.job_is_ending()       # this job ends with this callback
+            self._drain_queue()
         elif mode == 'early_failure':
             # Early failure detection
             self.check_early_job_failure()
@@ -2957,14 +3171,17 @@ class EnhancedCrystalQueueManager:
             # General status check
             self.check_queue_status()
             self.recover_running_finalrun_loops()
+            self._drain_queue()
             
         elif mode == 'submit_new':
             # Submit new jobs if capacity available
             self.process_new_d12_files()
+            self._drain_queue()
             
         elif mode == 'full_check':
             # Full monitoring cycle
             self.run_monitoring_cycle()
+            self._drain_queue()
             
         # Print status summary (a full_check's monitoring cycle has printed it)
         if self.enable_tracking and mode != 'full_check':
@@ -3106,16 +3323,17 @@ def main():
         help="Directory containing .d12 files (default: current directory)"
     )
     parser.add_argument(
-        "--max-jobs", 
-        type=int, 
-        default=250, 
-        help="Maximum running+pending jobs of yours in the queue (default: 250)"
+        "--max-jobs",
+        type=int,
+        default=None,
+        help="Old queue limit (a job script's line): at most max_jobs - reserve jobs of yours "
+             "queued, or your queue budget ([queue] in site.toml) when that is smaller"
     )
     parser.add_argument(
-        "--reserve", 
-        type=int, 
-        default=30, 
-        help="Number of job slots to reserve (default: 30)"
+        "--reserve",
+        type=int,
+        default=None,
+        help="Job slots --max-jobs leaves free (see --max-jobs)"
     )
     parser.add_argument(
         "--db-path", 
@@ -3167,12 +3385,22 @@ def main():
     )
 
     args = parser.parse_args()
+    # A job script's --max-jobs/--reserve (1.1.5/1.1.6 write 950/50): the
+    # queue budget is the smaller of max_jobs - reserve and the site budget.
+    if args.max_jobs is not None:
+        budget.set_legacy_cap(args.max_jobs, args.reserve or 0)
+        max_jobs, reserve = args.max_jobs, args.reserve or 0
+    else:
+        if args.reserve is not None:
+            print("Warning: --reserve is ignored without --max-jobs: the queue budget applies. Set the reserve with [queue] reserve in site.toml (mace queue status shows it), or pass --max-jobs N too.", file=sys.stderr)
+        cfg = budget.resolve(quiet=True)
+        max_jobs, reserve = cfg.budget + cfg.reserve, cfg.reserve
 
     # Create queue manager
     manager = EnhancedCrystalQueueManager(
         d12_dir=args.d12_dir,
-        max_jobs=args.max_jobs,
-        reserve_slots=args.reserve,
+        max_jobs=max_jobs,
+        reserve_slots=reserve,
         db_path=args.db_path,
         enable_tracking=not args.disable_tracking,
         enable_error_recovery=not args.disable_error_recovery,

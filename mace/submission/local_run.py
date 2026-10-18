@@ -69,7 +69,7 @@ STOP_MARK = "mace run: STOPPED"     # completion_checker reads this line in the 
 # What the job script can take: it uses $DIR/$JOB unquoted, as under SLURM.
 # '+' is in MACE's own names (<base>_charge+potential.d3).
 PATH_OK = re.compile(r"^[A-Za-z0-9._+,=^/-]+$")
-PROP_TYPE_RE = re.compile(r"(charge\+potential|transport|potential|charge|band|doss)\d*",
+PROP_TYPE_RE = re.compile(r"(charge\+potential|transport|potential|charge|orbitals|band|doss)\d*",
                           re.IGNORECASE)
 PARENT_SUFFIXES = ("_opt", "_sp", "_OPT", "_SP")      # what opt2d3 strips
 # Point the queue manager at a workflow context database or plan; never

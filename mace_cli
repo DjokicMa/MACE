@@ -582,25 +582,33 @@ def show_recover_action_help(action):
     """Show help for a specific recover action"""
     action_help = {
         'recover': """
-Usage: mace recover --action recover [options]
+Usage: mace recover [--action recover] [options]
 
-Detect errors in failed tracked calculations and prepare fixed inputs and
-job scripts. Nothing is submitted: submit them with mace submit (the exact
-commands are printed at the end), or let the queue manager resubmit
-tracked runs.
+Find the failed tracked calculations, classify each failure, show a table
+(calculation, error class, proposed fix, retries used of the limit) and,
+after a confirmation (or --yes), apply the fixes and resubmit them through
+the queue manager's own recovery path.
 
 Options:
-  --max-recoveries N    Maximum total recovery attempts (default: 10)
+  --dry-run             Show the diff of every file a fix would write and the
+                        sbatch command; change and submit nothing
+  --yes, -y             Apply and resubmit without asking
+  --calc-id ID          Only this calculation (repeat or comma-separate)
+  --dir PATH            Only calculations whose work folder is inside PATH
+  --errors CLASS,...    Only these error classes (oom, scf, time_limit, ...)
+  --include-stale       With --yes: also jobs that ended more than
+                        MACE_RECOVER_MAX_AGE_DAYS (default 3) days ago
+  --overwrite-sh        Write the job script again from the template
+  --max-recoveries N    Resubmit at most N calculations (default: 10)
+  --prepare-only        Only write the fixed files and print the commands
   --db PATH             Database path
   --config FILE         Recovery configuration file
 
 Auto-recoverable errors:
-  - SHRINK factor issues
-  - Memory allocation failures
-  - SCF convergence problems
-  - Walltime / timeout
-  - Disk-space (scratch cleanup)
-(Basis-set issues are flagged for MANUAL intervention, not auto-recovered.)
+  - Memory (OOM kills), walltime, SCF convergence, SHRINK factors
+  - Unconverged optimizations, FINALRUN loops, collapsed step size
+  - Disk space (scratch cleanup)
+(Geometry, basis-set, scratch and I/O errors need a person: the table says why.)
 """,
         'stats': """
 Usage: mace recover --action stats
@@ -637,6 +645,9 @@ Write the default error-recovery configuration file (equivalent to
 # Commands handed straight to a script's own argparse: `mace X --help` is
 # that script's help (examples included), named `mace X` by argv[0].
 PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions')
+# Commands mace_cli hands to a module of its own before any parsing here
+# (`mace update`: standard library only); `mace X --help` is that module's.
+MODULE_HELP_COMMANDS = ('update',)
 
 
 # ------------------------------------------------------------ command registry
@@ -645,7 +656,7 @@ PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion',
 # (e.g. `site check`) goes in that command's one-liner here.
 COMMANDS = ['workflow', 'submit', 'run', 'site', 'preflight', 'preopt', 'mlip', 'defects', 'phonopy', 'monitor',
             'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions', 'completion', 'status', 'queue',
-            'manager', 'recover', 'database', 'engine', 'plotting', 'gui', 'cluster', 'help', 'credits', 'version']
+            'manager', 'recover', 'database', 'engine', 'plotting', 'gui', 'cluster', 'help', 'credits', 'version', 'update']
 
 # (key for `mace help KEY`, title, purpose or "", [(command, one-liner, extra lines)])
 COMMAND_GROUPS = (
@@ -653,7 +664,8 @@ COMMAND_GROUPS = (
         ("workflow", "Plan and run multi-step workflows - OPT, SP, BAND/DOSS, FREQ...", ()),
         ("engine", "Advance workflows: process finished runs, submit the next step", ()),
         ("manager", "Tracking queue manager - materials.db records, submission cycles", ()),
-        ("recover", "Prepare fixes for failed tracked runs (SHRINK, memory, SCF)", ()),
+        ("recover", "Fix failed tracked runs and resubmit them (memory, SCF, walltime)", ()),
+        ("queue", "Your queue budget: submit held jobs (drain) or show it (status)", ()),
     ]),
     ("monitoring", "Monitoring", "your calculations and the cluster", [
         ("monitor", "What MACE tracks (materials.db) - live dashboard, or --status", ()),
@@ -671,7 +683,7 @@ COMMAND_GROUPS = (
     ]),
     ("results", "Results", "extract, analyze, plot and query", [
         ("analyze", "Outputs into materials.db (gaps, energies); --convergence FILE", ()),
-        ("plotting", "Plots - bands, DOS, structures, cube volumetrics, FREQ, IR/Raman", ()),
+        ("plotting", "Plots - bands, DOS, structures, cubes, orbitals, FREQ, IR/Raman", ()),
         ("database", "Query materials.db - search, compare, export (CSV, Excel, ...)", ()),
     ]),
     ("special", "Special systems and structure tools", "", [
@@ -689,14 +701,14 @@ COMMAND_GROUPS = (
             "diagnostics  the server's part of a bug report (no GUI needed)")),
     ]),
     ("setup", "Setup and information", "run `mace site` first on a new cluster", [
-        ("site", "Show the site settings for job scripts (--init, check)", ()),
+        ("site", "Show job-script site settings (--init, check, set/unset, suggest)", ()),
         ("help", "This list, one group (mace help monitoring) or one command", ()),
         ("version", "Show the MACE version (same as --version)", ()),
+        ("update", "Update MACE (and a cluster's) to a release, preview or main", ()),
         ("credits", "Show the development team (same as --credits)", ()),
     ]),
     ("aliases", "Aliases and deprecated", "(they keep working)", [
         ("status", "Same as 'mace monitor --status'", ()),
-        ("queue", "Deprecated - use 'mace manager'", ()),
     ]),
 )
 
@@ -762,7 +774,23 @@ Options:
   --interactive         Start interactive workflow planning
   --quick-start         Quick start with predefined templates
   --execute FILE        Execute a saved workflow plan
-  --status              Check workflow status
+  --status [ID]         Check workflow status; with an ID, that workflow's
+                        steps per material (planned/waiting/queued/running/
+                        completed/failed/blocked/paused/...)
+  --list                List the workflows planned in the folder and their state
+  --spec SPEC           Check a workflow spec (JSON): each step's settings and
+                        resources with where they come from; nothing written
+  --write-plan          With --spec: write the plan and print the launch command
+  --pause ID            Record completions, submit nothing (no next steps, no
+                        recovery jobs)
+  --resume ID           Lift a pause and start the steps held meanwhile
+  --cancel ID           Stop the workflow and scancel its own queued/running
+                        jobs (lists them and asks first; --yes does not ask)
+  --process ID          Start the next steps whose completion step did not run
+                        (a job finished, nothing was submitted after it); this
+                        workflow only, and not while it is paused or canceled
+  --json                One JSON document on stdout (--status ID, --list,
+                        --spec, --pause, --resume, --cancel, --process)
   --show-templates      Display available workflow templates
   --cif-dir DIR         Directory containing CIF files (for quick start)
   --d12-dir DIR         Directory containing D12 files (for quick start)
@@ -771,7 +799,8 @@ Options:
                         charge_analysis, combined_analysis (default: full_electronic)
   --work-dir DIR        Working directory (default: current directory)
   --db-path PATH        Database path (default: materials.db)
-  --max-jobs N          Maximum concurrent jobs (default: 200)
+  --max-jobs N          At most N of this workflow's jobs queued at once
+                        (default: none; all workflows share your queue budget)
   --array               Submit the first step as SLURM job arrays: materials
                         whose job scripts ask for exactly the same resources
                         share one array, one task per material. Later steps are
@@ -787,6 +816,11 @@ Examples:
   mace workflow --status
   mace workflow --show-templates
   mace workflow --quick-start --d12-dir ./decks --workflow opt_sp --array --max-running 10
+  mace workflow --spec spec.json --write-plan
+  mace workflow --list
+  mace workflow --status workflow_20261015_101500_3fa2 --json
+  mace workflow --pause workflow_20261015_101500_3fa2
+  mace workflow --process workflow_20261015_101500_3fa2
 """,
     'submit': """
 Usage: mace submit [file_or_directory] [options]
@@ -811,6 +845,9 @@ Options:
                        configure every step yourself. Implies --track.
                        Without it, a manual submission runs exactly what you
                        submitted and nothing else.
+  --progress-plan PLAN Submit these decks as the first step of a plan written by
+                       `mace workflow --spec SPEC --write-plan`; they then
+                       progress as that plan says. Implies --track.
   --array              Submit the decks as SLURM job arrays: decks whose job
                        scripts ask for exactly the same resources share one
                        array, one task per deck. A deck whose request no other
@@ -818,6 +855,9 @@ Options:
   --max-running N      With --array: at most N tasks of each array run at once
                        (--array=0-M%N). The limit is per array; recovery
                        resubmissions are normal jobs and are not limited.
+  --yes, -y            Without --track: submit the decks that do not fit in your
+                       queue budget (mace queue) from the reserve without asking.
+                       With --track they are held and submitted as slots free up.
 
 Node Exclusion Options (mutually exclusive):
   --exclude-type TYPE  Exclude all nodes named TYPE-<number> (e.g. TYPE node)
@@ -876,6 +916,10 @@ mace site - Show the site settings MACE writes into the job scripts it generates
 Usage:
   mace site [--json] [--refresh] [--init]
   mace site check [--partition P] [--account A] [--kind scf|prop|both] [--no-sbatch] [--json]
+  mace site set KEY VALUE      (e.g. mace site set resources.ntasks 16)
+  mace site unset KEY
+  mace site set --folder [DIR] KEY VALUE   (a project folder's mace-folder.toml)
+  mace site unset --folder [DIR] KEY
 
 The SLURM account, partition, QOS, constraint and extra directives, the job
 size, how CRYSTAL is started (mpirun or srun), the CRYSTAL module (with a
@@ -885,8 +929,14 @@ environment (MACE_SLURM_ACCOUNT, MACE_SLURM_PARTITION, MACE_CRYSTAL_MODULE,
 ...), then ~/.config/mace/site.toml (MACE_SITE_CONFIG names another file),
 then group files (/etc/mace/site.toml, or MACE_SITE_GROUP_CONFIG), then the
 built-in values. mace site check tests them on this cluster (with sbatch
---test-only) before your first real job. MACE submits with SLURM only (PBS,
-Torque and LSF: MACE 1.2 or later). See docs/cli.md, "Site settings".
+--test-only) before your first real job. mace site set / unset change one
+key of your site.toml (resources.ntasks, resources.properties.ntasks,
+resources.FREQ.walltime, slurm.account, ...), keeping its comments.
+With --folder [DIR] (default: here) they change the folder's
+mace-folder.toml instead, as the GUI's Settings > Save to this folder does
+(plots.energy_window -3,5; units.energy meV; submit.walltime 1-00).
+MACE submits with SLURM only (PBS, Torque and LSF: MACE 1.2 or later).
+See docs/cli.md, "Site settings".
 """,
     'run': """
 Usage: mace run [files/directories] [options]
@@ -955,6 +1005,10 @@ modified) and CRYSTAL is run on the copy. TESTPDIM stops the program after the
 whole input has been read and the symmetry analysis is done, so a run takes
 seconds - but it is late enough to catch a bad symmetry group, a bad lattice
 record or a basis set with no functions for one of your elements.
+
+ORBITALS properties decks (.d3) are checked without CRYSTAL: ICAR and ILOC on
+one line, ILOC 1, and a two-component (SOC) parent run beside the deck, on
+which CRYSTAL23 crashes, are reported as failures.
 
 Options:
   -j, --jobs N          Check N decks concurrently (default: 1)
@@ -1180,7 +1234,7 @@ Options:
                          letters, digits or . _ ~ - (visible to other users
                          in ps; MACE_GUI_TOKEN does it privately)
   --gateway G            your cluster's login host, named in the tunnel hint
-                         (default MACE_GUI_GATEWAY, else <gateway>)
+                         (default MACE_GUI_GATEWAY, else LOGIN_HOST)
   --root DIR             a folder File > Open Folder may switch within
                          (repeatable; replaces the defaults, your home and
                          scratch folders; MACE_GUI_ROOTS does the same);
@@ -1295,6 +1349,7 @@ For action-specific options, use: mace monitor --action <ACTION> --help
 Usage: mace analyze --extract-properties <directory> [options]
        mace analyze --convergence <file.out> [--json]
        mace analyze --convergence <file.out> --energy [--segments continuous|separate]
+       mace analyze --convergence <file.out> --scf [--step latest|first|N|point:N]
 
 Extract properties from CRYSTAL output files, or show how one run converged.
 
@@ -1310,10 +1365,26 @@ Options:
   --fragments                Per-fragment Mulliken charges for neutral runs too
                              (charged runs always get them)
 
-Building a database from a folder (all opt-in):
+Total ZT of TRANSPORT runs (opt-in; without it only the electronic ZTe):
+  --kappa-lattice VALUE|FILE Lattice thermal conductivity κL in W/(m·K): one
+                             value, or a CSV of T,kappa_L rows (interpolated
+                             linearly, never extrapolated: a run temperature
+                             outside the table stores no total). Stores
+                             transport_zt_total_max = max S²σT/(κe + κL) and
+                             where κL came from; the electronic keys stay
+  --tau-fs FS                With --kappa-lattice: the relaxation time (fs)
+                             to evaluate the total at (default: the run's
+                             RELAXTIM from its .out). SIGMA.dat and KAPPA.dat
+                             are at RELAXTIM; σ and κ0 scale with tau, κL
+                             does not, so the total depends on tau
+
+Building a database from a folder (--register is on for a folder; the rest opt-in):
   --register                 First record the folder's completed calculations
                              (materials and calculations rows), so the
-                             database lists them
+                             database lists them. The default for a folder
+                             (--extract-properties DIR); not for --output-file
+  --no-register              Store the properties only (no materials or
+                             calculations rows: `mace database` lists none)
   --dry-run                  Write nothing: list each output as new, changed,
                              unchanged, not tracked, unreadable or incomplete
   --json                     With --dry-run: one JSON document
@@ -1341,7 +1412,15 @@ Convergence of one run (reads the .out only, writes nothing):
   --relative-to REF          With --energy: final (default), first, minimum
                              or absolute
   --unit UNIT                With --energy: meV (default), eV, Ha, kJ/mol or
-                             kcal/mol
+                             kcal/mol; with --scf: Ha (default) or the same
+  --scf                      With --convergence: the SCF convergence, cycle by
+                             cycle (energy, its change, the spin density, the
+                             notable cycles: mixing, DIIS, spin lock release,
+                             conducting state), the TOLDEE it ran against and,
+                             for an optimization, the cycles of every point;
+                             with --json, the whole timeline as JSON
+  --step STEP                With --scf: latest (default), first, a block
+                             number, or point:N
 
 Examples:
   mace analyze --extract-properties .
@@ -1356,6 +1435,7 @@ Examples:
   mace analyze --convergence mat1_opt.out
   mace analyze --convergence mat1_opt.out --json
   mace analyze --convergence mat1_opt.out --energy --segments separate
+  mace analyze --convergence mat1_sp.out --scf --unit meV
 
 Note: This command extracts properties and stores them in the materials database.
 Filters help process only specific materials or calculation types.
@@ -1368,9 +1448,10 @@ Enhanced CRYSTAL Queue Manager with material tracking and workflow automation.
 Options:
   --status              Show current queue status
   --d12-dir DIR         Directory with D12 files (default: current directory)
-  --max-jobs N          Maximum running+pending jobs of yours in the queue
-                        (default: 250)
-  --reserve N           Reserved job slots (default: 30)
+  --max-jobs N          At most N - reserve running+pending jobs of yours
+                        (default: your queue budget, [queue] in site.toml;
+                        see mace queue)
+  --reserve N           Job slots --max-jobs leaves free
   --organize            Copy inputs into <calc_type>/<material_id>/ folders
                         (default: submit in place)
   --callback-mode MODE  One cycle of: full_check (default: update records,
@@ -1389,30 +1470,84 @@ Examples:
 Note: This runs the Enhanced Queue Manager (queue/manager.py) which requires SLURM.
 """,
     'queue': """
-Usage: mace queue [options]
+Usage: mace queue drain [--dry-run] [--json] [--db DB] [--quiet]
+       mace queue status [--json]
 
-Deprecated: Use 'mace manager' instead.
-This command will be removed in a future version.
+MACE keeps at most a budget of your jobs queued (running + pending, every
+array task counted, all workflows and manual submissions together):
+
+  budget = your SLURM submit limit - reserve      ([queue] in site.toml)
+
+The limit is read from SLURM (the smallest of scontrol show assoc_mgr
+MaxSubmitJobs and sacctmgr's association/QOS MaxSubmit); when it cannot be
+read MACE keeps at most 900 queued. A job that does not fit is held: its row
+shows 'held' (mace workflow --status, mace monitor, the GUI) with a reason
+(queue budget full, the workflow's max_jobs, SLURM refused it), and it is
+submitted when a slot frees up. Every completion step, mace workflow
+--process and the GUI release held jobs; when work is held and no MACE job is
+queued, one small job named mace-drain runs this command again 15 minutes
+later ([queue] sentinel = false turns it off).
+
+  drain        Submit held jobs of every workflow while the budget has room,
+               in the [queue] order: depth (next steps of started materials
+               first, then the oldest first steps), breadth or mixed.
+    --dry-run  Show what would be submitted; submit nothing
+    --json     The report as JSON (released, held by reason, budget, sentinel)
+    --db DB    Also drain this database (repeatable)
+  status       The budget, your queued jobs, held work and the sentinel
+
+site.toml [queue] keys: reserve (default 100, a tenth of a smaller limit),
+budget (absolute, overrides limit - reserve), limit (when SLURM does not say),
+order (depth | breadth | mixed), followup_share (mixed: 0.75), sentinel.
+
+Anything else prints this help and exits 2. The old queue manager is
+'mace manager' (1.1.5's 'mace queue' was its alias).
 """,
     'recover': """
 Usage: mace recover [options]
 
-Prepares fixed inputs and job scripts for failed tracked CRYSTAL
-calculations; submit them with mace submit, or let the queue manager
-resubmit tracked runs. The exact commands are printed at the end.
+Finds the failed tracked CRYSTAL calculations, shows each one's error class,
+proposed fix and retries, and after a confirmation applies the fixes and
+resubmits them through the queue manager's own recovery path (tracking,
+workflow steps and retry limits as in the job callbacks). --dry-run shows the
+diff of every file it would change and the sbatch command first.
 
 Options:
   --action ACTION       Action to perform: recover, stats, config (default: recover)
-  --max-recoveries N    Maximum number of recoveries to attempt (default: 10)
+  --dry-run             Show the changes and commands; change and submit nothing
+  --yes, -y             Apply the fixes and resubmit without asking
+  --calc-id ID          Only this calculation (repeat or comma-separate)
+  --dir PATH            Only calculations whose work folder is inside PATH
+  --errors CLASS,...    Only these error classes or types (oom, scf, time_limit,
+                        shrink, disk, opt_unconverged, memory_error, ...)
+  --include-stale       With --yes: also resubmit jobs that ended more than
+                        MACE_RECOVER_MAX_AGE_DAYS (default 3) days ago; without
+                        --yes they are asked about separately
+  --overwrite-sh        Write the job script again from the template when the
+                        fix leaves it alone (default: reuse the existing one)
+  --max-recoveries N    Resubmit at most N calculations in one run (default: 10)
+  --max-recovery-attempts N
+                        Recoveries per calculation lineage (default: 3)
+  --max-jobs N          Nothing is resubmitted while the queue holds
+                        N - reserve jobs, as mace manager (default: your
+                        queue budget, see mace queue status)
+  --reserve N           With --max-jobs: slots kept free (default: 0)
+  --json                Print the plan and the results as JSON
+  --prepare-only        Only write the fixed inputs and job scripts and print
+                        the commands that submit them
   --config FILE         Path to recovery configuration file (default:
-                        recovery_config.yaml here, else mace/config/recovery_config.yaml)
-  --db PATH             Path to materials database
+                        recovery_config.yaml in the job folder, else mace/config/recovery_config.yaml)
+  --db PATH             Path to materials database (default: materials.db and
+                        the workflow databases .mace_context_*/materials.db
+                        here; with --dir, the databases in that folder)
   --create-config       Create default recovery configuration
 
 Examples:
+  mace recover --dry-run
   mace recover
+  mace recover --errors oom,time_limit --yes
+  mace recover --calc-id 3_dia3_OPT_20261014_101500123
   mace recover --action stats
-  mace recover --max-recoveries 5
   mace recover --create-config
 
 For action-specific options, use: mace recover --action <ACTION> --help
@@ -1503,33 +1638,76 @@ Note: --action status requires --material-id. There is no --dry-run/--max-submit
 Usage: mace plotting [options]
 
 Plot CRYSTAL calculation outputs (band structures, DOS, structures,
-cube volumetrics, FREQ vibrational modes).
+cube volumetrics, orbitals, FREQ vibrational modes).
 
 Modes:
   (default)             Interactive mode - guided configuration
   --band                Plot band structures with CLI options
   --dos                 Plot density of states with CLI options
+  --band-dos            Each band structure with its run's DOS, one figure on a
+                        shared energy axis (the GUI's band + DOS view)
   --structure           Visualize crystal structures from CIF files
   --cube                Render cube volumetrics (ECH3/POT3 density, ESP, spin)
+  --orbitals            Orbitals of an ORBITALS run (.molden): pick orbital, k point,
+                        spin; a cube is built in <job>_orbitals/ and drawn as a cube
   --freq, --vibmodes    Render FREQ vibrational normal modes
   --ir / --raman        Plot IR / Raman spectra (*IRSPEC.DAT / *RAMSPEC.DAT)
   --spectra             Plot both IR and Raman (umbrella)
+  --bz                  Draw the first Brillouin zone with the k-path (BAND.DAT/.d3/.out)
   --all                 Plot all available outputs with defaults
+  --legend              Write an element legend (SVG, PNG or a TSV/CSV/JSON table)
+                        for the elements of the given structure files or folders
+  --gallery KIND        Many outputs in one grid figure: band, dos, bandos,
+                        ir, raman, opt, scf or structure (FILEs/folders)
 
 Common Options:
   -d, --directory DIR   Working directory (default: current)
   -o, --output DIR      Output directory for generated plots
   FILE(s)               Explicit input file(s); omit to auto-discover in -d
-  --format FMT          Output format for cube/FREQ: html (default), png, svg, pdf
+  --format FMT          Output format: cube/FREQ html (default), png, svg, pdf;
+                        band/DOS png, svg, pdf or html (default: png and svg);
+                        --legend: svg (default), png, tsv, csv or json
+  --palette NAME        Element colors for atoms: vesta, jmol, cvd, legacy, or a palette
+                        saved in the GUI (default: the GUI's default palette, else VESTA)
 
-Band Structure Options:
-  --e-lower FLOAT       Lower energy limit in eV (default: -8)
-  --e-upper FLOAT       Upper energy limit in eV (default: 8)
-  --alpha FLOAT         Transparency for band stacking (default: 0.3)
-  --no-gaps             Remove gaps at k-path discontinuities
+Band Structure Options (the energy options apply to --dos and band/DOS galleries too):
+  --e-lower FLOAT       Lower energy limit in eV (default: -6, as the GUI)
+  --e-upper FLOAT       Upper energy limit in eV (default: 6, as the GUI)
+  --energy-reference {auto,fermi,vacuum}
+                        The energy zero: auto (default) is the vacuum scale when the
+                        run's POTC files are beside the data, else the Fermi level;
+                        fermi: E - E_F even then; vacuum: needs the POTC files
+  --fermi-shift EV      Move the energies by -EV: the energy EV above E_F becomes the
+                        reference (the dotted line; the GUI's Fermi shift; default: 0)
+  --units UNIT          Energy unit: eV (default), meV, Ha, kJ/mol, kcal/mol (plotly)
+  --band-path FILE      Plot along an edited k-path (a JSON band_path, as mace gui and
+                        opt2d3 write it; also for --bz)
+  --alpha FLOAT         Band line opacity, matplotlib (default: 1, opaque)
+  --no-gaps             No gaps at k-path discontinuities (matplotlib)
 
-DOS Options:
-  --projection TYPE     Projection type: both, total, orbital, tm_orb
+Plot Style Options (band, DOS, band + DOS; the GUI's Style controls):
+  --backend NAME        plotly (default: the GUI's figure, when plotly and kaleido
+                        can export) or matplotlib (the figures of MACE 1.1.5)
+  --style NAME          default, publication, vesta, presentation, grayscale,
+                        colorblind (also gallery, spectra and cube maps)
+  --spin-colors NAME    auto (the style's), mace (pink/cyan), blue-red,
+                        black-vermilion or custom
+  --spin-up-color HEX, --spin-down-color HEX
+                        A custom spin pair, #rrggbb
+  --band-color HEX      A run that is not spin-polarized (closed shell, or
+                        alpha = beta): its bands and DOS total, #rrggbb
+                        (default: the style's, the plot's text color)
+  --spin-down-style S   Spin down's line: dash (default), dot, dashdot, solid
+                        (also --spin-style); --spin-down-solid: solid
+  --dos-colors MODE     auto (default), total, element, orbital, element-orbital
+  --dos-spin MODE       auto (default), mirrored or overlaid (also --spin-dos)
+  --no-dos-total        DOS without the total
+  --dos-total           DOS with the total (default; overrides the folder file's)
+  --dos-smooth EV       DOS: Gaussian smoothing of the drawn curves, sigma in eV
+                        (display only, labeled in the plot; e.g. 0.05; 0: off)
+
+DOS Options (matplotlib):
+  --projection TYPE     both, total, orbital, tm_orb (default: --dos-colors' lines)
   --no-composition      Disable VB/CB composition labels
 
 Structure Options:
@@ -1544,7 +1722,21 @@ Cube Options:
   --view {iso,slice,slice-all}    Visualization mode (default: iso)
   --slice AXIS POS      Single 2D slice (axis x/y/z, integer index)
   --colorscale NAME     Plotly colorscale; --no-atoms / --bonds / --publication
+  --clip P              Slices: color range from the (100-P)th to the Pth percentile,
+                        symmetric about 0 for spin and potential (default: 99)
+  --color-range LO,HI   Slices: the color range outright (log10 units for a log
+                        density; a negative LO: --color-range=-0.01,0.01)
   --engine-args "..."   Advanced: forward extra cube-engine flags
+
+Orbital Options (--orbitals; the cube options apply too):
+  --mo LIST             HOMO, LUMO, HOMO-1, LUMO+2 or MO numbers (default: HOMO,LUMO)
+  --k N                 k point number from the ORBITALS .out (default: the VBM's, else Γ)
+  --orb-spin {alpha,beta}   Spin channel of an open-shell run (default: alpha)
+  --part {re,im,abs2}   Re psi (default, +/- lobes), Im psi (complex k only) or |psi|^2
+  --degenerate-sum      Sum |psi|^2 over each degenerate set
+  --cells NxMxL         Cells along the periodic axes (default 3 / 2x2 / 1x1x1)
+  --quality {preview,normal,fine}   Grid spacing 0.40 / 0.25 / 0.15 bohr
+  --list-orbitals       Print the k points, levels and self-check only
 
 Vibrational Mode Options:
   --list-modes          List the mode table only (no render)
@@ -1559,16 +1751,39 @@ Spectra (IR / Raman) Options:
   --ir-column N         IR intensity column index (default: 2 = absorbance)
                         (spectra are matplotlib png/svg/pdf; --format html -> png)
 
+Element Legend Options (--legend):
+  --legend-layout L     vertical (default), horizontal or grid; --legend-columns N
+  --legend-shape S      circle (default) or square; --legend-swatch PX, --legend-font-size PX
+  --legend-label L      symbol (default), name or both
+  --legend-text C       dark (default), light or #rrggbb; --legend-background C
+  --legend-order O      z (default), first or alpha; --legend-no-outline
+  --legend-recursive    Folders: include their subfolders
+  --dpi DPI             PNG resolution (default: 300)
+
+Gallery Options (--gallery KIND FILES/FOLDER):
+  --cols N              Columns of the grid (default: 3, at most 8)
+  --independent-axes    Each pane its own ranges (default: shared)
+  --caption-csv PATH    Also write the caption table (material, formula, gap, energy)
+  --max N               At most N panes (default: 200)
+  --db PATH             The materials.db for the captions (default: beside the files)
+  -o OUT                The figure (.svg, .png or .pdf), or a folder for gallery_KIND.svg
+
 Examples:
   mace plotting                     # Interactive mode
   mace plotting --band              # Plot all band structures with defaults
+  mace plotting --band-dos          # Each band structure with its DOS, one figure
+  mace plotting --band --backend matplotlib   # the figures of MACE 1.1.5
   mace plotting --all               # Plot everything discovered with defaults
   mace plotting --cube dens.CUBE --iso 0.001,0.01
   mace plotting --diff after.CUBE before.CUBE
+  mace plotting --orbitals --mo HOMO --degenerate-sum
   mace plotting --freq mol_freq.out --list-modes
   mace plotting --freq mol_freq.out --mode 7 --gif
   mace plotting --spectra --average
   mace plotting --raman --raman-mode all
+  mace plotting --bz Si_band.BAND.DAT --band-path edited_path.json
+  mace plotting --legend runs/ --format png --dpi 600 --legend-layout grid
+  mace plotting --gallery band BAND/ --cols 4 -o bands.svg
 
 Supported File Types:
   Band Structure: *.band.band.dat, *.BAND.DAT
@@ -1581,7 +1796,8 @@ Supported File Types:
 Output Formats:
   - Interactive HTML (plotly) by default
   - PNG / SVG / PDF static export via kaleido (--format)
-  - PNG (600 DPI) / SVG for band/DOS/structure publications
+  - PNG / SVG for band/DOS/structure publications: band/DOS PNGs at 300 dpi
+    (600 with --backend matplotlib); --width/--height (in) and --dpi set them
 """,
     'status': """
 Usage: mace status [options]
@@ -1815,7 +2031,9 @@ def main():
         command = sys.argv[1]
         
         # Check if --no-banner or --help is present
-        suppress_banner = no_banner_first or '--no-banner' in sys.argv or '--help' in sys.argv or '-h' in sys.argv
+        # (--json: stdout carries exactly one JSON document)
+        suppress_banner = (no_banner_first or '--no-banner' in sys.argv or '--help' in sys.argv
+                           or '-h' in sys.argv or '--json' in sys.argv)
         
         # Set --no-banner if needed
         if '--no-banner' in sys.argv:
@@ -1827,6 +2045,17 @@ def main():
         if not suppress_banner:
             show_banner()
         
+        # A project folder's mace-folder.toml [setup] preset (a config or
+        # options file) when the command names none; nothing without the file.
+        if command in ('convert', 'opt2d12', 'opt2d3'):
+            from mace.utils import folder_settings as _fs
+            _folder = _fs.load()
+            _fs.warn_once(_folder)
+            _rest, _msg = _fs.preset_args(command, sys.argv[2:], _folder)
+            if _msg:
+                _fs.note(_msg)
+            sys.argv = sys.argv[:2] + _rest
+
         # Execute the command. argv[0] is the mace command, not the script
         # file: argparse names its prog after it, so `mace opt2d3 --help`
         # reads `usage: mace opt2d3 ...` (and %(prog)s examples match).
@@ -1868,6 +2097,12 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == 'gui' and sys.argv[2] in ('connect', 'login-url', 'diagnostics'):
         from mace.gui.cli import dispatch_tool
         sys.exit(dispatch_tool(sys.argv[2], [a for a in sys.argv[3:] if a != '--no-banner']))
+
+    # `mace update ...`: update this git checkout (and a cluster's) safely;
+    # standard library only, its own --help.
+    if len(sys.argv) >= 2 and sys.argv[1] == 'update':
+        from mace.update import main as update_main
+        sys.exit(update_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
     # `mace gui --slurm ...`: MACE GUI as a batch job (standard library only, its
     # own --help); the server itself starts inside the job.
@@ -1933,6 +2168,10 @@ def main():
             ui.print("PI: Prof. Jose Luis Mendoza-Cortes")
         sys.exit(0)
     
+    # --json: stdout carries exactly one JSON document, no banner
+    if '--json' in sys.argv[2:]:
+        args.no_banner = True
+
     # Set environment variable for child processes
     if args.no_banner:
         os.environ['MACE_NO_BANNER'] = '1'
@@ -1954,6 +2193,33 @@ def main():
     sys.argv = [sys.argv[0]] + args.args + remaining
     if args.no_banner and '--no-banner' not in sys.argv:
         sys.argv.append('--no-banner')
+
+    def _held_rows(manager, calc_ids):
+        """How many of these rows the queue budget left held."""
+        n = 0
+        for cid in calc_ids:
+            try:
+                if (manager.db.get_calculation(cid) or {}).get('status') == 'held':
+                    n += 1
+            except Exception:
+                pass
+        return n
+
+    def _launch_drain(manager, workflow_id, held):
+        """After a tracked submission: remember the database for later drains
+        and, when something is held, run one (it also starts the mace-drain
+        sentinel when no MACE job is queued)."""
+        try:
+            from mace.queue import budget
+            plan_cap = None
+            budget.register(manager.db_path, workflow_id, plan_cap)
+            if held:
+                cfg = budget.resolve(quiet=True)
+                ui.info(f"Held {held} ({cfg.describe()}); they start as slots free up "
+                        f"(mace queue status shows them)")
+                budget.drain(dbs=[manager.db_path], out=ui.info, quiet=True)
+        except Exception as e:
+            ui.warn(f"Queue drain skipped: {e}")
 
     def command_args(command_name):
         """Arguments following the command on the ORIGINAL command line.
@@ -2006,6 +2272,10 @@ def main():
                                       '`mace workflow --show-templates`) or "interactive" to '
                                       'configure every step yourself. Implies --track. Without '
                                       'this flag a manual submission never progresses on its own.')
+        submit_parser.add_argument('--progress-plan', metavar='PLAN',
+                                 help='Submit these decks as the first step of a workflow plan '
+                                      'written by `mace workflow --spec SPEC --write-plan`; '
+                                      'they then progress as that plan says. Implies --track.')
         submit_parser.add_argument('--array', action='store_true',
                                  help='Submit the decks as SLURM job arrays: decks whose job '
                                       'scripts ask for exactly the same resources share one '
@@ -2015,6 +2285,9 @@ def main():
                                  help='With --array: at most N tasks of each array run at once '
                                       '(--array=0-M%%N). The limit is per array; recovery '
                                       'resubmissions are normal jobs and are not limited.')
+        submit_parser.add_argument('--yes', '-y', action='store_true',
+                                 help='Without --track: submit the decks that do not fit in your '
+                                      'queue budget from the reserve without asking')
 
         # Node exclusion options
         exclusion_group = submit_parser.add_mutually_exclusive_group()
@@ -2042,12 +2315,38 @@ def main():
         nosubmit = submit_args.nosubmit
         overwrite_sh = submit_args.overwrite_sh
         progress = submit_args.progress
+        progress_plan = submit_args.progress_plan
         walltime = submit_args.walltime
+        progress_plan_data = None
+        if progress_plan:
+            if progress:
+                ui.err("Error: give --progress or --progress-plan, not both.")
+                sys.exit(1)
+            from mace.workflow.manual_progress import read_launch_plan
+            try:
+                progress_plan_data = read_launch_plan(progress_plan)
+            except ValueError as e:
+                ui.err(f"Error: {e}")
+                sys.exit(1)
+            if walltime:
+                ui.err("Error: --walltime is not applied with --progress-plan; the plan's job "
+                       "scripts set the resources (execution.walltime in the spec).")
+                sys.exit(1)
+            # the plan's own job_arrays setting (the spec's execution.job_arrays)
+            ja = progress_plan_data.get("job_arrays") or {}
+            if ja.get("first_step") and not submit_args.array:
+                submit_args.array = True
+                if submit_args.max_running is None and ja.get("max_running"):
+                    submit_args.max_running = int(ja["max_running"])
+            progress = f"plan {Path(progress_plan).name}"
         # Progression is recorded and driven through the database, so the
         # tracking path is the only one that can carry it.
         track = submit_args.track or bool(progress)
         array_mode = submit_args.array
         max_running = submit_args.max_running
+        if getattr(submit_args, 'yes', False):
+            # the untracked submission modules read it (mace/queue/budget.py offer_reserve)
+            os.environ['MACE_SUBMIT_USE_RESERVE'] = '1'
         if max_running is not None and not array_mode:
             ui.err("Error: --max-running limits the tasks of a job array; use it with --array.")
             sys.exit(1)
@@ -2172,6 +2471,18 @@ def main():
                 ui.err(f"Error: {target} is not a valid file or directory")
                 sys.exit(1)
 
+            # --progress-plan on a folder: the decks the plan was written for
+            if progress_plan and os.path.isdir(target):
+                listed = {str(Path(f).resolve())
+                          for f in (progress_plan_data.get("input_files") or {}).get("d12") or []}
+                skipped = [f for f in selected if str(Path(f).resolve()) not in listed]
+                selected = [f for f in selected if str(Path(f).resolve()) in listed]
+                if skipped:
+                    ui.info(f"Not in the plan, not submitted: {', '.join(Path(f).name for f in skipped)}")
+                if not selected:
+                    ui.err("Error: none of the plan's decks is in this folder.")
+                    sys.exit(1)
+
             # an EXTERNAL deck without its fort.34 source: say so before submitting
             from mace.submission.external_geometry import missing_fort34_message
             for f in selected:
@@ -2264,7 +2575,18 @@ def main():
             # keeps a bare `mace submit` a single calculation.
             plan_file = workflow_id = None
             sequence = []
-            if progress:
+            if progress_plan:
+                from mace.workflow.manual_progress import (
+                    check_launch_plan, describe_plan, position_in_sequence)
+                try:
+                    plan_file, workflow_id, sequence = check_launch_plan(
+                        progress_plan_data, progress_plan, Path(base_dir).resolve(),
+                        [Path(f) for f in selected])
+                except ValueError as e:
+                    ui.err(f"Error: {e}")
+                    sys.exit(1)
+                describe_plan(plan_file, workflow_id, sequence)
+            elif progress:
                 from mace.workflow.manual_progress import (
                     build_progress_plan, describe_plan, position_in_sequence)
                 try:
@@ -2296,35 +2618,49 @@ def main():
                 walltime_override=walltime, db_path=manager_db)
             for key, custom in custom_generators.items():
                 manager.script_paths[key] = custom
+            if workflow_id:
+                # the plan's own templates, never the folder's workflow_scripts/
+                # (another plan written after this one rewrote those)
+                import json as _json
+                from mace.workflow.manual_progress import own_step_scripts
+                try:
+                    launched_plan = progress_plan_data or _json.loads(Path(plan_file).read_text())
+                except (OSError, ValueError):
+                    launched_plan = {}
+                manager.script_paths.update(own_step_scripts(launched_plan, Path(base_dir).resolve()))
             ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
                     f"{manager_db} (in-place)")
             submitted = 0
 
+            def stamp_workflow(calc_id, calc_type):
+                manager.db.update_calculation_settings(calc_id, {
+                    "workflow_id": workflow_id,
+                    "workflow_step": position_in_sequence(calc_type, sequence) or 1,
+                    "workflow_calc_type": calc_type,
+                }, merge=True)      # keeps crystal_module (site.py)
+
             if array_mode:
                 # Job arrays: the same rows and job scripts as below, submitted
                 # as one array per resource request (mace/submission/job_array.py).
-                def stamp_workflow(calc_id, calc_type):
-                    manager.db.update_calculation_settings(calc_id, {
-                        "workflow_id": workflow_id,
-                        "workflow_step": position_in_sequence(calc_type, sequence) or 1,
-                        "workflow_calc_type": calc_type,
-                    }, merge=True)      # keeps crystal_module (site.py)
-
                 results = manager.submit_calculations_as_arrays(
                     [Path(f) for f in selected], max_running=max_running,
                     stamp=stamp_workflow if workflow_id else None)
                 submitted = sum(1 for _, job_id in results if job_id)
-                ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
+                held = _held_rows(manager, [c for c, j in results if c and not j])
+                ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)"
+                      + (f", held {held} (they start as queue slots free up)" if held else ""))
                 tracked_ids = [job_id for _, job_id in results if job_id]
                 if tracked_ids:
                     ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
-                sys.exit(0 if submitted == len(selected) else 1)
+                _launch_drain(manager, workflow_id, held)
+                sys.exit(0 if submitted + held == len(selected) else 1)
 
             for sh in reuse_scripts.values():
                 ui.info(f"Using existing script: {sh.name} (edited; submitted as written, "
                         f"--overwrite-sh writes it again)")
             # the folder's crystal_job_status.json keeps earlier submissions too
             submitted_before = set(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
+            held_ids, refused, slurm_said = [], [], set()
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
                     reuse = reuse_scripts.get(str(Path(f).resolve()))
@@ -2332,20 +2668,30 @@ def main():
                         # submitted as written; only the line naming the
                         # database its completion step records into is added
                         manager._export_db_path(reuse)
-                    calc_id = manager.submit_calculation(Path(f), job_script_override=reuse)
+                    # the workflow settings go into the row before it is
+                    # submitted: the queue budget reads the workflow's max_jobs
+                    calc_id = manager.submit_calculation(Path(f), job_script_override=reuse,
+                                                         stamp=stamp_workflow if workflow_id else None)
+                    from mace.queue import budget as _budget
+                    _o = _budget.last_outcome()
                     if calc_id:
-                        submitted += 1
-                        if workflow_id:
-                            calc = manager.db.get_calculation(calc_id)
-                            calc_type = (calc or {}).get('calc_type') or 'OPT'
-                            manager.db.update_calculation_settings(calc_id, {
-                                "workflow_id": workflow_id,
-                                "workflow_step": position_in_sequence(calc_type, sequence) or 1,
-                                "workflow_calc_type": calc_type,
-                            }, merge=True)      # keeps crystal_module (site.py)
+                        if _held_rows(manager, [calc_id]):
+                            held_ids.append(calc_id)
+                            if _o is not None and _o.reason == 'slurm_limit' and _o.message:
+                                slurm_said.add(_o.message.strip().splitlines()[-1])
+                        else:
+                            submitted += 1
+                    else:
+                        refused.append((Path(f).name, _o.message if _o is not None and _o.message else ""))
                 except Exception as e:
                     ui.err(f"  Failed to submit {f.name}: {e}")
-            ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
+            for name, msg in refused:
+                # SLURM's own message (the progress bar keeps the manager's lines quiet)
+                ui.err(f"  Not submitted: {name}" + (f": {msg}" if msg else ""))
+            for msg in sorted(slurm_said):
+                ui.warn(f"  SLURM refused a job at your submit limit; the rest are held: {msg}")
+            ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)"
+                  + (f", held {len(held_ids)} (they start as queue slots free up)" if held_ids else ""))
             # Single copy-pasteable job-id line for follow-up squeue/scancel, at
             # parity with the non-tracking submit path (the per-file ids were only
             # printed scattered across the manager's own output).
@@ -2355,7 +2701,8 @@ def main():
                            if j not in submitted_before]
             if tracked_ids:
                 ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
-            sys.exit(0 if submitted == len(selected) else 1)
+            _launch_drain(manager, workflow_id, len(held_ids))
+            sys.exit(0 if submitted + len(held_ids) == len(selected) else 1)
 
         # 1 when a deck was not submitted (the submission modules' main())
         submit_rc = 0
@@ -2440,7 +2787,17 @@ def main():
                     from submission.properties import main as submit_properties
                     submit_rc = max(submit_rc, submit_properties() or 0)
                 elif choice == '3':
-                    # Submit both
+                    # Submit both. -i on a pipe with per-type groups is
+                    # refused before the D12 jobs go in, not after them.
+                    if interactive:
+                        from mace.submission import site as site_mod
+                        refusal = (site_mod.piped_groups_refusal(
+                                       site_mod.deck_groups(target, d12_files, "scf"))
+                                   or site_mod.piped_groups_refusal(
+                                       site_mod.deck_groups(target, d3_files, "prop")))
+                        if refusal:
+                            ui.err(f"Error: {refusal}")
+                            sys.exit(1)
                     ui.rule("Submitting D12 files")
                     sys.argv = ['submit_script', target]
                     if interactive:
@@ -2582,11 +2939,16 @@ def main():
             # so --status reads the workflow's DB, not the empty default materials.db.
             auto_activate_context(workflow_id=workflow_id)
 
+            # A read: never create materials.db in a folder that has none
+            ctx = get_current_context()
+            if not ctx and not Path('materials.db').exists():
+                ui.rule("MACE Status")
+                ui.info(f"No MACE database in {Path.cwd()} (nothing tracked here yet).")
+                ui.info("Workflow plans here: mace workflow --list")
+                return
+
             # Initialize database
             db = ContextualMaterialDatabase()
-
-            # Show context information
-            ctx = get_current_context()
             if ctx:
                 ui.rule(f"MACE Status (Workflow: {ctx.workflow_id})")
                 ui.info(f"Isolation Mode: {ctx.isolation_mode}")
@@ -2646,6 +3008,24 @@ def main():
                     for calc in recent_calcs:
                         ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}"
                                 f"{array_label(calc.get('slurm_job_id'))}")
+
+            if not summary:
+                # 1.1.6: each active job's time left (the ETA of `mace cluster job`, from its output; SLURM is
+                # asked once for the table) and the array and workflow totals
+                try:
+                    from mace.cluster.status_eta import status_section, ACTIVE
+                    active_calcs = []
+                    for st_name in ACTIVE:
+                        active_calcs += db.get_calculations_by_status(st_name) or []
+                    sec = status_section(active_calcs)
+                except Exception as exc:          # never let the ETA take the status view down
+                    sec = {"lines": [], "footer": [f"(time left not available: {type(exc).__name__})"]}
+                if sec["lines"]:
+                    print()
+                    for line in sec["lines"]:
+                        print(line)
+                for line in sec["footer"]:
+                    print(line)
             
         else:
             # Run normal monitor dashboard
@@ -2753,9 +3133,10 @@ def main():
         # Combine all arguments
         all_args = command_args('manager')
         
-        # Parse queue arguments
-        max_jobs = 250
-        reserve = 30
+        # Parse queue arguments (no --max-jobs/--reserve: the queue budget,
+        # [queue] in site.toml, mace/queue/budget.py)
+        max_jobs = None
+        reserve = None
         callback_mode = None
         dry_run = False
         show_status = False
@@ -2788,6 +3169,15 @@ def main():
             else:
                 i += 1
         
+        flags_given = max_jobs is not None
+        if max_jobs is None:
+            if reserve is not None:
+                ui.warn("--reserve is ignored without --max-jobs: the queue budget applies. Set the reserve with [queue] reserve in site.toml (mace queue status shows it), or pass --max-jobs N too.")
+            from mace.queue import budget as _budget
+            _cfg = _budget.resolve(quiet=True)
+            max_jobs, reserve = _cfg.budget + _cfg.reserve, _cfg.reserve
+        elif reserve is None:
+            reserve = 0
         if show_status:
             # Show queue status using the check_queue method. Manual `mace
             # manager` defaults to in-place (organize_outputs=False); pass
@@ -2801,13 +3191,13 @@ def main():
             )
             try:
                 running, pending = manager.check_queue()
-                available = max_jobs - running
+                available = max(0, max_jobs - reserve - running - pending)
 
                 ui.rule("Queue Status")
                 ui.info(f"Running Jobs: {running}")
                 ui.info(f"Pending Jobs: {pending}")
                 ui.info(f"Available Slots: {available}")
-                ui.info(f"Max Jobs: {max_jobs}")
+                ui.info(f"Queue budget: {max_jobs - reserve} (max jobs {max_jobs} minus {reserve} reserved)")
                 ui.info(f"Reserved Slots: {reserve}")
             except Exception as e:
                 ui.rule("Queue Status")
@@ -2822,8 +3212,9 @@ def main():
             from mace.queue.manager import main as queue_main
             
             # Build argument list
-            sys.argv = ['queue_manager.py', '--d12-dir', base_dir,
-                       '--max-jobs', str(max_jobs), '--reserve', str(reserve)]
+            sys.argv = ['queue_manager.py', '--d12-dir', base_dir]
+            if flags_given:
+                sys.argv += ['--max-jobs', str(max_jobs), '--reserve', str(reserve)]
 
             if organize:
                 # Opt back into the organized <calc_type>/<material_id>/ layout;
@@ -2844,17 +3235,21 @@ def main():
             # Call the main function
             queue_main()
     
+    elif args.command == 'queue' and command_args('queue')[:1] and command_args('queue')[0] in ('drain', 'status'):
+        # the user-wide queue budget: release held jobs, or show the budget
+        from mace.queue.budget import main as budget_main
+        sys.exit(budget_main(command_args('queue')))
+
     elif args.command == 'queue':
-        # Redirect to manager command for backward compatibility
-        ui.warn("Note: 'mace queue' is deprecated. Use 'mace manager' instead.")
-        ui.warn("This command will be removed in a future version.\n")
-        # Re-process as manager command, forwarding ALL arguments (flags
-        # previously landed in `remaining` and were dropped, so e.g.
-        # `mace queue --status` launched the full job-submitting manager)
-        sys.argv = [sys.argv[0], 'manager'] + command_args('queue')
-        main()  # Recursive call to handle as manager
-        return
-        
+        # Only drain and status. 1.1.5's alias of `mace manager` is gone: a
+        # bare `mace queue` ran the manager's full cycle, which submits the
+        # decks under the current folder and creates materials.db there.
+        rest = command_args('queue')
+        if rest:
+            ui.err(f"mace queue: unknown subcommand or option '{rest[0]}'")
+        show_command_help('queue')
+        sys.exit(2)
+
     elif args.command == 'recover':
         # Error recovery command
         from recovery.recovery import main as recovery_main
@@ -3611,7 +4006,9 @@ def main():
                     if include_properties and not properties_only:
                         ui.info(f"Included properties: {', '.join(include_properties)}")
                 else:
-                    ui.err("Export failed.")
+                    from database.export.formats import empty_export_reason
+                    ui.err(f"Export failed: {empty_export_reason(db, properties_only, filter_strings)}.")
+                    sys.exit(1)
 
             except ImportError as e:
                 ui.err(f"Error: {e}")

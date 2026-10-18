@@ -42,6 +42,11 @@ CALC_TYPES = {
         "depends_on": ["SP", "OPT"],
         "generates": ["charge_density", "electrostatic_potential"],
     },
+    "ORBITALS": {
+        "name": "Orbitals (Molden files)",
+        "depends_on": ["SP", "OPT"],
+        "generates": ["orbitals"],
+    },
 }
 
 # Predefined workflow templates
@@ -57,8 +62,21 @@ WORKFLOW_TEMPLATES = {
     "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
 }
 
+# One line about each template (`mace workflow --show-templates`, the GUI).
+WORKFLOW_TEMPLATE_DESCRIPTIONS = {
+    "basic_opt": "Basic geometry optimization only",
+    "opt_sp": "Geometry optimization followed by single point calculation",
+    "opt_sp_freq": "Optimization, single point, then vibrational frequencies",
+    "full_electronic": "Complete electronic structure characterization",
+    "double_opt": "Two-stage optimization for difficult convergence cases",
+    "complete": "Complete characterization including vibrational analysis",
+    "transport_analysis": "Transport properties calculation (conductivity, Seebeck)",
+    "charge_analysis": "Charge density and electrostatic potential analysis",
+    "combined_analysis": "Electronic structure with transport properties",
+}
+
 # The built-in MPI ranks of a properties job (BAND, DOSS, TRANSPORT,
-# CHARGE+POTENTIAL; Pproperties): the one place this number lives. The job
+# CHARGE+POTENTIAL, ORBITALS; Pproperties): the one place this number lives. The job
 # scripts (submit_prop.sh), the site settings, the planner, quick start and
 # `mace submit` all take it from here. Measured on MSU HPCC: BAND and DOSS
 # runs on 28 ranks kept 0.4-0.9 cores busy (1-3 %), and a work-based sizing
@@ -125,6 +143,15 @@ SLURM_RESOURCE_DEFAULTS = {
         "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
         "account": "mendoza_q",
     },
+    # ORBITALS itself takes under a second (HPCC, 7 systems); the NEWK before
+    # it costs what any NEWK on that mesh costs. Γ or IS 2 by default.
+    "ORBITALS": {
+        "ntasks": PROPERTIES_NTASKS,
+        "nodes": 1,
+        "walltime": "1:00:00",
+        "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
+        "account": "mendoza_q",
+    },
 }
 
 # Module and scratch directory settings
@@ -142,14 +169,15 @@ SCRATCH_DIR_DEFAULTS = {
     "DOSS": "$SCRATCH/crys23/prop",
     "TRANSPORT": "$SCRATCH/crys23/prop",
     "CHARGE+POTENTIAL": "$SCRATCH/crys23/prop",
+    "ORBITALS": "$SCRATCH/crys23/prop",
 }
 
 # Calculation type categories
 D12_CALC_TYPES = ["OPT", "SP", "FREQ"]  # Use .d12 input files
-D3_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]  # Use .d3 input files
+D3_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]  # Use .d3 input files
 
 # Optional calculation types (workflow continues if these fail)
-OPTIONAL_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "FREQ"]
+OPTIONAL_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS", "FREQ"]
 
 # File extensions
 CRYSTAL_INPUT_EXTENSIONS = {
@@ -224,4 +252,20 @@ def opt2d3_default_band_config():
         "last_band": None,
         "plot": True,
         "print_eigenvalues": False,
+    }
+
+
+def opt2d3_default_transport_config():
+    """The TRANSPORT configuration the workflow routes use: opt2d3's
+    answers when Enter is pressed through it, as opt2d3 holds them (the
+    temperatures are floats there, so TRANGE is written "100.0 800.0 50.0"
+    by every route). A fresh dict is returned on every call."""
+    return {
+        "calculation_type": "TRANSPORT",
+        "temperature_range": [100.0, 800.0, 50.0],
+        "mu_range": [-2.0, 2.0, 0.01],
+        "mu_reference": "fermi",
+        "mu_range_type": "auto_fermi",
+        "tdf_range": [-5.0, 5.0, 0.01],
+        "relaxation_time": 10
     }

@@ -49,6 +49,12 @@ Options:
   --root DIR         a folder File > Open Folder may switch to (repeatable)
   --no-open          print the URL; do not open a browser
   --dry-run          print the ssh command (one argument per line) and exit
+  --check            check ssh, its config, keys, agent and permissions, try each
+                     hop with only `true`, and say which works (read-only)
+  --no-net           with --check: no ssh logins or DNS lookups
+  --fix-config       print a suggested ~/.ssh/config block (never written)
+  --update-remote [release|preview|latest]
+                     run mace update on the cluster first (default: release)
   -h, --help         this help
 
 Values come from the flags, then the profile in ~/.config/mace/connect.toml
@@ -65,7 +71,7 @@ PROFILE=""
 F_GATEWAY="" F_JUMP="" F_NODE="" F_HOP="" F_DIR="" F_MACE="" F_SETUP="" F_CONDA="" F_LOCAL_PORT="" F_OPEN=""
 F_SSH_OPTIONS=() F_ROOTS=()
 HAVE_SSH_OPTIONS=0 HAVE_ROOTS=0
-DRY_RUN=0
+DRY_RUN=0 CHECK=0 NO_NET=0 FIX_CONFIG=0 UPDATE_REMOTE=""
 need() { [ $# -ge 2 ] || { echo "mace-gui-connect: $1 needs a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -84,6 +90,11 @@ while [ $# -gt 0 ]; do
     --root) need "$@"; F_ROOTS+=("$2"); HAVE_ROOTS=1; shift 2 ;;
     --no-open) F_OPEN="0"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --check) CHECK=1; shift ;;
+    --no-net) NO_NET=1; shift ;;
+    --fix-config) FIX_CONFIG=1; shift ;;
+    --update-remote)
+      case "${2:-}" in release|preview|latest) UPDATE_REMOTE="$2"; shift 2 ;; *) UPDATE_REMOTE=release; shift ;; esac ;;
     --slurm) echo "mace-gui-connect: --slurm is not supported by this script" >&2; exit 2 ;;
     -*) echo "mace-gui-connect: unknown option $1 (see --help)" >&2; exit 2 ;;
     *) PROFILE="$1"; shift ;;
@@ -338,7 +349,7 @@ $(sed -n -E 's/^[[:space:]]*[Hh][Oo][Ss][Tt]([[:space:]]+|[[:space:]]*=[[:space:
 EOF3
   return 0
 }
-if [ -n "$GATEWAY" ] && email_like "$GATEWAY"; then
+if [ -n "$GATEWAY" ] && [ "$CHECK$FIX_CONFIG" = 00 ] && email_like "$GATEWAY"; then
   echo "Warning: the gateway $GATEWAY looks like an email address. It should be user@login-host (your cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting anyway; to fix the profile in $CONF, run: mace gui connect ${PROFILE:+$PROFILE }--gateway <user@login-host> --save (or pass --gateway to this script)." >&2
 fi
 
@@ -360,21 +371,59 @@ home_path() {
   esac
 }
 
+# When the mace command is not on the node's PATH (the default "mace", or a
+# one-word path that is not there), the node's shell tries mace_cli in that
+# path's folder, $MACE_HOME, ~/mace and ~/MACE, and prints MACE_GUI_USING
+# <path> (mace_fallback in connect.py; the same shell code).
+mace_fallback() {  # -> FIND
+  local w own c cands t
+  FIND=""
+  set -f
+  # shellcheck disable=SC2086  # the mace command's words
+  set -- $MACE
+  set +f
+  [ $# -eq 1 ] || return 0
+  w="$1"
+  # shellcheck disable=SC2016  # shell code for the node, expanded there
+  if [ "$w" = mace ]; then
+    t='command -v "$M" >/dev/null 2>&1'
+    cands='${MACE_HOME:+"$MACE_HOME"/mace_cli} "$HOME"/mace/mace_cli "$HOME"/MACE/mace_cli'
+  else
+    case "$w" in */mace_cli|*/) return 0 ;; */*) ;; *) return 0 ;; esac
+    t='[ -x "$M" ]'
+    own="$(home_path "${w%/*}/mace_cli")"
+    cands="$own"
+    for c in '${MACE_HOME:+"$MACE_HOME"/mace_cli}' '"$HOME"/mace/mace_cli' '"$HOME"/MACE/mace_cli'; do
+      [ "$c" = "$own" ] || cands="$cands $c"
+    done
+  fi
+  FIND="M=$(home_path "$w"); $t || for c in $cands; do if [ -x \"\$c\" ]; then M=\$c; echo \"MACE_GUI_USING \$c\"; break; fi; done"
+}
+
 remote_command() {  # $1 = remote port
   local parts="" script cmd w
   if [ -n "$SETUP" ]; then parts="${SETUP%;}"; fi
   if [ -n "$CONDA" ]; then parts="${parts:+$parts; }conda activate $(home_path "$CONDA")"; fi
   cmd="exec"
   [ -z "$NODE" ] && cmd="$cmd env MACE_GUI_MAX_WORKERS=2"
-  # the mace command may be several words (e.g. python3 ~/mace/mace_cli)
-  set -f
-  for w in $MACE; do cmd="$cmd $(home_path "$w")"; done
-  set +f
+  mace_fallback
+  if [ -n "$FIND" ]; then
+    cmd="$cmd \"\$M\""
+  else
+    # the mace command may be several words (e.g. python3 ~/mace/mace_cli)
+    set -f
+    for w in $MACE; do cmd="$cmd $(home_path "$w")"; done
+    set +f
+  fi
   cmd="$cmd --no-banner gui --managed --port $1 --dir ."
   if [ ${#ROOTS[@]} -gt 0 ]; then
     for w in "${ROOTS[@]}"; do cmd="$cmd --root $(home_path "$w")"; done
   fi
-  script="cd -- $(home_path "${DIR:-~}") && $cmd"
+  if [ -n "$FIND" ]; then
+    script="cd -- $(home_path "${DIR:-~}") && { $FIND; $cmd; }"
+  else
+    script="cd -- $(home_path "${DIR:-~}") && $cmd"
+  fi
   script="${parts:+$parts; }$script"
   printf 'exec bash -lc %s' "$(shq "$script")"
 }
@@ -417,6 +466,24 @@ EOF4
   fi
 }
 
+# -o ConnectTimeout=20 unless an --ssh-option or your ssh config (ssh -G) sets one: a command-line
+# -o would beat the config's own value (a slow VPN's). CT_VAL: yours, else 20, for the nested
+# hop's inner ssh (CONNECT_TIMEOUT_S, config_connect_timeout in connect.py)
+ct_setup() {  # $1 = the host the options apply to -> CT_OPTS, CT_VAL
+  local v=""
+  CT_OPTS=(-o ConnectTimeout=20) CT_VAL=20
+  if [ ${#SSH_OPTIONS[@]} -gt 0 ]; then
+    v="$(printf '%s ' "${SSH_OPTIONS[@]}" | tr '[:upper:]' '[:lower:]')"
+    case "$v" in *connecttimeout*) CT_OPTS=() ;; esac
+    v="$(printf '%s\n' "$v" | sed -n 's/.*connecttimeout[ =]*\([0-9][0-9]*\).*/\1/p')"
+  fi
+  if [ -z "$v" ] && [ -n "$1" ]; then
+    v="$(ssh -G "$1" 2>/dev/null </dev/null | awk '$1 == "connecttimeout" && $2 ~ /^[0-9]+$/ && $2 > 0 { print $2; exit }')"
+    [ -n "$v" ] && CT_OPTS=()
+  fi
+  [ -n "$v" ] && CT_VAL="$v"
+  return 0
+}
 build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   local lp="$1" rp="$2" gp="$3" rcmd jumps
   rcmd="$(remote_command "$rp")"
@@ -424,19 +491,23 @@ build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   jumps="$JUMP"
   # TRUST_CMD: the line that asks once to trust the host key(s) this session needs (host_key_trust_command)
   if [ -z "$NODE" ] || [ -z "$GATEWAY" ]; then
+    ct_setup "${NODE:-$GATEWAY}"
     TRUST_CMD="ssh ${jumps:+-J $jumps }${NODE:-$GATEWAY} true"
     [ -n "$jumps" ] && ARGV+=(-J "$jumps")
     ARGV+=(-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+    [ ${#CT_OPTS[@]} -gt 0 ] && ARGV+=("${CT_OPTS[@]}")
     [ ${#SSH_OPTIONS[@]} -gt 0 ] && ARGV+=("${SSH_OPTIONS[@]}")
     ARGV+=(-L "127.0.0.1:$lp:127.0.0.1:$rp" "${NODE:-$GATEWAY}" "$rcmd")
     return
   fi
   if [ "$HOP" = nested ]; then
     TRUST_CMD="ssh ${jumps:+-J $jumps }$GATEWAY true"
+    ct_setup "$GATEWAY"
     local inner
-    inner="ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -L 127.0.0.1:$gp:127.0.0.1:$rp $(shq "$NODE") $(shq "$rcmd")"
+    inner="ssh -o BatchMode=yes -o ConnectTimeout=$CT_VAL -o ExitOnForwardFailure=yes -L 127.0.0.1:$gp:127.0.0.1:$rp $(shq "$NODE") $(shq "$rcmd")"
     [ -n "$jumps" ] && ARGV+=(-J "$jumps")
     ARGV+=(-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+    [ ${#CT_OPTS[@]} -gt 0 ] && ARGV+=("${CT_OPTS[@]}")
     [ ${#SSH_OPTIONS[@]} -gt 0 ] && ARGV+=("${SSH_OPTIONS[@]}")
     ARGV+=(-L "127.0.0.1:$lp:127.0.0.1:$gp" "$GATEWAY" "$inner")
     return
@@ -444,13 +515,433 @@ build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   local target
   target="$(node_target)"
   node_keys "$target"
+  ct_setup "$target"
   TRUST_CMD="ssh -J ${jumps:+$jumps,}$GATEWAY $target true"
   ARGV+=(-J "${jumps:+$jumps,}$GATEWAY")
   ARGV+=(-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+  [ ${#CT_OPTS[@]} -gt 0 ] && ARGV+=("${CT_OPTS[@]}")
   [ ${#NODE_KEYS[@]} -gt 0 ] && ARGV+=("${NODE_KEYS[@]}")
   [ ${#SSH_OPTIONS[@]} -gt 0 ] && ARGV+=("${SSH_OPTIONS[@]}")
   ARGV+=(-L "127.0.0.1:$lp:127.0.0.1:$rp" "$target" "$rcmd")
 }
+
+# ------------------------------------------------------------------ host names (gateway_unresolvable in connect.py)
+config_hosts() {  # the Host patterns of ~/.ssh/config, one per line (ssh_config_hosts in connect.py)
+  [ -f "$HOME/.ssh/config" ] || return 0
+  sed -n -E 's/^[[:space:]]*[Hh][Oo][Ss][Tt]([[:space:]]+|[[:space:]]*=[[:space:]]*)//p' "$HOME/.ssh/config" \
+    | tr -s ' \t' '\n\n' | sed -e 's/^"//' -e 's/"$//' | grep -v -e '^!' -e '^$'
+}
+host_in_config() {  # $1 host: 0 when a Host pattern matches it
+  local h pat
+  h="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  while IFS= read -r pat; do
+    [ -n "$pat" ] || continue
+    pat="$(printf '%s' "$pat" | tr '[:upper:]' '[:lower:]')"
+    # shellcheck disable=SC2254  # the Host pattern is a glob on purpose
+    case "$h" in $pat) return 0 ;; esac
+  done <<EOF5
+$(config_hosts)
+EOF5
+  return 1
+}
+resolves() {  # $1 host name: 0 when it resolves here (or nothing here can tell)
+  if command -v getent >/dev/null 2>&1; then
+    getent hosts "$1" >/dev/null 2>&1 || getent ahosts "$1" >/dev/null 2>&1; return
+  fi
+  if command -v dscacheutil >/dev/null 2>&1; then [ -n "$(dscacheutil -q host -a name "$1" 2>/dev/null)" ]; return; fi
+  if command -v host >/dev/null 2>&1; then host "$1" >/dev/null 2>&1; return; fi
+  return 0
+}
+gw_unresolvable() {  # -> UNRES: the gateway's host name when no Host matches it and it does not resolve
+  local h g pj pc hn
+  UNRES=""
+  [ -n "$GATEWAY" ] && [ -z "$JUMP" ] || return 1
+  h="${GATEWAY##*@}"
+  host_in_config "$h" && return 1
+  g="$(ssh -G "$GATEWAY" 2>/dev/null)"
+  pj="$(g_val proxyjump "$g" | head -n 1)"
+  pc="$(g_val proxycommand "$g" | head -n 1)"
+  [ "${pj:-none}" = none ] && [ "${pc:-none}" = none ] || return 1
+  hn="$(g_val hostname "$g" | head -n 1)"
+  hn="${hn:-$h}"
+  resolves "$hn" && return 1
+  UNRES="$hn"
+}
+
+# ssh's words for a host it could not reach (unreachable in connect.py)
+unreach() {  # $1 ssh's messages, $2 the node (for "open failed" through the gateway) -> UR_HOST, UR_WHY
+  local l
+  UR_HOST="" UR_WHY=""
+  l="$(printf '%s\n' "$1" | grep -E 'Could not resolve hostname|connect to host [^ ]+ port [0-9]+: (Connection timed out|Operation timed out|Connection refused|No route to host|Network is unreachable)|Connection timed out during banner exchange|Connection to [^ ]+ port [0-9]+ timed out|open failed: (connect failed|administratively prohibited): ' | head -n 1)"
+  [ -n "$l" ] || return 1
+  case "$l" in
+    *"Could not resolve hostname"*)
+      UR_HOST="$(printf '%s' "$l" | sed -E 's/.*Could not resolve hostname ([^: ]+).*/\1/')"
+      UR_WHY="DNS: the name does not resolve" ;;
+    *"open failed:"*)
+      [ -n "${2:-}" ] || return 1
+      UR_HOST="${2##*@}"
+      case "$(printf '%s' "${l#*open failed: }" | tr '[:upper:]' '[:lower:]')" in
+        *"not known"*|*servname*|*resolve*) UR_WHY="DNS on the gateway: the name does not resolve" ;;
+        *"timed out"*) UR_WHY="timeout" ;;
+        *refused*) UR_WHY="connection refused" ;;
+        *route*|*unreachable*) UR_WHY="no route" ;;
+        *) UR_WHY="${l##*: }" ;;
+      esac ;;
+    *"banner exchange"*)
+      UR_HOST="$(printf '%s\n' "$1" | sed -n -E 's/.*Connection to ([^ ]+) port.*/\1/p' | head -n 1)"
+      UR_HOST="${UR_HOST:-the host}"; UR_WHY="timeout" ;;
+    *"timed out"*)
+      UR_HOST="$(printf '%s' "$l" | sed -E 's/.*(connect to host|Connection to) ([^ ]+) port.*/\2/')"; UR_WHY="timeout" ;;
+    *refused*)
+      UR_HOST="$(printf '%s' "$l" | sed -E 's/.*connect to host ([^ ]+) port.*/\1/')"; UR_WHY="connection refused" ;;
+    *)
+      UR_HOST="$(printf '%s' "$l" | sed -E 's/.*connect to host ([^ ]+) port.*/\1/')"; UR_WHY="no route" ;;
+  esac
+}
+
+# ------------------------------------------------------------------ --check and --fix-config
+# The same checks and words as mace gui connect --check (connect_check.py):
+# read-only; the private half of a key is never opened.
+CK_FAILS=0 CK_HOPFAILS=0
+ck() {  # $1 level, $2 text, $3 the fix (optional)
+  printf '%-5s %s\n' "$1" "$2"
+  if [ -n "${3:-}" ]; then printf '      fix: %s\n' "$3"; fi
+  if [ "$1" = FAIL ]; then CK_FAILS=$((CK_FAILS + 1)); fi
+  return 0
+}
+xpath() {  # a path as ssh -G prints it (~/...) -> a path here
+  # shellcheck disable=SC2088  # ssh -G prints a literal ~/
+  case "$1" in "~") printf '%s' "$HOME" ;; "~/"*) printf '%s/%s' "$HOME" "${1#\~/}" ;; *) printf '%s' "$1" ;; esac
+}
+existing_files() {  # $1 ssh -G output: its identity files that exist, one per line
+  local f
+  g_val identityfile "$1" | while IFS= read -r f; do
+    if [ -n "$f" ] && [ -f "$(xpath "$f")" ]; then printf '%s\n' "$f"; fi
+  done
+}
+joined() { paste -s -d ',' - | sed 's/,/, /g'; }
+fingerprint() {  # $1 key file: the SHA256 fingerprint of its .pub (the public half), or nothing
+  local pub
+  pub="$(xpath "$1").pub"
+  [ -f "$pub" ] && ssh-keygen -lf "$pub" 2>/dev/null | awk '{ print $2; exit }'
+}
+fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
+ck_cmd() {  # $1 the hop to name (optional): the line that connects with this script
+  local c="$0"
+  if [ -n "$PROFILE" ]; then c="$c $(shq "$PROFILE")"
+  else
+    [ -n "$GATEWAY" ] && c="$c --gateway $(shq "$GATEWAY")"
+    [ -n "$NODE" ] && c="$c --node $(shq "$NODE")"
+    [ -n "$JUMP" ] && c="$c --jump $(shq "$JUMP")"
+  fi
+  [ -n "${1:-}" ] && c="$c --hop $1"
+  printf '%s' "$c"
+}
+agent_load() {  # -> AGENT_RC, AGENT_OUT: ssh-add -l (with the gateway's IdentityAgent, if any)
+  local ia
+  [ -n "${AGENT_DONE:-}" ] && return 0
+  AGENT_DONE=1
+  ia="$(g_val identityagent "$CK_G" | head -n 1)"
+  case "$ia" in
+    ""|none|SSH_AUTH_SOCK|'$'*) AGENT_SOCK="${SSH_AUTH_SOCK:-}"; AGENT_OUT="$(ssh-add -l 2>&1)"; AGENT_RC=$? ;;
+    *) AGENT_SOCK="$(xpath "$ia")"; AGENT_OUT="$(SSH_AUTH_SOCK="$AGENT_SOCK" ssh-add -l 2>&1)"; AGENT_RC=$? ;;
+  esac
+  AGENT_FPS="$(printf '%s\n' "$AGENT_OUT" | awk '$1 ~ /^[0-9]+$/ { print $2 }')"
+}
+node_refused() {  # $1 ssh's messages: the node refused the login, not the gateway (node_auth_refused)
+  local d nh gh
+  case "$1" in *"Host key verification failed"*) return 1 ;; esac
+  d="$(printf '%s\n' "$1" | grep 'Permission denied (' | cut -d: -f1)"
+  [ -n "$d" ] || return 1
+  nh="${NODE##*@}"; gh="${GATEWAY##*@}"
+  if [ -n "$gh" ] && printf '%s\n' "$d" | grep -qF -- "$gh"; then return 1; fi
+  printf '%s\n' "$d" | grep -qF -- "$nh"
+}
+ck_classify() {  # $1 host, $2 ssh's messages, $3 exit code, $4 "jump" for the node hop
+  local last methods
+  if unreach "$2" "${4:+$NODE}"; then
+    ck FAIL "cannot reach host $UR_HOST ($UR_WHY)" "check the name, and your network or VPN (ssh -v $UR_HOST true shows where it stops)"
+    return
+  fi
+  case "$2" in
+    *"Host key verification failed"*|*"IDENTIFICATION HAS CHANGED"*)
+      ck FAIL "ssh does not know the host key of $1 yet, or it changed" "ssh $1 true (once, in this terminal, to check and accept the key)"
+      return ;;
+  esac
+  last="$(printf '%s\n' "$2" | grep -v '^[[:space:]]*$' | tail -n 1)"
+  last="${last:-no message}"
+  if [ -n "${4:-}" ]; then
+    if node_refused "$2"; then
+      ck FAIL "jump hop: $NODE refused your key from this computer (a connection would ask for the password of $NODE)" "use the nested hop, or give $NODE your key (docs/gui.md#mace-gui-connect-the-node-asks-for-a-password)"
+    else
+      ck FAIL "jump hop: ssh -J $GATEWAY $NODE true failed (exit $3): $last"
+    fi
+    return
+  fi
+  if printf '%s\n' "$2" | grep -q 'Permission denied ('; then
+    methods="$(printf '%s\n' "$2" | sed -n 's/.*Permission denied (\([^)]*\)).*/\1/p' | head -n 1)"
+    case ",$methods," in
+      *,publickey,*) ck FAIL "$1 refused your keys (Permission denied: $methods)" "ssh-add your key, and check that its .pub is in ~/.ssh/authorized_keys on the cluster (docs/ssh-setup.md)" ;;
+      *) ck WARN "$1 asks for a 2FA code or a password, which the check cannot type; the hop probes stop here" "turn on connection sharing (ControlMaster, see --fix-config), log in once with ssh $1, then check again; or skip the probes with --no-net" ;;
+    esac
+    return
+  fi
+  ck FAIL "ssh $1 true failed (exit $3): $last" "ssh -v $1 true"
+}
+
+# shellcheck disable=SC2088  # ~/ paths printed for you, not expanded here
+run_check() {
+  local first what role u hn port pj gfiles nfiles n target missing held f fp key cm why extra err rc inner
+  local res_gw="" res_jump="" res_nested="" others
+  first="${GATEWAY:-$NODE}"
+  if [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then what="$GATEWAY -> $NODE"; else what="$first"; fi
+  echo "Checking the ssh setup for ${PROFILE:+$PROFILE: }$what (read-only; nothing is changed)"
+  # 1. ssh
+  if ! command -v ssh >/dev/null 2>&1; then
+    ck FAIL "no ssh command on PATH: connect needs the OpenSSH client" "install the OpenSSH client (the openssh-client or openssh package)"
+    echo "Verdict: fix the FAIL lines above, then check again."
+    return 1
+  fi
+  ck OK "ssh: $(ssh -V 2>&1 | head -n 1) ($(command -v ssh))"
+  # 2. the gateway (ssh -G)
+  CK_G="$(ssh -G "$first" 2>/dev/null)"
+  if [ -z "$CK_G" ]; then
+    ck FAIL "ssh -G $first printed nothing: ssh cannot read its settings for $first" "ssh -G $first (shows ssh's own error, often a typo in ~/.ssh/config)"
+    echo "Verdict: fix the FAIL lines above, then check again."
+    return 1
+  fi
+  if [ -n "$GATEWAY" ]; then role=gateway; else role=node; fi
+  u="$(g_val user "$CK_G" | head -n 1)"; hn="$(g_val hostname "$CK_G" | head -n 1)"; port="$(g_val port "$CK_G" | head -n 1)"
+  ck OK "$role $first: user ${u:-?}, HostName ${hn:-$first}, port ${port:-22}"
+  pj="$(g_val proxyjump "$CK_G" | head -n 1)"
+  if [ -n "$pj" ] && [ "$pj" != none ]; then ck INFO "$first is reached through ProxyJump $pj (from your ssh config)"; fi
+  if [ -n "$GATEWAY" ] && email_like "$GATEWAY"; then
+    ck WARN "the gateway $GATEWAY looks like an email address. It should be user@login-host (your cluster's login node) or a Host alias from ~/.ssh/config" "mace gui connect ${PROFILE:+$PROFILE }--gateway <user@login-host> --save"
+  fi
+  if [ -n "$GATEWAY" ] && [ "$NO_NET" != 1 ] && gw_unresolvable; then
+    ck WARN "$UNRES matches no Host in ~/.ssh/config and does not resolve (DNS)" "use your cluster's login host (e.g. login.example.edu), or add a Host block with its HostName to ~/.ssh/config"
+  fi
+  gfiles="$(existing_files "$CK_G")"
+  if [ -n "$gfiles" ]; then
+    extra=""
+    [ "$(g_val identitiesonly "$CK_G" | head -n 1)" = yes ] && extra=" (IdentitiesOnly yes)"
+    ck OK "key files ssh offers $first: $(printf '%s\n' "$gfiles" | joined)$extra"
+  else
+    ck WARN "none of the key files ssh offers $first exist; only an agent's keys can log in" "ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_cluster, then put its .pub in ~/.ssh/authorized_keys on the cluster (docs/ssh-setup.md)"
+  fi
+  cm="$(g_val controlmaster "$CK_G" | head -n 1)"
+  case "${cm:-false}" in false|no) ;; *) ck OK "connection sharing is on for $first (ControlMaster $cm)" ;; esac
+  # 3. the node (ssh -G) against the gateway
+  if [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then
+    if [ "$HOP" = nested ]; then
+      ck INFO "nested hop: the gateway logs in to $NODE with the keys it has there; your keys here are not used for that hop"
+    else
+      target="$(node_target)"
+      n="$(ssh -G "$target" 2>/dev/null)"
+      nfiles="$(existing_files "$n")"
+      u="$(g_val user "$n" | head -n 1)"
+      ck INFO "node $NODE: user ${u:-?}, key files $(if [ -n "$nfiles" ]; then printf '%s\n' "$nfiles" | joined; else printf 'none that exist'; fi)"
+      node_keys "$target"
+      if [ ${#NODE_KEYS[@]} -gt 0 ]; then ck INFO "for the jump hop, the connection also gives $NODE: ${NODE_KEYS[*]}"; fi
+      if [ -n "$gfiles" ]; then
+        missing=""
+        while IFS= read -r f; do
+          g_val identityfile "$n" | grep -qxF -- "$f" || missing="${missing:+$missing
+}$f"
+        done <<EOF6
+$gfiles
+EOF6
+        if [ "$(printf '%s\n' "$missing" | grep -c .)" -lt "$(printf '%s\n' "$gfiles" | grep -c .)" ]; then
+          ck OK "the jump hop offers $NODE your gateway key (from your ssh config)"
+        else
+          agent_load
+          held=""
+          while IFS= read -r f; do
+            fp="$(fingerprint "$f")"
+            if [ -n "$fp" ] && [ "$AGENT_RC" = 0 ] && printf '%s\n' "$AGENT_FPS" | grep -qxF -- "$fp"; then held="$f"; break; fi
+          done <<EOF7
+$missing
+EOF7
+          if [ -n "$held" ]; then
+            ck OK "the jump hop offers $NODE your gateway key (the agent holds $held)"
+          else
+            ck WARN "$NODE gets none of $(printf '%s\n' "$missing" | joined) from your ssh config, and the agent does not hold them, so a plain ssh -J $GATEWAY $NODE would ask for the password of $NODE" "the connection adds them for you (above); for plain ssh too, add a Host block for the node (--fix-config prints one) or run ssh-add $(printf '%s\n' "$missing" | head -n 1)"
+          fi
+        fi
+      fi
+    fi
+  fi
+  # 4. the agent: fingerprints only
+  key="$(printf '%s\n' "$gfiles" | head -n 1)"
+  key="${key:-~/.ssh/id_ed25519_cluster}"
+  agent_load
+  case "$AGENT_RC" in
+    0) ck OK "agent: $(printf '%s\n' "$AGENT_FPS" | grep -c .) key(s): $(printf '%s\n' "$AGENT_OUT" | awk '$1 ~ /^[0-9]+$/ { t = ($NF ~ /^\(/) ? " " $NF : ""; print $2 t }' | joined)" ;;
+    1) ck WARN "the ssh agent holds no keys" "ssh-add $key" ;;
+    *)
+      why="$(printf '%s\n' "$AGENT_OUT" | head -n 1)"
+      [ -z "$AGENT_SOCK" ] && why="SSH_AUTH_SOCK is not set in this terminal"
+      ck WARN "cannot reach an ssh agent (${why:-no answer})" "eval \"\$(ssh-agent)\" && ssh-add $key" ;;
+  esac
+  if [ "$AGENT_RC" = 0 ] || [ "$AGENT_RC" = 1 ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      fp="$(fingerprint "$f")"
+      if [ -z "$fp" ]; then
+        ck INFO "$f.pub is missing, so the check cannot compare $f with the agent" "ssh-keygen -y -f $f > $f.pub"
+      elif printf '%s\n' "$AGENT_FPS" | grep -qxF -- "$fp"; then
+        ck OK "$f ($fp) is in the agent"
+      else
+        ck WARN "$f ($fp) is not in the agent: with a passphrase, ssh must ask for it on every hop, and a connection may have no terminal to ask on" "ssh-add $f"
+      fi
+    done <<EOF8
+$gfiles
+EOF8
+  fi
+  # 5. permissions
+  if [ -d "$HOME/.ssh" ]; then
+    local bad=0 m files
+    m="$(fmode "$HOME/.ssh")"
+    if [ -n "$m" ] && [ $((8#$m & 8#077)) -ne 0 ]; then ck WARN "~/.ssh is mode $m; ssh wants 700" "chmod 700 ~/.ssh"; bad=1; fi
+    files="$(printf '%s\n%s\n%s\n' "~/.ssh/config" "$gfiles" "${nfiles:-}" | grep . | awk '!seen[$0]++')"
+    while IFS= read -r f; do
+      [ -f "$(xpath "$f")" ] || continue
+      m="$(fmode "$(xpath "$f")")"
+      [ -n "$m" ] && [ $((8#$m & 8#077)) -ne 0 ] || continue
+      if [ "$f" = "~/.ssh/config" ] && [ $((8#$m & 8#022)) -eq 0 ]; then
+        ck WARN "$f is mode $m; ssh wants 600 and refuses a key or config others can use" "chmod 600 $f"
+      else
+        ck FAIL "$f is mode $m; ssh wants 600 and refuses a key or config others can use" "chmod 600 $f"
+      fi
+      bad=1
+    done <<EOF9
+$files
+EOF9
+    [ "$bad" = 0 ] && ck OK "permissions: ~/.ssh, its config and your key files are private"
+  fi
+  # 6. live probes, each running only `true`
+  if [ "$NO_NET" = 1 ]; then
+    ck SKIP "live probes skipped: no ssh login was tried"
+  else
+    local J=() X=()
+    [ -n "$JUMP" ] && J=(-J "$JUMP")
+    if [ ${#SSH_OPTIONS[@]} -gt 0 ]; then X=("${SSH_OPTIONS[@]}"); fi
+    case "${cm:-false}" in
+      false|no) ;;
+      *) if ssh -O check ${J[@]+"${J[@]}"} "$first" >/dev/null 2>&1 </dev/null; then ck OK "a shared connection to $first is open: the probes reuse it"; fi ;;
+    esac
+    # the profile's ssh options where the connection passes them: the gateway's ssh of the nested
+    # hop (and without a hop), the node's ssh of the jump hop (-J's gateway leg gets none)
+    if [ -n "$NODE" ] && [ -n "$GATEWAY" ] && [ "$HOP" != nested ]; then
+      err="$(ssh ${J[@]+"${J[@]}"} -o BatchMode=yes -o ConnectTimeout=10 "$first" true 2>&1 >/dev/null </dev/null)"; rc=$?
+    else
+      err="$(ssh ${J[@]+"${J[@]}"} -o BatchMode=yes -o ConnectTimeout=10 ${X[@]+"${X[@]}"} "$first" true 2>&1 >/dev/null </dev/null)"; rc=$?
+    fi
+    if [ "$rc" = 0 ]; then
+      ck OK "ssh $first true: logged in without a prompt"; res_gw=1
+    else
+      ck_classify "$first" "$err" "$rc"
+    fi
+    if [ -n "$res_gw" ] && [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then
+      target="$(node_target)"
+      node_keys "$target"
+      err="$(ssh -J "${JUMP:+$JUMP,}$GATEWAY" -o BatchMode=yes -o ConnectTimeout=10 ${NODE_KEYS[@]+"${NODE_KEYS[@]}"} ${X[@]+"${X[@]}"} "$target" true 2>&1 >/dev/null </dev/null)"; rc=$?
+      if [ "$rc" = 0 ]; then
+        ck OK "jump hop: ssh -J $GATEWAY $NODE true works"; res_jump=1
+      else
+        ck_classify "$NODE" "$err" "$rc" jump; CK_HOPFAILS=$((CK_HOPFAILS + 1))
+      fi
+      inner="ssh -o BatchMode=yes -o ConnectTimeout=10 $(shq "$NODE") true"
+      err="$(ssh ${J[@]+"${J[@]}"} -o BatchMode=yes -o ConnectTimeout=10 ${X[@]+"${X[@]}"} "$GATEWAY" "$inner" 2>&1 >/dev/null </dev/null)"; rc=$?
+      if [ "$rc" = 0 ]; then
+        ck OK "nested hop: the gateway logs in to $NODE by itself"; res_nested=1
+      else
+        ck FAIL "nested hop: the gateway could not log in to $NODE (exit $rc): $(printf '%s\n' "$err" | grep -v '^[[:space:]]*$' | tail -n 1)" "log in to the gateway and run ssh $NODE true there: the cluster may need a key for logins between its own hosts"
+        CK_HOPFAILS=$((CK_HOPFAILS + 1))
+      fi
+    fi
+  fi
+  # 7. the verdict
+  others=$((CK_FAILS - CK_HOPFAILS))
+  if [ "$others" = 0 ] && { [ -n "$res_jump" ] || [ -n "$res_nested" ]; }; then
+    if [ "$HOP" = nested ] && [ -n "$res_nested" ]; then echo "Verdict: the nested hop works. Connect with: $(ck_cmd)"
+    elif [ -n "$res_jump" ]; then
+      if [ "$HOP" = nested ]; then echo "Verdict: the jump hop works. Connect with: $(ck_cmd jump)"
+      else echo "Verdict: the jump hop works. Connect with: $(ck_cmd)"; fi
+    else echo "Verdict: only the nested hop works. Connect with: $(ck_cmd nested)"; fi
+    return 0
+  fi
+  if [ "$CK_FAILS" -gt 0 ]; then echo "Verdict: fix the FAIL lines above, then check again."; return 1; fi
+  if [ -z "$NODE" ] || [ -z "$GATEWAY" ]; then
+    if [ -n "$res_gw" ]; then echo "Verdict: MACE GUI runs on the gateway itself. Connect with: $(ck_cmd)"; return 0; fi
+  fi
+  echo "Verdict (without the probes): no problem found. Connect with: $(ck_cmd)"
+  return 0
+}
+
+suggest_alias() {  # a short Host alias from a login host: login.example.edu -> example, hpcc.example.edu -> hpcc
+  local h l1 rest
+  h="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  l1="${h%%.*}"; rest="${h#*.}"
+  case "$l1" in
+    login|ssh|gateway|gw|bastion)
+      if [ "$rest" != "$h" ] && [ "${rest#*.}" != "$rest" ]; then printf '%s' "${rest%%.*}"; return; fi ;;
+  esac
+  case "$l1" in ""|*[!0-9-]*) printf '%s' "${l1:-cluster}" ;; *) printf cluster ;; esac
+}
+# shellcheck disable=SC2088
+fix_config() {  # print (never write) a suggested ~/.ssh/config block (Checker.fix_config in connect_check.py)
+  local first g user hn alias keys key f pj c node
+  first="${GATEWAY:-$NODE}"
+  g="$(ssh -G "$first" 2>/dev/null)"
+  user="$(g_val user "$g" | head -n 1)"
+  hn="$(g_val hostname "$g" | head -n 1)"; hn="${hn:-${first##*@}}"
+  case "$first" in *@*|"") alias="$(suggest_alias "$hn")" ;; *) alias="$first" ;; esac
+  keys="$(existing_files "$g")"
+  key=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "${f##*/}" in id_rsa|id_ecdsa|id_ecdsa_sk|id_ed25519|id_ed25519_sk|id_xmss|id_dsa) ;; *) key="$f"; break ;; esac
+  done <<EOF10
+$keys
+EOF10
+  [ -n "$key" ] || key="$(printf '%s\n' "$keys" | head -n 1)"
+  echo "# A suggested ~/.ssh/config block for this profile, from ssh -G (printed only: nothing was written). Review it, then add it to ~/.ssh/config."
+  if config_hosts | grep -qxF -- "$alias"; then echo "# You already have a Host $alias block: merge these lines into it."; fi
+  if [ -z "$key" ]; then
+    key="~/.ssh/id_ed25519_cluster"
+    echo "# No key file exists yet: make one first, ssh-keygen -t ed25519 -f $key"
+  fi
+  printf 'Host %s\n    HostName %s\n' "$alias" "$hn"
+  [ -n "$user" ] && printf '    User %s\n' "$user"
+  pj="${JUMP:-$(g_val proxyjump "$g" | head -n 1)}"
+  if [ -n "$pj" ] && [ "$pj" != none ]; then printf '    ProxyJump %s\n' "$pj"; fi
+  printf '    IdentityFile %s\n    IdentitiesOnly yes\n    AddKeysToAgent yes\n' "$key"
+  [ "$(uname 2>/dev/null)" = Darwin ] && echo "    UseKeychain yes"
+  printf '    ControlMaster auto\n    ControlPath ~/.ssh/cm-%%C\n    ControlPersist 30m\n    ServerAliveInterval 30\n'
+  if [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then
+    node="${NODE##*@}"
+    printf '\nHost %s\n' "$node"
+    [ -n "$user" ] && printf '    User %s\n' "$user"
+    printf '    IdentityFile %s\n    IdentitiesOnly yes\n    ProxyJump %s\n' "$key" "$alias"
+  fi
+  c="$0"
+  [ -n "$PROFILE" ] && c="$c $(shq "$PROFILE")"
+  c="$c --gateway $(shq "$alias")"
+  [ -n "$NODE" ] && c="$c --node $(shq "${NODE##*@}")"
+  echo "# Then connect with: $c"
+}
+
+if [ "$CHECK" = 1 ] || [ "$FIX_CONFIG" = 1 ]; then
+  RC=0
+  if [ "$CHECK" = 1 ]; then run_check; RC=$?; fi
+  if [ "$FIX_CONFIG" = 1 ]; then
+    [ "$CHECK" = 1 ] && echo
+    fix_config
+  fi
+  exit "$RC"
+fi
 
 if [ "$DRY_RUN" = 1 ]; then
   build_argv "$LOCAL_PORT" 40000 40001
@@ -538,6 +1029,47 @@ err_filter() {  # ssh's stderr -> $TMPD/err (all of it) and this terminal (witho
 }
 
 WHERE="${NODE:-$GATEWAY}"
+# --update-remote: `mace update` in the cluster's MACE checkout first, on the
+# gateway (it shares your home with the nodes), interactive with a terminal.
+# Exit 3 from the cluster: its MACE has no update command (older than 1.1.6).
+if [ -n "$UPDATE_REMOTE" ]; then
+  mace_fallback
+  if [ -n "$FIND" ]; then
+    # shellcheck disable=SC2016  # shell code for the cluster, expanded there
+    UM='"$M"'
+  else
+    UM=""
+    set -f
+    for w in $MACE; do UM="${UM:+$UM }$(home_path "$w")"; done
+    set +f
+  fi
+  UARGS="--channel $UPDATE_REMOTE"
+  UOPTS=(-o BatchMode=yes)
+  if [ -t 0 ]; then UOPTS=(-t); else UARGS="$UARGS --yes"; fi
+  UCMD="if $UM update --help 2>/dev/null | grep -q -e --remote-only; then $UM update $UARGS; else exit 3; fi"
+  [ -n "$FIND" ] && UCMD="{ $FIND; } >/dev/null 2>&1; $UCMD"
+  USCRIPT="cd -- \"\$HOME\" && $UCMD"
+  [ -n "$CONDA" ] && USCRIPT="conda activate $(home_path "$CONDA"); $USCRIPT"
+  [ -n "$SETUP" ] && USCRIPT="${SETUP%;}; $USCRIPT"
+  UHOST="${GATEWAY:-$NODE}"
+  echo "Updating MACE on $UHOST ($UPDATE_REMOTE) ..."
+  UJ=()
+  [ -n "$JUMP" ] && UJ=(-J "$JUMP")
+  ct_setup "$UHOST"
+  URC=0
+  ssh ${UJ[@]+"${UJ[@]}"} "${UOPTS[@]}" ${CT_OPTS[@]+"${CT_OPTS[@]}"} ${SSH_OPTIONS[@]+"${SSH_OPTIONS[@]}"} "$UHOST" "exec bash -lc $(shq "$USCRIPT")" || URC=$?
+  case "$URC" in
+    0) ;;
+    1) echo "mace-gui-connect: the MACE on $UHOST was not updated (you said no). Connecting anyway." >&2 ;;
+    2) echo "mace-gui-connect: mace update on $UHOST stopped without updating (its reason is above). Connecting anyway." >&2 ;;
+    3) echo "mace-gui-connect: the MACE on $UHOST is older than 1.1.6 and has no update command: update it once by hand (git -C <MACE folder> pull). Connecting anyway." >&2 ;;
+    255) echo "mace-gui-connect: ssh to $UHOST failed (see above), so mace update did not run. Connecting anyway." >&2 ;;
+    *) echo "mace-gui-connect: mace update did not finish on $UHOST (exit $URC; see above). Connecting anyway." >&2 ;;
+  esac
+fi
+if gw_unresolvable; then
+  echo "Warning: $UNRES matches no Host in ~/.ssh/config and does not resolve (DNS): check the gateway's name (your cluster's login host, e.g. login.example.edu). Connecting anyway." >&2
+fi
 # ssh's stdin: a FIFO this script writes to (ping, detach; its EOF stops the
 # server). ssh's stdout: a regular file, polled below. Under MobaXterm
 # (Cygwin), ssh's READY line written to a FIFO stdout reached this script
@@ -574,6 +1106,8 @@ handle_line() {  # one line of ssh's stdout; returns 1 when the session is over
       else
         URL="$BASE?token=$TOKEN"
       fi
+      RV="$(json_field version "$line")"
+      [ -n "$RV" ] && echo "MACE on $WHERE: $RV"
       case "$line" in *'"reattached": true'*) echo "Reattached to the server still running on $WHERE." ;; esac
       open_browser "$URL"
       echo "MACE GUI on $WHERE: $URL"
@@ -592,6 +1126,8 @@ handle_line() {  # one line of ssh's stdout; returns 1 when the session is over
         *) echo "The server on $WHERE stopped." ;;
       esac
       STATE="stopped"; return 1 ;;
+    "MACE_GUI_USING "*)
+      echo "mace is not on $WHERE's PATH there; using ${line#MACE_GUI_USING }. To skip the search, pass --mace ${line#MACE_GUI_USING }." ;;
     "MACE_GUI_ERROR "*) echo "mace-gui-connect: the server reported: ${line#MACE_GUI_ERROR }" >&2; STATE="error"; return 1 ;;
     "") ;;
     *) echo "remote: $line" ;;
@@ -691,8 +1227,15 @@ case "$ERR" in
     exit 1 ;;
 esac
 key_failed && { key_hint; exit 1; }
+if [ "$CODE" = 255 ] && unreach "$ERR" "$NODE"; then
+  echo "mace-gui-connect: cannot reach host $UR_HOST ($UR_WHY): check the name, and your network or VPN." >&2
+  echo "mace-gui-connect: $0 --check (with the same profile or flags) tests each step of the connection." >&2
+  exit 1
+fi
 if [ "$CODE" = 127 ]; then
   echo "mace-gui-connect: the remote shell did not find mace: pass --mace <full path> or a --setup line." >&2
+  mace_fallback
+  [ -n "$FIND" ] && echo "mace-gui-connect: it also looked for mace_cli in \$MACE_HOME, ~/mace and ~/MACE there." >&2
   [ -n "$MOVED" ] && echo "mace-gui-connect: $MOVED came from this computer's home folder (your shell expands an unquoted ~ here): check that it exists on $WHERE. Quote the ~ ('~/...') so that your shell passes it as is." >&2
   exit 127
 fi

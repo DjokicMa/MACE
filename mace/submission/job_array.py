@@ -393,24 +393,6 @@ def free_submit_slots(account: Optional[str]) -> Optional[Tuple[int, int]]:
     return parse_submit_slots(res.stdout, user, account)
 
 
-def check_submit_limits(prepared: Sequence[PreparedArray]) -> None:
-    """Refuse the whole wave up front when its tasks would not fit in the
-    free MaxSubmitJobs slots (every task counts against the limit)."""
-    per_account: Dict[Optional[str], int] = {}
-    for p in prepared:
-        acct = dict(p.group.key).get("--account") or None
-        per_account[acct] = per_account.get(acct, 0) + len(p.members)
-    for acct, count in per_account.items():
-        slots = free_submit_slots(acct)
-        if slots and count > slots[0] - slots[1]:
-            limit, used = slots
-            raise ArrayRefusal(
-                f"{count} array task(s) for account {acct or '(default)'} do not fit: "
-                f"MaxSubmitJobs is {limit} and {used} job(s) are already queued, so "
-                f"{max(limit - used, 0)} slot(s) are free. Nothing was submitted; submit "
-                f"fewer decks at a time")
-
-
 # --------------------------------------------------------------------------
 # files
 
@@ -574,32 +556,85 @@ def abort_held_arrays(array_ids: Sequence[str]) -> List[str]:
     return removed
 
 
+def _shrink(p: PreparedArray, keep: int) -> List[ArrayMember]:
+    """Keep the first ``keep`` tasks of a prepared array (manifest, wrapper
+    and spec rewritten); returns the members left out."""
+    rest = list(p.members[keep:])
+    p.members = list(p.members[:keep])
+    p.group = ArrayGroup(p.group.key, p.members, p.group.directive_lines, p.group.separate_stderr)
+    throttle = p.array_spec.split("%", 1)[1] if "%" in p.array_spec else None
+    p.array_spec = throttle_spec(len(p.members), int(throttle) if throttle else None)
+    write_manifest(p.manifest, p.members)
+    p.wrapper.write_text(wrapper_text(p.tag, p.array_dir, p.manifest, p.group, p.job_name, p.array_spec))
+    return rest
+
+
 def submit_prepared(prepared: Sequence[PreparedArray],
-                    record_rows: Optional[Callable[[Sequence[PreparedArray]], None]] = None
+                    record_rows: Optional[Callable[[Sequence[PreparedArray]], None]] = None,
+                    on_overflow: Optional[Callable[[List[ArrayMember]], None]] = None
                     ) -> List[PreparedArray]:
     """Submit held, record, release (see the module docstring).
 
-    ``record_rows(prepared)`` writes every database row of the wave (in one
-    transaction); it runs after every sbatch succeeded and before any array
-    is released. Raises ArraySubmitError (with the held arrays removed) when
-    an sbatch or the recording fails.
+    Every task takes one slot of MACE's queue budget (mace/queue/budget.py):
+    the tasks that fit are submitted, the arrays shrunk to them, and the
+    rest go to ``on_overflow(members)`` (the caller holds their rows or lists
+    them); a SLURM submit-limit refusal sends that array and the rest of the
+    wave there too (``on_overflow(members, "slurm_limit")``). ``record_rows(prepared)`` writes every database row of
+    the wave (in one transaction); it runs after every sbatch succeeded and
+    before any array is released. Raises ArraySubmitError (with the held
+    arrays removed) when another sbatch error or the recording fails.
     """
-    check_submit_limits(prepared)
+    from mace.queue import budget
+    overflow: List[ArrayMember] = []
+    refused: List[ArrayMember] = []
     submitted: List[PreparedArray] = []
-    for p in prepared:
-        argv = ["sbatch", "--hold", p.wrapper.name]
-        res = _run(argv, cwd=str(p.array_dir))
-        m = SUBMITTED_RE.search(res.stdout) if (res is not None and res.returncode == 0) else None
-        if not m:
-            err = ((res.stderr or res.stdout).strip() if res is not None
-                   else "sbatch could not be run")
-            abort_held_arrays([q.array_job_id for q in submitted])
-            raise ArraySubmitError(f"sbatch refused job array {p.tag} "
-                                   f"({len(p.members)} tasks): {err}")
-        p.array_job_id = m.group(1)
-        note_submission()
-        submitted.append(p)
-        _write_submitted(p, argv, released=False)
+    with budget.session() as bs:
+        free = bs.free() if bs.locked else 0
+        if bs.locked and bs.unknown:
+            free = 0
+        keep = []
+        for p in prepared:
+            k = min(free, len(p.members))
+            keep.append(k)
+            free -= k
+        if on_overflow is None and any(k < len(p.members) for p, k in zip(prepared, keep)):
+            raise ArrayRefusal(
+                f"{sum(len(p.members) for p in prepared)} array task(s) do not fit in the queue budget "
+                f"({bs.cfg.describe()}, {bs.used} queued). Nothing was submitted; submit fewer decks at a time")
+        todo = []
+        for p, k in zip(prepared, keep):
+            if k == len(p.members):
+                todo.append(p)
+            elif k > 0:
+                overflow.extend(_shrink(p, k))
+                todo.append(p)
+            else:
+                overflow.extend(p.members)
+        for idx, p in enumerate(todo):
+            argv = ["sbatch", "--hold", p.wrapper.name]
+            res = _run(argv, cwd=str(p.array_dir))
+            m = SUBMITTED_RE.search(res.stdout) if (res is not None and res.returncode == 0) else None
+            if not m:
+                err = ((res.stderr or res.stdout).strip() if res is not None
+                       else "sbatch could not be run")
+                if budget.classify(err, bs.used, bs.cfg.limit) == "limit" and on_overflow is not None:
+                    bs.stopped = True
+                    if budget.LIMIT_TOKEN_RE.search(err) and len(p.members) <= 1:
+                        # an array of n is refused anywhere below used + n: only a
+                        # one-task refusal tells the limit (the rows go in singly)
+                        budget.remember_refusal(bs.used, bs.env)
+                    print(f"  SLURM refused job array {p.tag} at its submit limit: {err.splitlines()[-1]}")
+                    for q in todo[idx:]:
+                        refused.extend(q.members)
+                    break
+                abort_held_arrays([q.array_job_id for q in submitted])
+                raise ArraySubmitError(f"sbatch refused job array {p.tag} "
+                                       f"({len(p.members)} tasks): {err}")
+            p.array_job_id = m.group(1)
+            note_submission()
+            bs.note(p.array_job_id, len(p.members), p.job_name)
+            submitted.append(p)
+            _write_submitted(p, argv, released=False)
     if record_rows is not None:
         try:
             record_rows(submitted)
@@ -613,6 +648,13 @@ def submit_prepared(prepared: Sequence[PreparedArray],
         else:
             print(f"  Could not release job array {p.array_job_id}; its rows are recorded. "
                   f"Release it with: scontrol release {p.array_job_id}")
+    if overflow:
+        on_overflow(overflow)
+    if refused:
+        try:
+            on_overflow(refused, "slurm_limit")
+        except TypeError:
+            on_overflow(refused)
     return submitted
 
 
@@ -673,20 +715,22 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
     job_ids: List[str] = []
 
     def single(script_name: str) -> Optional[str]:
-        res = _run(["sbatch", script_name], cwd=str(data_folder))
-        if res is None or res.returncode != 0:
+        from mace.queue import budget
+        res = budget.sbatch(["sbatch", script_name], data_folder, quiet=True)   # note_submission() inside
+        if res.held:
+            budget.note_unsubmitted(script_name, str(data_folder), ["sbatch"] + [script_name])
+            return None
+        if not res.submitted:
             say(f"  Warning: Failed to submit {script_name}")
-            if res is not None and res.stderr:
-                say(f"    {res.stderr.strip()}")
-                hint = invalid_account_hint(res.stderr)
+            if res.message:
+                say(f"    {res.message}")
+                hint = invalid_account_hint(res.message)
                 if hint:
                     say(f"    {hint}")
             return None
-        note_submission()
-        m = SUBMITTED_RE.search(res.stdout)
-        if m:
-            say(f"  ✓ Submitted {script_name} as a normal job (job {m.group(1)})")
-            return m.group(1)
+        if res.job_id:
+            say(f"  ✓ Submitted {script_name} as a normal job (job {res.job_id})")
+            return res.job_id
         say(f"  ✓ Submitted {script_name} as a normal job")
         return None
 
@@ -732,8 +776,12 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
             for name, reason in regenerate:
                 say(f"  {name}: {reason} (not submitted: --nosubmit)")
             return []
+        def unsubmitted(members, reason="budget"):
+            from mace.queue import budget
+            for m in members:
+                budget.note_unsubmitted(Path(m.script).name, str(m.dir), ["sbatch"] + [Path(m.script).name])
         try:
-            subs = submit_prepared(prepared) if prepared else []
+            subs = submit_prepared(prepared, on_overflow=unsubmitted) if prepared else []
         except (ArrayRefusal, ArraySubmitError) as e:
             say(f"Error: {e}")
             hint = invalid_account_hint(str(e))
