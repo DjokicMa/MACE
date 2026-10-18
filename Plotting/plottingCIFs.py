@@ -41,6 +41,20 @@ ELEMENT_COLORS = {
     "Si": "#DAA520",
 }
 
+
+
+def _palette():
+    """The element palette `mace plotting` chose for this run (--palette, else
+    the saved default in ~/.config/mace/element_colors.json, shared with the
+    GUI, else VESTA); None (--palette legacy, or no mace on the path) keeps
+    ELEMENT_COLORS."""
+    try:
+        from mace.utils.element_palettes import active_colors
+    except ImportError:
+        return None
+    return active_colors()
+
+
 # Coordination-based coloring (overrides element color when --color-by-coord)
 COORD_COLORS = {
     1: "#FF4444",   # red         — under-coordinated
@@ -174,7 +188,11 @@ def get_atoms_data(supercell, color_by_coord=False, bond_cutoff=1.9):
         colors = [COORD_COLORS.get(c, COORD_COLOR_DEFAULT)
                   for c in coordinations]
     else:
-        colors = [ELEMENT_COLORS.get(s, "#808080") for s in symbols]
+        pal = _palette()
+        if pal:
+            colors = [pal.get(s, "#808080") for s in symbols]
+        else:
+            colors = [ELEMENT_COLORS.get(s, "#808080") for s in symbols]
 
     return positions, radii, colors, coordinations
 

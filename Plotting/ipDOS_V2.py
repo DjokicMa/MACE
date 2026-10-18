@@ -15,7 +15,9 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator, MultipleLocator
+from matplotlib.ticker import FixedLocator, MaxNLocator, MultipleLocator
+from matplotlib.transforms import blended_transform_factory
+from matplotlib import patheffects
 import matplotlib as mpl
 import glob
 from os.path import exists
@@ -25,8 +27,16 @@ from collections import defaultdict
 # SHARED CONFIGURATION (Keep consistent with ipBANDS_V7.py)
 # =============================================================================
 
-DEFAULT_FIG_WIDTH = 4
-DEFAULT_FIG_HEIGHT = 8
+# 1.1.6 (T8): a figure for a page column, 3.5 x 5 in, no title, 11 pt labels and 10 pt ticks
+DEFAULT_FIG_WIDTH = 3.5
+DEFAULT_FIG_HEIGHT = 5
+FIG_WIDTH = DEFAULT_FIG_WIDTH   # --fixed-width (mace plotting --width)
+PNG_DPI = 600                   # --dpi (mace plotting --dpi)
+# the GUI's plot colors (tokens.css at a light plot): the grid (--line), the Fermi line (--text-2),
+# the k-point lines (--border-strong)
+GRID_COLOR = "#e3e6eb"
+FERMI_COLOR = "#545b67"
+KTICK_COLOR = "#848b97"
 
 # Subplot parameters for exact alignment between BAND and DOS plots
 SUBPLOT_LEFT = 0.18
@@ -45,8 +55,74 @@ mpl.rcParams.update(
     }
 )
 
+def _presets():
+    """mace/plotting/presets.py (the plot styles and DOS colors shared with mace gui)."""
+    try:
+        from mace.plotting import presets
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.plotting import presets
+    return presets
+
+
+def _plot_tokens(style):
+    """The GUI's plot colors (ink, secondary text, borders) of a style on a light plot (plotly_bands.tokens)."""
+    try:
+        from mace.plotting.plotly_bands import tokens
+    except ImportError:          # run as a script from Plotting/
+        _presets()
+        from mace.plotting.plotly_bands import tokens
+    return tokens(style)
+
+
+def _mpl_color(color):
+    """A presets color (#rrggbb, or rgba(r,g,b,a) from presets.rgba) as matplotlib takes it."""
+    if isinstance(color, str) and color.startswith("rgba("):
+        r, g, b, a = (float(x) for x in color[5:-1].split(","))
+        return (r / 255, g / 255, b / 255, a)
+    return color
+
+
+def _group_titles(legend, rows, color):
+    """Legend rows ``rows`` as group titles (matplotlib has no legend groups): no handle space, the
+    title color, flush left with the entries' handles."""
+    texts = legend.get_texts()
+    packers = [p for col in legend._legend_handle_box.get_children() for p in col.get_children()]
+    for i in rows:
+        texts[i].set_color(color)
+        if i < len(packers):
+            box = packers[i].get_children()[0]
+            box.width = 0
+            packers[i].sep = 0
+
+
+def projection_styles(labels, search, dos_colors=None, style="default", element_colors=None, show_total=True,
+                      spin=False, weights=None):
+    """{label: {"name", "color", "dash", "show", "total"}} for the projections of a DOS (mace gui's
+    DOS colors, presets.py dos_styles). ``dos_colors`` (auto, total, element, orbital,
+    element-orbital) picks the lines and their colors; without it the projection type picked the
+    lines (``search``) and each takes the color it has in mace gui: an element's all-orbital line
+    its element color, an orbital line its orbital's hue (one element) or a shade of its element's
+    color (several), s/p/d/f also by line style."""
+    P = _presets()
+    colors = element_colors if element_colors is not None else P.element_colors()
+    if dos_colors:
+        look = P.dos_styles(labels, dos_colors, colors, preset=style, show_total=show_total, spin=spin, weights=weights)["lines"]
+        return {x["label"]: x for x in look}
+    elements = {P.parse_projection(lab)["element"] for lab in search} - {None}
+    orb = P.dos_styles(labels, "orbital" if len(elements) <= 1 else "element-orbital", colors, preset=style,
+                       spin=spin, weights=weights)["lines"]
+    whole = P.dos_styles(labels, "element", colors, preset=style, spin=spin, weights=weights)["lines"]
+    out = {}
+    for o, w in zip(orb, whole):
+        x = dict(w if P.parse_projection(o["label"])["orbital"] in ("all", None, "total") else o)
+        x["show"] = x["total"] or o["label"] in search
+        out[o["label"]] = x
+    return out
+
+
 # =============================================================================
-# ELEMENT COLORS - SHARED WITH BAND PLOT
+# ELEMENT COLORS (legacy table: the element groups of element_mode; the line colors are presets.py's)
 # =============================================================================
 
 ELEMENT_COLORS = {
@@ -576,6 +652,8 @@ def analyze_fermi_composition(
 
         for label, contrib in contributions.items():
             elem = get_element_from_label(label)
+            if not elem:            # an unnamed column: no element to name ("Fe(d), , O(p)")
+                continue
             orbital = get_orbital_from_label(label)
             element_totals[elem] += contrib
             if orbital:
@@ -728,6 +806,8 @@ def analyze_composition(
 
         for label, contrib in contributions.items():
             elem = get_element_from_label(label)
+            if not elem:            # an unnamed column: no element to name ("Fe(d), , O(p)")
+                continue
             orbital = get_orbital_from_label(label)
             element_totals[elem] += contrib
             if orbital:
@@ -875,22 +955,33 @@ def find_optimal_legend_position(
 
 
 def read_doss_projection_labels(d3_file):
-    """The projection labels of a DOSS .d3 ("#C S", ..., "END" for the total)."""
-    v = []
-    n = 9999
-    num = 9999
+    """The projection labels of a DOSS .d3 ("#C S", ..., "END" for the total).
+
+    The DOSS block is the header (NPRO NPT INZB IFNB IPLO NPOL NPR), a BMI BMA record when
+    INZB and IFNB are negative (an energy window), NPRO projection records, then NPR print
+    records ("105 -1": MACE's decks write one) and END. Only the projections are labels; the
+    total, the last DOSS.DAT column, is "END" (doss_label: "Total")."""
     with open(d3_file) as F:
-        for i, line in enumerate(F):
-            if line.startswith("DOSS"):
-                n = i
-            if i == n + 1:
-                l = line.split()
-                num = int(l[0])
-            if i >= n + 3 and i <= n + 3 + num:
-                v.append(str(line[max(line.find("#"), 0) :].strip()))
-            if line.startswith("END"):
-                break
-    return v
+        lines = F.read().splitlines()
+    n = next((i for i, line in enumerate(lines) if line.startswith("DOSS")), None)
+    if n is None or n + 1 >= len(lines):
+        return []
+    head = lines[n + 1].split()
+    try:
+        num = int(head[0])
+    except (ValueError, IndexError):
+        return []
+    try:
+        window = int(head[2]) < 0 and int(head[3]) < 0
+    except (ValueError, IndexError):
+        window = True        # the layout MACE's decks always have
+    start = n + 3 if window else n + 2
+    v = []
+    for line in lines[start:start + num]:
+        if line.startswith("END"):
+            break
+        v.append(str(line[max(line.find("#"), 0):].strip()))
+    return v + ["END"]
 
 
 def doss_label(raw):
@@ -931,6 +1022,15 @@ def vacuum_shift(potc_dat, potc_out):
                 z.append(float(line.split()[0]))
                 V.append(float(line.split()[1]))
     return -(V[0] - EF) * 27.2114
+
+
+def energy_axis_label(vacuum, shift=0.0):
+    """The energy axis title: E - E_F, the vacuum scale, or either with a Fermi
+    shift (the same as ipBANDS_V2's)."""
+    if not shift:
+        return r"$E - E_{vac}$ (eV)" if vacuum else r"$E - E_F$ (eV)"
+    ref = r"E_{vac}" if vacuum else r"E_F"
+    return rf"$E - ({ref}{shift:+g})$ (eV)"
 
 
 def read_doss_header(doss_file):
@@ -986,6 +1086,7 @@ def read_doss_columns(doss_file, n_columns, maxV=0):
     """DOSS.DAT columns: [energies (eV, + maxV), then each projection in
     states/eV]. Every data record of every spin block is read, in file order."""
     data_vect = [[] for n in range(n_columns)]
+    nepts, nspin = read_doss_points(doss_file)
     with open(doss_file) as f:
         for i, line in enumerate(f):
             if line.startswith("# EFERMI"):
@@ -1010,12 +1111,36 @@ def read_doss_columns(doss_file, n_columns, maxV=0):
                 if not ne_parts:
                     continue
                 data += ne_parts
+            if len(data) < n_columns:
+                break                   # a record cut off at the end of a short file
 
             data_vect[0].append(float(data[0]) * 27.2114 + maxV)
 
             for j in range(1, n_columns):
                 data_vect[j].append(float(data[j]) / 27.2114)
+    # a short file (a copy still in progress, a full quota) is refused: half of
+    # spin up would be drawn as spin down, in a wrong window
+    if nepts and len(data_vect[0]) < nepts * nspin:
+        raise ValueError(
+            f"{os.path.basename(doss_file)} is truncated: {len(data_vect[0])} of {nepts * nspin} energy points "
+            f"(NEPTS {nepts}, NSPIN {nspin} in its header); copy the whole file again")
     return data_vect
+
+
+def read_doss_points(doss_file):
+    """(NEPTS or None, NSPIN) from the DOSS.DAT header line: the energy points
+    of each spin block."""
+    with open(doss_file) as fh:
+        head = fh.readline().split()
+    try:
+        nepts = int(head[head.index("NEPTS") + 1])
+    except (ValueError, IndexError):
+        nepts = None
+    try:
+        nspin = int(head[head.index("NSPIN") + 1])
+    except (ValueError, IndexError):
+        nspin = 1
+    return nepts, nspin
 
 
 def ipDOS(
@@ -1031,9 +1156,34 @@ def ipDOS(
     fixed_height=DEFAULT_FIG_HEIGHT,
     formats="png,svg",
     output_dir=".",
+    fermi_shift=0.0,
+    energy_reference="auto",
+    style="default",
+    dos_colors=None,
+    show_total=True,
+    spin_dos="auto",
+    spin_dash=None,
+    element_colors=None,
+    spin_up_color=None,
+    spin_down_color=None,
+    band_color=None,
+    dos_smooth=None,
 ):
-    """Main DOS plotting function"""
+    """Main DOS plotting function. ``style``: the plot preset (presets.py); ``dos_colors``: the
+    projections and colors (auto, total, element, orbital, element-orbital; None: the projection
+    type's lines in mace gui's colors); ``show_total``: draw the total; ``spin_dos``: auto (a
+    spin-polarized run mirrored, a closed-shell run one-sided), mirrored or overlaid;
+    ``spin_dash``: spin down's line style; ``spin_up_color``/``spin_down_color``: the total's spin
+    pair (default: the style's). ``dos_smooth``: the Gaussian smoothing width
+    (eV, display only; None or 0: off). ``energy_reference``: auto (the vacuum scale
+    when the run's POTC files are beside the data, else E - E_F), fermi (E - E_F
+    always) or vacuum (needs the POTC files). ``fermi_shift`` (eV) moves the
+    states by -fermi_shift: the dashed line and the window stay, so the energy
+    fermi_shift above E_F becomes the reference (the GUI's Fermi shift)."""
 
+    P = _presets()
+    preset = P.get(style, "band")
+    total_fill = preset["dos"]["total_fill"]
     file = material + "_doss.DOSS.DAT"
     file1 = material + "_doss.d3"
     file4 = material + "_POTC.POTC.DAT"
@@ -1055,10 +1205,17 @@ def ipDOS(
     search = sort_labels_by_element_and_orbital(search)
 
     # Handle vacuum reference
-    maxV = vacuum_shift(file4, file5)
+    energy_reference = (energy_reference or "auto").lower()
+    if energy_reference == "vacuum" and not (exists(file4) and exists(file5)):
+        raise ValueError("--energy-reference vacuum needs the run's POTC files beside the data "
+                         f"({file4} and {file5})")
+    maxV = 0 if energy_reference == "fermi" else vacuum_shift(file4, file5)
+    vacuum_axis = energy_reference != "fermi" and exists(file4)
 
     # Read DOS data
     data_vect = read_doss_columns(file, len(labels), maxV)
+    if fermi_shift:
+        data_vect[0] = [e - fermi_shift for e in data_vect[0]]
     data_vect, n_pileup = suppress_edge_pileup(data_vect, read_doss_header(file)[1])
     if n_pileup:
         print("  Left out the pile-up bin at the edge of the DOS window (states outside the window)")
@@ -1160,6 +1317,7 @@ def ipDOS(
             _, neg_val, pos_val = x_scale_mode.split(":")
             xlim_neg = -float(neg_val)
             xlim_pos = float(pos_val)
+            xlimit = max(abs(xlim_neg), xlim_pos)
         except:
             xlimit = max_dos * 1.1
             xlim_neg = -xlimit
@@ -1228,8 +1386,38 @@ def ipDOS(
         data_vect, labels, search, data_vect[0], E_l, E_u, maxV
     )
 
-    # Create figure with fixed subplot parameters for alignment
-    fig = plt.figure(figsize=(DEFAULT_FIG_WIDTH, fixed_height))
+    # the two spin blocks (CRYSTAL writes both, the second negative): a closed-shell run is drawn
+    # one-sided, a spin-polarized one mirrored, unless spin_dos asks otherwise (B2, the GUI's rule)
+    n_all = len(data_vect[0])
+    nspin = read_doss_header(file)[1]
+    half = n_all // 2 if nspin == 2 and n_all % 2 == 0 else n_all
+    up_cols = [np.asarray(c[:half], float) for c in data_vect[1:]]
+    down_cols = [np.asarray(c[half:], float) for c in data_vect[1:]] if half < n_all else None
+    polarized = P.dos_spin_polarized(up_cols, down_cols)
+    if spin_dos == "mirrored" and down_cols is not None:
+        side = "mirrored"
+    elif spin_dos == "overlaid" and polarized:
+        side = "overlaid"
+    else:
+        side = "mirrored" if (spin_dos == "auto" and polarized) else "one"
+    energy = np.asarray(data_vect[0][:half], float)
+    col_of = {lab: k for k, lab in enumerate(labels[1:])}
+    both = side != "one"
+    # an unrestricted run with alpha = beta (MACE's SPIN default): each block holds one spin, so the
+    # one-sided curve is their sum alpha + |beta|, the total DOS (the GUI's results.dos_data spin_summed)
+    summed = down_cols is not None and not polarized and side == "one"
+    if summed:
+        up_cols = [u - d for u, d in zip(up_cols, down_cols)]
+    if polarized:
+        state = "spin-polarized"
+    elif down_cols is not None:
+        state = "spin-polarized, alpha = beta (non-magnetic)" + (", total alpha + beta drawn" if summed else "")
+    else:
+        state = "closed shell"
+    print(f"  Spin: {state}, drawn {side if side != 'one' else 'one-sided'}")
+
+    # Create figure with fixed subplot parameters for alignment (no title: the caption names it)
+    fig = plt.figure(figsize=(FIG_WIDTH, fixed_height))
     ax = fig.add_axes(
         [
             SUBPLOT_LEFT,
@@ -1238,126 +1426,174 @@ def ipDOS(
             SUBPLOT_TOP - SUBPLOT_BOTTOM,
         ]
     )
-
-    ax.set_title("Density of States", pad=10, fontsize=18, weight="bold")
+    label_pt, tick_pt = preset["font"], preset["tick_font"]
 
     # Set black spines
     for spine in ax.spines.values():
         spine.set_edgecolor("black")
-        spine.set_linewidth(1.2)
+        spine.set_linewidth(1.2 * preset["frame"])
 
-    ax.yaxis.set_major_locator(MultipleLocator(1.0))
-    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1.0 if (E_u - E_l) <= 14 else 2.0))
+    ax.yaxis.set_minor_locator(FixedLocator([]))
 
-    # Y-axis label with properly BOLD E-E_F (both E and subscript F)
-    if exists(file4):
-        ax.set_ylabel(r"Energy w.r.t. Vacuum (eV)", fontsize=16, weight="bold")
+    ax.set_ylabel(energy_axis_label(vacuum_axis, fermi_shift), fontsize=label_pt)
+    y_lo, y_hi = E_l + maxV, E_u + maxV
+    ax.set_ylim(y_lo, y_hi)
+
+    # Grid: the GUI's light major grid, no minor grid (a style without one: Publication, Print grayscale)
+    if preset["grid"] != "none":
+        ax.grid(True, which="major", axis="both", linewidth=0.8, color=GRID_COLOR, linestyle="-")
+        ax.grid(False, which="minor")
     else:
-        # Use mathbf for the entire expression to make E, minus, and subscript all bold
-        ax.set_ylabel(r"$\mathbf{E-E_F}$ (eV)", fontsize=16, weight="bold")
-
-    ax.set_xlim(xlim_neg, xlim_pos)
-    ax.set_ylim(E_l + maxV, E_u + maxV)
-
-    # Tick setup
-    tick_positions = np.linspace(xlim_neg, xlim_pos, 7)
-    minor_positions = []
-    for i in range(len(tick_positions) - 1):
-        minor_positions.append((tick_positions[i] + tick_positions[i + 1]) / 2)
-
-    ax.xaxis.set_major_locator(FixedLocator(tick_positions))
-    ax.xaxis.set_minor_locator(FixedLocator(minor_positions))
-
-    # Grid
-    ax.grid(
-        True,
-        which="major",
-        axis="both",
-        alpha=0.5,
-        linewidth=0.8,
-        color="#666666",
-        linestyle="-",
-    )
-    ax.grid(
-        True,
-        which="minor",
-        axis="both",
-        alpha=0.25,
-        linewidth=0.5,
-        color="#888888",
-        linestyle="-",
-    )
+        ax.grid(False)
     ax.set_axisbelow(True)
-
-    # X-axis labels (min/max only)
-    ax.set_xticks([xlim_neg, xlim_pos])
-
-    if max(abs(xlim_neg), abs(xlim_pos)) >= 100:
-        max_val = max(abs(xlim_neg), abs(xlim_pos))
-        exponent = int(np.floor(np.log10(max_val)))
-        scale_factor = 10**exponent
-        ax.set_xticklabels(
-            [f"{xlim_neg / scale_factor:.1f}", f"{xlim_pos / scale_factor:.1f}"]
-        )
-        xlabel_text = f"DOS (states/eV/U.C.) ×10$^{{{exponent}}}$"
-    else:
-        ax.set_xticklabels([f"{xlim_neg:.1f}", f"{xlim_pos:.1f}"])
-        xlabel_text = r"DOS (states/eV/U.C.)"
 
     ax.yaxis.set_label_position("right")
     ax.yaxis.tick_right()
-    ax.set_xlabel(xlabel_text, fontsize=16, weight="bold")
+    ax.set_xlabel(r"DOS (states/eV)", fontsize=label_pt)
 
-    plt.xticks(fontsize=14)
-    plt.yticks(fontsize=14)
+    plt.xticks(fontsize=tick_pt)
+    plt.yticks(fontsize=tick_pt)
 
-    ax.tick_params(which="major", length=8, width=1.2)
-    ax.tick_params(which="minor", length=5, width=1.0)
+    tick_dir = "out" if preset["ticks"] == "outside" else "in"
+    ax.tick_params(which="major", length=5, width=1.0 * preset["frame"], direction=tick_dir)
+    ax.tick_params(which="minor", length=3, width=0.8 * preset["frame"], direction=tick_dir)
 
-    color_map, linestyle_map = generate_color_scheme(labels, search_ordered)
+    # each projection's color and line style: the DOS colors of mace gui (presets.py dos_styles); the
+    # projections drawn are --dos-colors' (when given) or the projection type's
+    weights = P.dos_weights(list(energy), [{"label": lab, "up": list(up_cols[k]),
+                                            "down": list(down_cols[k]) if (polarized and down_cols is not None) else None}
+                                           for k, lab in enumerate(labels[1:])], y_lo, y_hi)
+    styles = projection_styles(labels[1:], search_ordered, dos_colors, style, element_colors, show_total,
+                               spin=both, weights=weights)
+    spin_pair = P.spin_colors(style, "band", "light", None, spin_up_color, spin_down_color)
+    down_dash = spin_dash or P.SPIN_DOWN_DASH
+    tk = _plot_tokens(style)
+    ink = tk["--plot-ink"] or tk["--text"]
+    # the one-sided total of a run that is not spin-polarized in a neutral color (--band-color, the style's, else ink)
+    neutral = P.band_color(style, "band", "light", band_color, ink)
+    if dos_colors:
+        # the 1.1.6 layout (the GUI's): by default only the 2-4 projections carrying most of the DOS in the
+        # window; DOS colors Auto takes the style's projection colors, largest first, clear of the spin pair
+        pk = P.pick_projections(list(styles.values()), weights)
+        order = pk["order"]
+        for lab in order:
+            if lab not in pk["shown"]:
+                styles[lab] = {**styles[lab], "show": False}
+        if dos_colors == "auto":
+            ppal = P.projection_palette(style, [spin_pair["up"], spin_pair["down"]] if both else None)
+            if ppal:
+                for k, lab in enumerate(order):
+                    styles[lab] = {**styles[lab], "color": ppal[k % len(ppal)], "dash": "solid"}
+        hidden = [lab for lab in order if lab not in pk["shown"]]
+        if hidden:
+            print(f"  Projections drawn: {', '.join(styles[lab]['name'] for lab in pk['shown'])} "
+                  f"(the largest in the window; left out: {', '.join(styles[lab]['name'] for lab in hidden)})")
+        search_ordered = [lab for lab in calculate_dos_order(data_vect, labels, [x["label"] for x in styles.values()
+                          if x["show"] and not x["total"]], data_vect[0], E_l, E_u, maxV)]
+    else:
+        order = sorted(search_ordered, key=lambda lab: -float(weights.get(lab) or 0.0))
+    # opt-in Gaussian smoothing (display only, --dos-smooth / [plots] dos_smooth)
+    sigma = P.smooth_sigma(dos_smooth)
+    energy_list = list(energy)
 
-    # Plot Total DOS as background (z=1)
-    for i in range(1, len(data_vect)):
-        if labels[i] == "Total":
-            ax.fill_betweenx(
-                data_vect[0],
-                data_vect[i],
-                label=labels[i],
-                alpha=0.5,
-                color="darkgray",
-                zorder=1,
-            )
+    def sm(y):
+        return np.asarray(P.gauss_smooth(list(y), energy_list, sigma)) if sigma else np.asarray(y)
 
-    # Plot DOS lines in z-order
+    fills = P.spin_fills(spin_pair, style)
+    nfill = P.neutral_fill(neutral, style)
+    # the GUI's widths: the projections 1.3, the total 1.7 (never thinner than the projections)
+    lw = 1.3 * preset["line"]
+    curves = []
+
+    def draw(k, color, dash, z, label=None, total=False):
+        """projection column k: spin up on the right, spin down (dashed, its own color) on the left."""
+        width = 1.7 * preset["line"] if total else lw
+        up = sm(up_cols[k])
+        if total:
+            # the total: lightly filled in spin up's color (both spins), else a neutral fill under an ink line
+            ax.fill_betweenx(energy, 0, up, color=_mpl_color(fills["up"] if both else nfill), linewidth=0, zorder=1)
+        line_color = (spin_pair["up"] if both else neutral) if total else color
+        ax.plot(up, energy, label=label, linewidth=width, color=line_color, linestyle=P.mpl_dash(dash), zorder=z)
+        curves.append(up)
+        if not both or down_cols is None:
+            return
+        down = sm(down_cols[k] if polarized else -up_cols[k])
+        if side == "overlaid":
+            down = np.abs(down)
+        elif total:
+            ax.fill_betweenx(energy, 0, down, color=_mpl_color(fills["down"]), linewidth=0, zorder=1)
+        ax.plot(down, energy, linewidth=width, color=spin_pair["down"] if total else color,
+                linestyle=P.mpl_dash(down_dash if dash == "solid" else dash),
+                alpha=0.65 if (side == "overlaid" and dash != "solid") else 1.0, zorder=z)
+        curves.append(down)
+
+    total_style = styles.get("Total")
+    total_drawn = "Total" in col_of and (dos_colors == "total" or show_total) and total_style is not None
+    if total_drawn:
+        draw(col_of["Total"], total_style["color"], "solid", 50, label="Total", total=True)
+
+    # Plot DOS lines in z-order (the largest DOS behind)
     base_zorder = 2
-    for z_idx, proj in enumerate(search_ordered):
-        for i in range(1, len(data_vect)):
-            if labels[i] == proj:
-                color = color_map.get(proj, (0, 0, 0))
-                linestyle = linestyle_map.get(proj, "-")
-                z = base_zorder + z_idx
-                ax.plot(
-                    data_vect[i],
-                    data_vect[0],
-                    label=labels[i],
-                    linewidth=1.8,
-                    alpha=0.85,
-                    color=color,
-                    linestyle=linestyle,
-                    zorder=z,
-                )
+    rank = {proj: z for z, proj in enumerate(search_ordered)}
+    drawn = []
+    for proj in sorted(search_ordered, key=lambda x: col_of.get(x, 0)):
+        st = styles.get(proj)
+        if proj not in col_of or st is None or st["total"] or not st.get("show", True):
+            continue
+        draw(col_of[proj], st["color"], st["dash"], base_zorder + rank[proj], label=st["name"])
+        drawn.append(proj)
 
-    # Fermi level line
-    fermi_line = plt.axhline(
-        maxV,
-        color="black",
-        linestyle="-.",
-        lw=1.5,
-        alpha=0.8,
-        label="$E_F$",
-        zorder=100,
-    )
-    plt.axvline(0, color="black", lw=2.5, alpha=0.9, zorder=101)
+    # the DOS range: the drawn curves in the scaling window, symmetric when mirrored
+    if x_scale_mode.startswith("custom:"):
+        xlim = (xlim_neg if side == "mirrored" else 0.0, xlim_pos)
+    else:
+        emask = (energy >= scale_e_min) & (energy <= scale_e_max)
+        if not np.any(emask):
+            emask = np.ones(len(energy), dtype=bool)
+        vals = [np.nanmax(np.abs(c[emask])) for c in curves if np.any(np.isfinite(c[emask]))]
+        m = max(vals) * 1.08 if vals and max(vals) > 0 else 1.0
+        xlim = (-m, m) if side == "mirrored" else (0.0, m)
+    ax.set_xlim(*xlim)
+    print(f"  X-axis limits: {xlim[0]:.4f} to {xlim[1]:.4f}")
+    if side == "mirrored" and xlim[0] < 0 < xlim[1]:
+        # magnitudes on both sides of zero
+        ticks = P.mirrored_ticks(xlim[0], xlim[1])
+        ax.set_xticks(ticks["vals"])
+        ax.set_xticklabels(ticks["text"], fontsize=tick_pt)
+    else:
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]))
+    ax.xaxis.set_minor_locator(FixedLocator([]))
+
+    # a clear DOS = 0 baseline (the spin halves meet there)
+    ax.axvline(0, color=ink, lw=1.2, zorder=1.5)
+    # "↑ up" and "down ↓" over each half, beside the zero line, in the spin colors
+    if side == "mirrored" and xlim[0] < 0 < xlim[1]:
+        over = blended_transform_factory(ax.transData, ax.transAxes)
+        for text, color, ha, dx in (("↑ up", spin_pair["up"], "left", 3), ("down ↓", spin_pair["down"], "right", -3)):
+            ax.annotate(text, xy=(0, 1), xycoords=over, xytext=(dx, 2), textcoords="offset points", ha=ha, va="bottom",
+                        color=color, fontweight="bold", fontsize=max(7, tick_pt - 2))
+
+    # Fermi level line: dotted (dashed would read as spin down)
+    fermi_label = "$E_F$" if not fermi_shift else f"$E_F{fermi_shift:+g}$ eV"
+    plt.axhline(maxV, color=FERMI_COLOR, linestyle=P.mpl_dash("dot"), lw=1.2, label=fermi_label, zorder=100)
+
+    # the energies the DOS run did not compute: shaded, labeled when there is room (no data, not zero states)
+    across = blended_transform_factory(ax.transAxes, ax.transData)
+    halo = [patheffects.withStroke(linewidth=2.5, foreground="white")]     # a note readable over the grid
+    finite_e = energy[np.isfinite(energy)]
+    window = [float(finite_e.min()), float(finite_e.max())] if len(finite_e) else None
+    for g0, g1 in P.dos_window_gaps(window, y_lo, y_hi):
+        ax.axhspan(g0, g1, color=_mpl_color(P.rgba(ink, 0.05)), linewidth=0, zorder=0.4)
+        if g1 - g0 >= 0.06 * (y_hi - y_lo):
+            low = g0 <= y_lo
+            ax.text(0.5, g1 if low else g0, P.DOS_LAYOUT["no_data"], transform=across, ha="center",
+                    va="top" if low else "bottom", fontsize=max(6, tick_pt - 4), color=tk["--text-3"], zorder=0.6,
+                    path_effects=halo)
+    if sigma:
+        ax.text(0.98, 0.01, f"Gaussian smoothing σ = {P.js_num(sigma)} eV (display only)", transform=ax.transAxes,
+                ha="right", va="bottom", fontsize=max(6, tick_pt - 4), color=tk["--text-2"], zorder=101,
+                path_effects=halo)
 
     # Composition notes (the orbitals at the band edges): with the band-gap note they head
     # the legend, outside the axes, not boxes over the curves
@@ -1384,19 +1620,57 @@ def ipDOS(
             else:
                 gap_text = f"$E_g$ = {band_gap_info['gap']:.2f} eV"
 
+    # the grouped legend (the GUI's Spin and Projections groups; matplotlib has no group titles, so each
+    # group opens with a title row): Spin in neutral ink, the projections as color swatches, then E_F
+    from matplotlib.lines import Line2D
+    handles, names, heads = [], [], []
+
+    def head(text):
+        heads.append(len(names))
+        handles.append(Line2D([], [], linestyle="none", marker=None))
+        names.append(text)
+
+    head("Spin")
+    if both:
+        handles.append(Line2D([], [], color=ink, lw=2))
+        names.append("spin up (α)")
+        handles.append(Line2D([], [], color=ink, lw=2, linestyle=P.mpl_dash(down_dash)))
+        names.append("spin down (β)")
+    else:
+        handles.append(Line2D([], [], color=neutral, lw=2))
+        names.append("α = β (closed shell)")
+    keyed = (["Total"] if total_drawn else []) + [lab for lab in order if lab in drawn]
+    if keyed:
+        head("Projections")
+    for lab in keyed:
+        st = styles[lab]
+        if lab == "Total":
+            face = _mpl_color(P.rgba(ink, 0.12) if both else P.rgba(neutral, 0.22))
+            edge = tk["--border-strong"] if both else neutral
+        else:
+            face = edge = st["color"]
+        handles.append(Line2D([], [], linestyle="none", marker="s", markersize=8, markerfacecolor=face,
+                              markeredgecolor=edge, markeredgewidth=1.0))
+        names.append(st["name"])
+    handles.append(Line2D([], [], color=FERMI_COLOR, lw=1.2, linestyle=P.mpl_dash("dot")))
+    names.append(fermi_label)
+
     # the legend outside the axes and the tick labels and axis label on their right:
-    # a busy DOS has no empty corner for it
+    # a busy DOS has no empty corner for it (matplotlib figures never put a legend over the data)
     legend = legend_outside(
         fig,
         ax,
+        handles,
+        names,
         frameon=True,
-        fontsize=9,
+        fontsize=max(8, tick_pt - 1),
         ncol=1,
         columnspacing=0.5,
-        handlelength=1.5,
+        handlelength=1.8,
         title="\n".join(t for t in (gap_text, *comp_lines) if t) or None,
-        title_fontsize=9,
+        title_fontsize=max(8, tick_pt - 1),
     )
+    _group_titles(legend, heads, tk["--text-2"])
     legend.get_frame().set_facecolor("white")
     legend.get_frame().set_edgecolor("black")
     legend.get_frame().set_linewidth(1.0)
@@ -1411,7 +1685,7 @@ def ipDOS(
         if fmt in ['svg', 'png', 'pdf']:
             output_path = os.path.join(output_dir, f"{material}.DOSS.{fmt}")
             if fmt == 'png':
-                fig.savefig(output_path, format=fmt, dpi=600)
+                fig.savefig(output_path, format=fmt, dpi=PNG_DPI)
             else:
                 fig.savefig(output_path, format=fmt)
             saved_files.append(f"{material}.DOSS.{fmt}")
@@ -1458,8 +1732,22 @@ def main():
             "  --cb-range N         : Energy range above CBM for CB composition (default: 0.5 eV)"
         )
         print("  --composition-range N: Set both VB and CB range to N (shorthand)")
-        print("  --fixed-height N     : Figure height in inches (default: 8)")
+        print("  --fixed-height N     : Figure height in inches (default: 5)")
+        print("  --fixed-width N      : Figure width in inches (default: 3.5)")
+        print("  --dpi N              : PNG resolution (default: 600)")
         print("  --formats FMT        : Output formats (comma-separated): svg, png, pdf. Default: png,svg")
+        print("  --fermi-shift EV     : Move the states by -EV: the energy EV above E_F becomes the reference")
+        print("  --energy-reference R : auto (vacuum scale with the run's POTC files, default), fermi or vacuum")
+        print("  --style S            : default, publication, presentation, grayscale or colorblind")
+        print("  --dos-colors M       : auto, total, element, orbital or element-orbital (lines and colors)")
+        print("  --no-total           : without the total DOS")
+        print("  --spin-dos M         : auto (spin-polarized mirrored, closed shell one-sided), mirrored or overlaid")
+        print("  --spin-style D       : spin down's line style: dash (default), dot, dashdot or solid")
+        print("  --spin-up-color HEX  : the total's spin up color (default: the style's spin colors)")
+        print("  --spin-down-color HEX: the total's spin down color")
+        print("  --dos-smooth EV      : Gaussian smoothing width (display only; default: off)")
+        print("  --output-dir DIR     : write the figures here (default: beside the data)")
+        print("  --file DOSS.DAT      : plot this file only (default: every *_doss.DOSS.DAT in the folder)")
         sys.exit(1)
 
     E_l = float(sys.argv[1])
@@ -1497,8 +1785,32 @@ def main():
             elif arg == "--fixed-height" and i + 1 < len(sys.argv):
                 flag_args["fixed_height"] = float(sys.argv[i + 1])
                 i += 1
+            elif arg == "--fixed-width" and i + 1 < len(sys.argv):
+                flag_args["fixed_width"] = float(sys.argv[i + 1])
+                i += 1
+            elif arg == "--dpi" and i + 1 < len(sys.argv):
+                flag_args["dpi"] = int(sys.argv[i + 1])
+                i += 1
             elif arg == "--formats" and i + 1 < len(sys.argv):
                 flag_args["formats"] = sys.argv[i + 1]
+                i += 1
+            elif arg == "--fermi-shift" and i + 1 < len(sys.argv):
+                flag_args["fermi_shift"] = float(sys.argv[i + 1])
+                i += 1
+            elif arg == "--dos-smooth" and i + 1 < len(sys.argv):
+                flag_args["dos_smooth"] = float(sys.argv[i + 1])
+                i += 1
+            elif arg == "--no-total":
+                flag_args["show_total"] = False
+            elif arg in ("--style", "--dos-colors", "--spin-dos", "--spin-style", "--output-dir", "--file",
+                         "--spin-up-color", "--spin-down-color", "--band-color") and i + 1 < len(sys.argv):
+                flag_args[arg[2:].replace("-", "_")] = sys.argv[i + 1]
+                i += 1
+            elif arg == "--energy-reference" and i + 1 < len(sys.argv):
+                flag_args["energy_reference"] = sys.argv[i + 1].lower()
+                if flag_args["energy_reference"] not in ("auto", "fermi", "vacuum"):
+                    print("Error: --energy-reference is auto, fermi or vacuum")
+                    sys.exit(1)
                 i += 1
         else:
             positional_args.append(arg)
@@ -1513,12 +1825,25 @@ def main():
     vb_range = flag_args.get("vb_range", 0.5)
     cb_range = flag_args.get("cb_range", 0.5)
     fixed_height = flag_args.get("fixed_height", DEFAULT_FIG_HEIGHT)
+    global FIG_WIDTH, PNG_DPI
+    FIG_WIDTH = flag_args.get("fixed_width", DEFAULT_FIG_WIDTH)
+    PNG_DPI = flag_args.get("dpi", 600)
     formats = flag_args.get("formats", "png,svg")
 
     DIR = os.getcwd() + "/"
-    FIGDIR = DIR
+    FIGDIR = flag_args.get("output_dir") or DIR
+    if flag_args.get("output_dir"):
+        os.makedirs(FIGDIR, exist_ok=True)
+    choices = {"style": list(_presets().ORDER), "dos_colors": list(_presets().DOS_MODES),
+               "spin_dos": ["auto", "mirrored", "overlaid"], "spin_style": ["dash", "dot", "dashdot", "solid"]}
+    for k, ok in choices.items():
+        if k in flag_args and flag_args[k] not in ok:
+            print(f"Error: --{k.replace('_', '-')} is one of {', '.join(ok)}")
+            sys.exit(1)
 
     pathlist = glob.glob(DIR + "*_doss.DOSS.DAT")
+    if flag_args.get("file"):
+        pathlist = [p for p in pathlist if os.path.basename(p) == os.path.basename(flag_args["file"])]
     nDIR = len(DIR)
     ntype = len("_doss.DOSS.DAT")
 
@@ -1546,6 +1871,17 @@ def main():
                 fixed_height,
                 formats,
                 FIGDIR,
+                fermi_shift=flag_args.get("fermi_shift", 0.0),
+                style=flag_args.get("style", "default"),
+                dos_colors=flag_args.get("dos_colors"),
+                show_total=flag_args.get("show_total", True),
+                spin_dos=flag_args.get("spin_dos", "auto"),
+                spin_dash=flag_args.get("spin_style"),
+                energy_reference=flag_args.get("energy_reference", "auto"),
+                spin_up_color=flag_args.get("spin_up_color"),
+                spin_down_color=flag_args.get("spin_down_color"),
+                band_color=flag_args.get("band_color"),
+                dos_smooth=flag_args.get("dos_smooth"),
             )
         except Exception as e:
             print(f"  Error processing {material}: {e}")

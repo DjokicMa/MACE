@@ -27,6 +27,7 @@ from ..prompts import (
     select_option,
     yes_no_prompt,
 )
+from .. import outcome
 from ..registry import PlotKind, PlotterEntry, register
 
 # Engine flags that write output or open a browser: never honored from the
@@ -84,12 +85,13 @@ def configure_cube_plot(interactive: bool = True) -> Dict[str, Any]:
         "view": "iso",          # iso | slice | slice-all
         "iso": None,            # None -> engine auto-recommends isovalues
         "colorscale": None,
-        "alpha": 0.7,
+        "alpha": 0.5,         # see-through surfaces: the atoms and bonds inside stay visible
         "show_atoms": True,
         "bonds": False,
         "publication": False,
         "scale": None,          # None | 'log' | 'linear'
-        "clip": 99.5,
+        "clip": 99.0,
+        "color_range": None,
         "slice_axis": "z",
         "slice_pos": None,
         "operation": None,      # None | 'diff'
@@ -156,7 +158,7 @@ def configure_cube_plot(interactive: bool = True) -> Dict[str, Any]:
             default=1,
         )
         config["scale"] = [None, "log", "linear"][scale_choice - 1]
-        config["clip"] = get_float_input("  Color clip percentile (trim outliers)", 99.5)
+        config["clip"] = get_float_input("  Color clip percentile (slices: the (100 - p)th to the pth percentile)", 99.0)
         config["publication"] = yes_no_prompt("  Publication styling (clean axes, no title)?", "no")
 
     return config
@@ -194,11 +196,17 @@ def _cube_config_from_args(args) -> Dict[str, Any]:
     cfg["show_atoms"] = not getattr(args, "no_atoms", False)
     cfg["bonds"] = bool(getattr(args, "bonds", False))
     cfg["publication"] = bool(getattr(args, "publication", False))
+    # --style (presets.py): the sign colors of spin/difference isosurfaces, a density map's colormap;
+    # Publication also lays the figure out for a paper (--publication)
+    cfg["style"] = getattr(args, "style", None) or "default"
+    if cfg["style"] == "publication":
+        cfg["publication"] = True
     if getattr(args, "log", False):
         cfg["scale"] = "log"
     elif getattr(args, "linear", False):
         cfg["scale"] = "linear"
     cfg["clip"] = getattr(args, "clip", cfg["clip"])
+    cfg["color_range"] = getattr(args, "color_range", None)
 
     fmt = getattr(args, "format", None)
     if fmt:
@@ -221,7 +229,8 @@ def _common_argv(config: Dict[str, Any]) -> List[str]:
     argv: List[str] = []
     if config["view"] == "iso":
         if config.get("iso"):
-            argv += ["--iso", ",".join(str(v) for v in config["iso"])]
+            # one token: a negative first value would read as a flag
+            argv += ["--iso=" + ",".join(str(v) for v in config["iso"])]
     elif config["view"] == "slice":
         pos = config.get("slice_pos")
         # A non-numeric position makes the engine pick its own best/middle slice
@@ -233,18 +242,22 @@ def _common_argv(config: Dict[str, Any]) -> List[str]:
 
     if config.get("colorscale"):
         argv += ["--cmap", config["colorscale"]]
-    argv += ["--alpha", str(config.get("alpha", 0.7))]
+    argv += ["--alpha", str(config.get("alpha", 0.5))]
     if not config.get("show_atoms", True):
         argv += ["--no-atoms"]
     if config.get("bonds"):
         argv += ["--bonds"]
     if config.get("publication"):
         argv += ["--publication"]
+    if config.get("style", "default") != "default":
+        argv += ["--style", config["style"]]
     if config.get("scale") == "log":
         argv += ["--log-scale"]
     elif config.get("scale") == "linear":
         argv += ["--linear-scale"]
-    argv += ["--clip", str(config.get("clip", 99.5))]
+    argv += ["--clip", str(config.get("clip", 99.0))]
+    if config.get("color_range"):
+        argv += ["--color-range", str(config["color_range"])]
 
     engine_args = config.get("engine_args") or []
     if engine_args:
@@ -285,6 +298,15 @@ def _run_engine(argv: List[str]) -> None:
         sys.argv = argv_backup
 
 
+def _wrote(path: str, source: str, output_files: List[str]) -> None:
+    """Record the figure, or the failure (the run then exits non-zero, outcome)."""
+    if Path(path).exists():
+        output_files.append(path)
+        print(f"    Generated: {Path(path).name}")
+    else:
+        outcome.failed(source, f"{Path(path).name} was not written")
+
+
 def plot_cube(files: List[str], config: Dict[str, Any], output_dir: str = ".") -> List[str]:
     """Render cube files. ``operation='diff'`` subtracts exactly two cubes into a
     single figure; otherwise each file is rendered independently."""
@@ -297,24 +319,24 @@ def plot_cube(files: List[str], config: Dict[str, Any], output_dir: str = ".") -
     if config.get("operation") == "diff":
         if len(files) != 2:
             print(f"  --diff requires exactly 2 cubes, got {len(files)}.")
+            outcome.failed("--diff", "needs exactly 2 cubes")
             return []
         base = f"{Path(files[0]).stem}_minus_{Path(files[1]).stem}"
         print(f"\n  Difference: {Path(files[0]).name} - {Path(files[1]).name}")
         for flag, path in _save_flags(base, output_dir, "diff", formats):
             _run_engine(["--subtract", files[0], files[1], "--align-grids", *common, flag, path])
-            if Path(path).exists():
-                output_files.append(path)
-                print(f"    Generated: {Path(path).name}")
+            _wrote(path, base, output_files)
         return output_files
 
+    # a density map in the style's sequential colormap (signed maps keep the engine's RdBu, B6)
+    seq = {"vesta": "Rainbow", "grayscale": "Greys", "colorblind": "Cividis"}.get(config.get("style", "default"))  # british-ok: a colormap name
     for cube_file in files:
         base = Path(cube_file).stem
         print(f"\n  Plotting cube: {Path(cube_file).name}")
+        extra = ["--cmap", seq] if seq and not config.get("colorscale") and "_dens" in Path(cube_file).name.lower() else []
         for flag, path in _save_flags(base, output_dir, view, formats):
-            _run_engine([cube_file, *common, flag, path])
-            if Path(path).exists():
-                output_files.append(path)
-                print(f"    Generated: {Path(path).name}")
+            _run_engine([cube_file, *common, *extra, flag, path])
+            _wrote(path, Path(cube_file).name, output_files)
 
     return output_files
 

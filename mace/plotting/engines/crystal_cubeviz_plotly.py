@@ -32,6 +32,7 @@ Options:
 
 # Suppress Qt/OpenGL warnings from display libraries
 import os
+import re
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 import numpy as np
@@ -100,9 +101,12 @@ class CubeFile:
         self.wrap_atoms = wrap_atoms
         self.cell_dims = None
         self.skip_vacuum_detection = skip_vacuum_detection
+        self.orbital = None   # "re" / "im" / "abs2" for a MACE orbital cube (mace.orbitals)
+        self.is_molecule = False
 
         self.read_cube()
         self._determine_data_type()
+        self.is_molecule = self._detect_molecule()
         self._analyze_structure()
 
         if self.z_shift != 0.0:
@@ -227,6 +231,13 @@ class CubeFile:
     
     def _determine_data_type(self):
         """Determine if data is electron density, spin density, potential, or difference."""
+        # MACE orbital cubes (mace.orbitals) say what they hold on the second comment line:
+        # Re/Im psi is signed (+/- lobes), |psi|^2 is a density
+        if getattr(self, 'comment2', '').startswith('MACE ORBITALS'):
+            m = re.search(r'\bpart=(\w+)', self.comment2)
+            self.orbital = m.group(1) if m else 're'
+            self.data_type = 'density' if self.orbital == 'abs2' else 'orbital'
+            return
         # First check comment lines (title lines) for subtraction/difference
         if hasattr(self, 'comment1') and hasattr(self, 'comment2'):
             title_combined = (self.comment1 + ' ' + self.comment2).lower()
@@ -264,6 +275,26 @@ class CubeFile:
             else:
                 self.data_type = 'spin' if np.abs(np.mean(self.data)) < 1e-6 else 'potential'
 
+    def _detect_molecule(self) -> bool:
+        """A molecule's cube: CRYSTAL writes a zero cell (``0 0 0 0 0 0``) on the second comment
+        line of a 0D run; a MACE orbital cube says ``dim=0``."""
+        c2 = getattr(self, 'comment2', '') or ''
+        if c2.startswith('MACE ORBITALS'):
+            m = re.search(r'\bdim=(\d)', c2)
+            return bool(m and m.group(1) == '0')
+        nums = []
+        for tok in c2.split()[:6]:
+            try:
+                nums.append(float(tok))
+            except ValueError:
+                return False
+        return len(nums) == 6 and all(v == 0.0 for v in nums)
+
+    def structure_label(self) -> str:
+        if self.is_molecule:
+            return 'molecule'
+        return '2D material' if self.is_2d else '3D material'
+
     def is_diverging_data(self):
         """
         Check if data type uses diverging colormap (has meaningful positive/negative values).
@@ -271,7 +302,7 @@ class CubeFile:
         Returns True for: spin, potential, and all difference types
         """
         return self.data_type in ['spin', 'potential', 'spin_difference',
-                                   'potential_difference', 'density_difference', 'difference']
+                                   'potential_difference', 'density_difference', 'difference', 'orbital']
 
     def get_data_type_label(self):
         """Get human-readable label for data type."""
@@ -282,8 +313,11 @@ class CubeFile:
             'density_difference': 'Density Difference (Δρ)',
             'potential_difference': 'Potential Difference (ΔV)',
             'spin_difference': 'Spin Difference (Δσ)',
-            'difference': 'Difference'
+            'difference': 'Difference',
+            'orbital': 'Orbital',
         }
+        if self.orbital:
+            return {'re': 'Orbital Re ψ', 'im': 'Orbital Im ψ', 'abs2': 'Orbital |ψ|²'}.get(self.orbital, 'Orbital')
         return labels.get(self.data_type, self.data_type.capitalize())
 
     def _analyze_structure(self):
@@ -294,7 +328,9 @@ class CubeFile:
             np.linalg.norm(self.lattice_vectors[1]),
             np.linalg.norm(self.lattice_vectors[2])
         ])
-        
+        if self.is_molecule:
+            return            # no slab vacuum, no rewrapping for a molecule
+
         # Use cell parameters if available
         if self.cell_parameters:
             c_param = self.cell_parameters.get('c', 0)
@@ -607,7 +643,7 @@ class CubeFile:
             print(f"  represent numerical artifacts rather than physical signal.")
             print(f"  Isosurface values will be in the range ~1e-12 to ~1e-9.")
             print(f"{'='*60}\n")
-        print(f"Structure type: {'2D material' if self.is_2d else '3D material'}")
+        print(f"Structure type: {self.structure_label()}")
         print(f"Crystal system: {self.crystal_system}")
         print(f"Number of atoms: {abs(self.natoms)}")
         print(f"Grid points: {self.nvoxels[0]} × {self.nvoxels[1]} × {self.nvoxels[2]}")
@@ -697,9 +733,10 @@ def generate_smart_isovalues(data, data_type='density', n_values=20,
 
         return sorted(isovalues)
 
-    elif data_type in ['spin', 'potential', 'spin_difference', 'potential_difference', 'density_difference', 'difference']:
+    elif data_type in ['spin', 'potential', 'spin_difference', 'potential_difference', 'density_difference', 'difference',
+                       'orbital']:
         # Special handling for density_difference - use SMALL symmetric values
-        if data_type in ['density_difference', 'difference']:
+        if data_type in ['density_difference', 'difference', 'orbital']:
             # For density difference, focus on small changes (not nuclear cusps!)
             # Use symmetric logarithmic spacing from 1e-4 to 1 e/Bohr³
             # This covers physisorption (0.001) to chemisorption (0.1) regimes
@@ -813,16 +850,40 @@ def get_plotly_colorscale(data_type: str, cmap: Optional[str] = None):
     if cmap:
         return cmap
     
+    # signed maps (B6): plotly's RdBu runs red (low) to blue (high), so + is blue for spin, as the
+    # isosurfaces; a potential reversed (RdBu_r): + red, as its captions and the GUI's "cli" colors
     colorscales = {
         'density': 'Viridis',
         'spin': 'RdBu',
-        'potential': 'RdBu'
+        'potential': 'RdBu_r',
+        'spin_difference': 'RdBu',
+        'density_difference': 'RdBu',
+        'difference': 'RdBu',
+        'potential_difference': 'RdBu_r',
     }
     return colorscales.get(data_type, 'Viridis')
 
 
 def get_atom_properties():
-    """Get atom visualization properties (VESTA/CPK color scheme)."""
+    """Get atom visualization properties (VESTA/CPK color scheme), in the
+    element palette of this run when there is one (mace plotting --palette,
+    else the saved default in ~/.config/mace/element_colors.json, shared
+    with the GUI's View > Element Colors)."""
+    props = _builtin_atom_properties()
+    try:
+        from mace.utils.element_palettes import active_colors
+        pal = active_colors()
+    except ImportError:
+        pal = None
+    if pal:
+        for p in props.values():
+            if pal.get(p['name']):
+                p['color'] = pal[p['name']]
+    return props
+
+
+def _builtin_atom_properties():
+    """The engine's own colors and sizes (Z -> {color, name, size})."""
     return {
         # Period 1
         1: {'color': 'white', 'name': 'H', 'size': 8},
@@ -973,7 +1034,7 @@ def export_figure_to_gif(fig, output_path, fps=5, width=800, height=600, loop=0)
     """
     if not HAS_KALEIDO:
         print("ERROR: kaleido is required for GIF export")
-        print("Install with: pip install kaleido")
+        print('Install with: pip install "plotly>=5.0.0,<6.2" kaleido==0.2.1')
         return False
 
     if not HAS_PIL:
@@ -1071,7 +1132,7 @@ def create_rotation_gif(fig, output_path, rotate_axis='z', n_frames=36, fps=10,
     """
     if not HAS_KALEIDO:
         print("ERROR: kaleido is required for GIF export")
-        print("Install with: pip install kaleido")
+        print('Install with: pip install "plotly>=5.0.0,<6.2" kaleido==0.2.1')
         return False
 
     if not HAS_PIL:
@@ -1895,7 +1956,8 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
 
     # Choose colorscale based on color CUBE type
     if color_cube.is_diverging_data():
-        colorscale = 'RdBu_r'  # Blue for negative, red for positive
+        # a potential: red = + (RdBu_r); spin or a difference: + blue (RdBu), as the isosurfaces (B6)
+        colorscale = 'RdBu_r' if str(color_cube.data_type).startswith('potential') else 'RdBu'
         colorbar_title = f"{color_cube.get_data_type_label()}"
     else:
         colorscale = 'Viridis'
@@ -2064,14 +2126,56 @@ def transform_vertices_optimized(verts, cube: CubeFile, bohr_to_ang, data_shape,
     return verts_real
 
 
+# The sign colors of spin and difference volumes (B6): + blue, - red in every renderer (the GUI's 3D
+# view and slices, these isosurfaces and slices), the captions saying so; a potential keeps red = +
+# (positive potential, electron-poor), as its captions and the GUI's "cli" potential colors.
+# mace plotting --style sets the pair (presets.py "iso": VESTA-like yellow/cyan, ...).
+ISO = {"plus": "#2563eb", "minus": "#dc2626", "plus_word": "Blue", "minus_word": "Red"}
+_ISO_WORDS = {"default": ("Blue", "Red"), "presentation": ("Blue", "Red"), "publication": ("Blue", "Vermilion"),
+              "colorblind": ("Blue", "Vermilion"), "vesta": ("Yellow", "Cyan"), "grayscale": ("Dark gray", "Light gray")}
+POTENTIAL = {"plus": "#b2182b", "minus": "#2166ac", "plus_word": "Red", "minus_word": "Blue"}
+
+
+def use_style(style):
+    """The isosurface sign colors of a plot style (presets.py)."""
+    try:
+        from mace.plotting import presets
+    except ImportError:
+        return
+    pid = presets.resolve_id(style or "default", "maps")
+    iso = presets.get(pid, "maps")["iso"]
+    words = _ISO_WORDS.get(pid, ("Positive", "Negative"))
+    ISO.update({"plus": iso["plus"], "minus": iso["minus"], "plus_word": words[0], "minus_word": words[1]})
+
+
+def sign_colors(data_type):
+    """(+ color, - color, + word, - word) of a signed volume."""
+    c = POTENTIAL if str(data_type or "").startswith("potential") else ISO
+    return c["plus"], c["minus"], c["plus_word"], c["minus_word"]
+
+
+def _iso_trace_color(cube, iso_val, iso_values, sampled):
+    """An isosurface's color: signed data (orbital lobes, spin, differences) in the style's
+    +/- pair (+ blue, - red, as the GUI's volume view); a single density surface in the
+    style's + color; several density levels sampled along the colorscale."""
+    if cube.data_type == 'orbital':
+        return ISO["plus"] if iso_val > 0 else ISO["minus"]
+    if cube.data_type in ('spin', 'spin_difference', 'density_difference', 'difference', 'potential',
+                          'potential_difference'):
+        plus, minus, _, _ = sign_colors(cube.data_type)
+        return plus if iso_val > 0 else minus
+    if len(iso_values) == 1:
+        return ISO["plus"]
+    return sampled if isinstance(sampled, str) else f'rgb{tuple(sampled[:3])}'
+
+
 def get_iso_color(data_type, iso_val):
     """Get appropriate color for isosurface based on value."""
     if data_type == 'density':
         return 'cyan' if iso_val > 0 else 'red'
-    elif data_type == 'spin':
-        return 'blue' if iso_val > 0 else 'red'
-    elif data_type == 'potential':
-        return 'green' if iso_val > 0 else 'orange'
+    elif data_type in ('spin', 'spin_difference', 'density_difference', 'difference', 'potential'):
+        plus, minus, _, _ = sign_colors(data_type)
+        return plus if iso_val > 0 else minus
     else:
         return 'gray'
 
@@ -2113,6 +2217,26 @@ def create_atom_traces_cached(cube: CubeFile, bohr_to_ang):
     return traces
 
 
+def default_iso_level(cube: CubeFile) -> float:
+    """The level the isosurface view starts at, shared with the GUI's volume view
+    (``mace.gui.volume.default_level``): the middle of generate_smart_isovalues; an
+    orbital at +-0.2 (CRYSTAL's PRINTPLO example) or half its largest |value|."""
+    if cube.data_type == "orbital":
+        m = float(np.abs(cube.data).max())
+        return 0.2 if m > 0.4 else (m / 2 or 1e-3)
+    vals = generate_smart_isovalues(cube.data, cube.data_type if cube.data_type in ("density", "spin", "potential") else
+                                    ("density_difference" if "difference" in cube.data_type else "density"))
+    vals = [abs(v) for v in vals if v]
+    return float(sorted(vals)[len(vals) // 2]) if vals else float(np.abs(cube.data).max() / 10 or 1e-3)
+
+
+def default_iso_values(cube: CubeFile) -> List[float]:
+    """One surface, as the GUI draws it: +level, and -level too for signed data with both signs."""
+    level = default_iso_level(cube)
+    signed = cube.is_diverging_data() and float(cube.data.min()) < 0 < float(cube.data.max())
+    return [-level, level] if signed else [level]
+
+
 def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = None,
                           colorscale: Optional[str] = None, opacity: float = 0.7,
                           show_atoms: bool = True):
@@ -2129,10 +2253,12 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
     Y *= bohr_to_ang
     Z *= bohr_to_ang
     
-    # Use recommended values if not provided
+    # Default: one surface (a +/- pair for signed data), as the GUI draws it. Several nested
+    # opaque surfaces hid the structure; ask for them with --iso a,b,c.
     if iso_values is None:
-        iso_values = cube.recommended_iso
-        print(f"Using isovalues: {', '.join([f'{x:.2e}' for x in iso_values])}")
+        iso_values = default_iso_values(cube)
+        print(f"Using isovalue(s): {', '.join([f'{x:.2e}' for x in iso_values])} "
+              f"(more surfaces: --iso v1,v2,...)")
     
     # Get colorscale
     colorscale = get_plotly_colorscale(cube.data_type, colorscale)
@@ -2141,6 +2267,7 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
     colors = pcolors.sample_colorscale(colorscale,
                                        np.linspace(0, 1, len(iso_values)))
     
+    signed_view = any(v < 0 for v in iso_values) and any(v > 0 for v in iso_values)
     # Add isosurfaces
     if HAS_SKIMAGE:
         for idx, iso_val in enumerate(iso_values):
@@ -2185,9 +2312,10 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
                     i=faces[:, 0],
                     j=faces[:, 1],
                     k=faces[:, 2],
-                    color=colors[idx] if isinstance(colors[idx], str) else f'rgb{tuple(colors[idx][:3])}',
+                    color=_iso_trace_color(cube, iso_val, iso_values, colors[idx]),
                     opacity=opacity,
-                    name=f'iso={iso_val:.2e}',
+                    name=(f'{"+" if iso_val > 0 else "−"}{abs(iso_val):.2e}' if signed_view
+                          else f'iso={iso_val:.2e}'),
                     showlegend=True
                 ))
                 
@@ -2241,17 +2369,30 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
     if cube.is_2d:
         title += " (2D material)"
     
+    # a molecule gets bonds, as the GUI's sticks (periodic cells only on request: --bonds)
+    if show_atoms and getattr(cube, 'is_molecule', False):
+        try:
+            _add_bond_traces(fig, cube)
+        except Exception:
+            pass
+
+    # framed for a static image: the camera far enough out that the whole box stays in the
+    # picture (plotly's default eye clipped the box's near corner), readable fonts
     fig.update_layout(
-        title=title,
+        title=dict(text=title, x=0.5, xanchor='center'),
         scene=dict(
             xaxis_title='X (Å)',
             yaxis_title='Y (Å)',
             zaxis_title='Z (Å)',
-            aspectmode='data'
+            aspectmode='data',
+            camera=dict(eye=dict(x=1.6, y=1.6, z=1.25)),
         ),
+        font=dict(size=16),
+        legend=dict(font=dict(size=16), itemsizing='constant'),
+        margin=dict(l=10, r=10, t=60, b=10),
         showlegend=True
     )
-    
+
     return fig
 
 
@@ -2314,7 +2455,8 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
             print(f"  ⚠️ WARNING: {cube.get_data_type_label()} data contains NO positive values!")
             print(f"     Only negative isosurfaces will be shown.")
         else:
-            print(f"  ✓ Data contains both positive and negative values - will show red (+) and blue (-) surfaces")
+            _p, _m, pw, mw = sign_colors(cube.data_type)
+            print(f"  ✓ Data contains both positive and negative values - will show {pw.lower()} (+) and {mw.lower()} (-) surfaces")
 
     # Use cropped data if vacuum detected
     if hasattr(cube, 'data_bounds') and cube.vacuum_detected:
@@ -2371,7 +2513,7 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
             # For negative values, just show that one (it will be paired with its positive counterpart)
             # For density or one-sided data, just show the single value
             if show_symmetric:
-                values_to_calc = [iso_val, -iso_val]  # Show both red (+) and blue (-)
+                values_to_calc = [iso_val, -iso_val]  # Show both signs (sign_colors)
             else:
                 values_to_calc = [iso_val]  # Just this value
 
@@ -2404,7 +2546,8 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
 
                     # For symmetric surfaces, use different colors for +/-
                     if show_symmetric:
-                        color = 'red' if calc_val > 0 else 'blue'
+                        plus, minus, _, _ = sign_colors(cube.data_type)
+                        color = plus if calc_val > 0 else minus
                         name_suffix = f'+{abs(calc_val):.3e}' if calc_val > 0 else f'-{abs(calc_val):.3e}'
                     else:
                         color = get_iso_color(cube.data_type, calc_val)
@@ -2537,18 +2680,16 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
             is_atom = trace_type == 'Scatter3d'  # Atoms are always Scatter3d
 
             if not is_atom:
-                # For isosurface (Mesh3d) traces, check color
-                trace_color = str(getattr(trace, 'color', ''))
-                is_red = 'red' in trace_color.lower()
-                is_blue = 'blue' in trace_color.lower()
+                # an isosurface's sign is in its name ("+1.000e-03", "-1.000e-03"), whatever its color
+                name = str(getattr(trace, 'name', '') or '')
+                is_pos = name.startswith('+')
+                is_neg = name.startswith('-')
             else:
-                # Atoms are neither red nor blue isosurfaces
-                is_red = False
-                is_blue = False
+                is_pos = is_neg = False
 
-            # Always show atoms, show red or blue based on selection
-            show_pos_only.append(True if (is_red or is_atom) else False)
-            show_neg_only.append(True if (is_blue or is_atom) else False)
+            # Always show atoms, show the positive or negative surfaces based on selection
+            show_pos_only.append(True if (is_pos or is_atom) else False)
+            show_neg_only.append(True if (is_neg or is_atom) else False)
 
         updatemenus.append(
             dict(
@@ -2605,6 +2746,7 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
     )
 
     # Add interpretation labels for spin/potential
+    _pc, _mc, PW, MW = sign_colors(cube.data_type)
     if cube.data_type == 'potential':
         if can_show_symmetric:
             label_text = '<b>Red (+):</b> Positive potential (e⁻-poor) | <b>Blue (−):</b> Negative potential (e⁻-rich)'
@@ -2626,11 +2768,11 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
         )
     elif cube.data_type == 'spin':
         if can_show_symmetric:
-            label_text = '<b>Red (+):</b> Spin-up excess (α > β) | <b>Blue (−):</b> Spin-down excess (β > α)'
+            label_text = f'<b>{PW} (+):</b> Spin-up excess (α > β) | <b>{MW} (−):</b> Spin-down excess (β > α)'
         elif data_has_positive:
-            label_text = '<b>Red (+):</b> Spin density | ⚠️ <i>Data only contains positive values (may be absolute spin)</i>'
+            label_text = f'<b>{PW} (+):</b> Spin density | ⚠️ <i>Data only contains positive values (may be absolute spin)</i>'
         else:
-            label_text = '<b>Blue (−):</b> Spin density | ⚠️ <i>Data only contains negative values</i>'
+            label_text = f'<b>{MW} (−):</b> Spin density | ⚠️ <i>Data only contains negative values</i>'
         fig.add_annotation(
             text=label_text,
             xref='paper', yref='paper',
@@ -2643,22 +2785,29 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
             align='center',
             xanchor='center'
         )
+    elif cube.data_type == 'orbital':
+        fig.add_annotation(
+            text=f'<b>{ISO["plus_word"]} (+) / {ISO["minus_word"]} (−):</b> orbital lobes of opposite sign '
+                 '(the overall sign is arbitrary)',
+            xref='paper', yref='paper', x=0.5, y=1.02, showarrow=False,
+            bgcolor='rgba(240, 240, 240, 0.95)', bordercolor='gray', borderwidth=1,
+            font=dict(size=12, color='black'), align='center', xanchor='center')
     elif cube.data_type in ['density_difference', 'potential_difference', 'spin_difference', 'difference']:
         # Add legend for difference plots
         if cube.data_type == 'density_difference':
-            label_text = '<b>Red (+):</b> Electron accumulation (Δρ > 0) | <b>Blue (−):</b> Electron depletion (Δρ < 0)'
+            label_text = f'<b>{PW} (+):</b> Electron accumulation (Δρ > 0) | <b>{MW} (−):</b> Electron depletion (Δρ < 0)'
             bgcolor = 'rgba(255, 230, 230, 0.95)'
             bordercolor = 'red'
         elif cube.data_type == 'potential_difference':
-            label_text = '<b>Red (+):</b> Potential increase (ΔV > 0) | <b>Blue (−):</b> Potential decrease (ΔV < 0)'
+            label_text = f'<b>{PW} (+):</b> Potential increase (ΔV > 0) | <b>{MW} (−):</b> Potential decrease (ΔV < 0)'
             bgcolor = 'rgba(255, 255, 200, 0.95)'
             bordercolor = 'orange'
         elif cube.data_type == 'spin_difference':
-            label_text = '<b>Red (+):</b> Spin polarization increase (Δσ > 0) | <b>Blue (−):</b> Spin polarization decrease (Δσ < 0)'
+            label_text = f'<b>{PW} (+):</b> Spin polarization increase (Δσ > 0) | <b>{MW} (−):</b> Spin polarization decrease (Δσ < 0)'
             bgcolor = 'rgba(200, 220, 255, 0.95)'
             bordercolor = 'blue'
         else:
-            label_text = '<b>Red (+):</b> Positive difference | <b>Blue (−):</b> Negative difference'
+            label_text = f'<b>{PW} (+):</b> Positive difference | <b>{MW} (−):</b> Negative difference'
             bgcolor = 'rgba(230, 230, 255, 0.95)'
             bordercolor = 'purple'
 
@@ -2691,220 +2840,188 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
     return fig
 
 
+# ---------------------------------------------------------------- slice color range
+# A slice's color range (1.1.6, bug g): robust limits, so the spikes at the nuclei do not take the whole
+# color scale: the (100 - clip)th to clip-th percentile of the values (1st to 99th by default), symmetric
+# about 0 for signed data (spin, potential, a difference). --color-range LO,HI gives it outright (in the
+# plotted units: log10 for a log-scale density). The GUI's 2D maps use the same rule (js/maprange.js).
+_COLOR_RANGE: Optional[Tuple[float, float]] = None
+
+
+def robust_range(values, signed: bool = False, full: bool = False, lo: float = 1.0, hi: float = 99.0) -> Tuple[float, float]:
+    """[lo, hi] of ``values``: the lo-th and hi-th percentiles (numpy's linear), min and max with
+    ``full``; ``signed``: symmetric about 0 (the larger end)."""
+    v = np.asarray(values, dtype=float).ravel()
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return 0.0, 1.0
+    a, b = (float(v.min()), float(v.max())) if full else (float(np.percentile(v, lo)), float(np.percentile(v, hi)))
+    if signed:
+        m = max(abs(a), abs(b)) or 1.0
+        a, b = -m, m
+    if not b > a:
+        c = a
+        a, b = c - (abs(c) or 1.0) * 0.5, c + (abs(c) or 1.0) * 0.5
+    return a, b
+
+
+def slice_range(cube, data, log_scale: bool, percentile_clip: float = 99.0) -> Tuple[float, float]:
+    """The color range of a slice view of ``cube`` (``data``: the values it draws, raw)."""
+    if _COLOR_RANGE is not None:
+        return float(_COLOR_RANGE[0]), float(_COLOR_RANGE[1])
+    hi = float(percentile_clip)
+    lo = 100.0 - hi
+    if cube.data_type == 'density':
+        nz = np.asarray(data)[np.asarray(data) > 0]
+        if nz.size == 0:
+            return (-10.0, -6.0) if log_scale else (0.0, 1e-6)
+        vals = np.log10(nz + 1e-10) if log_scale else nz
+        return robust_range(vals, lo=lo, hi=hi)
+    return robust_range(data, signed=cube.is_diverging_data(), lo=lo, hi=hi)
+
+
+def parse_color_range(text: str) -> Tuple[float, float]:
+    try:
+        a, b = (float(x) for x in str(text).split(","))
+    except ValueError:
+        raise ValueError("--color-range is LO,HI (two numbers)")
+    if not (np.isfinite(a) and np.isfinite(b) and b > a):
+        raise ValueError("--color-range is LO,HI with HI above LO")
+    return a, b
+
+
+def cube_value_unit(cube) -> str:
+    """The unit of a cube's values (CRYSTAL ECH3/POT3 cubes and MACE orbital cubes are atomic units)."""
+    if getattr(cube, 'orbital', None) in ('re', 'im'):
+        return 'bohr⁻³ᐟ²'
+    if getattr(cube, 'orbital', None) == 'abs2':
+        return 'bohr⁻³'
+    if str(cube.data_type).startswith('potential'):
+        return 'Hartree/e'
+    if cube.data_type in ('density', 'spin', 'density_difference', 'spin_difference'):
+        return 'e/bohr³'
+    return ''
+
+
+def _plane_frame(cube, axis: str, position: int):
+    """In-plane orthonormal frame of a lattice plane: (o0, o1, e1, e2, origin3d) in bohr.
+
+    e1 runs along the plane's first voxel axis, e2 is perpendicular to it in the
+    plane, so a skewed cell's plane is drawn as its true parallelogram."""
+    ax = 'xyz'.index(axis)
+    o0, o1 = [i for i in range(3) if i != ax]
+    u = np.asarray(cube.voxel_vectors[o0], float)
+    v = np.asarray(cube.voxel_vectors[o1], float)
+    e1 = u / np.linalg.norm(u)
+    vp = v - np.dot(v, e1) * e1
+    e2 = vp / (np.linalg.norm(vp) or 1.0)
+    origin3d = np.asarray(cube.origin, float) + position * np.asarray(cube.voxel_vectors[ax], float)
+    return o0, o1, e1, e2, origin3d
+
+
+def resample_plane(cube, axis: str, position: int, values: np.ndarray, max_points: int = 1600):
+    """(x, y, z) of a lattice plane resampled on Cartesian in-plane axes (Å), NaN outside the cell
+    (the GUI's slice_job does the same). x and y are 1D, z is (len(y), len(x))."""
+    from scipy.ndimage import map_coordinates
+    o0, o1, e1, e2, origin3d = _plane_frame(cube, axis, position)
+    u = np.asarray(cube.voxel_vectors[o0], float)
+    v = np.asarray(cube.voxel_vectors[o1], float)
+    n0, n1 = values.shape
+    a11, a12, a22 = float(u @ e1), float(v @ e1), float(v @ e2)
+    x0, y0 = float(origin3d @ e1), float(origin3d @ e2)
+    corners = np.array([[0, 0], [(n0 - 1) * a11, 0], [(n1 - 1) * a12, (n1 - 1) * a22],
+                        [(n0 - 1) * a11 + (n1 - 1) * a12, (n1 - 1) * a22]])
+    step = 0.5 * (min(abs(a11), abs(a22)) or 1.0)      # half a voxel: smooth parallelogram edges
+    xs = np.arange(corners[:, 0].min(), corners[:, 0].max() + step * 0.5, step)
+    ys = np.arange(corners[:, 1].min(), corners[:, 1].max() + step * 0.5, step)
+    if len(xs) > max_points:
+        xs = np.linspace(xs[0], xs[-1], max_points)
+    if len(ys) > max_points:
+        ys = np.linspace(ys[0], ys[-1], max_points)
+    XX, YY = np.meshgrid(xs, ys)                       # (ny, nx)
+    j = YY / a22 if a22 else np.zeros_like(YY)
+    i = (XX - j * a12) / a11
+    eps = 1e-6
+    inside = (i >= -eps) & (i <= n0 - 1 + eps) & (j >= -eps) & (j <= n1 - 1 + eps)
+    z = map_coordinates(values.astype(float), [np.clip(i, 0, n0 - 1), np.clip(j, 0, n1 - 1)],
+                        order=1, mode='nearest')
+    z = np.where(inside, z, np.nan)
+    bohr_to_ang = 0.529177
+    return (xs + x0) * bohr_to_ang, (ys + y0) * bohr_to_ang, z
+
+
 def plot_slice_plotly(cube: CubeFile, axis: str = 'z', position: Optional[int] = None,
                      colorscale: Optional[str] = None, show_atoms: bool = True,
-                     log_scale: bool = None, percentile_clip: float = 99.5):
-    """Plot 2D slice using Plotly."""
-    
-    # Get slice data
+                     log_scale: bool = None, percentile_clip: float = 99.0):
+    """One lattice plane as a flat 2D map (no 3D scene): the plane resampled on
+    Cartesian in-plane axes, so a skewed cell is its true parallelogram, with equal
+    x/y scale, the atoms near the plane, and the values' unit on the colorbar."""
     if position is None:
         position = cube.get_best_visualization_slice(axis)
-    
     slice_data = cube.get_slice(axis, position)
-    
-    # Get colorscale
     colorscale = get_plotly_colorscale(cube.data_type, colorscale)
-    
-    # Auto-detect if log scale should be used
     if log_scale is None:
         log_scale = (cube.data_type == 'density')
-    
     bohr_to_ang = 0.529177
-    
-    # Calculate color scale and prepare display data
     display_data = slice_data.copy()
-    
-    if cube.data_type == 'density':
-        nonzero_data = slice_data[slice_data > 0]
-        if len(nonzero_data) > 0:
-            vmin = np.percentile(nonzero_data, 100 - percentile_clip)
-            vmax = np.percentile(nonzero_data, percentile_clip)
-            
-            if log_scale:
-                display_data = np.log10(slice_data + 1e-10)
-                vmin = np.log10(vmin + 1e-10)
-                vmax = np.log10(vmax + 1e-10)
-        else:
-            if log_scale:
-                display_data = np.log10(slice_data + 1e-10)
-                vmin, vmax = -10, -6
-            else:
-                vmin, vmax = 0, 1e-6
-    elif cube.is_diverging_data():
-        vmax = np.percentile(np.abs(slice_data), percentile_clip)
-        vmin = -vmax
-    else:
-        vmin = np.min(slice_data)
-        vmax = np.max(slice_data)
-    # elif cube.is_diverging_data():
-    #     vmax = np.percentile(np.abs(slice_data), percentile_clip)
-    #     vmin = -vmax
-    # else:
-    #     vmin = np.min(slice_data)
-    #     vmax = np.max(slice_data)
-    
-    # Create figure
+    if cube.data_type == 'density' and log_scale:
+        display_data = np.log10(slice_data + 1e-10)
+    vmin, vmax = slice_range(cube, slice_data, log_scale, percentile_clip)
+
+    o0, o1, e1, e2, origin3d = _plane_frame(cube, axis, position)
+    xs, ys, z = resample_plane(cube, axis, position, display_data)
+    names = 'abc'
+    aligned = abs(abs(e1[o0]) - 1) < 1e-6 and abs(abs(e2[o1]) - 1) < 1e-6
+    x_label = f"{'XYZ'[o0]} (Å)" if aligned else f"along {names[o0]} (Å)"
+    y_label = f"{'XYZ'[o1]} (Å)" if aligned else f"in the {names[o0]}{names[o1]} plane, ⊥ {names[o0]} (Å)"
+    unit = cube_value_unit(cube)
+    log_txt = "log₁₀ " if log_scale and cube.data_type == "density" else ""
+    cb_title = f"{log_txt}{cube.get_data_type_label()}" + (f"<br>({unit})" if unit else "")
+
     fig = go.Figure()
-    
-    # Handle different axes
-    # For non-orthogonal lattices: r = origin + i*voxel[0] + j*voxel[1] + k*voxel[2]
-    if axis == 'z':
-        # XY plane at Z slice k=position (i, j vary)
-        i = np.arange(cube.nvoxels[0])
-        j = np.arange(cube.nvoxels[1])
-        I, J = np.meshgrid(i, j, indexing='ij')
+    fig.add_trace(go.Heatmap(
+        x=xs, y=ys, z=z, colorscale=colorscale, zmin=vmin, zmax=vmax, zsmooth='best',
+        hoverongaps=False, colorbar=dict(title=dict(text=cb_title), thickness=18, len=0.85)))
 
-        # Include contribution from all three voxel vectors
-        X = (cube.origin[0] +
-             I * cube.voxel_vectors[0, 0] +
-             J * cube.voxel_vectors[1, 0] +
-             position * cube.voxel_vectors[2, 0]) * bohr_to_ang
-        Y = (cube.origin[1] +
-             I * cube.voxel_vectors[0, 1] +
-             J * cube.voxel_vectors[1, 1] +
-             position * cube.voxel_vectors[2, 1]) * bohr_to_ang
-
-        x_label = 'X (Å)'
-        y_label = 'Y (Å)'
-
-        # Atom slicing position
-        slice_pos = cube.origin[2] + position * cube.voxel_vectors[2, 2]
-        slice_dim = 2
-
-    elif axis == 'y':
-        # XZ plane at Y slice j=position (i, k vary)
-        i = np.arange(cube.nvoxels[0])
-        k = np.arange(cube.nvoxels[2])
-        I, K = np.meshgrid(i, k, indexing='ij')
-
-        # Include contribution from all three voxel vectors
-        X = (cube.origin[0] +
-             I * cube.voxel_vectors[0, 0] +
-             position * cube.voxel_vectors[1, 0] +
-             K * cube.voxel_vectors[2, 0]) * bohr_to_ang
-        Y = (cube.origin[2] +
-             I * cube.voxel_vectors[0, 2] +
-             position * cube.voxel_vectors[1, 2] +
-             K * cube.voxel_vectors[2, 2]) * bohr_to_ang
-
-        x_label = 'X (Å)'
-        y_label = 'Z (Å)'
-
-        # Atom slicing position
-        slice_pos = cube.origin[1] + position * cube.voxel_vectors[1, 1]
-        slice_dim = 1
-
-    else:  # axis == 'x'
-        # YZ plane at X slice i=position (j, k vary)
-        j = np.arange(cube.nvoxels[1])
-        k = np.arange(cube.nvoxels[2])
-        J, K = np.meshgrid(j, k, indexing='ij')
-
-        # Include contribution from all three voxel vectors
-        X = (cube.origin[1] +
-             position * cube.voxel_vectors[0, 1] +
-             J * cube.voxel_vectors[1, 1] +
-             K * cube.voxel_vectors[2, 1]) * bohr_to_ang
-        Y = (cube.origin[2] +
-             position * cube.voxel_vectors[0, 2] +
-             J * cube.voxel_vectors[1, 2] +
-             K * cube.voxel_vectors[2, 2]) * bohr_to_ang
-
-        x_label = 'Y (Å)'
-        y_label = 'Z (Å)'
-
-        # Atom slicing position
-        slice_pos = cube.origin[0] + position * cube.voxel_vectors[0, 0]
-        slice_dim = 0
-    
-    # Render as a flat 3D surface on the FULL 2D (skewed) Cartesian grid, so
-    # non-orthogonal cells show a true parallelogram. go.Heatmap is rectilinear
-    # only and silently collapsed X/Y to 1D (X[0,:], Y[:,0]), dropping the skew
-    # (issue 2.3 slice). display_data is (ni, nj), matching X/Y from meshgrid.
-    fig.add_trace(go.Surface(
-        x=X, y=Y, z=np.zeros_like(X),
-        surfacecolor=display_data,
-        colorscale=colorscale,
-        cmin=vmin,
-        cmax=vmax,
-        colorbar=dict(
-            title=f'{"log₁₀ " if log_scale and cube.data_type == "density" else ""}'
-                  f'{cube.get_data_type_label()}'
-        )
-    ))
-    
-    # Add atoms
     if show_atoms and position is not None:
         atom_props = get_atom_properties()
-        
-        atom_x = []
-        atom_y = []
-        atom_colors = []
-        atom_sizes = []
-        atom_texts = []
-        
+        normal = np.cross(e1, e2)
+        ax_x, ax_y, cols, sizes, texts = [], [], [], [], []
         for num, pos in zip(cube.atomic_numbers, cube.atomic_positions):
-            if abs(pos[slice_dim] - slice_pos) < 2.0:  # Within 2 Bohr of slice
-                if axis == 'z':
-                    atom_x.append(pos[0] * bohr_to_ang)
-                    atom_y.append(pos[1] * bohr_to_ang)
-                elif axis == 'y':
-                    atom_x.append(pos[0] * bohr_to_ang)
-                    atom_y.append(pos[2] * bohr_to_ang)
-                else:  # axis == 'x'
-                    atom_x.append(pos[1] * bohr_to_ang)
-                    atom_y.append(pos[2] * bohr_to_ang)
-                
+            pos = np.asarray(pos, float)
+            if abs(float((pos - origin3d) @ normal)) < 2.0:      # within 2 bohr of the plane
+                ax_x.append(float(pos @ e1) * bohr_to_ang)
+                ax_y.append(float(pos @ e2) * bohr_to_ang)
                 props = atom_props.get(num, {'color': 'gray', 'name': f'Z{num}', 'size': 12})
-                atom_colors.append(props['color'])
-                atom_sizes.append(props['size'] * 2)
-                atom_texts.append(props['name'])
-        
-        if atom_x:
-            fig.add_trace(go.Scatter3d(
-                x=atom_x,
-                y=atom_y,
-                z=[0.0] * len(atom_x),  # overlay on the slice plane (same frame)
-                mode='markers+text',
-                marker=dict(
-                    size=atom_sizes,
-                    color=atom_colors,
-                    line=dict(color='white', width=2)
-                ),
-                text=atom_texts,
-                textposition='top center',
-                name='Atoms',
-                showlegend=False
-            ))
-    
-    # Update layout
+                cols.append(props['color'])
+                sizes.append(max(8, props['size']))
+                texts.append(props['name'])
+        if ax_x:
+            fig.add_trace(go.Scatter(
+                x=ax_x, y=ax_y, mode='markers+text', text=texts, textposition='top center',
+                marker=dict(size=sizes, color=cols, line=dict(color='white', width=1.5)),
+                name='Atoms', showlegend=False, cliponaxis=True))
+
     scale_info = " (log scale)" if log_scale and cube.data_type == 'density' else ""
     title = f"{cube.get_data_type_label()} - {axis.upper()}-slice at index {position}{scale_info}"
-    
-    # 3D scene viewed straight down the slice plane: shows the true (skewed)
-    # parallelogram with equal aspect, atoms overlaid in the same frame.
     fig.update_layout(
-        title=title,
-        scene=dict(
-            xaxis_title=x_label,
-            yaxis_title=y_label,
-            zaxis=dict(visible=False, showticklabels=False, title=''),
-            aspectmode='data',
-            camera=dict(
-                eye=dict(x=0.0, y=0.0, z=2.2),   # top-down
-                up=dict(x=0.0, y=1.0, z=0.0),
-            ),
-        ),
-        height=750,
-        width=800
-    )
-
+        title=dict(text=title, x=0.5, xanchor='center'),
+        xaxis=dict(title=x_label, scaleanchor='y', scaleratio=1, constrain='domain',
+                   showgrid=False, zeroline=False, ticks='outside', mirror=True, showline=True,
+                   linecolor='#444', range=[float(xs[0]), float(xs[-1])]),
+        yaxis=dict(title=y_label, constrain='domain', showgrid=False, zeroline=False,
+                   ticks='outside', mirror=True, showline=True, linecolor='#444',
+                   range=[float(ys[0]), float(ys[-1])]),
+        plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(size=16),
+        margin=dict(l=80, r=30, t=70, b=70),
+        height=750, width=800)
     return fig
 
 
 def plot_all_slices_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optional[str] = None,
                           show_atoms: bool = True, max_cols: int = 6, 
-                          log_scale: bool = None, percentile_clip: float = 99.5):
+                          log_scale: bool = None, percentile_clip: float = 99.0):
     """Plot all slices in a grid using Plotly subplots."""
     
     n_slices = int(cube.nvoxels[['x', 'y', 'z'].index(axis)])
@@ -2948,25 +3065,8 @@ def plot_all_slices_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optional
     
     bohr_to_ang = 0.529177
     
-    # Calculate color scale
-    if cube.data_type == 'density':
-        nonzero_data = cube.data[cube.data > 0]
-        if len(nonzero_data) > 0:
-            vmin = np.percentile(nonzero_data, 100 - percentile_clip)
-            vmax = np.percentile(nonzero_data, percentile_clip)
-            
-            if log_scale:
-                vmin = np.log10(vmin + 1e-10)
-                vmax = np.log10(vmax + 1e-10)
-        else:
-            vmin, vmax = 0, 1e-6
-    elif cube.is_diverging_data():
-        abs_data = np.abs(cube.data)
-        vmax = np.percentile(abs_data, percentile_clip)
-        vmin = -vmax
-    else:
-        vmin = np.min(cube.data)
-        vmax = np.max(cube.data)
+    # Calculate color scale (robust: slice_range)
+    vmin, vmax = slice_range(cube, cube.data, log_scale, percentile_clip)
     
     # Plot each (subsampled) slice
     for panel, idx in enumerate(slice_indices):
@@ -3118,7 +3218,7 @@ def plot_all_slices_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optional
 
 
 def _plot_slice_browser_surface(cube, axis='z', colorscale=None, show_atoms=True,
-                                log_scale=None, percentile_clip=99.5, max_frames=100):
+                                log_scale=None, percentile_clip=99.0, max_frames=100):
     """Slice browser for NON-ORTHOGONAL cells: go.Surface frames + slider so
     skewed slices render as true parallelograms. (The orthogonal browser uses
     go.Heatmap/Contour, which are rectilinear-only.)"""
@@ -3139,17 +3239,7 @@ def _plot_slice_browser_surface(cube, axis='z', colorscale=None, show_atoms=True
         log_scale = (cube.data_type == 'density')
 
     d = cube.data
-    if cube.data_type == 'density':
-        nz = d[d > 0]
-        vmin, vmax = (np.percentile(nz, 100 - percentile_clip), np.percentile(nz, percentile_clip)) \
-            if len(nz) else (0.0, 1e-6)
-        if log_scale:
-            vmin, vmax = np.log10(vmin + 1e-10), np.log10(vmax + 1e-10)
-    elif cube.is_diverging_data():
-        m = np.percentile(np.abs(d), percentile_clip)
-        vmin, vmax = -m, m
-    else:
-        vmin, vmax = float(np.min(d)), float(np.max(d))
+    vmin, vmax = slice_range(cube, d, log_scale, percentile_clip)
 
     def _geom(idx):
         if axis == 'z':
@@ -3215,7 +3305,7 @@ def _plot_slice_browser_surface(cube, axis='z', colorscale=None, show_atoms=True
 
 def plot_slice_browser_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optional[str] = None,
                              show_atoms: bool = True, log_scale: bool = None,
-                             percentile_clip: float = 99.5, max_frames: int = 100):
+                             percentile_clip: float = 99.0, max_frames: int = 100):
     """Interactive slice browser using Plotly with slider.
 
     Args:
@@ -3257,75 +3347,8 @@ def plot_slice_browser_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optio
     
     bohr_to_ang = 0.529177
 
-    # Calculate global color scale
-    if cube.data_type == 'density':
-        nonzero_data = cube.data[cube.data > 0]
-        if len(nonzero_data) > 0:
-            vmin = np.percentile(nonzero_data, 100 - percentile_clip)
-            vmax = np.percentile(nonzero_data, percentile_clip)
-
-            if log_scale:
-                vmin = np.log10(vmin + 1e-10)
-                vmax = np.log10(vmax + 1e-10)
-        else:
-            vmin, vmax = 0, 1e-6
-    elif cube.is_diverging_data():
-        # CRITICAL FIX: For spin/potential, 0 must ALWAYS be neutral (white/transparent)
-        data_min = np.min(cube.data)
-        data_max = np.max(cube.data)
-
-        # Use percentiles to clip extreme outliers, but ALWAYS include 0 in range
-        if cube.data_type == 'potential':
-            # For potential, clip extremes and FORCE symmetry around 0 (just like SPIN)
-            # This ensures 0 is EXACTLY at center -> appears WHITE/NEUTRAL
-            abs_min = abs(data_min)
-            abs_max = abs(data_max)
-            asymmetry_ratio = abs_max / abs_min if abs_min > 1e-10 else float('inf')
-
-            if asymmetry_ratio > 100:  # Highly asymmetric
-                print(f"\n  Highly asymmetric potential detected (ratio: {asymmetry_ratio:.1f})")
-                print(f"  Using MINIMUM range to make BOTH pos/neg features visible...")
-                # Clip each side independently
-                neg_data = cube.data[cube.data < 0]
-                pos_data = cube.data[cube.data > 0]
-                vmin_clip = np.percentile(neg_data, 1) if len(neg_data) > 0 else 0
-                vmax_clip = np.percentile(pos_data, 99) if len(pos_data) > 0 else 0
-
-                # CRITICAL FIX: Use MIN (not MAX) to ensure both features visible
-                # This gives 50% colorscale to negative, 50% to positive
-                vmax_sym = min(abs(vmin_clip), abs(vmax_clip))
-                vmin = -vmax_sym
-                vmax = vmax_sym
-                print(f"  Symmetric range: [{vmin:.3f}, {vmax:.3f}] (0 = WHITE, both sides visible)\n")
-            else:
-                vmin, vmax = data_min, data_max
-        else:
-            # For spin, clip to percentiles but force symmetry around 0
-            print(f"\n  Clipping spin data to percentiles for better visibility...")
-            print(f"  Original range: [{data_min:.3e}, {data_max:.3e}]")
-
-            # Clip each side independently to remove extreme noise
-            neg_data = cube.data[cube.data < 0]
-            pos_data = cube.data[cube.data > 0]
-
-            if len(neg_data) > 0:
-                vmin_clip = np.percentile(neg_data, 5)  # Remove bottom 5% noise
-            else:
-                vmin_clip = 0
-
-            if len(pos_data) > 0:
-                vmax_clip = np.percentile(pos_data, 95)  # Remove top 5% noise
-            else:
-                vmax_clip = 0
-
-            # Force symmetry around 0 for proper color balance
-            vmax_sym = max(abs(vmin_clip), abs(vmax_clip))
-            vmin = -vmax_sym
-            vmax = vmax_sym
-            print(f"  Clipped symmetric range: [{vmin:.3e}, {vmax:.3e}] (0 = neutral)\n")
-    else:
-        vmin = np.min(cube.data)
-        vmax = np.max(cube.data)
+    # Calculate global color scale (robust, symmetric about 0 for spin and potential: slice_range)
+    vmin, vmax = slice_range(cube, cube.data, log_scale, percentile_clip)
 
     # No need for pre-calculated ranges - let Plotly auto-fit to data (like ULTRA_SIMPLE)
 
@@ -4255,7 +4278,10 @@ Examples:
     parser.add_argument('--save', help='Save figure to HTML file')
     parser.add_argument('--log-scale', action='store_true', help='Force log scale for density')
     parser.add_argument('--linear-scale', action='store_true', help='Force linear scale')
-    parser.add_argument('--clip', type=float, default=99.5, help='Percentile for color clipping')
+    parser.add_argument('--clip', type=float, default=99.0,
+                        help='Slices: the color range runs from the (100 - CLIP)th to the CLIPth percentile (default: 99)')
+    parser.add_argument('--color-range', metavar='LO,HI', default=None,
+                        help='Slices: the color range outright (log10 units for a log-scale density)')
     parser.add_argument('-i', '--interactive', action='store_true', help='Interactive mode')
     parser.add_argument('--z-shift', type=float, default=0.0, help='Manual z-shift in Angstroms')
 
@@ -4312,6 +4338,9 @@ Examples:
                        help='Bond line pixel width (default 5)')
     parser.add_argument('--publication', action='store_true',
                        help='Publication mode: hide axes/box, tight margins, no title')
+    parser.add_argument('--style', default='default',
+                       help='Plot style (mace plotting --style): the sign colors of spin and difference '
+                            'isosurfaces (vesta: yellow/cyan)')
     parser.add_argument('--no-title', action='store_true', help='Suppress auto-generated title')
     parser.add_argument('--no-axes', action='store_true', help='Hide 3D axes')
     parser.add_argument('--no-colorbar', action='store_true', help='Hide colorbars (for composite panels)')
@@ -4360,6 +4389,13 @@ Examples:
                        help='Explicit scene y-axis range (Å)')
 
     args = parser.parse_args()
+    global _COLOR_RANGE
+    if getattr(args, 'color_range', None):
+        try:
+            _COLOR_RANGE = parse_color_range(args.color_range)
+        except ValueError as e:
+            parser.error(str(e))
+    use_style(getattr(args, 'style', 'default'))
 
     # DUAL CUBE MODE: Handle before normal file detection
     if args.shape_cube and args.color_cube:

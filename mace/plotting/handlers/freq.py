@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .. import detect
+from .. import detect, outcome
 from ..prompts import (
     get_float_input,
     select_option,
@@ -162,7 +162,8 @@ def _freq_config_from_args(args) -> Dict[str, Any]:
 # Rendering
 # =============================================================================
 
-def _run_engine(argv: List[str]) -> None:
+def _run_engine(argv: List[str]) -> bool:
+    """False when the engine failed (it said why; the run then exits non-zero, outcome)."""
     vib = _engine()
     argv_backup = sys.argv
     try:
@@ -171,10 +172,13 @@ def _run_engine(argv: List[str]) -> None:
     except (Exception, SystemExit) as e:  # engine sys.exit()s on --list/--all/error
         # SystemExit(0) is the normal --list/--all exit; only note real errors.
         if isinstance(e, SystemExit) and (e.code in (0, None)):
-            return
+            return True
         print(f"    Error: {e}")
+        outcome.failed(Path(argv[0]).name, str(e))
+        return False
     finally:
         sys.argv = argv_backup
+    return True
 
 
 def _collect_new(out_dir: Path, before: set) -> List[str]:
@@ -213,6 +217,7 @@ def plot_freq(files: List[str], config: Dict[str, Any], output_dir: str = ".") -
             mode = config.get("mode") or _representative_mode(out_file)
             if mode is None:
                 print(f"    No vibrational modes found in {name}; skipping.")
+                outcome.failed(name, "no vibrational modes")
                 continue
             print(f"\n  Rendering mode {mode}: {name}")
             argv += ["--mode", str(mode)]

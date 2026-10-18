@@ -30,9 +30,10 @@ from typing import List, Dict, Optional, Any
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 from . import handlers  # noqa: F401  (import side-effect: registers all plotters)
-from . import detect
+from . import detect, outcome
 from .registry import PlotKind, REGISTRY, entries, get
 from .prompts import select_option, yes_no_prompt
+from mace.utils import folder_settings as _fs
 
 
 # Legacy string keys for the back-compat discover_plottable_files() shim.
@@ -146,6 +147,17 @@ def run_interactive(directory: str = ".") -> None:
 # Command-Line Interface
 # =============================================================================
 
+def _dos_smooth_ev(text: str) -> float:
+    """--dos-smooth's value: a Gaussian sigma in eV from 0 (off) to 1."""
+    try:
+        v = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number (a sigma in eV, e.g. 0.05)")
+    if not 0 <= v <= 1:
+        raise argparse.ArgumentTypeError(f"{text} is outside 0 to 1 eV (0 turns the smoothing off)")
+    return v
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for mace plotting."""
     parser = argparse.ArgumentParser(
@@ -158,6 +170,8 @@ Examples:
   mace plotting                          # Interactive mode in current directory
   mace plotting --band                   # Plot all band structures with defaults
   mace plotting --dos                    # Plot all DOS with defaults
+  mace plotting --band-dos               # Each band structure with its DOS, one figure (as the GUI)
+  mace plotting --band --backend matplotlib   # the figures of MACE 1.1.5 and earlier
   mace plotting --structure              # Visualize all CIF files
   mace plotting --all                    # Plot everything discovered with defaults
 
@@ -166,6 +180,9 @@ Examples:
   mace plotting --esp pot.CUBE --view slice --slice z 30
   mace plotting --diff after.CUBE before.CUBE   # density difference
 
+  mace plotting --orbitals                         # HOMO and LUMO of the ORBITALS run here
+  mace plotting --orbitals si_orb_00001_K000_real.molden --mo HOMO --degenerate-sum
+  mace plotting --orbitals --list-orbitals         # k points, levels, self-check
   mace plotting --freq mol_freq.out --list-modes
   mace plotting --freq mol_freq.out --mode 7 --gif
   mace plotting --freq mol_freq.out --all-modes
@@ -173,6 +190,12 @@ Examples:
   mace plotting --ir                     # plot every *IRSPEC.DAT
   mace plotting --raman --raman-mode all # Raman incl. single-crystal directions
   mace plotting --spectra --average      # IR + Raman, conf configs averaged
+
+  mace plotting --legend MgO.cif         # element legend SVG in the GUI's palette
+  mace plotting --legend runs/ --format png --dpi 600 --legend-layout grid
+  mace plotting --gallery band BAND/ --cols 4 -o bands.svg   # many band structures in one grid
+  mace plotting --gallery bandos run1/ run2/ --caption-csv captions.csv
+  mace plotting --gallery opt OPT/ -o opt.png               # energy along each optimization
 """
     )
 
@@ -194,6 +217,13 @@ Examples:
         help='Plot density of states'
     )
     mode_group.add_argument(
+        '--band-dos',
+        dest='band_dos',
+        action='store_true',
+        help="Plot each band structure with its run's DOS in one figure on a shared energy axis "
+             "(mace gui's band + DOS view): FILE is a BAND or a DOSS file, its partner sits beside it"
+    )
+    mode_group.add_argument(
         '--structure',
         action='store_true',
         help='Visualize crystal structures from CIF files'
@@ -202,6 +232,12 @@ Examples:
         '--cube',
         action='store_true',
         help='Plot cube volumetric data (ECH3/POT3 density, potential, spin)'
+    )
+    mode_group.add_argument(
+        '--orbitals',
+        action='store_true',
+        help='Plot orbitals from a CRYSTAL ORBITALS run (.molden files): choose the orbital, '
+             'k point and spin; a cube is built in <job>_orbitals/ and drawn like other cubes'
     )
     mode_group.add_argument(
         '--freq', '--vibmodes',
@@ -225,9 +261,27 @@ Examples:
         help='Plot both IR and Raman spectra (umbrella)'
     )
     mode_group.add_argument(
+        '--bz',
+        action='store_true',
+        help='Draw the first Brillouin zone with the k-path (BAND.DAT/.d3/.out; --band-path for an edit)'
+    )
+    mode_group.add_argument(
         '--all',
         action='store_true',
         help='Plot all available outputs with defaults'
+    )
+    mode_group.add_argument(
+        '--legend',
+        action='store_true',
+        help='Write an element legend (SVG, PNG or a TSV/CSV/JSON table) for the elements of the '
+             'given structure files or folders (their union), in the element palette (--palette)'
+    )
+    mode_group.add_argument(
+        '--gallery',
+        metavar='KIND',
+        choices=['band', 'dos', 'bandos', 'ir', 'raman', 'opt', 'scf', 'structure'],
+        help='Many outputs in one grid figure: band, dos, bandos (band + DOS), ir, raman, '
+             'opt (energy along the optimization), scf (SCF convergence) or structure'
     )
 
     # Explicit input file(s); when omitted, files are auto-discovered in -d.
@@ -239,8 +293,9 @@ Examples:
     )
     parser.add_argument(
         '--format',
-        choices=['html', 'png', 'svg', 'pdf'],
-        help='Output format for cube/FREQ plots (default: html)'
+        choices=['html', 'png', 'svg', 'pdf', 'tsv', 'csv', 'json'],
+        help='Output format: cube/FREQ html (default), png, svg, pdf; band/DOS/band-DOS png, svg, pdf or html '
+             '(default: png and svg); --legend: svg (default), png, tsv, csv or json'
     )
 
     # Common options
@@ -252,33 +307,122 @@ Examples:
     parser.add_argument(
         '-o', '--output',
         default='.',
-        help='Output directory for generated plots'
+        help='Output directory for generated plots (band/DOS: beside the data when not given)'
     )
+
+    # Plot styles (1.1.6, mace/plotting/presets.py STYLE_OPTIONS: the same names as the GUI's Style controls
+    # and a folder's mace-folder.toml [plots] keys)
+    from .presets import ORDER, DOS_MODES, SPIN_COLOR_CHOICES, DOS_SMOOTH_SIGMA
+    style_group = parser.add_argument_group('plot style options (band, DOS, band + DOS, gallery, spectra, cube maps)')
+    style_group.add_argument('--backend', choices=['plotly', 'matplotlib'], default=None,
+                             help='Band/DOS renderer: plotly draws the GUI\'s figure (default, when plotly and kaleido '
+                                  'can export here), matplotlib the figures of MACE 1.1.5 and earlier')
+    style_group.add_argument('--style', choices=list(ORDER), default=None,
+                             help='Plot style: default, publication (Okabe-Ito after black, no grid, ticks outside), '
+                                  'vesta (cube maps and isosurfaces: VESTA-like; other plots draw default), '
+                                  'presentation (large text, thick lines), grayscale (print: line styles and markers), '
+                                  'colorblind (Okabe-Ito). Default: default')
+    style_group.add_argument('--spin-colors', choices=list(SPIN_COLOR_CHOICES), default=None,
+                             help="Band/DOS spin colors: auto (the style's: blue/red in default and presentation, "
+                                  "black/vermilion in publication), mace (pink/cyan), blue-red, black-vermilion, or "
+                                  "custom (--spin-up-color/--spin-down-color). Default: auto")
+    style_group.add_argument('--spin-up-color', metavar='HEX', default=None,
+                             help="Band/DOS: spin up's color, #rrggbb (a custom pair; default: the spin colors')")
+    style_group.add_argument('--spin-down-color', metavar='HEX', default=None,
+                             help="Band/DOS: spin down's color, #rrggbb (a custom pair; default: the spin colors')")
+    style_group.add_argument('--band-color', metavar='HEX', default=None,
+                             help="Band/DOS: the color of a run that is not spin-polarized (closed shell, or α = β): its "
+                                  "bands and one-sided DOS total, #rrggbb (default: the style's, the plot's text color; "
+                                  "a spin-polarized run keeps the spin colors)")
+    style_group.add_argument('--spin-down-style', '--spin-style', dest='spin_style',
+                             choices=['dash', 'dot', 'dashdot', 'solid'], default=None,
+                             help="Band/DOS: spin down's (β's) line style, spin up solid (default: dash)")
+    style_group.add_argument('--spin-down-solid', dest='spin_style', action='store_const', const='solid',
+                             help='Band/DOS: spin down solid too (the spins told apart by color only)')
+    style_group.add_argument('--dos-colors', choices=list(DOS_MODES), default=None,
+                             help="DOS: which projections and their colors: auto (one element by orbital, two or three "
+                                  "element x orbital, more by element; default), total, element, orbital, element-orbital")
+    style_group.add_argument('--no-dos-total', dest='dos_total', action='store_false', default=None,
+                             help='DOS: without the total')
+    style_group.add_argument('--dos-total', dest='dos_total', action='store_true', default=None,
+                             help="DOS: with the total (the default; overrides a mace-folder.toml's dos_total = false)")
+    style_group.add_argument('--dos-spin', '--spin-dos', dest='spin_dos', choices=['auto', 'mirrored', 'overlaid'], default=None,
+                             help='DOS spin layout: auto (a spin-polarized run mirrored, a closed-shell run one-sided; '
+                                  'default), mirrored or overlaid')
+    style_group.add_argument('--dos-smooth', dest='dos_smooth', metavar='EV', type=_dos_smooth_ev, default=None,
+                             help=f'DOS: Gaussian smoothing of the drawn curves (display only, labeled in the plot), '
+                                  f'sigma in eV, e.g. {DOS_SMOOTH_SIGMA:g}; 0: off (default: off)')
+    style_group.add_argument('--units', choices=['eV', 'meV', 'Ha', 'kJ/mol', 'kcal/mol'], default=None,
+                             help='Band/DOS energy unit (plotly backend; default: eV)')
+    style_group.add_argument('--width', type=float, default=None, metavar='IN',
+                             help='Band/DOS/band + DOS figure width in inches (default: plotly the GUI pane\'s size, '
+                                  'band and band + DOS 7.9 x 4.4 in, DOS 5.4 x 5.4 in; matplotlib 3.5 x 5 in, a band '
+                                  'figure wider with many k labels; matplotlib widens a figure for its legend)')
+    style_group.add_argument('--height', type=float, default=None, metavar='IN',
+                             help='Band/DOS/band + DOS figure height in inches (default: see --width)')
+    style_group.add_argument('--dpi', type=int, default=None,
+                             help='PNG resolution, dots per inch, written into the PNG with the size: band/DOS/band + DOS '
+                                  '(default: 300; --backend matplotlib band and DOS 600) and --legend (default: 300)')
+
+    # Gallery options (mace/plotting/gallery.py, shared with the GUI's Plot Gallery)
+    gallery_group = parser.add_argument_group('gallery options (--gallery KIND FILES/FOLDER)')
+    gallery_group.add_argument('--cols', type=int, default=None,
+                               help='Gallery: columns of the grid (default: 3, at most 8)')
+    gallery_group.add_argument('--independent-axes', action='store_true',
+                               help='Gallery: each pane its own axis ranges (default: shared; the energy '
+                                    'window of band/DOS panes is always --e-lower/--e-upper)')
+    gallery_group.add_argument('--caption-csv', metavar='PATH',
+                               help='Gallery: also write the caption table (material, formula, gap, energy) as CSV')
+    gallery_group.add_argument('--max', type=int, default=None,
+                               help='Gallery: at most this many panes (default: 200)')
+    gallery_group.add_argument('--db', metavar='PATH',
+                               help='Gallery: the materials.db for the captions (default: the one beside the files)')
 
     # Band options
     band_group = parser.add_argument_group('band structure options')
     band_group.add_argument(
         '--e-lower',
         type=float,
-        default=-8.0,
-        help='Lower energy limit in eV (default: -8)'
+        default=-6.0,
+        help='Lower energy limit in eV, from the reference (default: -6, as the GUI)'
     )
     band_group.add_argument(
         '--e-upper',
         type=float,
-        default=8.0,
-        help='Upper energy limit in eV (default: 8)'
+        default=6.0,
+        help='Upper energy limit in eV, from the reference (default: 6, as the GUI)'
+    )
+    band_group.add_argument(
+        '--energy-reference',
+        choices=['auto', 'fermi', 'vacuum'],
+        default='auto',
+        help="Band/DOS energy zero: auto (default) is the vacuum scale when the run's POTC files "
+             '(<material>_POTC.POTC.DAT and _POTC.out) are beside the data, else the Fermi level; '
+             'fermi: E - E_F even then; vacuum: the vacuum scale (needs the POTC files)'
+    )
+    band_group.add_argument(
+        '--fermi-shift',
+        type=float,
+        default=0.0,
+        metavar='EV',
+        help='Band/DOS: move the energies by -EV, so the energy EV above E_F is the reference '
+             '(the dotted line; the GUI\'s Fermi shift); the window stays around it (default: 0)'
     )
     band_group.add_argument(
         '--alpha',
         type=float,
-        default=0.3,
-        help='Transparency for band stacking (default: 0.3)'
+        default=1.0,
+        help='Band line opacity; below 1 overlapping bands stack darker (default: 1, opaque)'
     )
     band_group.add_argument(
         '--no-gaps',
         action='store_true',
         help='Remove gaps at k-path discontinuities'
+    )
+    band_group.add_argument(
+        '--band-path',
+        metavar='FILE',
+        help='Plot along an edited k-path: a JSON band_path (as mace gui and opt2d3 write it)'
     )
 
     # DOS options
@@ -286,8 +430,8 @@ Examples:
     dos_group.add_argument(
         '--projection',
         choices=['both', 'total', 'orbital', 'tm_orb'],
-        default='both',
-        help='Projection type (default: both)'
+        default=None,
+        help='Projection type of --backend matplotlib (default: the projections of --dos-colors, as the GUI)'
     )
     dos_group.add_argument(
         '--no-composition',
@@ -317,6 +461,35 @@ Examples:
         help='Color atoms by coordination number'
     )
 
+    # Element colors (structures, FREQ modes, cube atom overlays), shared with the GUI
+    struct_group.add_argument(
+        '--palette',
+        metavar='NAME',
+        help='Element colors for atoms (structure, FREQ modes, cube overlays): a preset '
+             '(vesta, jmol, cvd, legacy) or a palette saved in the GUI (View > Element Colors). '
+             'Default: the default palette saved there, else VESTA (as the GUI). '
+             'legacy: the colors mace plotting used before 1.1.6'
+    )
+
+    # Element legend options (mace/utils/element_legend.py, shared with the GUI)
+    lg = parser.add_argument_group('element legend options (--legend)')
+    lg.add_argument('--legend-layout', choices=['vertical', 'horizontal', 'grid'], default='vertical',
+                    help='One column, one row, or a grid (default: vertical)')
+    lg.add_argument('--legend-columns', type=int, default=4, metavar='N', help='Grid: columns (default: 4)')
+    lg.add_argument('--legend-shape', choices=['circle', 'square'], default='circle', help='Swatch shape (default: circle)')
+    lg.add_argument('--legend-swatch', type=float, default=18, metavar='PX', help='Swatch size in px, 1/96 in (default: 18)')
+    lg.add_argument('--legend-font-size', type=float, default=14, metavar='PX', help='Font size in px (default: 14)')
+    lg.add_argument('--legend-label', choices=['symbol', 'name', 'both'], default='symbol',
+                    help='Symbol, full name or both (default: symbol)')
+    lg.add_argument('--legend-text', default='dark', metavar='COLOR',
+                    help='Text color: dark (for light backgrounds, default), light (for dark ones) or #rrggbb')
+    lg.add_argument('--legend-background', default='none', metavar='COLOR',
+                    help='none (transparent, default), white, black or #rrggbb')
+    lg.add_argument('--legend-order', choices=['z', 'first', 'alpha'], default='z',
+                    help='Atomic number (default), first appearance or alphabetical')
+    lg.add_argument('--legend-no-outline', action='store_true', help='No thin ring around the swatches')
+    lg.add_argument('--legend-recursive', action='store_true', help='Folders: include their subfolders')
+
     # Cube visualization options
     cube_group = parser.add_argument_group('cube visualization options')
     cube_group.add_argument('--density', '--charge', dest='density', action='store_true',
@@ -341,14 +514,38 @@ Examples:
     cube_group.add_argument('--publication', action='store_true', help='Cube: publication styling')
     cube_group.add_argument('--log', action='store_true', help='Cube: log color scale')
     cube_group.add_argument('--linear', action='store_true', help='Cube: linear color scale')
-    cube_group.add_argument('--clip', type=float, default=99.5,
-                            help='Cube: color clip percentile (default: 99.5)')
+    cube_group.add_argument('--clip', type=float, default=99.0,
+                            help='Cube slices: the color range runs from the (100 - CLIP)th to the CLIPth percentile, '
+                                 'symmetric about 0 for spin and potential, so nuclear spikes do not take the scale (default: 99)')
+    cube_group.add_argument('--color-range', metavar='LO,HI', default=None,
+                            help='Cube slices: the color range outright (log10 units for a log-scale density)')
     cube_group.add_argument('--engine-args',
                             help='Advanced: extra cube-engine flags (shlex-split; '
                                  'output-controlling flags are screened out)')
 
     # Vibrational mode options ( --all-modes is deliberately NOT in mode_group,
     # so it never clashes with the top-level --all; see H5 ).
+    orb_group = parser.add_argument_group('orbital options (--orbitals; the cube options above apply too)')
+    orb_group.add_argument('--mo', metavar='LIST',
+                           help='Orbitals: comma-separated HOMO, LUMO, HOMO-1, LUMO+2 or MO numbers '
+                                '(default: HOMO,LUMO)')
+    orb_group.add_argument('--k', type=int, metavar='N',
+                           help='Orbitals: k point number from the ORBITALS .out list (default: the '
+                                'valence-band top, else Γ)')
+    orb_group.add_argument('--orb-spin', choices=['alpha', 'beta'],
+                           help='Orbitals: spin channel of an open-shell run (default: alpha)')
+    orb_group.add_argument('--part', choices=['re', 'im', 'abs2'],
+                           help='Orbitals: Re ψ (default), Im ψ (complex k only) or |ψ|²')
+    orb_group.add_argument('--degenerate-sum', action='store_true',
+                           help='Orbitals: sum |ψ|² over each degenerate set (gauge-free)')
+    orb_group.add_argument('--cells', metavar='NxMxL',
+                           help='Orbitals: cells to draw along the periodic axes (default: 3 for '
+                                'polymers, 2x2 for slabs, 1x1x1 for crystals)')
+    orb_group.add_argument('--quality', choices=['preview', 'normal', 'fine'],
+                           help='Orbitals: grid spacing 0.40 / 0.25 / 0.15 bohr (default: normal)')
+    orb_group.add_argument('--list-orbitals', action='store_true',
+                           help='Orbitals: print the k points and levels, draw nothing')
+
     freq_group = parser.add_argument_group('vibrational mode options')
     freq_group.add_argument('--mode', type=int, help='FREQ: render this mode number')
     freq_group.add_argument('--all-modes', action='store_true',
@@ -387,20 +584,77 @@ def main(argv: Optional[List[str]] = None) -> int:
         argv: Command-line arguments (defaults to sys.argv[1:])
 
     Returns:
-        Exit code (0 for success, 1 if a requested kind has no files).
+        Exit code: 0 for success; 1 if a requested kind has no files or any requested figure
+        was not drawn (each plotter goes on to the next file, outcome records the failures).
     """
+    outcome.reset()
+    rc = _main(argv)
+    bad = outcome.failures()
+    if bad:
+        print(f"\n  {len(bad)} figure(s) not drawn:", file=sys.stderr)
+        for name, why in bad:
+            print(f"    {name}: {why}" if why else f"    {name}", file=sys.stderr)
+        return rc or 1
+    return rc
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
     parser = create_parser()
 
     if argv is None:
         argv = sys.argv[1:]
 
+    # a project folder's mace-folder.toml [plots] (the energy window) is the
+    # default here; a flag on the command line still wins
+    folder = _folder_defaults(parser, argv)
+
     args = parser.parse_args(argv)
+    # -o given: band/DOS figures go there (B8); without it they go beside the data, as before
+    args.output_given = _fs._given(argv, '-o', '--output') or any(a.startswith('-o') and len(a) > 2 for a in argv)
+    if getattr(args, 'band', False) or getattr(args, 'dos', False) or getattr(args, 'band_dos', False):
+        # the energy window runs from a lower to a higher energy, as the GUI requires
+        # (equal limits drew a zero-height plot; inverted ones were swapped silently)
+        if not args.e_lower < args.e_upper:
+            parser.error(f"--e-lower ({args.e_lower:g}) must be below --e-upper ({args.e_upper:g})")
+        # -o is the folder the figures go in (named <material>.BANDS.<format>, ...): a figure
+        # file name made a folder of that name
+        out = Path(args.output or '.')
+        if args.output_given and out.suffix.lower() in ('.svg', '.png', '.pdf', '.html') and not out.is_dir():
+            parser.error(f"-o {args.output}: for --band/--dos/--band-dos, -o names the folder the figures are "
+                         f"written in (as <material>.BANDS.<format>); pass a folder, and --format for the format")
+    if folder:
+        used = [f"--{k.replace('_', '-')} {v:g}" if isinstance(v, (int, float)) else f"--{k.replace('_', '-')} {v}"
+                for k, v in folder[1].items() if getattr(args, k, None) == v
+                and not any(a == f"--{k.replace('_', '-')}" or a.startswith(f"--{k.replace('_', '-')}=") for a in argv)]
+        if used:
+            _fs.note(f"using {' '.join(used)} from {folder[0]} (pass the option to use another value)")
     files_pos = list(getattr(args, 'files', []) or [])
+
+    # the element palette for every atom drawn in this run (one loader with the GUI)
+    from mace.utils import element_palettes
+    try:
+        element_palettes.choose(getattr(args, 'palette', None))
+    except ValueError as e:
+        parser.error(str(e))
+
+    if getattr(args, 'legend', False):
+        from .legend import run_legend
+        return run_legend(args, files_pos, parser)
+    if args.format in ('tsv', 'csv', 'json'):
+        parser.error(f'--format {args.format} is for --legend only')
 
     # H4: --diff owns exactly its two operands; extra positionals are an error.
     if getattr(args, 'diff', None) and files_pos:
         parser.error('--diff takes exactly two cube files; '
                      'remove the extra positional argument(s)')
+
+    if getattr(args, 'gallery', None):
+        from . import gallery
+        try:
+            return gallery.run_cli(args)
+        except gallery.GalleryError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
 
     # A mode flag pins the kind (mutually exclusive, so at most one matches);
     # cube sub-flags (--density/--esp/--spin/--diff) imply --cube.
@@ -410,6 +664,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if pinned is not None:
         return _dispatch_pinned(pinned, args, files_pos)
+
+    if getattr(args, 'bz', False):
+        from .handlers import bz
+        return bz.main(args)
 
     # --spectra umbrella: both IR and Raman.
     if getattr(args, 'spectra', False):
@@ -427,8 +685,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             if entry.accepts_energy_range:
                 config['e_lower'] = args.e_lower
                 config['e_upper'] = args.e_upper
+                config['fermi_shift'] = args.fermi_shift
+                config['energy_reference'] = args.energy_reference
+                from .handlers.legacy import _size_config, _style_config
+                config.update(_style_config(args))
+                config.update(_size_config(args))
             print(entry.progress_tmpl.format(n=len(files)))
-            entry.handler(files, config, args.output)
+            entry.handler(files, config, _output_for(entry, args))
         return 0
 
     # Explicit files with no mode flag: classify each and dispatch by kind.
@@ -438,6 +701,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Interactive mode (default)
     run_interactive(args.directory)
     return 0
+
+
+def _output_for(entry, args):
+    """The handler's output directory: band and DOS figures go beside the data unless -o is given."""
+    if entry.kind in (PlotKind.BAND, PlotKind.DOS) and not getattr(args, 'output_given', True):
+        return None
+    return args.output
+
+
+def _folder_defaults(parser, argv):
+    """(the folder file, the defaults it sets) after setting them on
+    ``parser``; None without a folder file (nothing changes)."""
+    fs = _fs.load()
+    _fs.warn_once(fs)
+    defaults = _fs.plot_defaults(fs)
+    if not defaults:
+        return None
+    parser.set_defaults(**defaults)
+    return fs.path, defaults
 
 
 def _cube_implied(args) -> bool:
@@ -480,7 +762,7 @@ def _dispatch_pinned(entry, args, files_pos: List[str]) -> int:
 
     config = _config_for(entry, args)
     print(entry.progress_tmpl.format(n=len(files)))
-    entry.handler(files, config, args.output)
+    entry.handler(files, config, _output_for(entry, args))
     return 0
 
 
@@ -499,7 +781,7 @@ def _dispatch_kinds(kinds, args, files_pos: List[str], empty_msg: str) -> int:
             continue
         config = _config_for(entry, args)
         print(entry.progress_tmpl.format(n=len(files)))
-        entry.handler(files, config, args.output)
+        entry.handler(files, config, _output_for(entry, args))
         any_done = True
 
     if not any_done:
@@ -529,7 +811,7 @@ def _dispatch_positional(args, files_pos: List[str]) -> int:
             continue
         config = _config_for(entry, args)
         print(entry.progress_tmpl.format(n=len(files)))
-        entry.handler(files, config, args.output)
+        entry.handler(files, config, _output_for(entry, args))
     return 0
 
 

@@ -74,6 +74,33 @@ ELEMENT_OUTLINE_COLORS = {
     'DEFAULT': '#642850'
 }
 
+
+def _palette():
+    """The element palette of this run (mace plotting --palette, else the saved
+    default in ~/.config/mace/element_colors.json, shared with the GUI, else
+    VESTA); None (--palette legacy) keeps the colors above."""
+    try:
+        from mace.utils.element_palettes import active_colors
+    except ImportError:
+        return None
+    return active_colors()
+
+
+def _atom_color(el):
+    pal = _palette()
+    if pal:
+        from mace.utils.element_palettes import color_for
+        return color_for(pal, el)
+    return ELEMENT_COLORS.get(el.upper(), ELEMENT_COLORS['DEFAULT'])
+
+
+def _atom_outline(el):
+    pal = _palette()
+    if pal:
+        from mace.utils.element_palettes import color_for, darker
+        return darker(color_for(pal, el), 0.55)
+    return ELEMENT_OUTLINE_COLORS.get(el.upper(), ELEMENT_OUTLINE_COLORS['DEFAULT'])
+
 # Covalent radii (Angstroms) - for bond detection
 COVALENT_RADII = {
     'H': 0.31, 'C': 0.76, 'N': 0.71, 'O': 0.66, 'F': 0.57,
@@ -371,10 +398,10 @@ class VibModeAnimator:
         return bonds
 
     def _get_color(self, element):
-        return ELEMENT_COLORS.get(element.upper(), ELEMENT_COLORS['DEFAULT'])
+        return _atom_color(element)
 
     def _get_outline_color(self, element):
-        return ELEMENT_OUTLINE_COLORS.get(element.upper(), ELEMENT_OUTLINE_COLORS['DEFAULT'])
+        return _atom_outline(element)
 
     def _get_size(self, element):
         return DISPLAY_SIZES.get(element.upper(), DISPLAY_SIZES['DEFAULT'])
@@ -1481,8 +1508,8 @@ class VibModeAnimator:
         for el in unique_elements:
             element_legend.append({
                 'symbol': el,
-                'color': ELEMENT_COLORS.get(el.upper(), ELEMENT_COLORS['DEFAULT']),
-                'outline': ELEMENT_OUTLINE_COLORS.get(el.upper(), ELEMENT_OUTLINE_COLORS['DEFAULT'])
+                'color': _atom_color(el),
+                'outline': _atom_outline(el)
             })
 
         # Prepare mode data for JavaScript
@@ -2549,8 +2576,8 @@ body {
         for el in unique_elements:
             element_legend.append({
                 'symbol': el,
-                'color': ELEMENT_COLORS.get(el.upper(), ELEMENT_COLORS['DEFAULT']),
-                'outline': ELEMENT_OUTLINE_COLORS.get(el.upper(), ELEMENT_OUTLINE_COLORS['DEFAULT'])
+                'color': _atom_color(el),
+                'outline': _atom_outline(el)
             })
 
         # Prepare data for JavaScript
@@ -3628,8 +3655,8 @@ def create_comparison_html(animators, labels, output_path='comparison_viewer.htm
     for el in unique_elements:
         element_legend.append({
             'symbol': el,
-            'color': ELEMENT_COLORS.get(el.upper(), ELEMENT_COLORS['DEFAULT']),
-            'outline': ELEMENT_OUTLINE_COLORS.get(el.upper(), ELEMENT_OUTLINE_COLORS['DEFAULT'])
+            'color': _atom_color(el),
+            'outline': _atom_outline(el)
         })
 
     # Color palette for different files

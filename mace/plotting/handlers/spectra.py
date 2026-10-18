@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 
 from . import spectra_api as api
 from ..prompts import configure_output_formats, select_option, yes_no_prompt
+from .. import outcome
 from ..registry import PlotKind, PlotterEntry, register
 
 _CONF_RE = re.compile(r"-conf\d+_")
@@ -64,6 +65,7 @@ def _ir_config_from_args(args) -> Dict[str, Any]:
     cfg = configure_ir_spectra(interactive=False)
     cfg["average"] = bool(getattr(args, "average", False))
     cfg["ir_column"] = getattr(args, "ir_column", 2)
+    cfg["style"] = getattr(args, "style", None) or "default"
     cfg["formats"] = _resolve_formats(args)
     return cfg
 
@@ -73,6 +75,7 @@ def plot_ir_spectra(files: List[str], config: Dict[str, Any], output_dir: str = 
     out: List[str] = []
     ir_column = config.get("ir_column", 2)
     formats = config.get("formats") or ["png"]
+    api.use_style(config.get("style"))
 
     conf = [f for f in files if _CONF_RE.search(Path(f).name)]
     nonconf = [f for f in files if f not in conf]
@@ -102,6 +105,7 @@ def plot_ir_spectra(files: List[str], config: Dict[str, Any], output_dir: str = 
                             formats=formats, ir_column=ir_column)
         if not new:
             print(f"    Skipped (needs > {ir_column} columns).")
+            outcome.failed(Path(f).name, "too few columns")
         for p in new:
             print(f"    Generated: {Path(p).name}")
         out += new
@@ -142,6 +146,7 @@ def _raman_config_from_args(args) -> Dict[str, Any]:
     cfg = configure_raman_spectra(interactive=False)
     cfg["average"] = bool(getattr(args, "average", False))
     cfg["raman_mode"] = getattr(args, "raman_mode", None) or "all"
+    cfg["style"] = getattr(args, "style", None) or "default"
     cfg["formats"] = _resolve_formats(args)
     return cfg
 
@@ -152,6 +157,7 @@ def plot_raman_spectra(files: List[str], config: Dict[str, Any], output_dir: str
     mode = config.get("raman_mode", "all")
     min_cols = api.RAMAN_MIN_COLS.get(mode, 10)
     formats = config.get("formats") or ["png"]
+    api.use_style(config.get("style"))
 
     conf = [f for f in files if _CONF_RE.search(Path(f).name)]
     nonconf = [f for f in files if f not in conf]
@@ -180,6 +186,7 @@ def plot_raman_spectra(files: List[str], config: Dict[str, Any], output_dir: str
                                mode=mode, formats=formats)
         if not new:
             print(f"    Skipped (needs >= {min_cols} columns for mode '{mode}').")
+            outcome.failed(Path(f).name, "too few columns")
         for p in new:
             print(f"    Generated: {Path(p).name}")
         out += new

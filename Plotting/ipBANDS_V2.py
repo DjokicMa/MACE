@@ -16,7 +16,7 @@ import sys
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, NullLocator
 import matplotlib as mpl
 import glob
 from os.path import exists
@@ -26,8 +26,17 @@ import re
 # SHARED CONFIGURATION (Keep consistent with ipDOS_V7.py)
 # =============================================================================
 
-DEFAULT_FIG_WIDTH = 4
-DEFAULT_FIG_HEIGHT = 8
+# 1.1.6 (T8): a figure for a page column, 3.5 x 5 in, no title, 11 pt labels and 10 pt ticks
+DEFAULT_FIG_WIDTH = 3.5
+DEFAULT_FIG_HEIGHT = 5
+PNG_DPI = 600                   # --dpi (mace plotting --dpi)
+# the GUI's plot colors (tokens.css at a light plot): the grid (--line), the Fermi line (--text-2),
+# the k-point lines (--border-strong)
+GRID_COLOR = "#e3e6eb"
+FERMI_COLOR = "#545b67"
+KTICK_COLOR = "#848b97"
+LABEL_PT = 11
+TICK_PT = 10
 
 # Subplot parameters for exact alignment between BAND and DOS plots
 SUBPLOT_LEFT = 0.18
@@ -46,9 +55,21 @@ mpl.rcParams.update(
     }
 )
 
-# Default spin colors
-DEFAULT_SPIN_UP_COLOR = "#fa26a0"  # Pink/magenta
-DEFAULT_SPIN_DOWN_COLOR = "#2ff3e0"  # Cyan
+def _presets():
+    """mace/plotting/presets.py (the plot styles shared with mace gui)."""
+    try:
+        from mace.plotting import presets
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.plotting import presets
+    return presets
+
+
+# Default spin colors: the one constant in mace/plotting/presets.py (SPIN_COLORS, pending Marcus's
+# pick: blue solid / red dashed in the interim); spin down dashed
+DEFAULT_SPIN_UP_COLOR = _presets().SPIN_COLORS["light"]["up"]
+DEFAULT_SPIN_DOWN_COLOR = _presets().SPIN_COLORS["light"]["down"]
+DEFAULT_SPIN_DOWN_DASH = _presets().SPIN_DOWN_DASH
 
 
 def hex_to_rgb(hex_color):
@@ -166,25 +187,51 @@ def greekify_label(label):
     return _format_mathtext(_greekify_single(label))
 
 
+def _bare_g_is_gamma(raw_segments, rows):
+    """True when a bare "G" of the path names the zone center (B1): MACE's default k-paths write
+    G for Γ ("V-Y-G-Z-T-R-G-X-U-G"), while seekpath's write GAMMA and keep G for a point that is
+    not the center (tI2, mC2). So: never when the path has GAMMA; else each G's k-point in the
+    deck (``rows``: the BAND lines after the title) must be 0 0 0, when the deck says."""
+    flat = [lab for seg in raw_segments for lab in seg]
+    if "G" not in flat or any(lab.upper() == "GAMMA" for lab in flat):
+        return False
+    try:
+        n = int(rows[0].split()[0])
+        lines = [r.split() for r in rows[1:1 + n]]
+        pairs = [(seg[i], seg[i + 1]) for seg in raw_segments for i in range(len(seg) - 1)]
+        if len(lines) != n or len(pairs) != n or any(len(x) != 6 for x in lines):
+            return True                       # symbolic or another layout: no coordinates to check
+        pts = [[float(v) for v in x] for x in lines]
+    except (ValueError, IndexError):
+        return True
+    for (a, b), x in zip(pairs, pts):
+        if (a == "G" and any(x[:3])) or (b == "G" and any(x[3:])):
+            return False
+    return True
+
+
 def parse_kpoint_path_and_segments(d3_file):
-    """Read k-point path labels from .d3 file and identify continuous segments."""
+    """Read k-point path labels from .d3 file and identify continuous segments.
+    A bare G that names the zone center (MACE's default paths) reads Γ, as GAMMA does."""
     try:
         with open(d3_file, "r") as f:
             next(f)
             path_line = next(f).strip()
+            rows = [ln for ln in (next(f, "") for _ in range(60)) if ln.strip()]
 
             parts = path_line.split(" - ")
             if len(parts) > 0:
                 kpoint_sequence = parts[-1].strip()
 
                 segments_raw = kpoint_sequence.split("|")
+                raw = [[s.strip() for s in segment.split("-") if s.strip()] for segment in segments_raw]
+                raw = [labels for labels in raw if labels]
+                gamma = _bare_g_is_gamma(raw, rows)
                 segments_labels = []
 
-                for segment in segments_raw:
-                    labels = [s.strip() for s in segment.split("-") if s.strip()]
-                    if labels:
-                        labels = [greekify_label(l) for l in labels]
-                        segments_labels.append(labels)
+                for labels in raw:
+                    labels = [greekify_label("GAMMA" if gamma and l == "G" else l) for l in labels]
+                    segments_labels.append(labels)
 
                 all_labels = []
                 clean_labels = []
@@ -391,6 +438,16 @@ def find_associated_files(material, suffix, directory):
     return files
 
 
+def _next_fields(fb, band_file, N, nspin):
+    """The next line's fields of a k-point record wrapped over lines; a file
+    that ends inside the record is truncated."""
+    line = next(fb, None)
+    if line is None:
+        raise ValueError(f"{os.path.basename(band_file)} is truncated: it ends inside a k point "
+                         f"(NKPT {N}, NSPIN {nspin or 1} in its header); copy the whole file again")
+    return line.split()
+
+
 def read_band_data(band_file, potc_dat=None, potc_out=None):
     """Read band structure data from CRYSTAL output files."""
     maxV = 0
@@ -419,6 +476,10 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
         header = fb.readline()
         N = int(header.split()[2])
         M = int(header.split()[4])
+        try:
+            nspin = int(header.split()[6])
+        except (IndexError, ValueError):
+            nspin = None
         E = np.zeros(N)
         Ebeta = np.zeros(N)
         BANDS = np.zeros((N, M))
@@ -461,7 +522,7 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
                 # and continues the k-point on the next line, so a row with
                 # NBND >= 1000 is short until stitched.
                 while len(data) < M + 1:
-                    data = np.concatenate([data, next(fb).split()])
+                    data = np.concatenate([data, _next_fields(fb, band_file, N, nspin)])
                 E[i] = float(data[0])
                 for j in range(0, M):
                     BANDS[i, j] = (float(data[j + 1]) * 27.2114) + maxV
@@ -472,13 +533,23 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
                 # and continues the k-point on the next line, so a row with
                 # NBND >= 1000 is short until stitched.
                 while len(data) < M + 1:
-                    data = np.concatenate([data, next(fb).split()])
+                    data = np.concatenate([data, _next_fields(fb, band_file, N, nspin)])
                 Ebeta[ib] = float(data[0])
                 for j in range(0, M):
                     BANDSbeta[ib, j] = (float(data[j + 1]) * 27.2114) + maxV
                 ib = ib + 1
             if alpha_beta_counter == 2:
                 break
+
+    # a short file (a copy still in progress, a full quota) is refused: the
+    # arrays are sized from the header, so the missing k points would be drawn
+    # at k = 0, E = 0 and a missing beta block as a closed-shell run
+    want = N * (nspin or 1)
+    got = i + (ib if nspin == 2 else 0)
+    if i < N or (nspin == 2 and ib < N):
+        raise ValueError(
+            f"{os.path.basename(band_file)} is truncated: {got} of {want} k points "
+            f"(NKPT {N}, NSPIN {nspin or 1} in its header); copy the whole file again")
 
     return (
         E,
@@ -496,6 +567,43 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
 # prints energies to 1e-4 Ha (2.7 meV), so a non-magnetic spin-polarized run
 # differs by that much; anything below 10 meV is invisible on a band plot.
 SPIN_IDENTICAL_EV = 0.01
+
+
+def energy_reference(reference, potc_dat, potc_out):
+    """The POTC files to read and whether the axis is on the vacuum scale, for
+    ``--energy-reference``: "auto" (the default) is the vacuum scale when the
+    run's POTC files are beside the data, else E - E_F; "fermi" is E - E_F
+    even then; "vacuum" needs both POTC files."""
+    reference = (reference or "auto").lower()
+    if reference == "fermi":
+        return None, None, False
+    if reference == "vacuum" and not (potc_dat and potc_out and exists(potc_dat) and exists(potc_out)):
+        raise ValueError("--energy-reference vacuum needs the run's POTC files beside the data "
+                         "(<material>_POTC.POTC.DAT and <material>_POTC.out)")
+    return potc_dat, potc_out, potc_dat is not None
+
+
+def apply_fermi_shift(BANDS, BANDSbeta, shift):
+    """Move the bands by -shift (eV): the dotted Fermi line and the energy window stay
+    where they are, so the energy ``shift`` above E_F becomes the reference (the
+    GUI's Fermi shift). An all-zero beta block (closed shell) stays zero."""
+    if not shift:
+        return BANDS, BANDSbeta
+    BANDSbeta = np.asarray(BANDSbeta)
+    return BANDS - shift, (BANDSbeta - shift if np.any(BANDSbeta != 0) else BANDSbeta)
+
+
+def energy_axis_label(vacuum, shift=0.0):
+    """The energy axis title: E - E_F, the vacuum scale, or either with a Fermi shift."""
+    if not shift:
+        return r"$E - E_{vac}$ (eV)" if vacuum else r"$E - E_F$ (eV)"
+    ref = r"E_{vac}" if vacuum else r"E_F"
+    return rf"$E - ({ref}{shift:+g})$ (eV)"
+
+
+def fermi_legend_label(shift=0.0):
+    """The dotted Fermi line's legend entry: E_F, or E_F with the Fermi shift."""
+    return r"$E_F$" if not shift else rf"$E_F{shift:+g}$ eV"
 
 
 def spin_state(BANDS, BANDSbeta, tol=SPIN_IDENTICAL_EV):
@@ -542,6 +650,100 @@ def stagger_tick_labels(positions, labels, x0, x1, axis_width_in, fontsize=12):
         right[row] = px + half
         out.append(("\n" + label) if row else label)
     return out
+
+
+def _band_path_module():
+    d3 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Crystal_d3")
+    if d3 not in sys.path:
+        sys.path.insert(0, d3)
+    import d3_band_path
+    return d3_band_path
+
+
+def load_band_path(path):
+    """A band_path edit from a JSON file: the list itself, a {"band_path": [...]}
+    object, or an opt2d3 configuration that has one."""
+    import json
+    kp = _band_path_module()
+    with open(path) as fh:
+        obj = json.load(fh)
+    if isinstance(obj, dict):
+        obj = obj.get("configuration", obj)
+        obj = obj.get("band_path") if isinstance(obj, dict) else obj
+    if obj is None:
+        raise ValueError(f"{path} has no band_path")
+    return kp.normalize(obj)
+
+
+def d3_path_tokens(d3_file):
+    """The path of a BAND deck's title as tokens with "|" (GAMMA, M, ..., |, L, ...)."""
+    with open(d3_file) as fh:
+        next(fh)
+        title = next(fh).strip()
+    part = title.split(" - ")[-1]
+    return [t.strip() for t in part.split("-") if t.strip()]
+
+
+def edited_band_data(E, BANDS, BANDSbeta, ticks, tokens, band_path):
+    """The band data laid out along an edited path (d3_band_path): the computed
+    segments' slices in the edit's order, reversed where it says so, hidden ones
+    left out. Returns (E, BANDS, BANDSbeta, segments, x_labels): one BandSegment
+    per continuous part, x_labels the tick of every point (one tick for the two
+    labels of a jump), ready for plot_bands_with_gaps. The GUI's band plot lays
+    out the same edit the same way (mace/gui/static/js/docs/plot.js bandView)."""
+    kp = _band_path_module()
+    computed = kp.from_tokens(tokens)
+    ticks = [float(t) for t in ticks]
+    if len(computed) != len(ticks) - 1:
+        raise ValueError(f"the path names {len(computed)} segments, the data has {len(ticks) - 1}")
+    x = np.asarray(E, dtype=float)
+    near = lambda t: int(np.argmin(np.abs(x - t)))       # noqa: E731
+
+    def slice_of(n):
+        a, b = near(ticks[n]), near(ticks[n + 1])
+        if n > 0 and not kp.joined(computed[n - 1], computed[n]):
+            a += 1                      # after a jump the segment starts one point past the tick
+        return list(range(a, b + 1))
+
+    used = set()
+    rows, xs, pieces, xt = [], [], [], []
+    prev, x0 = None, 0.0
+    for s in kp.visible(band_path):
+        a, b = kp.canonical_label(s["from"]), kp.canonical_label(s["to"])
+        n = next((i for i, c in enumerate(computed) if i not in used and (c["from"], c["to"]) == (a, b)), None)
+        rev = False
+        if n is None:
+            n = next((i for i, c in enumerate(computed) if i not in used and (c["from"], c["to"]) == (b, a)), None)
+            rev = n is not None
+        if n is None:
+            raise ValueError(f"{a}→{b} is not a segment of these band data")
+        used.add(n)
+        idx = slice_of(n)[::-1] if rev else slice_of(n)
+        xa = x[idx[0]]
+        cont = prev is not None and kp.joined(prev, s)
+        if not cont:
+            pieces.append({"labels": [greekify_label(a)], "start": len(rows)})
+            xt.append(x0)
+        for k, i in enumerate(idx):
+            if cont and k == 0:
+                continue
+            rows.append(i)
+            xs.append(x0 + abs(x[i] - xa))
+        x0 += abs(x[idx[-1]] - xa)
+        pieces[-1]["labels"].append(greekify_label(b))
+        pieces[-1]["end"] = len(rows) - 1
+        xt.append(x0)
+        prev = s
+    E2 = np.array(xs)
+    segments = [BandSegment(k + 1, p["labels"], E2[p["start"]], E2[p["end"]], p["start"], p["end"])
+                for k, p in enumerate(pieces)]
+    # a jump's two labels share one tick: drop the end tick of each part but the last
+    ticks2, k = [], 0
+    for p in pieces:
+        n_lab = len(p["labels"])
+        ticks2 += xt[k:k + n_lab] if p is pieces[-1] else xt[k:k + n_lab - 1]
+        k += n_lab
+    return E2, BANDS[rows], BANDSbeta[rows], segments, np.array(ticks2)
 
 
 def path_break_indices(E, ticks, labels):
@@ -720,13 +922,26 @@ def plot_bands_with_gaps(
     spin_down_color=None,
     auto_width=False,
     formats="png,svg",
+    fermi_shift=0.0,
+    style="default",
+    spin_dash=None,
+    band_color=None,
 ):
-    """Plot band structure with visual gaps at discontinuities and transparency support."""
+    """Plot band structure with visual gaps at discontinuities and transparency support.
+    ``fermi_shift``: the bands are already moved by it (apply_fermi_shift); it
+    names the reference in the axis title and the legend. ``style``: the plot
+    preset (presets.py: default, publication, presentation, grayscale,
+    colorblind); ``spin_dash``: spin down's line style (dash, dot, dashdot, solid)."""
 
+    P = _presets()
+    preset = P.get(style, "band")
+    pair = P.spin_colors(style, "band")
     if spin_up_color is None:
-        spin_up_color = DEFAULT_SPIN_UP_COLOR
+        spin_up_color = pair["up"]
     if spin_down_color is None:
-        spin_down_color = DEFAULT_SPIN_DOWN_COLOR
+        spin_down_color = pair["down"]
+    down_dash = P.mpl_dash(spin_dash or DEFAULT_SPIN_DOWN_DASH)
+    lw = 1.5 * preset["line"]
 
     # For low alpha, only adjust hue (cyan->blue) but use ACTUAL alpha for stacking
     if alpha < 0.95:
@@ -744,6 +959,10 @@ def plot_bands_with_gaps(
     spin, spin_diff = spin_state(BANDS, BANDSbeta)
     if spin == "identical":
         print(f"  Spin up and down agree within {spin_diff * 1000:.1f} meV (non-magnetic): one set drawn")
+    if spin != "polarized":
+        # not spin-polarized: one set of bands in a neutral color (--band-color, the style's, else ink)
+        neutral = P.band_color(style, "band", "light", band_color, "#000000")
+        plot_up_color = adjust_color_for_alpha(neutral, alpha) if alpha < 0.95 else neutral
 
     if all_segments is None:
         all_segments = segments
@@ -782,7 +1001,7 @@ def plot_bands_with_gaps(
     else:
         fig_width = fixed_width if fixed_width else DEFAULT_FIG_WIDTH
 
-    # Create figure with fixed subplot parameters for alignment
+    # Create figure with fixed subplot parameters for alignment (no title: the caption names it)
     fig = plt.figure(figsize=(fig_width, fig_height))
     ax = fig.add_axes(
         [
@@ -792,13 +1011,12 @@ def plot_bands_with_gaps(
             SUBPLOT_TOP - SUBPLOT_BOTTOM,
         ]
     )
-
-    ax.set_title("Band Structure", pad=10, fontsize=18, weight="bold")
+    label_pt, tick_pt = preset["font"], preset["tick_font"]
 
     # Set black spines
     for spine in ax.spines.values():
         spine.set_edgecolor("black")
-        spine.set_linewidth(1.2)
+        spine.set_linewidth(1.2 * preset["frame"])
 
     # the BAND.DAT tick of each segment's first label: segments share the tick
     # at a joint (and at a break, where "F0|Δ0" is one tick for two labels)
@@ -840,7 +1058,7 @@ def plot_bands_with_gaps(
             ax.plot(
                 shifted_E,
                 seg_BANDS[:, j],
-                linewidth=2.0,
+                linewidth=lw,
                 color=plot_up_color,
                 alpha=plot_alpha,
                 zorder=2,  # Spin up below
@@ -852,10 +1070,9 @@ def plot_bands_with_gaps(
             ax.plot(
                 shifted_Ebeta,
                 seg_BANDSbeta[:, j],
-                linewidth=2.0,
-                linestyle="--",
+                linewidth=lw,
+                linestyle=down_dash,
                 color=plot_down_color,
-                dashes=(5, 2),
                 alpha=plot_alpha,
                 zorder=3,  # Spin down on top - no blending with pink
             )
@@ -893,7 +1110,7 @@ def plot_bands_with_gaps(
             for tick_pos, label in zip(seg_tick_positions, seg_tick_labels):
                 all_tick_positions.append(tick_pos)
                 all_tick_labels.append(label)
-                ax.axvline(tick_pos, color="gray", lw=1.0, alpha=0.4, zorder=0)
+                ax.axvline(tick_pos, color=KTICK_COLOR, lw=0.8, zorder=0)
         elif is_continuous:
             # Continuous: just merge the shared boundary point, no pipe separator
             for tick_pos, label in zip(
@@ -901,13 +1118,17 @@ def plot_bands_with_gaps(
             ):
                 all_tick_positions.append(tick_pos)
                 all_tick_labels.append(label)
-                ax.axvline(tick_pos, color="gray", lw=1.0, alpha=0.4, zorder=0)
+                ax.axvline(tick_pos, color=KTICK_COLOR, lw=0.8, zorder=0)
         else:
-            if use_gaps:
-                for tick_pos, label in zip(seg_tick_positions, seg_tick_labels):
+            if use_gaps and all_tick_labels and seg_tick_labels:
+                # one tick for both labels of the jump, "H|P" over the gap (the GUI's merged tick)
+                ax.axvline(seg_tick_positions[0], color=KTICK_COLOR, lw=0.8, zorder=0)
+                all_tick_positions[-1] = (all_tick_positions[-1] + seg_tick_positions[0]) / 2
+                all_tick_labels[-1] = f"{all_tick_labels[-1]}|{seg_tick_labels[0]}"
+                for tick_pos, label in zip(seg_tick_positions[1:], seg_tick_labels[1:]):
                     all_tick_positions.append(tick_pos)
                     all_tick_labels.append(label)
-                    ax.axvline(tick_pos, color="gray", lw=1.0, alpha=0.4, zorder=0)
+                    ax.axvline(tick_pos, color=KTICK_COLOR, lw=0.8, zorder=0)
             else:
                 if len(all_tick_labels) > 0 and len(seg_tick_labels) > 0:
                     merged_label = f"{all_tick_labels[-1]}|{seg_tick_labels[0]}"
@@ -917,12 +1138,12 @@ def plot_bands_with_gaps(
                     ):
                         all_tick_positions.append(tick_pos)
                         all_tick_labels.append(label)
-                        ax.axvline(tick_pos, color="gray", lw=1.0, alpha=0.4, zorder=0)
+                        ax.axvline(tick_pos, color=KTICK_COLOR, lw=0.8, zorder=0)
                 else:
                     for tick_pos, label in zip(seg_tick_positions, seg_tick_labels):
                         all_tick_positions.append(tick_pos)
                         all_tick_labels.append(label)
-                        ax.axvline(tick_pos, color="gray", lw=1.0, alpha=0.4, zorder=0)
+                        ax.axvline(tick_pos, color=KTICK_COLOR, lw=0.8, zorder=0)
 
         current_x_offset += seg_width
 
@@ -933,28 +1154,26 @@ def plot_bands_with_gaps(
                 gap_positions.append((current_x_offset, current_x_offset + gap_size))
                 current_x_offset += gap_size
 
-    # Legend entries - use ADJUSTED colors to match what's actually plotted
-    up_label = {"closed": "Bands", "identical": "Spin ↑ = ↓ (non-magnetic)"}.get(spin, "Spin ↑")
-    dummy_line_up = ax.plot([], [], linewidth=2.0, color=plot_up_color, label=up_label)
+    # Legend entries - use ADJUSTED colors to match what's actually plotted (the GUI's wording)
+    # no spin legend for a run that is not spin-polarized (the GUI's)
     if spin == "polarized":
+        dummy_line_up = ax.plot([], [], linewidth=lw, color=plot_up_color, label="spin up (α)")
         dummy_line_down = ax.plot(
             [],
             [],
-            linewidth=2.0,
-            linestyle="--",
+            linewidth=lw,
+            linestyle=down_dash,
             color=plot_down_color,
-            label="Spin ↓",
-            dashes=(5, 2),
+            label="spin down (β)",
         )
 
-    # Fermi level (always opaque)
+    # Fermi level (always opaque): dotted, as in the DOS and the GUI (dashed reads as spin down)
     fermi_line = ax.axhline(
         maxV,
-        color="black",
-        linestyle="-.",
-        lw=1.5,
-        alpha=0.8,
-        label=r"$E_F$",
+        color=FERMI_COLOR,
+        linestyle=P.mpl_dash("dot"),
+        lw=1.4,
+        label=fermi_legend_label(fermi_shift),
         zorder=100,
     )
 
@@ -998,64 +1217,44 @@ def plot_bands_with_gaps(
     # Set ticks
     ax.set_xticks(all_tick_positions)
     tick_text = stagger_tick_labels(all_tick_positions, all_tick_labels, 0, current_x_offset,
-                                    fig_width * (SUBPLOT_RIGHT - SUBPLOT_LEFT), 12)
+                                    fig_width * (SUBPLOT_RIGHT - SUBPLOT_LEFT), tick_pt)
     staggered = any(t.startswith("\n") for t in tick_text)
     # the dropped row clears a subscript (F0) in the row above
-    ax.set_xticklabels(tick_text, fontsize=12, linespacing=1.4 if staggered else 1.2)
+    ax.set_xticklabels(tick_text, fontsize=tick_pt, linespacing=1.4 if staggered else 1.2)
 
     # Y-axis formatting
-    ax.yaxis.set_major_locator(MultipleLocator(1.0))
-    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1.0 if (E_u - E_l) <= 14 else 2.0))
+    ax.yaxis.set_minor_locator(NullLocator())        # no minor ticks (the GUI has none)
 
-    # Grid
-    ax.grid(
-        True,
-        which="major",
-        axis="y",
-        alpha=0.5,
-        linewidth=0.8,
-        color="#666666",
-        linestyle="-",
-    )
-    ax.grid(
-        True,
-        which="minor",
-        axis="y",
-        alpha=0.25,
-        linewidth=0.5,
-        color="#888888",
-        linestyle="-",
-    )
+    # Grid: the GUI's light major grid, no minor grid (a style without one: Publication, Print grayscale)
+    if preset["grid"] != "none":
+        ax.grid(True, which="major", axis="y", linewidth=0.8, color=GRID_COLOR, linestyle="-")
+        ax.grid(False, which="minor")
+    else:
+        ax.grid(False, axis="y")
     ax.set_axisbelow(True)
 
-    # Labels - BOLD E-E_F (using mathbf for whole expression)
-    if has_potc:
-        ax.set_ylabel(r"Energy w.r.t. Vacuum (eV)", fontsize=16, weight="bold")
-    else:
-        ax.set_ylabel(r"$\mathbf{E-E_F}$ (eV)", fontsize=16, weight="bold")
+    ax.set_ylabel(energy_axis_label(has_potc, fermi_shift), fontsize=label_pt)
 
-    # a second row of k labels takes the room the title had under the axis (the
-    # axes keep their fixed place so band and DOS figures line up): the k labels
-    # name the axis then
-    if not staggered:
-        ax.set_xlabel(r"Wave Vector", fontsize=16, weight="bold")
+    # no x-axis title (the GUI's): the k labels name the axis, with one or two rows of them
 
-    plt.yticks(fontsize=14)
-    ax.tick_params(which="major", length=8, width=1.2)
-    ax.tick_params(which="minor", length=5, width=1.0)
+    plt.yticks(fontsize=tick_pt)
+    tick_dir = "out" if preset["ticks"] == "outside" else "in"
+    ax.tick_params(which="major", length=5, width=1.0 * preset["frame"], direction=tick_dir)
+    ax.tick_params(which="minor", length=3, width=0.8 * preset["frame"], direction=tick_dir)
 
     # the legend outside the axes: a metal or a crowded path has no empty corner for it
-    handles, names = [dummy_line_up[0]], [up_label]
+    handles, names = [], []
     if spin == "polarized":
-        handles.append(dummy_line_down[0])
-        names.append("Spin ↓")
+        handles += [dummy_line_up[0], dummy_line_down[0]]
+        names += ["spin up (α)", "spin down (β)"]
     legend = legend_outside(
         fig,
         ax,
         handles + [fermi_line],
-        names + [r"$E_F$"],
+        names + [fermi_legend_label(fermi_shift)],
         frameon=True,
-        fontsize=9,
+        fontsize=max(8, tick_pt - 1),
         ncol=1,
     )
     legend.get_frame().set_facecolor("white")
@@ -1076,7 +1275,7 @@ def plot_bands_with_gaps(
         if fmt in ['svg', 'png', 'pdf']:
             output_path = os.path.join(output_dir, f"{material}{suffix}.BANDS.{fmt}")
             if fmt == 'png':
-                fig.savefig(output_path, format=fmt, dpi=600)
+                fig.savefig(output_path, format=fmt, dpi=PNG_DPI)
             else:
                 fig.savefig(output_path, format=fmt)
             saved_files.append(output_path)
@@ -1099,8 +1298,10 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
     """Main function to plot band structure"""
 
     file3 = associated_files.get("d3")
-    file4 = associated_files.get("potc_dat")
-    file5 = associated_files.get("potc_out")
+    # --energy-reference: auto (vacuum scale with the POTC files, else E - E_F), fermi or vacuum
+    file4, file5, has_potc = energy_reference(getattr(args, "energy_reference", "auto"),
+                                              associated_files.get("potc_dat"), associated_files.get("potc_out"))
+    fermi_shift = float(getattr(args, "fermi_shift", 0.0) or 0.0)
 
     all_labels, segments_labels, clean_labels = None, None, None
     if file3 and os.path.exists(file3):
@@ -1116,6 +1317,7 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
     E, BANDS, Ebeta, BANDSbeta, x_labels, maxV, kpoint_indices, n_panels = (
         read_band_data(band_file, file4, file5)
     )
+    BANDS, BANDSbeta = apply_fermi_shift(BANDS, BANDSbeta, fermi_shift)
 
     print(f"  Data shape: {E.shape[0]} k-points, {BANDS.shape[1]} bands")
 
@@ -1125,6 +1327,26 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
 
     if args.list_segments:
         list_segments(segments)
+        return
+
+    if getattr(args, "band_path", None):
+        # an edited path (mace gui's k-path editor, opt2d3's band_path): the data
+        # laid out along it; the formatting below is the same
+        if not (file3 and os.path.exists(file3)):
+            raise ValueError("--band-path needs the run's .d3 beside the BAND.DAT (its path labels)")
+        edit = load_band_path(args.band_path)
+        half = len(x_labels) // 2
+        ticks = x_labels[:half] if half and len(x_labels) % 2 == 0 and np.allclose(x_labels[:half], x_labels[half:]) else x_labels
+        E, BANDS, BANDSbeta, segments, x_labels = edited_band_data(E, BANDS, BANDSbeta, ticks, d3_path_tokens(file3), edit)
+        print("  k-path as edited: " + " ".join(_band_path_module().path_tokens(edit)))
+        plot_bands_with_gaps(E, BANDS, E, BANDSbeta, segments, None, x_labels, maxV, args.E_lower, args.E_upper,
+                             args.gap_width, output_dir, material, has_potc=has_potc,
+                             use_gaps=not args.no_gaps, all_segments=segments, fixed_width=args.fixed_width,
+                             fixed_height=args.fixed_height, kpoint_indices=None, alpha=args.alpha,
+                             spin_up_color=args.spin_up_color, spin_down_color=args.spin_down_color,
+                             band_color=getattr(args, "band_color", None),
+                             auto_width=args.auto_width, formats=args.formats, fermi_shift=fermi_shift,
+                             style=getattr(args, "style", "default"), spin_dash=getattr(args, "spin_style", None))
         return
 
     selected_indices = None
@@ -1169,7 +1391,7 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
         args.gap_width,
         output_dir,
         material,
-        has_potc=(file4 is not None),
+        has_potc=has_potc,
         use_gaps=use_gaps,
         all_segments=segments,
         fixed_width=args.fixed_width,
@@ -1178,8 +1400,12 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
         alpha=args.alpha,
         spin_up_color=args.spin_up_color,
         spin_down_color=args.spin_down_color,
+        band_color=getattr(args, "band_color", None),
         auto_width=args.auto_width,
         formats=args.formats,
+        fermi_shift=fermi_shift,
+        style=getattr(args, "style", "default"),
+        spin_dash=getattr(args, "spin_style", None),
     )
 
 
@@ -1201,6 +1427,13 @@ Examples:
     parser.add_argument("--segments", type=str, default=None)
     parser.add_argument("--path", type=str, default=None)
     parser.add_argument("--list-segments", action="store_true")
+    parser.add_argument("--band-path", default=None, metavar="FILE",
+                        help="an edited k-path (JSON: band_path, as mace gui and opt2d3 write it)")
+    parser.add_argument("--fermi-shift", type=float, default=0.0, metavar="EV",
+                        help="Move the bands by -EV: the energy EV above E_F becomes the reference (default: 0)")
+    parser.add_argument("--energy-reference", choices=["auto", "fermi", "vacuum"], default="auto",
+                        help="auto: the vacuum scale when the run's POTC files are beside the data, else E - E_F "
+                             "(default); fermi: E - E_F always; vacuum: the vacuum scale (needs the POTC files)")
     parser.add_argument("--gap-width", type=float, default=0.05)
     parser.add_argument("--no-gaps", action="store_true")
     parser.add_argument(
@@ -1210,14 +1443,27 @@ Examples:
     )
     parser.add_argument("--fixed-width", type=float, default=DEFAULT_FIG_WIDTH)
     parser.add_argument("--fixed-height", type=float, default=DEFAULT_FIG_HEIGHT)
+    parser.add_argument("--dpi", type=int, default=600, help="PNG resolution (default: 600)")
+    parser.add_argument("--band-color", default=None, metavar="HEX",
+                        help="The bands of a run that is not spin-polarized (default: the style's, else black)")
     parser.add_argument(
         "--alpha",
         type=float,
         default=1.0,
         help="Transparency (0-1, default: 1.0). Overlapping bands will stack and appear more opaque.",
     )
-    parser.add_argument("--spin-up-color", type=str, default=DEFAULT_SPIN_UP_COLOR)
-    parser.add_argument("--spin-down-color", type=str, default=DEFAULT_SPIN_DOWN_COLOR)
+    parser.add_argument("--spin-up-color", type=str, default=None,
+                        help="Spin up color (default: the style's; blue in Default)")
+    parser.add_argument("--spin-down-color", type=str, default=None,
+                        help="Spin down color (default: the style's; red in Default)")
+    parser.add_argument("--spin-style", choices=["dash", "dot", "dashdot", "solid"], default=DEFAULT_SPIN_DOWN_DASH,
+                        help="Spin down's line style (default: dash)")
+    parser.add_argument("--style", choices=list(_presets().ORDER), default="default",
+                        help="Plot style: default, publication, presentation, grayscale, colorblind")
+    parser.add_argument("--output-dir", default=None, metavar="DIR",
+                        help="Write the figures here (default: beside the data)")
+    parser.add_argument("--file", default=None, metavar="BAND.DAT",
+                        help="Plot this file only (default: every BAND.DAT in the folder)")
     parser.add_argument(
         "--formats",
         type=str,
@@ -1226,15 +1472,21 @@ Examples:
     )
 
     args = parser.parse_args()
+    global PNG_DPI
+    PNG_DPI = args.dpi
 
     if args.alpha < 0 or args.alpha > 1:
         print("Error: --alpha must be between 0 and 1")
         sys.exit(1)
 
     DIR = os.getcwd() + "/"
-    FIGDIR = DIR
+    FIGDIR = args.output_dir or DIR
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
 
     band_files = find_band_files(DIR)
+    if args.file:
+        band_files = [f for f in band_files if os.path.basename(f) == os.path.basename(args.file)]
 
     if not band_files:
         print(f"No BAND.DAT files found in {DIR}")

@@ -30,11 +30,13 @@ class PlotKind(Enum):
 
     BAND = "band"
     DOS = "dos"
+    BANDDOS = "bandos"
     STRUCTURE = "structure"
     CUBE = "cube"
     FREQ = "freq"
     SPECTRA_IR = "ir"
     SPECTRA_RAMAN = "raman"
+    ORBITALS = "orbitals"
     UNKNOWN = "unknown"
 
 

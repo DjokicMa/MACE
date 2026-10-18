@@ -104,7 +104,7 @@ def configure_output_formats(interactive: bool = True, default_formats: List[str
     print("\n  Output format options:")
     print("    1. PNG + SVG (default)")
     print("    2. SVG only (scalable)")
-    print("    3. PNG only (600 DPI)")
+    print("    3. PNG only (300 dpi; matplotlib band/DOS: 600)")
     print("    4. PDF only (vector)")
     print("    5. All formats (PNG + SVG + PDF)")
 
