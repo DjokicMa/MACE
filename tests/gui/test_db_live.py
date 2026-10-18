@@ -235,6 +235,8 @@ def test_live_refresh_and_busy_chip(served):
     # sort by formula descending and select a row: both must survive the refresh
     drv.find_element("css selector", "#db-host [data-sort='material_id']").click()
     H.wait(drv, "return document.querySelector('#db-host .dbv-th[aria-sort=descending]')", 10)
+    # the header turns at once; the rows are placeholders until the sorted first page arrives
+    H.wait(drv, "const r = document.querySelector('#db-host .dbv-tr[data-id]'); return r && r.dataset.id === 'mat0004'", 10)
     row = drv.find_element("css selector", "#db-host .dbv-tr[data-id='mat0002']")
     row.click()
     H.wait(drv, "return document.querySelector('#db-host .dbv-tr.sel[data-id=mat0002]')", 10)

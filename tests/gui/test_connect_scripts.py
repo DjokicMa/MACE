@@ -503,6 +503,37 @@ def test_powershell_parses():
     assert r.returncode == 0, r.stdout
 
 
+# PowerShell ends a single-quoted string at ' and also at the curly quotes U+2018-U+201B; Windows
+# PowerShell 5.1 reads a BOM-less .ps1 as ANSI, where the UTF-8 byte 0x91 of Ñ (C3 91) is ‘
+QUOTES = ["it's", "O’Brien", "‘a’ ‚b‛", "x’; Remove-Item -Recurse C:\\ #", "/home/PEÑA/proj", "tab\there",
+          "line\nnext", "€ and \U0001F600", "’"]
+
+
+@pytest.mark.parametrize("value", QUOTES)
+def test_powershell_export_quotes_every_single_quote_character(value):
+    lit = CS._ps_str(value)
+    assert lit.isascii(), lit
+    # outside the [char] codes only '...' runs with every quote doubled: nothing can end a string early
+    for run in re.findall(r"'((?:[^']|'')*)'", lit):
+        assert not set(run.replace("''", "")) & set("'\u2018\u2019\u201a\u201b"), lit
+    block = "\n".join(CS.defaults_block("powershell", {"dir": value, "roots": [value, "b"]}))
+    assert block.isascii()
+
+
+@needs_pwsh
+def test_powershell_export_values_read_back_exactly(tmp_path):
+    block = "\n".join(CS.defaults_block("powershell", {"dir": QUOTES[3], "setup": QUOTES[4], "roots": QUOTES}))
+    script = tmp_path / "v.ps1"
+    # CRLF and no BOM, as mace gui connect --export-script powershell writes it
+    script.write_text(block + "\n[Console]::OutputEncoding = [Text.Encoding]::UTF8\n"
+                      "ConvertTo-Json -Compress @($D_DIR, $D_SETUP, $D_ROOTS)\n", encoding="utf-8", newline="\r\n")
+    r = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(script)], capture_output=True,
+                       timeout=120, stdin=subprocess.DEVNULL)
+    assert r.returncode == 0, r.stderr.decode()
+    import json
+    assert json.loads(r.stdout.decode("utf-8")) == [QUOTES[3], QUOTES[4], QUOTES]
+
+
 def _fake_windows_bash(tmp_path, uname, with_cygpath):
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir(exist_ok=True)
@@ -905,3 +936,41 @@ def test_bash_script_keeps_refused_channels_for_the_diagnosis(tmp_path):
     assert "open failed" not in r.stderr                 # never confirmed: not shown, but the file has it
     sh = SH.read_text()
     assert 'printf \'%s\\n\' "$l" >> "$TMPD/err"' in sh
+
+
+# ---- a ConnectTimeout from your ssh config is kept (1.1.6 review): connect.py and both scripts alike
+
+def _stub_ssh_g_timeout(tmp_path, value):
+    fakebin = tmp_path / "fakebin-ct"
+    fakebin.mkdir()
+    (fakebin / "ssh").write_text('#!/bin/sh\n[ "$1" = -G ] || exit 255\n'
+                                 f'printf "user netid\\nconnecttimeout {value}\\n"\n')
+    (fakebin / "ssh").chmod(0o755)
+    return fakebin
+
+
+@pytest.mark.parametrize("hop", ["jump", "nested"])
+@pytest.mark.parametrize("value", ["90", "none"])
+def test_config_connect_timeout_parity(tmp_path, hop, value):
+    env = _env(tmp_path)
+    env["PATH"] = f"{_stub_ssh_g_timeout(tmp_path, value)}:{env.get('PATH', '/usr/bin:/bin')}"
+    flags = ["--gateway", "netid@gw.example.edu", "--node", "dev-node", "--hop", hop, "--dry-run"]
+    r = subprocess.run([sys.executable, str(REPO / "mace_cli"), "--no-banner", "gui", "connect", *flags],
+                       env=env, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    assert r.returncode == 0, r.stderr
+    want = shlex.split([ln for ln in r.stdout.splitlines() if ln.startswith("ssh ")][0])
+    if value == "90":
+        assert "ConnectTimeout=20" not in want
+        assert ("ConnectTimeout=90" in want[-1]) is (hop == "nested")
+    else:
+        assert "ConnectTimeout=20" in want
+    got = _argv_lines(subprocess.run(["bash", str(SH), *flags], env=env, capture_output=True, text=True,
+                                     timeout=60).stdout)
+    assert got == want
+    if PWSH:
+        pe = dict(env, APPDATA=str(tmp_path / "appdata"))
+        pe.pop("USERNAME", None)
+        ps = _run_ps(pe, "-Gateway", "netid@gw.example.edu", "-Node", "dev-node", "-Hop", hop, "-DryRun")
+        assert ps.returncode == 0, ps.stderr.decode()
+        args, _ = _ps_dry(ps.stdout)
+        assert args == "".join(a + "\n" for a in want[1:])

@@ -141,6 +141,30 @@ def test_table_fits_1280_without_a_sideways_scroll(fresh):
     assert not clipped, clipped[:5]
 
 
+@pytest.mark.parametrize("db", ["big10k.db", "materials.db"])
+def test_header_lines_up_with_the_rows_and_leaves_room_for_a_scrollbar(fresh, db):
+    """The header sits outside the scroller, so it must reserve the scroller's
+    scrollbar gutter: each header column is as wide as its row column, with or
+    without a vertical scrollbar (10k rows, or a few). The column minimums
+    leave room at 1280 px for the widest classic scrollbar (17 px, Windows),
+    so no browser's scrollbar pushes the table into a sideways scroll."""
+    drv = fresh[0]
+    U.reset(drv, 1280, 800)
+    open_db(drv, db)
+    time.sleep(0.3)
+    heads, cells = drv.execute_script("""const h = document.querySelector('#tab-db .dbv-head');
+        const r = document.querySelector('#tab-db .dbv-tr[data-id]');
+        const w = (cs) => cs.map((c) => [c.getBoundingClientRect().left, c.getBoundingClientRect().width]);
+        return [w([...h.children].slice(0, -1)), w([...r.children])]   // the header's last column is the filler""")
+    assert len(heads) == len(cells)
+    for (hl, hw), (cl, cw) in zip(heads, cells):
+        assert abs(hl - cl) <= 1 and abs(hw - cw) <= 1, (heads, cells)
+    mins, box = drv.execute_script("""const h = document.querySelector('#tab-db .dbv-head');
+        return [[...h.style.gridTemplateColumns.matchAll(/minmax\\((\\d+(?:\\.\\d+)?)px/g)].reduce((t, m) => t + Number(m[1]), 0),
+                document.querySelector('#tab-db .dbv-scroll').offsetWidth]""")
+    assert mins + 17 <= box, (mins, box)
+
+
 def test_detail_names_a_material_once(fresh):
     """A material whose id is its formula (the demo's Ag2Br3, cell Ag4Br6) shows the formula alone;
     an id that differs (mat000001) is shown above it."""

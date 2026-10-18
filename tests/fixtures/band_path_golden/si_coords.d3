@@ -1,0 +1,8 @@
+BAND
+Si - Band Structure - default - X-GAMMA-L-W-GAMMA
+4 16 1000 1 100 1 0
+8 0 8  0 0 0
+0 0 0  8 8 8
+8 8 8  8 4 12
+8 4 12  0 0 0
+END

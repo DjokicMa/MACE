@@ -5,8 +5,8 @@ separately, so an SP whose cycle 0 (the guess) printed an INDIRECT gap of
 3.4768 eV and that converged to a DIRECT gap of 4.3946 eV was stored with
 indirect_band_gap 3.4768 and band_gap_type "indirect". Only the last SCF's
 records count now: per spin channel (ALPHA then BETA, or one record for
-both), the gap kind and value of that cycle, and none at all when it ended
-conducting. A spin-polarized run's gap is the fundamental one,
+both), the gap kind and value of that cycle, and a gap of 0 with no kind
+when it ended conducting. A spin-polarized run's gap is the fundamental one,
 min(CBM) - max(VBM) over both channels from the TOP OF VALENCE / BOTTOM OF
 VIRTUAL BANDS lines, which is smaller than both channel gaps when the VBM is
 in one channel and the CBM in the other; without those lines it is the
@@ -80,8 +80,12 @@ def test_conducting_at_the_end_has_no_gap_of_an_earlier_cycle():
     assert not {"direct_band_gap", "indirect_band_gap", "band_gap_type"} & set(g)
 
 
-def test_conducting_throughout_stores_no_gap():
-    assert "band_gap" not in _gaps(_cycle(0, (None, "conducting")) + _cycle(1, (None, "conducting")))
+def test_conducting_throughout_stores_gap_zero():
+    # 0 as for a run that ended conducting after gapped cycles (and a
+    # multi-point OPT ending conducting); no gap kind
+    g = _gaps(_cycle(0, (None, "conducting")) + _cycle(1, (None, "conducting")))
+    assert g["band_gap"] == 0.0
+    assert not {"direct_band_gap", "indirect_band_gap", "band_gap_type"} & set(g)
 
 
 def _spin_block(chan, kind, gap, tops, bottoms):

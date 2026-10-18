@@ -164,8 +164,15 @@ def test_export_png_svg_and_data(fresh):
         # the export buttons moved into the plotkit toolbar's Export menu (PLAN_analysis C3)
         drv.find_element("css selector", "#plot-host .pk-export").click()
         drv.find_element("css selector", f".pk-menu [data-v={act}]").click()
-    end = time.time() + 20
-    while time.time() < end and len([f for f in downloads.iterdir() if not f.name.endswith(".part")]) < 3:
+    # wait for the three finished files: an unfinished download is Firefox's .part or
+    # Chromium's .crdownload / .org.chromium.Chromium.* temp file, which must not count
+    def done():
+        names = [f.name for f in downloads.iterdir()]
+        return (any(n.endswith(".png") for n in names) and any(n.endswith(".svg") for n in names)
+                and any(n.endswith("_data.csv") for n in names)
+                and not any(n.endswith((".part", ".crdownload")) or n.startswith(".org.chromium.") for n in names))
+    end = time.time() + 30
+    while time.time() < end and not done():
         time.sleep(0.2)
     names = sorted(f.name for f in downloads.iterdir())
     assert any(n.endswith(".png") for n in names) and any(n.endswith(".svg") for n in names) and any(n.endswith("_data.csv") for n in names), names

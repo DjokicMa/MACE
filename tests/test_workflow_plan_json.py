@@ -251,7 +251,7 @@ def _errors(ex, plan, capsys):
     ({"step_configurations": {"OPT_1": "FULLOPTG"}}, "Invalid step configuration for OPT_1"),
     ({"execution_settings": {"max_concurrent_jobs": 0}}, "Invalid max_concurrent_jobs: 0"),
     ({"execution_settings": {"max_concurrent_jobs": "200"}}, "Invalid max_concurrent_jobs: 200"),
-    ({"queue_management": {"max_jobs": 1001}}, "Invalid queue max_jobs: 1001"),
+    ({"queue_management": {"max_jobs": 0}}, "Invalid queue max_jobs: 0"),
 ])
 def test_invalid_plans_are_refused_with_the_reason(tmp_path, input_dir, capsys, change, message):
     ok, out = _errors(bare_executor(tmp_path), make_plan(str(input_dir), **change), capsys)

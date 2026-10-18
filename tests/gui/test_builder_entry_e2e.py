@@ -125,7 +125,10 @@ def test_inspector_cell_buttons_open_builders(fresh):
     H.wait(drv, "return !!document.querySelector('#inspector .ins-build')", 10)
     btns = drv.execute_script("return [...document.querySelectorAll('#inspector .insp-section[data-key=cell] button.tb-btn-text')].map((b) => b.textContent.trim())")
     assert btns == ["Supercell…", "Transform…", "Edit Cell…"], btns
+    find = "[...document.querySelectorAll('#inspector .ins-build')].find((b) => b.textContent.trim() === arguments[0])"
     for label, fid in (("Supercell…", "supercell"), ("Transform…", "transform")):
+        # the closed dialog's preview ends, and the editable Cell section comes back, on the next animation frame
+        H.wait(drv, f"return !!{find}", 10, label)
         drv.execute_script("[...document.querySelectorAll('#inspector .ins-build')].find((b) => b.textContent.trim() === arguments[0]).click()", label)
         wait_frame(drv, fid)
         close_frame(drv)

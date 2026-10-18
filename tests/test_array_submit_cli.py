@@ -217,26 +217,33 @@ def test_progress_rows_carry_the_workflow_and_the_task(tmp_path):
         assert s["slurm_array"]["array_job_id"] == "4242"
 
 
-def test_partial_wave_leaves_nothing_in_the_queue(tmp_path):
+def test_a_refused_array_holds_its_tasks_and_keeps_the_rest(tmp_path):
+    """SLURM refuses the second array of a wave at the submit limit: its
+    tasks are held (slurm_limit; MACE submits them as slots free up) and the
+    first array stays queued and released."""
     fake, env, d = _setup(tmp_path, ["m0", "m1", "m2", "m3"],
                           state={"max_array_tasks": 2, "fail_sbatch_call": 2})
     p = _mace(tmp_path, env, "submit", "--array", "--track", "decks")
-    assert p.returncode == 1
-    assert "QOSMaxSubmitJobPerUserLimit" in p.stdout
-    assert [c["argv"] for c in fake.calls("scancel")] == [["scancel", "4242"]]
-    assert ["squeue", "-h", "-r", "-j", "4242", "-o", "%T,%r"] in [
-        c["argv"] for c in fake.calls("squeue")]
-    assert not fake.records()
-    assert all(not x["slurm_job_id"] for x in rows(tmp_path / "materials.db").values())
-    assert not [c for c in fake.calls("scontrol") if c["argv"][1] == "release"]
+    assert p.returncode == 0, p.stdout[-3000:]
+    assert "QOSMaxSubmitJobPerUserLimit" in p.stdout or "job submit limit" in p.stdout
+    assert not fake.calls("scancel")
+    assert len(fake.records()) == 2
+    r = rows(tmp_path / "materials.db")
+    held = [x for x in r.values() if x["status"] == "held"]
+    assert len(held) == 2
+    assert {json.loads(x["settings_json"])["held_reason"] for x in held} == {"slurm_limit"}
+    assert [c for c in fake.calls("scontrol") if c["argv"][1] == "release"]
 
 
-def test_wave_larger_than_the_free_submit_slots_is_refused_up_front(tmp_path):
+def test_untracked_wave_larger_than_the_budget_submits_what_fits(tmp_path):
     fake, env, d = _setup(tmp_path, ["m0", "m1", "m2"], state={
-        "assoc_mgr": "Account=mendoza_q UserName=tester(1)\n MaxSubmitJobs=1000(999)"})
+        "assoc_mgr": "Account=mendoza_q UserName=tester(1)\n MaxSubmitJobs=1000(898)"})
+    for i in range(898):
+        fake.add_record(id=str(900000 + i), state="RUNNING", user="tester", name=f"other{i}")
     p = _mace(tmp_path, env, "submit", "--array", "decks")
-    assert p.returncode == 1 and "MaxSubmitJobs is 1000 and 999" in p.stdout
-    assert not fake.calls("sbatch")
+    assert p.returncode == 1, p.stdout[-3000:]
+    assert "Not submitted" in p.stdout and "--yes" in p.stdout     # the decks' order is the file system's
+    assert len([r for r in fake.records() if r.get("array")]) == 2
 
 
 # --- the submit / record race ------------------------------------------------

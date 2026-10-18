@@ -20,10 +20,15 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO_ROOT, TEST_DATA
+from mace.utils import property_keys as PK
 
 BASE_COMMIT = "daa5468e"          # the 1.1.5 base before the GUI (reachable in every clone)
 # properties the extraction-depth audit added (C11): not in the base tree's rows
-NEW_PROPS = ("space_group_number", "raman_intensities", "num_raman_modes")
+NEW_PROPS = ("space_group_number", "raman_intensities", "num_raman_modes",
+             # and those whose patterns matched no CRYSTAL23 line before 1.1.6
+             "scf_cycles", "scf_fmixing_percentage",
+             # 1.1.6's key clean-up: new keys
+             "wall_time_s", "layer_group_number", "layer_group_symbol", "transport_tensor_average")
 NEW_MARKS = ",".join("?" * len(NEW_PROPS))
 # properties the base tree stored wrongly and this tree no longer stores at all
 # (so a re-extraction removes their rows): a multi-point OPT's point-1 energy
@@ -31,7 +36,10 @@ NEW_MARKS = ",".join("?" * len(NEW_PROPS))
 DROPPED_PROPS = tuple(f"{c}_energy_{u}" for c in ("kinetic", "electron_electron", "electron_nuclear",
                                                    "nuclear_nuclear", "exchange", "correlation")
                       for u in ("au", "ev")) + (
-    "band_gap_advanced_ev", "band_gap_advanced_ha", "electronic_classification_advanced")
+    "band_gap_advanced_ev", "band_gap_advanced_ha", "electronic_classification_advanced") + tuple(
+    # 1.1.6's key clean-up: keys removed (property_keys.REMOVED), and the
+    # constant "No BAND.DAT or DOSS.DAT files found" note
+    sorted(PK.REMOVED - {"band_gap_advanced_ha"})) + ("advanced_analysis_note", "band_start")
 DROPPED = f"property_name IN ({','.join('?' * len(DROPPED_PROPS))})"
 # doubled geometry keys the base tree stored and this tree stores under their
 # single prefix (d6408ac5): the same values, so where the single name was stored
@@ -41,6 +49,10 @@ RENAMED_PROPS = {"final_final_atomic_positions": "final_atomic_positions",
                  "final_final_atomic_position_axes": "final_atomic_position_axes",
                  "initial_initial_atomic_positions": "initial_atomic_positions",
                  "initial_initial_atoms_count": "initial_atoms_count"}
+# and 1.1.6's renamed and merged keys (property_keys.ALIASES), chained
+RENAMED_PROPS = {old: PK.ALIASES.get(new, new) for old, new in RENAMED_PROPS.items()}
+RENAMED_PROPS.update({old: new for old, new in PK.ALIASES.items()
+                      if old not in DROPPED_PROPS and old not in RENAMED_PROPS})
 RENAMED = f"property_name IN ({','.join('?' * len(RENAMED_PROPS))})"
 # the rows both trees store under the same name (bind DROPPED_PROPS + tuple(RENAMED_PROPS))
 KEPT = f"NOT ({DROPPED}) AND NOT ({RENAMED})"
@@ -157,8 +169,13 @@ def test_untracked_folder_behaves_as_before(tmp_path, base_tree):
     _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(b))
     # the same properties; filed under the id a registration gives the outputs
     # ("1_dia"), where the base tree split them by a one-suffix strip of each name
-    q = f"SELECT DISTINCT property_name FROM properties WHERE property_name NOT IN ({NEW_MARKS})"
-    assert {(RENAMED_PROPS.get(n, n),) for (n,) in _q(a, q, *NEW_PROPS)} == set(_q(b, q, *NEW_PROPS))
+    # (the names this tree no longer stores left out; its large JSON values are
+    # in property_blobs)
+    q = f"SELECT DISTINCT property_name FROM properties WHERE property_name NOT IN ({NEW_MARKS}) AND NOT ({DROPPED})"
+    qb = (q + f" UNION SELECT DISTINCT property_name FROM property_blobs WHERE property_name NOT IN ({NEW_MARKS})"
+          f" AND NOT ({DROPPED})")
+    assert {(RENAMED_PROPS.get(n, n),) for (n,) in _q(a, q, *NEW_PROPS, *DROPPED_PROPS)} == \
+        set(_q(b, qb, *NEW_PROPS, *DROPPED_PROPS, *NEW_PROPS, *DROPPED_PROPS))
     assert not _q(b, f"SELECT 1 FROM properties WHERE {RENAMED}", *RENAMED_PROPS)
     assert len(_q(a, "SELECT DISTINCT material_id FROM properties")) > 1
     assert _q(b, "SELECT DISTINCT material_id FROM properties") == [("1_dia",)]
@@ -188,12 +205,13 @@ def test_dry_run_classes(tmp_path):
     # a failed run no calculation records: listed, not extracted (its rows had no material)
     assert cls.pop(failed) == "skipped"
     assert set(cls.values()) == {"new"}, cls
-    # without --register on a fresh database: not tracked
+    # without --register (--no-register; registering is the default for a
+    # folder) on a fresh database: not tracked
     # (the failed run is extracted then, as by a plain run: incomplete)
-    assert set(_by_name(_dry(tmp_path, d, db)).values()) <= {"not tracked (always re-extracted)", "skipped",
+    assert set(_by_name(_dry(tmp_path, d, db, "--no-register")).values()) <= {"not tracked (always re-extracted)", "skipped",
                                                               "incomplete"}
     _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db), "--register")
-    cls = _by_name(_dry(tmp_path, d, db))
+    cls = _by_name(_dry(tmp_path, d, db, "--no-register"))
     # without --register a failed run is extracted, as a plain run does
     assert cls.pop(failed) == "incomplete"
     assert set(cls.values()) == {"unchanged"}, cls
@@ -249,7 +267,8 @@ def test_backup_and_pruning(tmp_path):
 def test_skip_unchanged_extracts_only_the_changed_file(tmp_path):
     d = _folder(tmp_path, sum(DIA.values(), []))
     db = tmp_path / "materials.db"
-    p = _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db), "--skip-unchanged", ok=False)
+    p = _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db), "--skip-unchanged",
+             "--no-register", ok=False)
     assert p.returncode == 2 and "add --register" in p.stderr
     _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db), "--register")
     counts = [_q(db, f"SELECT count(*) FROM {t}")[0][0] for t in ("materials", "calculations", "properties")]
@@ -279,7 +298,9 @@ def test_progress_json_stdout_is_only_json(tmp_path):
 def test_without_the_new_flags_stdout_matches_the_base_tree(tmp_path, base_tree):
     d = _folder(tmp_path, sum(DIA.values(), []))
     a = _cli(base_tree, tmp_path, "--extract-properties", str(d), "--db-path", str(tmp_path / "a.db")).stdout
-    b = _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(tmp_path / "b.db")).stdout
+    # (the base tree's plain run is untracked: --no-register here, the default being to register)
+    b = _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(tmp_path / "b.db"),
+             "--no-register").stdout
 
     def norm(t):
         t = re.sub(r"\d{4}-\d\d-\d\dT[\d:.]+", "<T>", t)
@@ -290,7 +311,9 @@ def test_without_the_new_flags_stdout_matches_the_base_tree(tmp_path, base_tree)
         # ("semimetal"); a3308d9d corrected it (checked below)
         t = re.sub(r"(Advanced analysis:) \S+ (classification)", r"\1 <C> \2", t)
         # without ase the base tree printed its warning on stdout; it is on stderr now
-        return [ln for ln in t.splitlines() if "Materials processed" not in ln and "ASE not available" not in ln]
+        # this tree's note on outputs without a calculation record is new
+        return [ln for ln in t.splitlines() if "Materials processed" not in ln and "ASE not available" not in ln
+                and "no calculation record" not in ln]
     assert norm(a) == norm(b)
     assert "Advanced analysis: insulator classification" in b
     assert "Advanced analysis: semimetal" not in b
@@ -305,8 +328,10 @@ def test_without_the_new_flags_stdout_matches_the_base_tree(tmp_path, base_tree)
     doubled = lambda db: _q(db, f"SELECT count(*) FROM properties WHERE {RENAMED}", *RENAMED_PROPS)[0][0]  # noqa: E731
     renamed = doubled(tmp_path / "a.db") - doubled(tmp_path / "b.db")
     # the outputs of one material share its untracked rows now (one id), so the
-    # database holds each new property once while every output printed it
-    assert total(a) - lost - renamed + added <= total(b) <= total(a) - lost + added * len(DIA)
+    # database holds each new property once while every output printed it;
+    # and the base tree's database holds a dropped or renamed key once per id
+    # while up to every output printed it (1.1.6 renamed and merged many)
+    assert total(a) - (lost + renamed) * len(DIA) + added <= total(b) <= total(a) - lost + added * len(DIA)
 
 
 def test_register_from_a_relative_folder_records_absolute_paths(tmp_path):

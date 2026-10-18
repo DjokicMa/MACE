@@ -28,6 +28,7 @@ ALLOWED = {
     "mace/config/recovery_config.yaml": "a comment recording measured MSU behavior",
     "Crystal_d12/ion_charges.py": "provenance: the CRYSTAL build the tables were measured with",
     "Crystal_d12/d12_constants.py": "provenance comments: the CRYSTAL build that was measured",
+    "Crystal_d12/soc_ecp.py": "provenance comments: the CRYSTAL build the SOC checks were measured with",
     "mace/utils/envmodules.py": "docstring examples of module version parsing",
     "mace_cli": "help text of mace run / mace preflight naming the built-in module",
 }

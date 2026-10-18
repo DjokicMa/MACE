@@ -7,6 +7,7 @@ SLURM read through the shared query layer, the GPU default inside a job,
 the --http-control watchdog, the idle-stop default in a job and connect's
 remote command."""
 import argparse
+import json
 import shlex
 import sys
 import time
@@ -189,16 +190,57 @@ def test_http_control_watchdog():
     assert not stops3 and c3.lingering_since is not None
 
 
+def test_a_ping_from_an_unknown_watcher_attaches_it():
+    """After Update Now the new process starts with no watchers; the slurmsession
+    client only pings (it attached once, before the restart), so a ping of an
+    unknown watcher must attach it, or the watchdog stops the job's server."""
+    stops = []
+    c = managed.Controller(running=lambda: 0, stop=stops.append, timeout_s=0.3, grace_s=10)
+    c.http_control = True
+    got = c.ping("w9")
+    assert got["ok"] is True and c.watchers == 1 and c.connected is False
+    for _ in range(5):
+        time.sleep(0.1)
+        c.ping("w9")
+        c.tick()
+    assert not stops
+    assert c.ping("")["ok"] is True and c.watchers == 1          # an empty id never attaches
+
+
+def test_controller_hand_off_round_trip():
+    """The restart hand-off carries the watchers and whether the first connection
+    is gone; a lingering server comes back lingering."""
+    c = managed.Controller(running=lambda: 0, stop=lambda r: None, timeout_s=5, grace_s=5)
+    c.attach("w1")
+    c.connected = False
+    c.lingering_since = time.monotonic() - 100
+    saved = json.loads(json.dumps(c.handoff()))
+    assert saved["connected"] is False and saved["watchers"] == ["w1"] and saved["lingering_for"] >= 100
+    stops = []
+    n = managed.Controller(running=lambda: 0, stop=stops.append, timeout_s=0.3, grace_s=10)
+    n.restore(saved)
+    assert n.connected is False and n.watchers == 1 and n.lingering_since is not None
+    assert time.monotonic() - n.lingering_since >= 100
+    n.ping("w1")
+    n.tick()
+    assert not stops
+    n.restore({"watchers": "bad", "connected": "x"})                # junk is ignored
+    n.restore(None)
+    assert n.watchers == 1 and n.connected is False
+
+
 def test_connect_remote_command_for_slurm():
     prof = {"gateway": "me@login", "node": "dev1", "dir": "~/runs", "slurm": True, "slurm_time": "2:00:00",
             "slurm_partition": "short", "slurm_args": ["--reservation=r 1"]}
     cmd = connect.remote_command(prof, 41000)
     inner = shlex.split(shlex.split(cmd)[3])
-    words = inner[inner.index("&&") + 1:]
-    assert words[:4] == ["exec", "mace", "--no-banner", "gui"] and words[4] == "--slurm"
+    # the default mace: looked up first (mace_fallback), then exec'd as "$M"
+    words = inner[inner.index("exec"):]
+    assert words[:4] == ["exec", "$M", "--no-banner", "gui"] and words[4] == "--slurm"
+    assert inner[inner.index("&&") + 1:inner.index("&&") + 3] == ["{", "M=mace;"]
     assert words[words.index("--time") + 1] == "2:00:00" and words[words.index("--partition") + 1] == "short"
     assert "--sbatch-arg=--reservation=r 1" in words
-    assert words[-5:] == ["--managed", "--port", "41000", "--dir", "."]
+    assert words[-6:] == ["--managed", "--port", "41000", "--dir", ".;", "}"]
     assert "MACE_GUI_MAX_WORKERS=2" not in cmd
     plain = connect.remote_command({"gateway": "me@login", "dir": "~"}, 41000)
     assert "--slurm" not in plain

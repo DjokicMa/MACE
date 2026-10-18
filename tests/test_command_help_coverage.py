@@ -46,7 +46,7 @@ def _registry():
             "m = importlib.util.module_from_spec(spec)\n"
             "loader.exec_module(m)\n"
             "print(json.dumps({'commands': list(m.COMMANDS), 'curated': sorted(m.COMMAND_HELP),"
-            " 'forwarded': sorted(m.PASSTHROUGH_COMMANDS)}))\n")
+            " 'forwarded': sorted(m.PASSTHROUGH_COMMANDS + m.MODULE_HELP_COMMANDS)}))\n")
     r = subprocess.run([sys.executable, "-c", code], env=_env(), cwd=str(REPO_ROOT),
                        stdin=subprocess.DEVNULL, capture_output=True, text=True,
                        timeout=120)

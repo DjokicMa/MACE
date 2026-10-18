@@ -259,7 +259,7 @@ def test_cancel_keeps_the_database_whole(slow):
     """C10-c: cancel mid-build: Canceled, integrity ok, the summary names the
     backup, and the folder changed only in the database files and backups/."""
     base, root = slow
-    before = _md5_tree(root / "many", skip=("materials.db", "backups", "structures.db"))
+    before = _md5_tree(root / "many", skip=("materials.db", "backups", "structures.db", ".materials.db.building"))
     st, _, r = _post(base, "db/build", {"folder": "many", "confirm": True, "skip_unchanged": False, "wait": 0})
     tid = r["task"]["id"]
     end = time.time() + 300
@@ -274,4 +274,22 @@ def test_cancel_keeps_the_database_whole(slow):
     assert rec["state"] == "canceled"
     assert "the backup is many/backups/materials_backup_" in rec["log"], rec["log"]
     assert _q(root / "many" / "materials.db", "PRAGMA integrity_check")[0][0] == "ok"
-    assert _md5_tree(root / "many", skip=("materials.db", "backups", "structures.db")) == before
+    assert _md5_tree(root / "many", skip=("materials.db", "backups", "structures.db", ".materials.db.building")) == before
+
+
+def test_the_next_build_continues_a_stopped_one(slow):
+    """1.1.6: the canceled build above left its marker; the next build with
+    'Only new and changed files' skips what it committed and says so, in its
+    progress and in its summary (the CLI's own message); then the marker goes."""
+    base, root = slow
+    marker = root / "many" / ".materials.db.building"
+    assert marker.is_file()
+    rec, res = _wait(base, _post(base, "db/build", {"folder": "many", "confirm": True, "skip_unchanged": True}), timeout=900)
+    assert rec["state"] == "done", rec
+    r = res["resumed"]
+    assert r and r["total"] == 40 and 1 <= r["already"] <= 40, r
+    assert res["message"].startswith(f"Resumed: {r['already']} of 40 already done. Database updated:"), res["message"]
+    assert sum(1 for f in res["files"] if f.get("class") == "unchanged") == r["already"]
+    assert not marker.exists()
+    rec, res = _wait(base, _post(base, "db/build", {"folder": "many", "confirm": True, "skip_unchanged": True}), timeout=900)
+    assert rec["state"] == "done" and res["resumed"] is None and not res["message"].startswith("Resumed")

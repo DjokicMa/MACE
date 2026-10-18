@@ -207,7 +207,7 @@ def test_long_json_values_are_cut_with_copy_json(fresh):
     # a property the OPT and the SP both have names its calculation
     rows = drv.execute_script("""return [...document.querySelectorAll('#inspector .dbd-cat tr td:first-child')]
         .map((t) => t.textContent)""")
-    dup = [t for t in rows if t.startswith("total_cpu_time")]
+    dup = [t for t in rows if t.startswith("cpu_time_total_s")]
     assert len(dup) >= 2 and all(re.search(r"\((OPT|SP|BAND|DOSS)\)$", t) for t in dup), dup
     longest = drv.execute_script("""const w = document.createTreeWalker(document.querySelector('#inspector'), NodeFilter.SHOW_TEXT);
         let m = 0; while (w.nextNode()) m = Math.max(m, w.currentNode.nodeValue.length); return m""")

@@ -575,14 +575,31 @@ def test_scf_eta_held_out_gate():
     most of its misses (all too short) and its unknowns. Floors = the lower
     bounds of the first held-out scoring rounded down to 0.05; unknown and
     widths are regression bounds. The 2 GUESSP outputs are left out (flagged
-    live instead)."""
+    live instead).
+    1.1.6: a run that has printed "POSSIBLY CONDUCTING STATE" gets its high
+    end x METAL_HIGH_FACTOR (1.5, the smallest of 1/1.5/2/3 with 100 %
+    informative coverage on the dev metals; held-out metals 74 % -> 89 %,
+    insulators unchanged at 95 %). Held-out overall: coverage 91 % (86-100),
+    informative 94 %, time 90 %, width p50 12.0 p90 22.5 (the width gates
+    follow the wider metal ranges)."""
     B.need_corpus(B.TEST_DATA / "SP")
     s = B.summarize(_sp_rows("held"))
     print("\nSCF held-out:", B.fmt(s))
     assert s["coverage"][0] >= 0.60 and s["informative"][0] >= 0.65 and s["per_family"][0] >= 0.80
     assert s["time"][0] >= 0.60
     assert s["unknown"] <= 0.40 + 0.05 and s["capped_share"] <= 0.25
-    assert s["width_p50"] <= 8.0 * 1.15 and s["width_p90"] <= 15.0 * 1.15
+    assert s["width_p50"] <= 12.0 * 1.15 and s["width_p90"] <= 22.5 * 1.15
+
+
+def test_metal_scf_high_end_is_widened():
+    """The held-out metals (runs that printed POSSIBLY CONDUCTING STATE): 22 runs, 9 families,
+    coverage 89 % (85-100) with the widening, 74 % without; the floor is the lower bound rounded down."""
+    B.need_corpus(B.TEST_DATA / "SP")
+    metal = [r for r in _sp_rows("held") if any("POSSIBLY CONDUCTING STATE" in l for l in
+                                                 next(x for x in B.sp_runs() if x["path"] == r["run"])["lines"])]
+    assert metal and all("metal" in r["sp"]["flags"] or not r["ranged"] or r["sp"].get("capped") is not None for r in metal)
+    s = B.summarize(metal)
+    assert s["coverage"][0] >= 0.85, B.fmt(s)
 
 
 def test_sp_total_close_to_scf():
@@ -740,8 +757,14 @@ def test_freq_8sulfolane_cut_in_cpks(tmp_path):
     dsp = _lv(r, "freq.displacements")
     assert dsp["status"] == "pending" and dsp["text"] == "Displacements: pending"    # count not printed yet
     assert dsp["basis"] == ""                                  # the CPKS sentence is not the displacements' reason
-    assert lv[0]["text"].startswith("Total: unknown (IR/Raman (CPHF/CPKS) has no time estimate")
-    assert r["eta"]["low_s"] is None
+    # 1.1.6: the CPKS directions left, the tensors and the central point have ranges; the total waits only
+    # for the displacements' time per displacement
+    assert cp["count"]["low"] is not None and cp["remaining_s"]["high"] > cp["remaining_s"]["low"] > 0
+    assert "cycles (" in cp["text"] and " left, ~" in cp["text"] and cp["confidence"] == "rough"
+    cen = _lv(r, "freq.central")
+    assert cen["remaining_s"]["low"] is not None and cen["text"].startswith("Central point (SCF + gradient): pending, about")
+    assert lv[0]["text"].startswith("Total at least ") and "time per displacement unknown" in lv[0]["text"]
+    assert r["eta"]["low_s"] is not None and r["eta"]["high_s"] is None
     # once the frequency header is printed the displacement count is exact
     lines = SULFOLANE.read_text().splitlines()
     hdr = next(i for i, l in enumerate(lines) if "NUMBER OF SCF+GRADIENT" in l)
@@ -1117,16 +1140,17 @@ def test_running_cphf_stage_says_how_long_it_has_run(tmp_path):
     lv = next(x for x in r["levels"] if x["id"] == "freq.tensors")
     assert lv["status"] == "running"
     assert lv["info"]["so_far_s"] == pytest.approx(600, abs=5)
-    assert lv["text"] == "IR/Raman tensors: running (10 min so far)"
+    # 1.1.6: and its upper bound (TENSOR_HIGH_RATIO x the CPHF stages' time)
+    assert lv["text"].startswith("IR/Raman tensors: running (10 min so far), at most about "), lv["text"]
     r = P.progress(_copy(FREQ_RAMAN, tmp_path, k + 1, name="copy.out", deck=False))
     lv = next(x for x in r["levels"] if x["id"] == "freq.tensors")
-    assert lv["text"] == "IR/Raman tensors: running" and "so_far_s" not in lv["info"]
+    assert lv["text"].startswith("IR/Raman tensors: running, at most about ") and "so_far_s" not in lv["info"]
     # a first-order CPHF direction in progress: its time in the stage, after the cycle
     j = st["cp_dirs"][1][0] + 3
     t = P._t_at(P.timings(lines), st["cp_driver"])
     r = P.progress(_copy(FREQ_RAMAN, tmp_path, j, name="cp.out", deck=False), job={"elapsed_s": t + 125})
     lv = next(x for x in r["levels"] if x["id"] == "freq.cphf")
-    assert lv["status"] == "running" and lv["text"].endswith(" (2 min in this stage)"), lv["text"]
+    assert lv["status"] == "running" and " (2 min in this stage)" in lv["text"], lv["text"]
 
 
 def test_scf_log_tail_none_between_scf_end_and_next_cycle_0(tmp_path):
@@ -1196,3 +1220,250 @@ def test_sp_scf_unknown_text_says_it_once(tmp_path):
     r = P.progress(_copy(SP_DIA, tmp_path, cyc[0] + 1))
     scf = next(x for x in r["levels"] if x["id"] == "sp.scf")
     assert scf["text"] == "SCF cycle 1 (SCF cycles left unknown: fewer than 3 cycles)", scf["text"]
+
+
+# ------------------------------------------------------------------ 1.1.6: CPHF/CPKS, tensors, central point
+def test_cp_cycle_line_without_a_space_after_alpha():
+    """A large polarizability runs into the label ("ALPHA26707.745616", corpus Ag1Cl5): the cycle still counts."""
+    m = P._CP_CYCLE.match(" CYCLE   3   ALPHA30113.804129  EPSILON  382.389370  DELTA    5.9910E+02")
+    assert m and m.group(1) == "3" and float(m.group(2)) == 599.1
+    assert P._CP_CYCLE.match(" CYCLE   2  PSEUDO-ENERGY DERIVATIVE        5.913090E+04  DELTA    3.5969E+04")
+
+
+def test_cphf_estimate_backtest(monkeypatch):
+    """Leave-one-family-out over the 9 corpus FREQ runs with CPHF (9 families: 8 Ag halides with
+    IR, 1 LiFSI-sulfolane cluster with IR + Raman): the prior cycles per direction and the
+    central/reference ratio come from the other families only. Measured (snapshots, Wilson 95 %):
+    CPKS cycles left 0.79 (0.73-0.84, 187 cuts), CPKS time left 0.84 (0.78-0.89), tensors bound
+    0.90 (0.85-0.93), central point 0.86 (0.80-0.90); CP2 has one run (21 cuts, all covered).
+    Gates: the Wilson lower bound rounded down to 0.05. Thin data: the levels stay "rough"."""
+    import tempfile
+    runs = [p for p in sorted((B.TEST_DATA / "FREQ").glob("*.out")) if "CP_DRIVER" in p.read_text(errors="replace")]
+    if len(runs) < 9:
+        pytest.skip("test/ corpus not present (gitignored)")
+    fam = B.family_of(runs)
+    info = {}
+    for p in runs:
+        L = p.read_text(errors="replace").splitlines()
+        st, tl = P.freq_stages(L), P.timings(L)
+        cnt = P.cp_estimate(st, L, tl, "cphf", running=False)["counts"] + P.cp_estimate(st, L, tl, "cp2", running=False)["counts"]
+        ratio = (P._t_at(tl, st["totgra"]) - P._t_at(tl, st["central_c0"])) / (P._t_at(tl, st["cp_driver"]) - P._t_at(tl, st["ref_c0"]))
+        info[p] = (L, st, tl, cnt, ratio)
+    hits = collections.defaultdict(list)
+    with tempfile.TemporaryDirectory() as td:
+        for p, (L, st, tl, _, _) in info.items():
+            oth = [v for q, v in info.items() if fam[str(q)] != fam[str(p)]]
+            oc = [c for v in oth for c in v[3]]
+            monkeypatch.setattr(P, "CP_PRIOR_CYCLES", (min(oc), max(oc)))
+            rs = [v[4] for v in oth]
+            monkeypatch.setattr(P, "CENTRAL_REF_LOW", round(min(rs) * 0.9, 2))
+            monkeypatch.setattr(P, "CENTRAL_REF_HIGH", round(max(rs) * 1.15, 2))
+            cp_end = st["cp2_driver"] if st["cp2_driver"] is not None else (st["tensors"][0] if st["tensors"] else st["header"])
+            ten0 = st["tensors"][0] if st["tensors"] else st["header"]
+            cyc = [c[0] for c in st["cp_cycles"] if c[0] < cp_end]
+            for k in B.subsample(list(range(len(cyc))), 30):
+                cut = cyc[k] + 1
+                q = Path(td) / p.name
+                q.write_text("\n".join(L[:cut]) + "\n")
+                P._MEMO.clear()
+                lv = {x["id"]: x for x in P.progress(q)["levels"]}
+                now = P._t_at(tl, cut - 1)
+                x = lv["freq.cphf"]
+                truth_c = sum(1 for c in st["cp_cycles"] if cut <= c[0] < cp_end)
+                hits["cycles"].append(x["count"]["low"] <= truth_c <= x["count"]["high"])
+                if x["remaining_s"]["low"] is not None:
+                    hits["time"].append(x["remaining_s"]["low"] - 1e-6 <= P._t_at(tl, cp_end) - now <= x["remaining_s"]["high"] + 1e-6)
+                y = lv["freq.tensors"]
+                if y["remaining_s"]["high"] is not None:
+                    hits["tensors"].append(P._t_at(tl, st["header"]) - P._t_at(tl, ten0) <= y["remaining_s"]["high"] + 1e-6)
+                z = lv["freq.central"]
+                hits["central"].append(z["remaining_s"]["low"] <= P._t_at(tl, st["totgra"]) - P._t_at(tl, st["central_c0"])
+                                       <= z["remaining_s"]["high"])
+                assert x["confidence"] == ("rough" if x["remaining_s"]["low"] is not None else "unknown")
+                assert z["confidence"] == "rough"
+    floors = {"cycles": 0.70, "time": 0.75, "tensors": 0.80, "central": 0.80}
+    for k, v in hits.items():
+        lo, _ = B.wilson(sum(v), len(v))
+        assert lo >= floors[k], (k, sum(v), len(v), lo)
+
+
+# ------------------------------------------------------------------ 1.1.6: properties blocks
+_PROP_PAIRS = {"DOSS": ("NEWK", "DOSS", "DOSS"), "ECH3POT3": ("ECH3", "POT3", "POT3"),
+               "TRANSPORT": ("NEWK", "BOLTZTRA", "BOLTZTRA")}
+
+
+def _prop_ratios():
+    out = {}
+    for d, (anchor, last, key) in _PROP_PAIRS.items():
+        for p in sorted((B.TEST_DATA / d).glob("*.out")):
+            tl = P.timings(p.read_text(errors="replace").splitlines())
+            t = {}
+            for _, n, tt in tl:
+                t.setdefault(n, tt)
+            if not all(k in t for k in ("gordsh1", anchor, last)) or t[anchor] - t["gordsh1"] <= 0.05:
+                continue
+            out.setdefault(key, []).append((p, (t[last] - t[anchor]) / (t[anchor] - t["gordsh1"])))
+    return out
+
+
+def test_properties_ratio_held_out():
+    """A properties block's time from the block before it (PROP_RATIOS = the ratio's min-max on the dev
+    half, family split). Held-out coverage: DOSS 36/36 runs (95 % Wilson 0.90-1.00), POT3 26/28
+    (0.77-0.98); BOLTZTRA has 4 runs (2 + 2), reported only. Gates: the Wilson lower bounds rounded
+    down to 0.05; the constants must bracket the dev range they were read from."""
+    data = _prop_ratios()
+    if len(data.get("DOSS", [])) < 20:
+        pytest.skip("test/ corpus not present (gitignored)")
+    fam = B.family_of([p for v in data.values() for p, _ in v])
+    floors = {"DOSS": 0.90, "POT3": 0.75}
+    for key, v in data.items():
+        lo_c, hi_c = P.PROP_RATIOS[key][1:]
+        dev = [r for p, r in v if B.half(fam[str(p)]) == "dev"]
+        assert lo_c <= min(dev) and hi_c >= max(dev) and hi_c <= max(dev) * 1.1, (key, min(dev), max(dev))
+        if key in floors:
+            ho = [lo_c <= r <= hi_c for p, r in v if B.half(fam[str(p)]) != "dev"]
+            assert B.wilson(sum(ho), len(ho))[0] >= floors[key], (key, sum(ho), len(ho))
+
+
+def test_properties_levels_on_corpus_cuts(tmp_path):
+    import shutil
+    doss = sorted((B.TEST_DATA / "DOSS").glob("*.out"))
+    ech = sorted((B.TEST_DATA / "ECH3POT3").glob("*.out"))
+    if not doss or not ech:
+        pytest.skip("test/ corpus not present (gitignored)")
+    for src, mark, ids in ((doss[0], "NEWK        TELAPSE", ["properties.newk", "properties.doss"]),
+                           (ech[0], "ECH3        TELAPSE", ["properties.ech3", "properties.pot3"])):
+        lines = src.read_text(errors="replace").splitlines()
+        k = next(i for i, l in enumerate(lines) if mark in l)
+        d = tmp_path / src.parent.name
+        d.mkdir()
+        (d / "x.out").write_text("\n".join(lines[:k + 1]) + "\n")
+        shutil.copyfile(src.with_suffix(".d3"), d / "x.d3")
+        r = P.progress(d / "x.out")
+        assert r["mode"] == "properties"
+        lv = [x for x in r["levels"] if x["depth"] == 1]
+        assert [x["id"] for x in lv] == ids
+        assert lv[0]["status"] == "done" and lv[0]["text"].endswith(lv[0]["text"].split(": done in ")[-1])
+        assert lv[1]["status"] == "running" and lv[1]["confidence"] == "rough"
+        assert lv[1]["remaining_s"]["high"] > lv[1]["remaining_s"]["low"] >= 0
+        assert r["levels"][0]["text"].startswith("Total about ")
+        # before the first block finishes: the total is unknown and says why
+        (d / "y.out").write_text("\n".join(lines[:next(i for i, l in enumerate(lines) if "gordsh1" in l) + 1]) + "\n")
+        shutil.copyfile(src.with_suffix(".d3"), d / "y.d3")
+        r = P.progress(d / "y.out")
+        assert r["mode"] == "properties" and r["levels"][0]["text"].startswith("Total: unknown (")
+        assert "no earlier block to scale its time from" in r["levels"][0]["text"]
+
+
+# ------------------------------------------------------------------ 1.1.6: EOS, ELASTCON, ANHARM
+def _repeated_opt(n: int, src=None):
+    """n optimizations one after the other (a real corpus OPT, its TELAPSE shifted each time): the shape
+    an EOS (one V-constrained optimization per volume) or ELASTCON run prints. No such run exists in the
+    corpus, so the unit markers are CRYSTAL's ordinary OPT END lines."""
+    src = src or (B.TEST_DATA / "OPT" / "1_dia_opt_rev1.out")
+    B.need_corpus(src)
+    lines = src.read_text(errors="replace").splitlines()
+    start = next(i for i, l in enumerate(lines) if "OPTIMIZATION - POINT" in l) - 40
+    end = next(i for i, l in enumerate(lines) if "OPT END - CONVERGED" in l) + 1
+    head, body = lines[:start], lines[start:end]
+    tl = P.timings(lines)
+    span = P._t_at(tl, end) - P._t_at(tl, start)
+    out = list(head)
+    pat = re.compile(r"(TELAPSE\s+)([\d.]+)")
+    for k in range(n):
+        out += [pat.sub(lambda m: f"{m.group(1)}{float(m.group(2)) + k * span:.2f}", l) for l in body]
+    return out, span
+
+
+def test_eos_volumes_from_the_deck_range(tmp_path):
+    lines, span = _repeated_opt(2)
+    (tmp_path / "e.d12").write_text("x\nCRYSTAL\n0 0 0\n227\n3.5\n1\n6 0 0 0\nEOS\nRANGE\n0.92 1.08 5\nEND\nEND\n")
+    (tmp_path / "e.out").write_text("\n".join(lines) + "\n")
+    r = P.progress(tmp_path / "e.out")
+    assert r["mode"] == "eos" and r["total"] == 5 and r["done"] == 2
+    lv = [x for x in r["levels"] if x["id"] == "eos.units"][0]
+    assert lv["current"] == 3 and lv["count"]["exact"] == 5 and lv["confidence"] == "rough" and "untested" in lv["flags"]
+    # 3 volumes left x the measured time per volume x 0.75-1.5, less the time already in the third
+    assert lv["remaining_s"]["high"] == pytest.approx(3 * span * 1.5, rel=0.05)
+    assert lv["text"].startswith("Equation of state (EOS): volume 3 of 5, about ")
+    assert "no run of this kind in the corpus" in lv["basis"]
+    assert r["levels"][0]["text"].startswith("Total about ")
+    # the default 6 volumes without RANGE; before the first volume finishes the time is unknown
+    (tmp_path / "f.d12").write_text("x\nCRYSTAL\nEOS\nEND\nEND\n")
+    (tmp_path / "f.out").write_text("\n".join(lines[:len(lines) // 3]) + "\n")
+    r = P.progress(tmp_path / "f.out")
+    lv = [x for x in r["levels"] if x["id"] == "eos.units"][0]
+    assert lv["count"]["exact"] == 6 and lv["remaining_s"]["low"] is None
+    assert "time per volume unknown until the first finishes" in lv["text"]
+
+
+def test_elastcon_counts_need_deform(tmp_path):
+    lines, _ = _repeated_opt(2)
+    (tmp_path / "a.out").write_text("\n".join(lines) + "\n")
+    (tmp_path / "a.d12").write_text("x\nCRYSTAL\nELASTCON\nEND\nEND\n")
+    lv = [x for x in P.progress(tmp_path / "a.out")["levels"] if x["id"] == "elastcon.units"][0]
+    assert lv["count"]["exact"] is None and "symmetry analysis" in lv["text"]
+    assert P.progress(tmp_path / "a.out")["levels"][0]["text"].startswith("Total: unknown (configurations left unknown")
+    (tmp_path / "b.out").write_text("\n".join(lines) + "\n")
+    (tmp_path / "b.d12").write_text("x\nCRYSTAL\nELASTCON\nDEFORM\n1 0 0 1 0 0\nNUMDERIV\n5\nEND\nEND\n")
+    lv = [x for x in P.progress(tmp_path / "b.out")["levels"] if x["id"] == "elastcon.units"][0]
+    assert lv["count"]["exact"] == 2 * 4 + 1 and lv["remaining_s"]["high"] is not None
+
+
+def test_anharm_points(tmp_path):
+    B.need_corpus(B.TEST_DATA / "SP" / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out")
+    sp = (B.TEST_DATA / "SP" / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out").read_text().splitlines()
+    (tmp_path / "h.out").write_text("\n".join(sp) + "\n")
+    (tmp_path / "h.d12").write_text("x\nCRYSTAL\nANHARM\n2\nPOINTS26\nEND\nEND\n")
+    r = P.progress(tmp_path / "h.out")
+    assert r["mode"] == "anharm" and r["total"] == 26
+    lv = [x for x in r["levels"] if x["id"] == "anharm.units"][0]
+    assert lv["current"] == 2 and lv["remaining_s"]["low"] is not None
+
+
+# ------------------------------------------------------------------ 1.1.6: possibly stalled
+def test_stall_threshold_against_the_corpus():
+    """No finished corpus run was ever silent for STALL_FACTOR x its time per unit: the longest silence
+    between two timing lines was 5.35 x the median of the 5 SCF cycles (SP) or points (OPT) before it on
+    dev (94 runs) and 6.85 x on held-out (74 runs), so 10 x gives no false alarm on either half."""
+    import statistics as stats
+    runs = sorted((B.TEST_DATA / "SP").glob("*.out")) + sorted((B.TEST_DATA / "OPT").glob("*.out"))
+    if len(runs) < 50:
+        pytest.skip("test/ corpus not present (gitignored)")
+    cyc = re.compile(r"^\s*CYC\s+\d+")
+    worst = 0.0
+    for f in runs:
+        L = f.read_text(errors="replace").splitlines()
+        tl = P.timings(L)
+        units = [i for i, l in enumerate(L) if (cyc.match(l) if f.parent.name == "SP" else "OPTIMIZATION - POINT" in l)]
+        ut = [P._t_at(tl, i) for i in units]
+        for k in range(6, len(units)):
+            prev = [b - a for a, b in zip(ut[k - 6:k - 1], ut[k - 5:k]) if a is not None and b is not None]
+            typ = stats.median(prev) if prev else 0
+            if typ <= 0.5:
+                continue
+            ts = [t for i, _, t in tl if units[k - 1] <= i <= units[k]]
+            if len(ts) > 1:
+                worst = max(worst, max(b - a for a, b in zip(ts, ts[1:])) / typ)
+    assert 0 < worst < P.STALL_FACTOR, worst
+
+
+def test_possibly_stalled_flag(tmp_path):
+    src = B.TEST_DATA / "SP" / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out"
+    B.need_corpus(src)
+    lines = src.read_text().splitlines()
+    k = [i for i, l in enumerate(lines) if l.lstrip().startswith("CYC ")][6]
+    p = tmp_path / "s.out"
+    p.write_text("\n".join(lines[:k + 1]) + "\n")
+    old = time.time() - 4 * 3600                      # written 4 h ago, cycles take seconds
+    os.utime(p, (old, old))
+    r = P.progress(p, job={"elapsed_s": 5 * 3600, "limit_s": 86400})
+    assert r.get("stalled") and "possibly_stalled" in r["levels"][0]["flags"]
+    assert " - possibly stalled: no output for 4 h" in r["levels"][0]["text"], r["levels"][0]["text"]
+    # a fresh write, or a copied output without the job's clock: no flag
+    os.utime(p, None)
+    P._MEMO.clear()
+    assert not P.progress(p, job={"elapsed_s": 5 * 3600, "limit_s": 86400}).get("stalled")
+    os.utime(p, (old, old))
+    P._MEMO.clear()
+    assert not P.progress(p).get("stalled")

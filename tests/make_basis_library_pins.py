@@ -83,6 +83,7 @@ def pin_files():
 
 
 def pin_read_basis_file():
+    from basis_file_check import BasisFileError
     from d12_constants import read_basis_file
 
     out = {}
@@ -92,11 +93,17 @@ def pin_read_basis_file():
             for kind in ("EXTERNAL", "INTERNAL"):
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
-                    text = read_basis_file(path, z, kind)
+                    try:
+                        text = read_basis_file(path, z, kind)
+                        refused = ""
+                    except BasisFileError as exc:
+                        # A missing record is refused (it used to come back
+                        # as "" with a printed warning).
+                        text, refused = "", f"refused: {exc}"
                 out[f"{fam}/{z}/{kind}"] = {
                     "sha256": sha(text),
                     "empty": text == "",
-                    "warning": _normalize(buf.getvalue(), fam),
+                    "warning": _normalize(buf.getvalue() + refused, fam),
                 }
     return out
 

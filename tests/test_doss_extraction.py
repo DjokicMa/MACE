@@ -1,14 +1,14 @@
 """Regression tests for the structured DENSITY-OF-STATES extraction.
 
 `_extract_dos_properties` historically stored only a couple of DOS scalars
-(``doss_dat_band_gap_ev``, ``doss_dat_at_fermi``, ...). It now ALSO stores the
+(``doss_dat_band_gap_ev``, ``doss_dat_at_fermi``, ..., merged in 1.1.6). It now ALSO stores the
 actual density of states via the REAL extractor:
 
   - a compact ``dos_structure`` JSON summary (per-spin DOS @ Fermi, gap-from-DOS
     with band-edge energies, integrated number of states, a DOWNSAMPLED total-DOS
     curve per spin in eV, per-projection integrated weights, source file), and
-  - queryable scalar rows (``dos_total_at_fermi``, ``dos_at_fermi_alpha`` /
-    ``dos_at_fermi_beta``, ``dos_at_fermi_both_spins_ev``,
+  - queryable scalar rows (``dos_at_fermi_total``, ``dos_at_fermi_alpha`` /
+    ``dos_at_fermi_beta``,
     ``dos_band_gap_from_dos_ev``, ``dos_is_metallic``,
     ``dos_integrated_states_to_fermi``, ``dos_num_projections``).
 
@@ -16,10 +16,11 @@ UNITS / FERMI RELATIONSHIPS asserted here (see ``_build_dos_summary``):
   * DOS magnitudes are stored in states/eV/cell (converted from the legacy
     states/HARTREE/cell by dividing by HARTREE_TO_EV), self-consistent with the
     eV energy axis and the ``dos_units`` label;
-  * ``dos_at_fermi_per_channel_ev`` (single channel) * HARTREE_TO_EV equals the
-    legacy single-channel ``doss_dat_at_fermi`` (states/Ha) EXACTLY — so the
-    headline DOS@Fermi has a DEFINED relationship to the legacy scalar (no
-    silent 2x), while ``dos_at_fermi_both_spins_ev`` is the alpha+beta sum.
+  * the headline ``total_dos_at_fermi`` / ``dos_at_fermi_total`` is the TOTAL
+    DOS(E_F): the alpha+beta sum of a spin-polarized DOSS (each block holds
+    one spin). It held the alpha channel
+    only (1.1.6 review, F3-V8); ``dos_at_fermi_per_channel_ev`` and
+    ``dos_at_fermi_alpha``/``_beta`` keep the per-spin values.
 
 The raw ``DOSS.DAT`` (96 KB - 2 MB) is NOT dumped into the properties table; only
 the compact summary (~12 KB) + scalars are persisted, and the raw file is
@@ -39,6 +40,16 @@ import pytest
 
 from conftest import TEST_DATA, find_data
 from mace.utils.property_extractor import CrystalPropertyExtractor, HARTREE_TO_EV
+
+
+def _dat_analysis(out):
+    """DatFileProcessor's own analysis of the output's DOSS.DAT (gap, metallic,
+    the first block's DOS at E_F in states/Ha): the values stored as
+    doss_dat_band_gap_ev, doss_dat_metallic and doss_dat_at_fermi before 1.1.6
+    merged them; an independent check of the summary."""
+    from mace.utils.dat_file_processor import DatFileProcessor
+    dat = Path(out).parent / f"{Path(out).stem}.DOSS.DAT"
+    return DatFileProcessor().process_doss_dat_file(dat).get("dos_analysis") or {}
 
 
 @pytest.fixture(scope="module")
@@ -102,14 +113,14 @@ def test_dos_at_fermi_per_spin_finite(diamond_dos_props):
     for val in by_spin.values():
         assert val is not None and val < 0.01
     # The both-spins aggregate equals the sum of the per-spin finite values; the
-    # single-channel headline equals just the first (alpha) channel (NOT 2x).
+    # per-channel value is the first (alpha) channel.
     finite = [v for v in by_spin.values() if v is not None]
     assert dos["dos_at_fermi_both_spins_ev"] == pytest.approx(sum(finite), abs=1e-9)
     assert dos["dos_at_fermi_per_channel_ev"] == pytest.approx(
         by_spin.get("alpha", finite[0]), abs=1e-9)
-    # Back-compat headline tracks the single channel (legacy convention).
+    # The headline is the total of both spins.
     assert dos["total_dos_at_fermi"] == pytest.approx(
-        dos["dos_at_fermi_per_channel_ev"], abs=1e-9)
+        dos["dos_at_fermi_both_spins_ev"], abs=1e-9)
 
 
 def test_gap_and_band_edges_from_dos(diamond_dos_props):
@@ -175,13 +186,13 @@ def test_dos_gap_consistent_with_scalar(diamond_dos_props):
     """The new structured gap-from-DOS must match the pre-existing validated
     scalar ``doss_dat_band_gap_ev`` (both derive from the same analyzer)."""
     dos = diamond_dos_props["dos_structure"]
-    scalar_gap = diamond_dos_props["doss_dat_band_gap_ev"]
-    assert scalar_gap is not None
-    assert dos["band_gap_ev"] == pytest.approx(scalar_gap, abs=1e-6)
-    # The DOS-at-Fermi aggregate is consistent with the analyzer's scalar too
-    # (analyzer reports a single channel; the per-spin values share its
-    # first-point->=0 convention, so each channel matches it for diamond).
-    assert diamond_dos_props["doss_dat_at_fermi"] == pytest.approx(0.0, abs=0.01)
+    legacy = _dat_analysis(find_data("DOSS/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized_doss.out"))
+    assert legacy["band_gap_ev"] is not None
+    assert dos["band_gap_ev"] == pytest.approx(legacy["band_gap_ev"], abs=1e-6)
+    assert diamond_dos_props["dos_band_gap_from_dos_ev"] == pytest.approx(legacy["band_gap_ev"], abs=1e-6)
+    # The DOS-at-Fermi aggregate is consistent with the analyzer's too
+    assert legacy["dos_at_fermi"] == pytest.approx(0.0, abs=0.01)
+    assert diamond_dos_props["dos_at_fermi_total"] == pytest.approx(0.0, abs=0.01)
 
 
 def test_queryable_scalar_rows_added(diamond_dos_props):
@@ -189,7 +200,7 @@ def test_queryable_scalar_rows_added(diamond_dos_props):
     props (numerically filterable), without losing the legacy keys."""
     p = diamond_dos_props
     for k in (
-        "dos_total_at_fermi",
+        "dos_at_fermi_total",
         "dos_band_gap_from_dos_ev",
         "dos_integrated_states_to_fermi",
         "dos_num_projections",
@@ -201,8 +212,9 @@ def test_queryable_scalar_rows_added(diamond_dos_props):
     # Per-spin scalars exposed for a spin-polarized run.
     if p["dos_structure"]["spin_polarized"]:
         assert "dos_at_fermi_alpha" in p and "dos_at_fermi_beta" in p
-    # Legacy scalars preserved (layered, not rewritten).
-    assert p["doss_dat_band_gap_ev"] is not None
+    # 1.1.6: one DOS gap and one DOS at E_F (the doss_dat_* copies merged)
+    assert not {"doss_dat_band_gap_ev", "doss_dat_at_fermi", "dos_total_at_fermi",
+                "doss_dat_metallic", "dos_at_fermi_level"} & set(p)
     assert p["doss_dat_num_spins"] >= 1
     assert p["doss_dat_exists"] is True
     assert p["calculation_type"] == "DOSS"
@@ -213,15 +225,16 @@ def test_dos_units_self_consistent_with_label(diamond_dos_props):
     """ISSUE 1: the stored DOS magnitudes are in states/eV/cell (matching the
     eV energy axis and the ``dos_units`` label), i.e. they were divided by
     HARTREE_TO_EV relative to the raw states/Ha .DAT. Cross-check a KNOWN value:
-    the single-channel DOS@Fermi (states/eV) * HARTREE_TO_EV must reproduce the
-    raw legacy ``doss_dat_at_fermi`` (states/Ha) under the documented conversion.
+    the total DOS@Fermi (states/eV) * HARTREE_TO_EV must reproduce
+    ``doss_dat_at_fermi`` (states/Ha) under the documented conversion.
     Also assert the stored curve magnitudes equal raw_total/H at the same grid
     point (not the un-converted raw value)."""
     dos = diamond_dos_props["dos_structure"]
     assert dos["dos_units"] == "states/eV/cell"
 
-    legacy_ha = diamond_dos_props["doss_dat_at_fermi"]  # states/Ha, single chan
-    per_chan_ev = dos["dos_at_fermi_per_channel_ev"]     # states/eV, single chan
+    legacy_ha = _dat_analysis(find_data("DOSS/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized_doss.out"))[
+        "dos_at_fermi"]                                  # states/Ha, the first block
+    per_chan_ev = dos["dos_at_fermi_per_channel_ev"]     # states/eV, the first block
     assert legacy_ha is not None and per_chan_ev is not None
     # The documented, exact relationship: states/eV * H == states/Ha.
     assert per_chan_ev * HARTREE_TO_EV == pytest.approx(legacy_ha, rel=1e-9,
@@ -257,42 +270,31 @@ def test_dos_units_self_consistent_with_label(diamond_dos_props):
 
 
 def test_dos_at_fermi_relationship_on_spin_polarized_file():
-    """ISSUE 2: on a REAL spin-polarized metallic run the headline DOS@Fermi has
-    a DEFINED relationship to the legacy single-channel ``doss_dat_at_fermi``
-    (no silent factor-of-2). Asserts:
-      * per_channel_ev * H == legacy doss_dat_at_fermi  (states/Ha) EXACTLY,
-      * both_spins_ev == alpha + beta (the only place the 2x appears, clearly
-        named), and == 2 * per_channel for this symmetric run,
-      * the back-compat headline ``total_dos_at_fermi`` equals the SINGLE channel
-        (does NOT silently double the legacy scalar)."""
+    """On a REAL spin-polarized run the headline DOS@Fermi is the total of both
+    spins (each block of an unrestricted DOSS.DAT holds one spin):
+      * total_dos_at_fermi == dos_at_fermi_total == both_spins == alpha + beta,
+      * the DOSS.DAT analyzer's first block (states/Ha) == the alpha channel * H,
+      * per_channel_ev stays the alpha channel (== half here, a symmetric run)."""
     out = find_data("DOSS/1LiFSI-6EC-conf3_*_doss.out")
     extractor = CrystalPropertyExtractor(enable_tracking=False)
     p = extractor.extract_all_properties(out)
     dos = p["dos_structure"]
     assert dos["spin_polarized"] is True
 
-    legacy = p["doss_dat_at_fermi"]  # single channel, states/Ha (e.g. 2559.2)
+    legacy = _dat_analysis(out)["dos_at_fermi"]  # the first (alpha) block, states/Ha
     per_chan = dos["dos_at_fermi_per_channel_ev"]
     both = dos["dos_at_fermi_both_spins_ev"]
     by_spin = dos["dos_at_fermi_by_spin"]
     assert legacy is not None and per_chan is not None and both is not None
 
-    # The DEFINED relationship: per-channel (eV) * H reproduces the legacy scalar.
-    assert per_chan * HARTREE_TO_EV == pytest.approx(legacy, rel=1e-9, abs=1e-9)
-    # both-spins is the explicit alpha+beta sum (this is the ONLY 2x, and it is
-    # named so it cannot be confused with the per-channel headline).
-    assert both == pytest.approx(
-        by_spin["alpha"] + by_spin["beta"], abs=1e-9)
+    assert both == pytest.approx(by_spin["alpha"] + by_spin["beta"], abs=1e-9)
     assert both == pytest.approx(2.0 * per_chan, rel=1e-9)
-    # Back-compat headline tracks the single channel, NOT the doubled sum: it must
-    # NOT equal 2x the legacy scalar (the original silent-2x defect).
-    assert dos["total_dos_at_fermi"] == pytest.approx(per_chan, abs=1e-9)
-    assert dos["total_dos_at_fermi"] * HARTREE_TO_EV == pytest.approx(
-        legacy, rel=1e-9, abs=1e-9)
-    assert dos["total_dos_at_fermi"] != pytest.approx(both, rel=1e-6)
-    # The flat scalar rows expose BOTH, distinctly.
-    assert p["dos_total_at_fermi"] == pytest.approx(per_chan, abs=1e-9)
-    assert p["dos_at_fermi_both_spins_ev"] == pytest.approx(both, abs=1e-9)
+    assert per_chan == pytest.approx(by_spin["alpha"], abs=1e-9)
+    assert dos["total_dos_at_fermi"] == pytest.approx(both, abs=1e-9)
+    assert legacy == pytest.approx(per_chan * HARTREE_TO_EV, rel=1e-9, abs=1e-9)
+    assert p["dos_at_fermi_total"] == pytest.approx(both, abs=1e-9)
+    assert p["dos_at_fermi_alpha"] == pytest.approx(by_spin["alpha"], abs=1e-9)
+    assert p["dos_at_fermi_beta"] == pytest.approx(by_spin["beta"], abs=1e-9)
 
 
 def test_dos_categorizes_into_density_of_states(diamond_dos_props):
@@ -301,7 +303,7 @@ def test_dos_categorizes_into_density_of_states(diamond_dos_props):
     earlier 'density' branch; the 'dos_' prefix avoids that)."""
     extractor = CrystalPropertyExtractor(enable_tracking=False)
     assert extractor._categorize_property("dos_structure") == "density_of_states"
-    assert extractor._categorize_property("dos_total_at_fermi") == "density_of_states"
+    assert extractor._categorize_property("dos_at_fermi_total") == "density_of_states"
 
 
 def test_dos_structure_is_json_serializable_and_native(diamond_dos_props):
@@ -385,15 +387,16 @@ def test_dos_structure_sane_across_all_doss_files():
         assert len(blob) < 128 * 1024, f"{out.name}: dos_structure blob too large"
 
         # Gap-from-DOS consistent with the validated legacy scalar.
-        legacy = props.get("doss_dat_band_gap_ev")
+        analysis = _dat_analysis(out)
+        legacy = analysis.get("band_gap_ev")
         if legacy is not None and dos["band_gap_ev"] is not None:
             assert dos["band_gap_ev"] == pytest.approx(legacy, abs=1e-6), (
-                f"{out.name}: dos_structure gap disagrees with doss_dat_band_gap_ev"
+                f"{out.name}: dos_structure gap disagrees with the DOSS.DAT analyzer's"
             )
 
-        # metallic flag consistent with the legacy scalar.
-        if dos["metallic"] is not None and props.get("doss_dat_metallic") is not None:
-            assert dos["metallic"] == props["doss_dat_metallic"]
+        # metallic flag consistent with the DOSS.DAT analyzer's (and stored once).
+        if dos["metallic"] is not None and analysis.get("metallic") is not None:
+            assert dos["metallic"] == analysis["metallic"] == props["dos_is_metallic"]
 
         # Spin channels: both present for a spin-polarized run, no desync.
         by_spin = dos["dos_at_fermi_by_spin"]
@@ -424,15 +427,18 @@ def test_dos_structure_sane_across_all_doss_files():
                 f"{out.name}: num_proj {dos['num_proj']} != len(weights) {len(weights)}"
             )
 
-        # ISSUE 2: the single-channel headline never silently doubles the legacy
-        # scalar. per_channel * H == legacy doss_dat_at_fermi (when both present).
-        legacy_ef = props.get("doss_dat_at_fermi")
+        # The headline is the TOTAL DOS(E_F); the DOSS.DAT analyzer's value
+        # (states/Ha) is the first block's: per_channel * H.
+        legacy_ef = analysis.get("dos_at_fermi")
         per_chan = dos.get("dos_at_fermi_per_channel_ev")
+        total = dos.get("total_dos_at_fermi")
+        if total is not None:
+            assert props["dos_at_fermi_total"] == pytest.approx(total, abs=1e-12)
         if legacy_ef is not None and per_chan is not None:
-            assert per_chan * HARTREE_TO_EV == pytest.approx(legacy_ef, rel=1e-6,
-                                                             abs=1e-9), (
-                f"{out.name}: per-channel DOS@Fermi*H disagrees with legacy scalar"
+            assert per_chan * HARTREE_TO_EV == pytest.approx(legacy_ef, rel=1e-6, abs=1e-9), (
+                f"{out.name}: first-block DOS@Fermi*H disagrees with the DOSS.DAT analyzer"
             )
+        if legacy_ef is not None and per_chan is not None:
             both = dos.get("dos_at_fermi_both_spins_ev")
             if both is not None and dos["spin_polarized"]:
                 # both-spins is the SUM (>= single channel), not a silent 2x of

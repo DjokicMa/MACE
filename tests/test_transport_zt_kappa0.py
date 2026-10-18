@@ -30,7 +30,7 @@ def test_zt_peak_by_hand():
     p = _props(find_data(BCU + ".out"))
     t = p["transport"]
     assert t["zt_electronic_max_at"] == {"temperature_k": 300.0, "mu_ev": -2.61}
-    assert p["transport_zt_max"] == pytest.approx(x / (1 - x), rel=1e-9) == pytest.approx(14.4214, abs=1e-4)
+    assert p["transport_zt_electronic_max_avg"] == pytest.approx(x / (1 - x), rel=1e-9) == pytest.approx(14.4214, abs=1e-4)
     assert p["transport_kappa0_at_zt_max"] == pytest.approx(kappa0, rel=1e-12)
     assert p["transport_kappa_electronic_at_zt_max"] == pytest.approx(kappa0 - S * S * sigma * 300.0, rel=1e-9)
     assert t["kappa_electronic_at_zt_max_w_per_m_k"] == p["transport_kappa_electronic_at_zt_max"]
@@ -53,11 +53,11 @@ def test_points_with_nonpositive_kappa_e_store_nothing(tmp_path, capsys):
             rows.append("  ".join(v[:3] + ["1.0E-300"] * len(v[3:])))
     kap.write_text("\n".join(rows) + "\n")
     p = _props(tmp_path / out.name)
-    assert "transport_zt_max" not in p and "transport_kappa_electronic_at_zt_max" not in p
+    assert "transport_zt_electronic_max_avg" not in p and "transport_kappa_electronic_at_zt_max" not in p
     assert p["transport"]["zt_electronic_max"] is None
     assert p["transport"]["zt_points_skipped_kappa_e_nonpositive"] > 0
     assert re.search(r"kappa_e <= 0\) left out of ZT", capsys.readouterr().out)
-    assert p["transport_power_factor_max"] > 0      # PF does not need kappa
+    assert p["transport_power_factor_max_avg"] > 0      # PF does not need kappa
 
 
 def test_gui_labels_kappa_dat_as_kappa0():
@@ -67,6 +67,7 @@ def test_gui_labels_kappa_dat_as_kappa0():
 
 def test_zt_is_named_electrons_only():
     p = _props(find_data(BCU + ".out"))
-    assert p["transport_zt_electronic_max"] == p["transport_zt_max"]
+    # 1.1.6: one name (transport_zt_max and transport_zt_electronic_max are gone)
+    assert "transport_zt_electronic_max_avg" in p and "transport_zt_max" not in p
     assert "no lattice kappa" in p["transport"]["units"]["zt"]
-    assert CrystalPropertyExtractor._get_property_unit(None, "transport_power_factor_max") == "W/(m·K²)"
+    assert CrystalPropertyExtractor._get_property_unit(None, "transport_power_factor_max_avg") == "W/(m·K²)"

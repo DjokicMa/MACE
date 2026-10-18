@@ -64,8 +64,12 @@ def test_cli_labels_sit_at_their_k_and_never_overlap(monkeypatch, tmp_path, no_g
     pos = list(ax.get_xticks())
     g, y = pos[labels.index("Γ")], pos[[lab.strip() for lab in labels].index("Y")]
     f0 = pos[next(i for i, lab in enumerate(labels) if "F_{0}" in lab)]
-    # Y at its own k: 0.534 of the 0.573 to F0 (it was spread evenly, at 0.5)
-    assert (y - g) / (f0 - g) == pytest.approx(SLIP_TICKS[1] / SLIP_TICKS[2], abs=0.02)
+    # Y at its own k: 0.534 of the 0.573 to F0 (it was spread evenly, at 0.5); with gaps F0 shares one
+    # tick with Δ0 over the gap ("F0|Δ0", the GUI's merged label, 1.1.6), half a gap further on
+    if no_gaps:
+        assert (y - g) / (f0 - g) == pytest.approx(SLIP_TICKS[1] / SLIP_TICKS[2], abs=0.02)
+    else:
+        assert any("F_{0}$|$Δ_{0}" in lab for lab in labels) and g < y < f0
     assert any(lab.startswith("\n") for lab in labels)       # one of a crowded pair drops a row
     assert not _overlaps(fig, ax)
 

@@ -19,6 +19,7 @@ pytest.importorskip("selenium.webdriver")
 pytest.importorskip("ase")
 from selenium.webdriver.common.action_chains import ActionChains  # noqa: E402
 from selenium.webdriver.common.keys import Keys  # noqa: E402
+from selenium.common.exceptions import StaleElementReferenceException  # noqa: E402
 
 from conftest import TEST_DATA  # noqa: E402
 
@@ -355,6 +356,19 @@ def test_without_slurm(tmp_path):
 
 
 # ---------------------------------------------------------------- D26: above 20 decks the preview is explicit
+def _click_fresh(drv, css, tries=10):
+    """Click ``css``, finding it again when the dialog re-renders it between
+    the find and the click (a stale element); the button must still exist."""
+    for i in range(tries):
+        try:
+            drv.find_element("css selector", css).click()
+            return
+        except StaleElementReferenceException:
+            if i == tries - 1:
+                raise
+            time.sleep(0.2)
+
+
 def test_many_decks_need_update_preview(fresh):
     (drv, base, root, xdg, proc, dl), fake = fresh
     many = root / "many"
@@ -368,7 +382,7 @@ def test_many_decks_need_update_preview(fresh):
     H.wait(drv, "return !!document.querySelector('#submit-dialog [data-act=update]')", 10)
     assert drv.execute_script("return document.querySelector('#submit-dialog [data-act=submit]').disabled")
     assert "--track" not in _part(drv, "command")                    # no preview ran on its own
-    drv.find_element("css selector", '#submit-dialog [data-act="update"]').click()
+    _click_fresh(drv, '#submit-dialog [data-act="update"]')
     H.wait(drv, "return (document.querySelector('#submit-dialog [data-part=command]') || {}).textContent === 'cd . && mace submit --track many' || (document.querySelector('#submit-dialog [data-part=command]') || {}).textContent === 'mace submit --track many'", 60)
     H.wait(drv, "return !document.querySelector('#submit-dialog [data-act=submit]').disabled", 30)
     drv.find_element("css selector", '#submit-dialog [data-act="cancel"]').click()

@@ -296,6 +296,9 @@ def test_refused_on_network_bind(tmp_path):
         st, _, res = s.req("api/jobs/cancel", {"ids": ["12345"]})
         assert st == 409 and "open to the network" in res["error"]
         assert not s.fake.calls("scancel")
+        st, _, res = s.req("api/jobs/recover/run", {"preview_id": "rec-anything"})
+        assert st == 409 and "Recovering jobs is turned off while MACE GUI is open to the network" in res["error"]
+        assert not s.fake.calls("sbatch")
     finally:
         proc.terminate()
         proc.wait(timeout=30)

@@ -123,6 +123,16 @@ def test_restart_on_another_port_restores_everything(tmp_path, stop, browser_b):
         drv.get("about:blank")
     finally:
         drv.quit()
+    # the server drains the writes it has received; the page's pagehide keepalive may still be on its
+    # way when the browser quits: give it up to 3 s to arrive (the app sends it again on the next load)
+    end = time.time() + 3
+    while time.time() < end:
+        try:
+            if json.loads((xdg / "mace" / "gui.json").read_text())["settings"].get("uiScale") == 110:
+                break
+        except (OSError, ValueError, KeyError):
+            pass
+        time.sleep(0.1)
     proc.send_signal(stop)
     proc.wait(timeout=20)
     stored = json.loads((xdg / "mace" / "gui.json").read_text())

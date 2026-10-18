@@ -25,7 +25,7 @@ def test_one_point_spin_opt(extractor):
     p, final = _all(extractor, "OPT/1LiFSI-1DEC-conf1_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_"
                                "HSESOL3C_optimized.out")
     assert p["band_gap"] == 7.8402 == final
-    assert p["classification_band_gap"] == 7.8402
+    assert p["classification_gap_source"] == "scf"   # classification_band_gap merged into band_gap (1.1.6)
 
 
 def test_multi_point_spin_opt_uses_the_final_summary(extractor):
@@ -37,9 +37,12 @@ def test_spin_channels_differ_smaller_one_everywhere(extractor):
     # ALPHA 0.1826, BETA 0.1403 eV after OPT END
     p, final = _all(extractor, TI11O14)
     assert p["band_gap"] == 0.1403 == final
-    assert p["classification_band_gap"] == 0.1403
+    assert p["classification_gap_source"] == "scf"
 
 
 def test_classifier_spin_channels_without_band_gap(extractor):
     c = extractor._classify_electronic_properties({"alpha_band_gap": 0.1826, "beta_band_gap": 0.1403})
-    assert c["classification_band_gap"] == 0.1403
+    # the smaller channel: 0.1403 eV, a semiconductor (one scheme, 1.1.6)
+    assert c["electronic_classification"] == "semiconductor" and c["classification_gap_source"] == "scf"
+    c = extractor._classify_electronic_properties({"alpha_band_gap": 4.5, "beta_band_gap": 0.005})
+    assert c["electronic_classification"] == "metal"

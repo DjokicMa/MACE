@@ -83,7 +83,7 @@ def test_general_help_lists_every_command_once_in_group_order():
     assert order == sorted(order)
     # the site line names every action `mace site` accepts
     site_line = next(ln for ln in out.splitlines() if ln.startswith("  site        "))
-    assert site_line.startswith("  site        Show the site settings for job scripts")
+    assert site_line.startswith("  site        Show job-script site settings")
     from mace.submission import site_cli
     actions = next(a for a in site_cli.build_parser()._actions if a.dest == "action").choices
     assert "--init" in site_line

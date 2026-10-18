@@ -56,3 +56,27 @@ def test_extract_and_store_input_settings_roundtrip(tmp_path):
     settings = json.loads(row[0])
     # The extractor records the CRYSTAL keyword list it parsed.
     assert "crystal_keywords" in settings
+
+
+def test_3c_functional_spin_and_keywords_of_a_real_deck():
+    """A HSESOL3C deck: the 3c functional (none was recognized), SPIN, and
+    the keywords MACE writes (SPIN, the FREQ intensities, SUPERCEL, GUESSP,
+    SPINLOCK, ...) among the recorded keywords."""
+    from mace.utils.settings_extractor import extract_input_settings
+    d12 = find_data("OPT/*HSESOL3C*.d12", must_contain="HSESOL3C")
+    s = extract_input_settings(d12)
+    assert s["functional_info"]["exchange"] == "HSESOL3C"
+    assert s["functional_info"]["spin"] is True
+    assert "SPIN" in s["crystal_keywords"]
+
+
+def test_freq_and_restart_keywords_recorded():
+    from mace.utils.settings_extractor import extract_input_settings
+    freq = extract_input_settings(find_data("FREQ/1_dia_opt_rev1_freq_B3LYP-D3-D3_optimized_supercel222.d12"))
+    assert "SUPERCEL" in freq["crystal_keywords"]
+    intens = extract_input_settings(find_data("FREQ/*.d12", must_contain="INTRAMAN"))
+    assert {"INTENS", "INTCPHF", "INTRAMAN"} <= set(intens["crystal_keywords"])
+    guessp = extract_input_settings(find_data("*/*.d12", must_contain="GUESSP"))
+    assert "GUESSP" in guessp["crystal_keywords"]
+    lock = extract_input_settings(find_data("*/*.d12", must_contain="SPINLOCK"))
+    assert "SPINLOCK" in lock["crystal_keywords"]

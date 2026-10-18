@@ -93,12 +93,13 @@ def selection(drv):
 def set_view(drv, q=None, boundary=False):
     """MgO without boundary images at a fixed turn where no two drawn atoms
     overlap on screen (searched once from a seeded list of turns)."""
-    # small atoms (atom scale 0.2): every center is clear of its neighbors' discs
+    # small atoms (atom scale 0.2): every center is clear of its neighbors' discs.
+    # Ball and stick draws atom scale x VESTA's atomic radius (T9): Mg 1.60 A.
     drv.execute_script("window.__mace.settings.set('atomScale', 0.2)")
     if not boundary:
         drv.execute_script("window.__mace.settings.set('showBoundary', false)")
     H.wait(drv, f"return window.__mace.viewport.displayed() === {8 if not boundary else 27} && "
-                "Math.abs(window.__mace.viewport.scene().drawnRadii[0] - 0.2 * 0.7 * 1.73) < 1e-3", 10)
+                "Math.abs(window.__mace.viewport.scene().drawnRadii[0] - 0.2 * 1.6) < 1e-3", 10)
     drv.execute_script("""const v = window.MACE.state.viewers['viewer-main'], cam = window.__mace.viewport.camera();
         const disp = window.__mace.viewport.scene().display, R = window.__mace.viewport.scene().drawnRadii;
         let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -376,10 +377,14 @@ def test_selection_outline_rings_follow_the_camera(fresh):
         return drv.execute_script("return window.__mace.viewport.rings()")
     rings = check()
     # the ring is drawn in the selection color on the layer over the viewer
-    rgba = drv.execute_script("""const c = document.querySelector('.vp-rings'), r = arguments[0], k = c.width / c.clientWidth;
-        return Array.from(c.getContext('2d').getImageData(Math.round((r.x + r.r) * k), Math.round(r.y * k), 1, 1).data)""", rings[0])
+    # (the 2 px stroke is centered on r at a sub-pixel position that depends on
+    # the atom's drawn radius: read the pixels across it, take the closest)
+    pixels = drv.execute_script("""const c = document.querySelector('.vp-rings'), r = arguments[0], k = c.width / c.clientWidth;
+        const x = Math.round((r.x + r.r) * k), y = Math.round(r.y * k);
+        return [-1, 0, 1].map((d) => Array.from(c.getContext('2d').getImageData(x + d, y, 1, 1).data))""", rings[0])
     sel = drv.execute_script("return getComputedStyle(document.documentElement).getPropertyValue('--sel').trim()")
     want = [int(sel[i:i + 2], 16) for i in (1, 3, 5)]
+    rgba = min(pixels, key=lambda px: max(abs(a - b) for a, b in zip(px[:3], want)))
     # (antialiased against the thin background line around it: close to, not exactly, the token)
     assert rgba[3] > 200 and all(abs(a - b) < 80 for a, b in zip(rgba[:3], want)), (rgba, sel)
     drv.execute_script("window.__mace.viewport.camera().orbit(40, 25)")

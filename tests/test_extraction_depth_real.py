@@ -86,7 +86,7 @@ def props(db, name_part):
 
 def test_opt(db):
     p = props(db, "1_dia_opt_rev1.out")
-    assert p["total_energy_au"] < 0 and p["final_atomic_positions"]
+    assert p["total_energy_au"] < 0 and p["atomic_positions"]
     assert int(p["space_group_number"]) == 227
 
 
@@ -113,7 +113,7 @@ def test_band(db):
 
 def test_doss(db):
     p = props(db, "_doss.out")
-    assert p["dos_structure"] and "dos_at_fermi_level" in p
+    assert p["dos_structure"] and "dos_at_fermi_total" in p
 
 
 def test_transport(db):

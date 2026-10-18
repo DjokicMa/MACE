@@ -270,8 +270,12 @@ def _canonical_rows(rows):
 # job script (is the built-in account yours, MaxSubmitJobs, the partition's
 # MaxTime). They came after these goldens; with the fake's empty answers they
 # change nothing, so they are checked to be exactly these and set aside.
+# The queue budget's own read-only questions (mace/queue/budget.py: the
+# user's submit limit from sacctmgr's QOS, and the user's queue counted
+# before each submission) are set aside the same way.
 SITE_QUERIES = (["sacctmgr", "-nP", "show", "assoc"], ["sacctmgr", "-nP", "show", "user"],
-                ["scontrol", "show", "assoc_mgr"], ["scontrol", "show", "partition", "-a", "-o"])
+                ["scontrol", "show", "assoc_mgr"], ["scontrol", "show", "partition", "-a", "-o"],
+                ["sacctmgr", "-nP", "show", "qos"], ["squeue", "-a", "-u", "tester", "-h", "-r", "-o", "%i|%T|%j"])
 
 
 def _site_query(call):

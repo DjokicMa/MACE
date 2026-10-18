@@ -535,3 +535,45 @@ def test_saved_echg_config_survives_reload_validation(monkeypatch):
     assert config["type"] == "ECHG"
     assert config["n_points"] == 50
     assert d3_config.validate_d3_config(config) == (True, [])
+
+
+# ------------------------------------------- ECHG without a plane ----------
+# CRYSTAL23 manual p. 324: the MAPNET records are mandatory for ECHG, so a deck
+# of ECHG / IDER / END (written with rc 0 up to 1.1.5) is never produced.
+
+@pytest.mark.parametrize("cfg", [{"need_map_points": False}, {}])
+def test_echg_without_a_plane_in_batch_is_refused_naming_the_keys(tmp_path, monkeypatch, capsys, cfg):
+    _no_terminal(monkeypatch)
+    _no_input(monkeypatch)
+    gen = _generator(_molecule_out(), "ECHG", tmp_path, monkeypatch)
+    deck = gen._write_charge_d3({"type": "ECHG", "derivative_order": 0, "n_points": 50, **cfg})
+    assert deck is None
+    messages = _messages(capsys)
+    assert "map_points" in messages and "map_coord_type" in messages and "p. 324" in messages
+
+
+def _sequence(monkeypatch, answers):
+    it = iter(answers)
+    monkeypatch.setattr(builtins, "input", lambda prompt="": next(it))
+
+
+def test_echg_at_a_terminal_always_asks_the_plane(tmp_path, monkeypatch):
+    _terminal(monkeypatch)
+    _sequence(monkeypatch, ["F", "0 0 0", "1 0 0", "0 1 0"])
+    gen = _generator(_molecule_out(), "ECHG", tmp_path, monkeypatch)
+    deck = gen._write_charge_d3({"type": "ECHG", "derivative_order": 0, "n_points": 50,
+                                 "need_map_points": False})
+    assert deck.splitlines()[:5] == ["ECHG", "0", "50", "FRACTION", "COORDINA"], deck
+
+
+def test_echg_a_piped_answer_to_the_old_plane_question_still_works(tmp_path, monkeypatch, capsys):
+    """Up to 1.1.5 "Define charge density map plane? [Y/n]" came first: a
+    piped "y" is skipped, a piped "n" is a refusal (no invalid deck)."""
+    _terminal(monkeypatch)
+    _sequence(monkeypatch, ["y", "F", "0 0 0", "1 0 0", "0 1 0"])
+    gen = _generator(_molecule_out(), "ECHG", tmp_path, monkeypatch)
+    cfg = {"type": "ECHG", "derivative_order": 0, "n_points": 50, "need_map_points": True}
+    assert gen._write_charge_d3(dict(cfg)).splitlines()[3] == "FRACTION"
+    _sequence(monkeypatch, ["n"])
+    assert gen._write_charge_d3(dict(cfg)) is None
+    assert "p. 324" in _messages(capsys)

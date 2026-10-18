@@ -141,13 +141,16 @@ def test_submit_limit_refusal_gives_no_qos_hint():
 
 
 # ---------------------------------------------------------------- workflow queue clamp (G7b)
-def test_resolve_queue_unchanged():
-    for limit, want in ((200, (190, 10)), (1000, (950, 50)), (2, (1, 1))):
+def test_resolve_queue_counts_the_reserve_once():
+    # the callback keeps max_jobs - reserve queued: max_jobs is the limit
+    # itself and the reserve (100, a tenth of a smaller limit) is not added again
+    # (a limit of 1000 gives the built-in budget, 900: the templates' 950/50 say it)
+    for limit, want in ((200, (200, 20)), (1000, (950, 50)), (1040, (1040, 100)), (2, (2, 1))):
         assert site.queue_from_limit(limit) == want
     assert site.clamp_queue(250, 30, None, {"PATH": "/nonexistent"})[:2] == (250, 30)
 
 
-@pytest.mark.parametrize("limit,want", [(200, "--max-jobs 190 --reserve 10 --max-submit 10"),
+@pytest.mark.parametrize("limit,want", [(200, "--max-jobs 200 --reserve 20 --max-submit 10"),
                                         (1000, "--max-jobs 950 --reserve 50 --max-submit 10"),
                                         (None, "--max-jobs 950 --reserve 50 --max-submit 10")])
 def test_workflow_queue_clamp(tmp_path, limit, want):
@@ -166,8 +169,8 @@ def test_workflow_queue_clamp(tmp_path, limit, want):
     (plan,) = sorted((d / "workflow_configs").glob("workflow_plan_*.json"))
     q = json.loads(plan.read_text())["queue_management"]
     assert f"--max-jobs {q['max_jobs']} --reserve {q['reserve_slots']}" in want
-    said = "MaxSubmitJobs is 200" in p.stdout + p.stderr
-    assert said == (limit == 200)
+    # the plan's numbers come from the limit already: nothing to lower, nothing said
+    assert "MaxSubmitJobs is 200" not in p.stdout + p.stderr
 
 
 def test_planner_regex_line_follows_the_clamp(tmp_path):

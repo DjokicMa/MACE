@@ -41,12 +41,12 @@ def test_conducting_multi_point_opt_has_no_point_one_fermi(extractor):
     p = _props(extractor, "OPT/Ti11O14_mp-759754_sg1_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis."
                           "triplezeta_opt_B3LYP-D3-D3_optimized.out")
     # its EFERMI lines (last 1.5519687E-02) are point 1's; none after OPT END
-    assert "fermi_energy" not in p
+    assert "fermi_energy_au" not in p
 
 
 def test_multi_point_opt_final_fermi_energy_kept(extractor):
     p = _props(extractor, "OPT/3,4^2T1-CA_BULK_OPTGEOM_TZ.out")
-    assert p["fermi_energy"] == -1.1373763E-01
+    assert p["fermi_energy_au"] == -1.1373763E-01
 
 
 def test_one_point_opt_keeps_its_scf_values(extractor):
@@ -63,4 +63,4 @@ def test_multi_point_opt_ending_conducting_after_gapped_point_one(extractor):
                           "B3LYP-D3-D3_optimized.out")
     # a spin run (ALPHA/BETA ELECTRONS blocks; its last point-1 block is common)
     assert p["band_gap"] == 0.0 and p["spin_polarized"] is True
-    assert p["fermi_energy"] == -2.5299136E-01
+    assert p["fermi_energy_au"] == -2.5299136E-01

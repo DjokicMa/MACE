@@ -22,6 +22,8 @@ from test_gui_results import write_band_crystal
 sys.path.insert(0, str(REPO_ROOT / "Plotting"))
 
 MANY = ["Pb (s)", "Pb (p)", "Pb (d)", "I (s)", "I (p)", "I (d)", "Cs (s)", "Cs (p)", "Cs (d)", "Cs (f)"]
+# the legend names them as the GUI does (1.1.6): "Pb s"
+MANY_NAMES = [n.replace(" (", " ").rstrip(")") for n in MANY]
 
 
 def write_doss_many(directory, material="mgo", n_e=80):
@@ -134,6 +136,6 @@ def test_dos_legend_outside_the_axes_and_its_labels(monkeypatch, tmp_path, kind)
     assert not _overlaps(fig), _overlaps(fig)
     texts = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
     if kind == "many":
-        assert all(texts.count(n) == 1 for n in MANY), texts
+        assert all(texts.count(n) == 1 for n in MANY_NAMES), texts
     # the band-gap note is no box over the curves: it heads the legend
     assert not [t for t in fig.axes[0].texts if t.get_text().startswith(("$E_g", "Conductive", "Semimetal"))]

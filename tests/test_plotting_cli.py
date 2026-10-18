@@ -40,7 +40,7 @@ def test_parser_keeps_option_defaults():
     a = p.parse_args([])
     assert a.directory == '.'
     assert a.output == '.'
-    assert a.projection == 'both'
+    assert a.projection is None          # 1.1.6: the GUI's projections (--dos-colors) unless given
     assert a.supercell == [2, 2, 2]
 
 

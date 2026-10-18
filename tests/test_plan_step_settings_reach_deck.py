@@ -150,13 +150,17 @@ def test_real_sp_plan_custom_3c_functional_gets_its_basis(tmp_path):
 @pytest.mark.parametrize("mods,written", [
     ({"custom_functional": "PBE0"}, "PBE0"),
     ({"custom_functional": "PBE0-D3"}, "PBE0-D3"),
-    ({"new_functional": "PBE0"}, "PBE0"),
+    ({"new_functional": "PBE0", "use_dispersion": False}, "PBE0"),
+    # no word on dispersion: the B3LYP-D3 parent's D3 is kept (follow-ups preserve the parent)
+    ({"new_functional": "PBE0"}, "PBE0-D3"),
+    ({"new_functional": "M062X"}, "M062X"),
     ({"new_functional": "PBE0", "use_dispersion": True}, "PBE0-D3"),
 ])
 def test_real_sp_plan_functional_is_written_exactly_as_planned(tmp_path, mods, written):
-    """The planner appends -D3 only when the user asked for it. The B3LYP-D3
-    parent's dispersion flag used to survive the switch, so a planned PBE0
-    came out as PBE0-D3."""
+    """A custom functional is written as planned, and so is a new functional
+    with use_dispersion; with no word on dispersion a new functional keeps the
+    B3LYP-D3 parent's D3 when it has D3 parameters (follow-ups preserve the
+    parent, as the GUI's workflow builder does)."""
     step = {"calculation_type": "SP", "inherit_settings": False,
             "method_modifications": mods,
             "basis_modifications": {"inherit_basis": True}}

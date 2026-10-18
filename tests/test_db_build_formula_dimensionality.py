@@ -23,6 +23,9 @@ import pytest
 
 from conftest import REPO_ROOT, TEST_DATA
 
+# the formulas and dimensionalities come from the GUI's structure reader, which needs ase
+pytest.importorskip("ase", reason="the structure reader needs ase")
+
 EC = "OPT/EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized"
 TIPBO3 = "FREQ/TiPbO3_mp-20459_sg99_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized_freq_B3LYP-D3-D3_optimized"
 TIO = "OPT/TiO_mp-1071163_sg189_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized"

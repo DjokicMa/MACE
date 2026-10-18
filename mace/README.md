@@ -260,7 +260,7 @@ mace database --action query --filter "formula NOT LIKE '%H%'"      # Formulas w
 
 # IN operator for value lists
 mace database --action query --filter "space_group IN (225, 227, 229)"
-mace database --action query --filter "conductivity_type IN ('insulator', 'semiconductor')"
+mace database --action query --filter "electronic_classification IN ('insulator', 'semiconductor')"
 
 # IS NULL/IS NOT NULL checks
 mace database --action query --filter "transport_seebeck_300k IS NOT NULL"
@@ -555,7 +555,7 @@ Property                Count  Unique    Mode              Frequency
 --------------------------------------------------------------------
 crystal_system            200       7    cubic                45.0%
   Values: cubic(90), hexagonal(40), tetragonal(30), ...
-conductivity_type         185       3    insulator            65.0%
+electronic_classification 185       3    insulator            65.0%
   Values: insulator(120), semiconductor(50), metal(15)
 ```
 

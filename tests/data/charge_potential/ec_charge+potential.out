@@ -1,0 +1,237 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS            8  OF           28  WORKING
+ PROCESS           18  OF           28  WORKING
+ PROCESS            0  OF           28  WORKING
+ PROCESS            1  OF           28  WORKING
+ PROCESS            2  OF           28  WORKING
+ PROCESS            3  OF           28  WORKING
+ PROCESS            5  OF           28  WORKING
+ PROCESS            7  OF           28  WORKING
+ PROCESS           12  OF           28  WORKING
+ PROCESS           15  OF           28  WORKING
+ PROCESS           16  OF           28  WORKING
+ PROCESS           22  OF           28  WORKING
+ PROCESS           17  OF           28  WORKING
+ PROCESS           10  OF           28  WORKING
+ PROCESS           14  OF           28  WORKING
+ PROCESS            9  OF           28  WORKING
+ PROCESS           23  OF           28  WORKING
+ PROCESS           26  OF           28  WORKING
+ PROCESS           25  OF           28  WORKING
+ PROCESS           27  OF           28  WORKING
+ PROCESS           11  OF           28  WORKING
+ PROCESS            4  OF           28  WORKING
+ PROCESS           24  OF           28  WORKING
+ PROCESS            6  OF           28  WORKING
+ PROCESS           13  OF           28  WORKING
+ PROCESS           19  OF           28  WORKING
+ PROCESS           20  OF           28  WORKING
+ PROCESS           21  OF           28  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 21 05 2026 TIME 00:34:00.5
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+
+ *******************************************************************************
+ ./EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized_sp_HSESOL3C_o
+ CRYSTAL - PROPERTIES - TYPE OF CALCULATION :  UNRESTRICTED OPEN SHELL
+ *******************************************************************************
+ SPIN POLARIZED SYSTEM: SUMMED SPIN DENSITY   -0.00000000
+
+ KOHN-SHAM HAMILTONIAN
+
+ (EXCHANGE)[CORRELATION] FUNCTIONAL:(HSEsol GGA)[PBEsol]
+
+ RANGE-SEPARATED HYBRID FUNCTIONAL 
+ OMEGA (SHORT-RANGE)[LONG-RANGE]:(    0.1100)[    0.0000]
+
+ HYBRID EXCHANGE - PERCENTAGE OF FOCK EXCHANGE    25.0000
+
+ SPIN POLARIZED DFT SELECTED
+ *******************************************************************************
+ N. OF ATOMS PER CELL        10 COULOMB OVERLAP TOL          (T1) 10**   -8
+ NUMBER OF SHELLS            50 COULOMB PENETRATION TOL      (T2) 10**   -8
+ NUMBER OF AO                98 EXCHANGE OVERLAP TOL         (T3) 10**   -8
+ N. OF ELECTRONS PER CELL    46 EXCHANGE PSEUDO OVP (F(G))   (T4) 10**   -9
+ CORE ELECTRONS PER CELL     12 EXCHANGE PSEUDO OVP (P(G))   (T5) 10**  -24
+ N. OF SYMMETRY OPERATORS     1 POLE ORDER IN MONO ZONE                   4
+ *******************************************************************************
+   ATOM N.AT.  SHELL    X(A)      Y(A)      Z(A)      EXAD       N.ELECT.
+ *******************************************************************************
+    1    6 C     7    44.654    52.697    49.943   8.880E-01       6.072
+    2    6 C     7    46.111    53.065    50.235   8.880E-01       6.072
+    3    8 O     7    44.440    51.568    50.778   8.000E-01       8.406
+    4    8 O     7    46.643    51.858    50.762   8.000E-01       8.406
+    5    6 C     7    45.631    51.052    51.155   8.880E-01       5.299
+    6    8 O     7    45.770    50.032    51.750   8.000E-01       8.403
+    7    1 H     2    44.492    52.416    48.889   1.756E-01       0.837
+    8    1 H     2    43.944    53.492    50.205   1.756E-01       0.833
+    9    1 H     2    46.202    53.870    50.983   1.756E-01       0.837
+   10    1 H     2    46.673    53.358    49.338   1.756E-01       0.833
+ *******************************************************************************
+ DE(K)                   0.000E+00  ENERGY LEVEL SHIFTING        0.00000
+ TOTAL ENERGY -3.4111085314754E+02  CONVERGENCE ON ENER       -1.908E-10
+ KIN. ENERGY   3.3901600319981E+02  VIR. COEFF.           1.04706429E+00
+ N. OF SCF CYCLES               12  FERMI ENERGY              -0.289E+00
+ WEIGHT OF F(I) IN F(I+1)      30
+ *******************************************************************************
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT gordsh1     TELAPSE        1.07 TCPU        0.50
+
+ MATRIX SIZE: P(G)    9548, F(G)    4674, P(G) IRR    4919, F(G) IRR    4770
+ MAX G-VECTOR INDEX FOR 1- AND 2-ELECTRON INTEGRALS   1
+
+
+ CAPPA:IS1  1;IS2  1;IS3  1; K PTS MONK NET   1; SYMMOPS:K SPACE   2;G SPACE   1
+
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT ECH3 START  TELAPSE        1.08 TCPU        0.50
+
+ 3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D
+ 3D DENSITY, GRID IS 100*140*105
+
+    X COORDINATE RANGE IS    77.885 TO    93.357
+    Y COORDINATE RANGE IS    87.294 TO   109.051
+    Z COORDINATE RANGE IS    86.982 TO   103.199
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT CHARGE      TELAPSE      117.68 TCPU      103.64
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT ECH3 END    TELAPSE      117.68 TCPU      103.64
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT ECH3        TELAPSE      117.68 TCPU      103.64
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT POT3 START  TELAPSE      117.68 TCPU      103.64
+ PLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPL
+
+  MULTIPOLAR EXPANSION UP TO L=  4
+  MULTIPOLE SIGN CONVENTION : ELECTRON CHARGE = +1
+
+ PLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPLPL
+
+
+ MULTIPOLE ANALYSIS BY SHELLS
+ L=  0 M=  0   1.250E+00  6.949E-01  3.712E-01  9.148E-01  2.046E+00  7.435E-01
+               5.194E-02  1.250E+00  6.949E-01  3.712E-01  9.148E-01  2.046E+00
+               7.435E-01  5.194E-02  1.240E+00  7.120E-01  7.420E-01  1.104E+00
+               2.847E+00  1.726E+00  3.489E-02  1.240E+00  7.120E-01  7.420E-01
+               1.104E+00  2.847E+00  1.726E+00  3.489E-02  1.251E+00  6.932E-01
+               4.294E-01  4.485E-01  1.925E+00  4.112E-01  1.405E-01  1.241E+00
+               7.110E-01  7.596E-01  1.054E+00  2.820E+00  1.783E+00  3.410E-02
+               5.061E-01  3.313E-01  5.059E-01  3.269E-01  5.061E-01  3.313E-01
+               5.059E-01  3.269E-01
+
+ MULTIPOLE ANALYSIS BY ATOMS (L=0: NET CHARGE)
+ L=  0 M=  0   7.220E-02  7.219E-02  4.064E-01  4.064E-01 -7.009E-01  4.032E-01
+              -1.626E-01 -1.671E-01 -1.626E-01 -1.671E-01
+
+ NET ATOMIC CHARGE AND SPHEROPOLE (A.U.)
+ ATOM N.          Q           QR2       ATOM N.          Q           QR2
+     1     6  7.21966E-02  1.17967E+01     2     6  7.21871E-02  1.17968E+01
+     3     8  4.06416E-01  1.13505E+01     4     8  4.06415E-01  1.13506E+01
+     5     6 -7.00856E-01  9.11388E+00     6     8  4.03152E-01  1.21207E+01
+     7     1 -1.62631E-01  1.19752E+00     8     1 -1.67135E-01  1.21562E+00
+     9     1 -1.62615E-01  1.19766E+00    10     1 -1.67131E-01  1.21549E+00
+
+ 3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D3D
+ 3D DENSITY, GRID IS 100*140*105
+
+    X COORDINATE RANGE IS    77.885 TO    93.357
+    Y COORDINATE RANGE IS    87.294 TO   109.051
+    Z COORDINATE RANGE IS    86.982 TO   103.199
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT POT3 END    TELAPSE      148.92 TCPU      112.27
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT POT3        TELAPSE      148.92 TCPU      112.27
+ ENDPROP   
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE      148.92 TCPU      112.27
+ EEEEEEEEEE TERMINATION  DATE 21 05 2026 TIME 00:36:28.5
+NODE    0 CPU TIME =       112.267
+NODE    1 CPU TIME =       148.296
+NODE    2 CPU TIME =       148.326
+NODE    3 CPU TIME =       148.320
+NODE    4 CPU TIME =       148.274
+NODE    5 CPU TIME =       148.277
+NODE    6 CPU TIME =       148.311
+NODE    7 CPU TIME =       148.315
+NODE    8 CPU TIME =       148.316
+NODE    9 CPU TIME =       148.314
+NODE   10 CPU TIME =       148.249
+NODE   11 CPU TIME =       148.245
+NODE   12 CPU TIME =       148.315
+NODE   13 CPU TIME =       148.304
+NODE   14 CPU TIME =       148.296
+NODE   15 CPU TIME =       148.333
+NODE   16 CPU TIME =       148.301
+NODE   17 CPU TIME =       148.303
+NODE   18 CPU TIME =       148.295
+NODE   19 CPU TIME =       148.323
+NODE   20 CPU TIME =       148.308
+NODE   21 CPU TIME =       148.354
+NODE   22 CPU TIME =       148.346
+NODE   23 CPU TIME =       148.332
+NODE   24 CPU TIME =       148.325
+NODE   25 CPU TIME =       148.342
+NODE   26 CPU TIME =       148.353
+NODE   27 CPU TIME =       148.323
+    TOTAL CPU TIME =      4116.663

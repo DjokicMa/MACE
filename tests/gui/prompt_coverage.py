@@ -24,11 +24,11 @@ UNANSWERED = {
     ("NewCifToD12.py", "Select method (default"): (NOT_REACHABLE, "select_method(): not called (the menus are d12_interactive's)"),
     ("NewCifToD12.py", "Select X (default"): (NOT_REACHABLE, "select_dft_functional(): not called"),
     # opt2d12 (CRYSTALOptToD12.py): Setup passes one --out-file and --calc-type, no --config-file, and stdin is not a terminal
-    ("CRYSTALOptToD12.py", "Do you want to continue anyway?"): (NOT_REACHABLE, "basis lacks an element: asked only at a terminal"),
     ("CRYSTALOptToD12.py", "Apply these settings from config file?"): (NOT_REACHABLE, "--config-file only, and only at a terminal"),
     ("CRYSTALOptToD12.py", "Enter CRYSTAL output file path"): (NOT_REACHABLE, "several/no --out-file only (Setup passes one)"),
     ("CRYSTALOptToD12.py", "Apply to all X files?"): (NOT_REACHABLE, "several files with --config-file only"),
     ("CRYSTALOptToD12.py", "Use shared settings for all files?"): (NOT_REACHABLE, "several files only"),
+    ("CRYSTALOptToD12.py", "SMEAR width in hartree for this SOC deck"): (NOT_REACHABLE, "SOC deck from a metallic-looking parent: asked only at a terminal"),
     # d12_interactive.py
     ("d12_interactive.py", "TOLINTEG [X]"): (NOT_REACHABLE, "configure_tolerances_with_defaults(): not called"),
     ("d12_interactive.py", "TOLDEE [X]"): (NOT_REACHABLE, "configure_tolerances_with_defaults(): not called"),
@@ -79,7 +79,7 @@ UNANSWERED = {
     ("d12_constants.py", "Enable Fermi smearing?"): (NOT_REACHABLE, "configure_smearing(): not called"),
     ("d12_constants.py", "Smearing width [0.005]"): (NOT_REACHABLE, "configure_smearing(): not called"),
     # opt2d3 (CRYSTALOptToD3.py): Setup passes -i (one .out), -t and --save-config
-    ("CRYSTALOptToD3.py", "Select type (1-6)"): (NOT_REACHABLE, "no -t only (Setup passes it)"),
+    ("CRYSTALOptToD3.py", "Select type (1-7)"): (NOT_REACHABLE, "no -t only (Setup passes it)"),
     ("CRYSTALOptToD3.py", "Use same configuration for all files?"): (NOT_REACHABLE, "a directory of outputs only"),
     ("CRYSTALOptToD3.py", "Save this configuration for future use?"): (NOT_REACHABLE, "--save-config answers it / directory only"),
     ("CRYSTALOptToD3.py", "Enter CRYSTAL output file path"): (NOT_REACHABLE, "no -i only (Setup passes it)"),

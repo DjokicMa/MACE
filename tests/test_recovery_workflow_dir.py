@@ -104,3 +104,28 @@ def test_no_recorded_folder_says_where_it_submits(wf, capsys):
     out = capsys.readouterr().out
     assert d == root
     assert f"no folder of Z under {root / 'workflow_outputs'}" in out and str(root) in out
+
+
+# ---------------------------------------------------------------- 1.1.6: mace recover
+def test_submission_target_takes_the_recorded_folder(wf, monkeypatch):
+    """submission_target (mace recover's preview and its reuse of an existing
+    job script) resolves a recovered step's folder from its recorded work_dir,
+    as submit_calculation does, not from the current directory."""
+    mgr, calc, root, opt_dir, sp_dir, b_dir, cap = wf
+    monkeypatch.chdir(b_dir)                          # another material's folder (a callback's)
+    calc_dir, target = mgr.submission_target(sp_dir / "A_sp.d12", "SP", "A", work_dir=calc["work_dir"])
+    assert (calc_dir, target) == (sp_dir, sp_dir / "A_sp.d12")
+
+
+def test_reused_job_script_is_the_recorded_folders(wf, capsys, monkeypatch):
+    """`mace recover` without --overwrite-sh submits the step's existing job
+    script: the one in the recorded folder, from that folder."""
+    mgr, calc, root, opt_dir, sp_dir, b_dir, cap = wf
+    monkeypatch.chdir(b_dir)
+    script = sp_dir / "A_sp.sh"
+    script.write_text("#!/bin/bash\n#SBATCH -J A_sp\necho run\n")
+    assert mgr.resubmit_fixed_calculation(calc, fixed_input=sp_dir / "A_sp.d12", reuse_job_script=True)
+    out = capsys.readouterr().out
+    assert "Reusing the existing job script A_sp.sh" in out and MSG not in out
+    assert not (b_dir / "A_sp.sh").exists()
+    assert (cap / "calls").read_text().split()[:2] == [str(sp_dir), str(script)]

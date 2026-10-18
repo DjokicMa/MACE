@@ -131,14 +131,21 @@ def _own_text_files():
             and p.suffix in (".js", ".css", ".html", ".svg")]
 
 
+# The plot presets the GUI shares with mace plotting (presets.py): the figure's colors are data, not theme
+# tokens, so a GUI plot and the CLI's PNG are drawn in the same hex colors; plotpresets_data.js is generated
+# from presets.py and plotpresets.js ports its color rules (readable(), shade(), DOS grays, VESTA scales).
+SHARED_PALETTE_DATA = {"plotpresets_data.js", "plotpresets.js"}
+
+
 def test_colors_only_in_tokens():
     """No literal hex colors outside tokens.css (and the element color
-    tables, which are data). HTML entities like &#772; do not count."""
+    tables and the shared plot presets, which are data). HTML entities like
+    &#772; do not count."""
     hexcolor = re.compile(r"(?<![&\w])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b(?![\w-])")
     hits = []
     for p in _own_text_files():
         # the logo files are images: the browser draws them without the page's CSS
-        if p.name == "tokens.css" or p.parent.name in ("icons", "brand"):
+        if p.name == "tokens.css" or p.parent.name in ("icons", "brand") or p.name in SHARED_PALETTE_DATA:
             continue
         text = re.sub(r"&#\d+;", "", p.read_text())
         text = re.sub(r'href="[^"]*"|#[a-z][\w-]*', "", text)   # ids and fragment links
@@ -165,7 +172,10 @@ def test_boot_is_one_request_with_everything_the_page_starts_with(served):
     assert status == 200 and headers.get("Content-Encoding") == "gzip"
     import gzip
     boot = json.loads(gzip.decompress(body))
-    assert set(boot) == {"info", "files", "templates", "settings", "mace_defaults", "profile"}
+    # palettes (1.1.6): the user's element color palettes, so the first draw uses the default one;
+    # folder (1.1.6): the served folder's mace-folder.toml layer
+    assert set(boot) == {"info", "files", "templates", "settings", "mace_defaults", "profile", "palettes", "folder"}
+    assert boot["palettes"]["palettes"] == {} and boot["palettes"]["path"].endswith("mace/element_colors.json")
     assert any(f["path"] == "structures/MgO.cif" for f in boot["files"]["files"])
     assert len(body) < 3000
 

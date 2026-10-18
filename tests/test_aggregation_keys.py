@@ -17,7 +17,7 @@ from conftest import find_data
 # property_name -> the group_by mode in AggregationEngine._group_materials that
 # reads it (aggregation.py).
 GROUPING_KEYS = {
-    "conductivity_type": "conductivity_type",
+    "electronic_classification": "electronic_classification",  # conductivity_type before 1.1.6
     "total_energy_au": "energy_range",
     "atoms_in_unit_cell": "atoms_range",
     "band_gap": "band_gap_range",

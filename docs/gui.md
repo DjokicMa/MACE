@@ -18,9 +18,844 @@ never writes over a calculation's outputs, and keeps the previous version of
 every file it replaces; [What the GUI writes into your
 folder](#what-the-gui-writes-into-your-folder) lists everything, and where.
 
-**Start here:** [Run it locally](#run-it-locally),
-[First run from your computer](#first-run-from-your-computer) (MACE on a cluster),
-[Troubleshooting](#troubleshooting).
+**New here?** Read [Where MACE runs](#where-mace-runs), then find your row in
+[Choose your setup](#choose-your-setup) and follow that one section.
+
+## Contents
+
+**Getting started**
+
+- [Where MACE runs](#where-mace-runs) (the cluster, your computer, and why)
+- [Choose your setup](#choose-your-setup): the table that sends you to your section
+- On your computer only: [Run it locally](#run-it-locally)
+- On the cluster, viewed on your computer:
+  [Run it on a cluster and view it on your computer](#run-it-on-a-cluster-and-view-it-on-your-computer)
+  - [First run from your computer](#first-run-from-your-computer) (what every cluster setup needs first)
+  - [mace gui connect](#mace-gui-connect-linux-macos-wsl-windows) (MACE on your computer too)
+  - [Only MACE on the cluster](#only-mace-on-the-cluster) (the standalone scripts):
+    [Linux, macOS and Git Bash](#linux-macos-and-git-bash-mace-gui-connectsh),
+    [Windows (PowerShell)](#windows-powershell), [MobaXterm](#mobaxterm)
+  - [VS Code Remote-SSH](#vs-code-remote-ssh)
+  - [Plain ssh tunnel (any OS)](#plain-ssh-tunnel-any-os)
+  - [Common steps for every cluster setup](#common-steps-for-every-cluster-setup):
+    [host keys and 2FA](#first-use-of-a-node-with---hop-jump),
+    [jump hosts](#jump-hosts-and-nodes-that-accept-logins-only-from-the-login-node),
+    [stopping the server](#sign-out-and-stop-the-server),
+    [updating MACE](#updating-mace-from-the-gui)
+
+**Using the GUI**
+
+- [The window](#the-window)
+- [Keys, the command search, settings and context menus](#keys-the-command-search-settings-and-context-menus)
+- [What it shows](#what-it-shows)
+- [Editing](#editing)
+- [The classic editor panel](#the-classic-editor-panel)
+- [Building structures](#building-structures)
+- [Files](#files)
+- [Calculation Setup](#calculation-setup)
+- [Submit and Jobs](#submit-and-jobs)
+- [Batch Setup](#batch-setup)
+- [The Database document](#the-database-document)
+- [Analyzing a run](#analyzing-a-run)
+- [The Cluster view](#the-cluster-view)
+- [Workflows](#workflows)
+- [Plots: band, DOS, IR, Raman and FREQ modes](#plots-band-dos-ir-raman-and-freq-modes)
+- [Volumes (cube files)](#volumes-cube-files)
+- [Orbitals (ORBITALS .molden files)](#orbitals-orbitals-molden-files)
+- [Molecules, slabs and polymers](#molecules-slabs-and-polymers)
+- [Plot Gallery](#plot-gallery)
+- [Compare](#compare)
+- [Two editor groups side by side](#two-editor-groups-side-by-side)
+- [Display range, boundary and rendering](#display-range-boundary-and-rendering)
+- [Coordination and polyhedra](#coordination-and-polyhedra)
+- [SVG export](#svg-export)
+
+**Reference**
+
+- [Long sessions and SLURM jobs](#long-sessions-and-slurm-jobs)
+- [`mace gui` options and sign-in links](#mace-gui-options-and-sign-in-links)
+- [Security](#security)
+- [Dependencies](#dependencies)
+- [Example folder (`examples/gui/`)](#example-folder-examplesgui)
+- [Limitations](#limitations)
+- [For developers](#for-developers)
+
+**Troubleshooting**
+
+- [Troubleshooting](#troubleshooting): [Reporting a problem](#reporting-a-problem), [mace gui connect: key passphrases and the gateway](#mace-gui-connect-key-passphrases-and-the-gateway), [mace gui connect: the node asks for a password](#mace-gui-connect-the-node-asks-for-a-password), [mace gui connect --check](#mace-gui-connect---check), [Messages](#messages)
+
+## Where MACE runs
+
+MACE has two places it can run, and they do different jobs.
+[INSTALLATION.md, "Where to install"](../INSTALLATION.md#where-to-install)
+explains them in full; in short:
+
+- **On the cluster (required for full use).** CRYSTAL runs there, so SLURM
+  submission, workflows, job tracking, the completion callbacks that start
+  each next step, and recovery all need MACE installed on the cluster.
+  `mace gui` running there can do all of that for you from the browser.
+- **On your own computer, at minimum one of these**, to see the cluster's
+  GUI: nothing but ssh and a browser (the [standalone connect
+  script](#only-mace-on-the-cluster), no Python needed); [VS Code
+  Remote-SSH](#vs-code-remote-ssh); a [plain ssh tunnel](#plain-ssh-tunnel-any-os)
+  you open by hand; or a local MACE install, for [`mace gui
+  connect`](#mace-gui-connect-linux-macos-wsl-windows) (saved profiles,
+  `--check`, `mace update --remote`). Or skip the GUI: `ssh` to the cluster
+  and use the `mace` command there.
+- **A local install alone (no cluster)** is for getting things ready and
+  looking at results: building structures, writing decks and settings,
+  plotting and browsing outputs you copied from the cluster, and the
+  database. It cannot submit jobs or run workflows, and it runs CRYSTAL only
+  if CRYSTAL is installed on your computer too. You copy the inputs it
+  writes to the cluster yourself.
+
+## Choose your setup
+
+**First, pick where MACE GUI runs.**
+
+- **On the cluster, viewed on your computer (recommended).** The server runs
+  on a cluster node, next to your data, and your browser (or VS Code) shows
+  it through an ssh tunnel. Everything works: Submit, the Jobs panel, the
+  Cluster view, workflows, recovery and database builds of the cluster's
+  folders. Needs MACE on the cluster.
+- **On your computer only.** The server and the browser are both on your
+  computer. Use it to set things up (structures, Calculation Setup, decks)
+  and to look at outputs you copied over (plots, Run Analysis, the
+  database). It does not submit jobs: copy the decks to the cluster (scp,
+  MobaXterm's file browser, VS Code's Explorer) and submit them there.
+
+**Then find your row.** Each row links to one section with numbered steps
+from zero.
+
+| Where it runs | Your computer | How you connect | You view it in | Needs on your computer | Go to |
+|---|---|---|---|---|---|
+| Cluster | Linux, macOS, WSL | `mace gui connect` | your browser | a copy of MACE, Python 3, ssh | [mace gui connect](#mace-gui-connect-linux-macos-wsl-windows) |
+| Cluster | Windows (PowerShell) | `mace gui connect` with Python | your browser | a copy of MACE, Python 3, Windows' ssh (8.1+) | [mace gui connect](#mace-gui-connect-linux-macos-wsl-windows), "On Windows" |
+| Cluster | Linux, macOS, Git Bash on Windows | standalone `mace-gui-connect.sh` | your browser | ssh and bash only | [Linux, macOS and Git Bash](#linux-macos-and-git-bash-mace-gui-connectsh) |
+| Cluster | Windows (PowerShell) | standalone `mace-gui-connect.ps1` | your browser | Windows' ssh (8.1+) only | [Windows (PowerShell)](#windows-powershell) |
+| Cluster | Windows with MobaXterm | `mace-gui-connect.sh` in its local terminal, or its tunnel tool | your browser | MobaXterm | [MobaXterm](#mobaxterm) |
+| Cluster | any | VS Code Remote-SSH | VS Code's built-in browser or your browser | VS Code with Remote-SSH | [VS Code Remote-SSH](#vs-code-remote-ssh) |
+| Cluster | any | a plain `ssh -L` tunnel (PuTTY on Windows) | your browser | ssh | [Plain ssh tunnel](#plain-ssh-tunnel-any-os) |
+| Your computer | Linux, macOS, WSL | none: `mace gui` | your browser (or VS Code's) | a full MACE install | [Run it locally](#run-it-locally) |
+
+Not sure? On the cluster, viewed on your computer, is the one to pick. With
+VS Code already set up for the cluster, its row has the fewest steps. With
+nothing installed, the standalone script for your OS needs no Python. With
+Python on your computer, `mace gui connect` saves a profile, so every later
+run is one command.
+
+**Words used below**
+
+- **Gateway**: your cluster's login host, the one you `ssh` to first
+  (`me@hpcc.example.edu` in the examples). It is shared by everyone, so the
+  GUI does not run there.
+- **Dev node**: a development node behind the gateway where you may run
+  programs (`dev-node-01` in the examples). MACE GUI runs here.
+- **Tunnel** (port forwarding): ssh carries a port on your computer
+  (`127.0.0.1:8765`) to the server's port on the node. The server listens
+  only on the node's own `127.0.0.1`, so the tunnel must end at that node.
+- **Sign-in link**: the `http://127.0.0.1:.../?login=...` link `mace gui`
+  prints. Each link works once; `mace gui login-url` prints another.
+- **Profile**: the gateway, node, folder and setup lines `mace gui connect`
+  saves in `connect.toml`, so you do not type them again.
+
+## Run it locally
+
+*On your computer only: set things up and look at copied outputs; no jobs.*
+
+1. **Install MACE** on your computer with its packages:
+   [INSTALLATION.md, "Local install"](../INSTALLATION.md#local-install-optional).
+2. **Start it** in the folder you want to see:
+
+   ```
+   cd /path/to/your/calculations
+   mace gui                       # or: mace gui --dir examples/gui --open
+   ```
+
+   It prints something like:
+
+   ```
+   MACE GUI serving /home/you/calcs
+     http://127.0.0.1:8765/s/Xq3…/?login=k8F…
+     (the link signs in once; mace gui login-url prints another)
+   Token (for the sign-in form): 9vQ…
+   Press Ctrl+C to stop.
+   ```
+
+3. **Open the link** (or start with `--open`, which opens your browser). In
+   a VS Code terminal, Ctrl+click it; VS Code may open it in its built-in
+   browser (see [VS Code Remote-SSH](#vs-code-remote-ssh) to change that).
+4. **Every day:** the same `mace gui` command. Use the same port each time
+   (the default 8765, or `--port`), so your browser drafts come back.
+5. **Stop it:** File › Sign Out and Stop Server…, or Ctrl+C in the terminal.
+   Closing the browser tab does not stop it.
+6. **Send the work to the cluster:** copy the decks and settings files the
+   GUI wrote to the cluster (scp, rsync, MobaXterm's file browser or VS
+   Code's Explorer) and submit them there (`mace submit`).
+
+Pitfalls:
+
+- **No jobs here.** Submit and the Jobs and Cluster views need SLURM, which
+  your computer does not have. Running CRYSTAL here works only when CRYSTAL
+  and `mpirun` are installed on your computer (`mace run`; see
+  [INSTALLATION.md](../INSTALLATION.md#where-to-install)).
+- **A used link** shows the sign-in page: run `mace gui login-url` for a new
+  one, or paste the token. All options, the sign-in link and the token:
+  [`mace gui` options and sign-in links](#mace-gui-options-and-sign-in-links).
+
+To try it on the example folder shipped with MACE:
+
+```
+mace gui --dir examples/gui --open
+```
+
+## Run it on a cluster and view it on your computer
+
+*Recommended: MACE GUI runs on a cluster node and can do everything for you
+(submit, track, recover, run workflows), while you use it from your own
+computer.*
+
+The server runs where the data is (a cluster's dev node); the browser runs on
+your computer; an ssh tunnel joins them. Start with [First run from your
+computer](#first-run-from-your-computer), then follow the one section your
+row of [Choose your setup](#choose-your-setup) names. The manual tunnel, with
+two terminals and no script, is [Plain ssh tunnel](#plain-ssh-tunnel-any-os).
+
+### First run from your computer
+
+Do these once, whatever way you connect.
+
+1. **MACE on the cluster.** Install it there, on a dev node, and check that
+   `mace --help` works in a fresh login:
+   [INSTALLATION.md, "Cluster install"](../INSTALLATION.md#cluster-install-required-for-full-use).
+   Note the line that makes `mace` work (for example `module load Python`)
+   and where MACE is (for example `~/MACE`); the connect methods ask for both.
+2. **A browser** with WebGL2 on your computer: a current Firefox, Chrome,
+   Edge or Safari.
+3. **An OpenSSH client** on your computer. It comes with macOS and Linux,
+   and with Windows 10 and 11 as `ssh` in PowerShell (`ssh -V` shows its
+   version; the jump through the gateway needs 8.1 or newer). MobaXterm and
+   Git Bash bring their own.
+4. **Log in by hand once:** `ssh me@hpcc.example.edu`, then from there
+   `ssh dev-node-01`. This answers the gateway's host-key question and shows
+   whether your cluster asks for 2FA (for example Duo).
+5. **An ssh key (recommended):** [docs/ssh-setup.md](ssh-setup.md) sets up a
+   key with a passphrase, an agent (Linux, macOS Keychain, the Windows
+   OpenSSH agent, MobaXterm's MobAgent, VS Code) and an `~/.ssh/config` for
+   the gateway and the dev nodes, so you type the passphrase (and, on Linux
+   and macOS, 2FA) once. Without a key, ssh asks for your password, and with
+   the jump hop it asks for the gateway's and the node's.
+
+Then go to your section. The first connection through the gateway asks the
+host-key questions again for the node: [First use of a node with --hop
+jump](#first-use-of-a-node-with---hop-jump).
+
+### mace gui connect (Linux, macOS, WSL, Windows)
+
+*For: any OS, with a copy of MACE on your computer. One command starts the
+server on the node, opens the tunnel and your browser, and stops it all
+again. It saves profiles, checks your ssh setup (`--check`), and `mace update
+--remote` updates the cluster's MACE from here.*
+
+1. **Get MACE on your computer:** `git clone
+   https://github.com/DjokicMa/MACE.git` (or download and unpack a release).
+   `mace gui connect` needs only Python 3 and ssh, none of MACE's scientific
+   packages, so no `pip install` is needed for it.
+2. **Check your ssh setup** (it changes nothing):
+   `mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --check`.
+   Fix each `FAIL` line with the `fix:` line under it
+   ([mace gui connect --check](#mace-gui-connect---check)).
+3. **First connection:**
+   `mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs`.
+   Run with no flags, it asks for each value instead. Add `--setup 'module
+   load Python'` (the line that makes `mace` work on the node) and `--mace
+   ~/MACE/mace_cli` when `mace` is not on the node's PATH. Answer the
+   host-key questions and the 2FA prompts
+   ([First use of a node](#first-use-of-a-node-with---hop-jump)). Your
+   browser opens signed in.
+4. **Save it:** add `--save` to that line (the first run with no flags saves
+   by itself). From then on, **every day** is `mace gui connect` (or `mace
+   gui connect <profile>`). Press Enter in its terminal for a new sign-in
+   link.
+5. **Stop it:** Ctrl+C in the terminal of `mace gui connect`, or File › Sign
+   Out and Stop Server… in the browser. Closing the tab does not stop it.
+
+Pitfalls: the node asks for a password ([the node asks for a
+password](#mace-gui-connect-the-node-asks-for-a-password)); a passphrase or
+an email address as the gateway ([key passphrases and the
+gateway](#mace-gui-connect-key-passphrases-and-the-gateway)); a host that
+does not answer gives up after 20 seconds ([other
+messages](#mace-gui-connect---check)); a node that accepts logins only from
+the login node ([Jump hosts](#jump-hosts-and-nodes-that-accept-logins-only-from-the-login-node)).
+
+**On Windows** (PowerShell, Windows' own `ssh`; OpenSSH 8.1 or newer for
+`-J`, see `ssh -V`) run it with the Python you have, from a copy of MACE's
+folder: `python <MACE>\mace_cli gui connect --gateway ...`. Anaconda and
+Miniconda install no `py` launcher, so use `python` there (from the Anaconda
+Prompt, or with Anaconda's `python.exe` on PATH); with the python.org
+installer `py <MACE>\mace_cli gui connect ...` works too. The flags, the
+profile and the messages are the same as below.
+
+- **The first run** with no profile asks for the gateway, a jump host (blank
+  for none), the node (blank runs on the gateway itself, which is shared: a
+  dev node is better), the folder, setup lines (e.g. `module load Python`),
+  the `mace` command on the node and a profile name, and saves them in
+  `~/.config/mace/connect.toml` (Windows: `%APPDATA%\mace\connect.toml`), with
+  no passwords. On Linux and macOS only you can read it (mode 0600); on
+  Windows it has the access rights of your AppData folder, which only you
+  (and the computer's administrators) can read. Later runs need only `mace
+  gui connect` (the default profile) or `mace gui connect <name>`.
+- **Flags override the profile** for one run: `--gateway`, `--jump`,
+  `--node`, `--hop`, `--dir`, `--mace`, `--setup`, `--conda`,
+  `--local-port`, `--ssh-option` (repeatable), `--root` (repeatable),
+  `--no-open`. `--save [NAME]` writes them back; `--list` and
+  `--forget NAME` manage the profiles; `--dry-run` prints the exact ssh
+  command and exits (see [dry-run quoting](#dry-run-quoting) for which
+  shell each printed form is for).
+- **Paths on the node under `~`**: your shell expands an unquoted `~`
+  before `mace gui connect` sees it, so `--mace ~/mace/mace_cli` arrives as
+  `/home/you/mace/mace_cli`, a path on *this* computer. When the node's home
+  is elsewhere (`/mnt/home/netid`), that path is not there. So a `--mace`,
+  `--dir`, `--root` or `--conda` value (or a saved profile value) under this
+  computer's home folder is sent as `~/...`, which the node expands to its
+  own home, and a note says so: "Note: treated /home/you/mace/mace_cli as
+  ~/mace/mace_cli on the remote ...". Quote the `~` (`--mace '~/mace/mace_cli'`)
+  to pass it as is. `--setup` is shell code you quote, so it is left alone.
+  The standalone scripts do the same.
+- **The ~/.ssh/config way** works too: a `Host hpcc` block for the gateway
+  (with `User`), and `--gateway hpcc`. `mace gui connect` asks `ssh -G` which
+  user that alias logs in as, and uses the same user on the node.
+- **Ctrl+C** stops the server on the node and its cache folder. When GUI
+  tasks are still running (a local CRYSTAL run, a database build, a Clean),
+  it asks first: "2 tasks are running on dev-node-01 (...). Stop them too?
+  [y/N]". No (the default) leaves the server running only for them.
+- **A dropped connection** (a closed lid, a network change) stops the server
+  when no task runs. With tasks running it keeps them running and stops after
+  the last one ends (plus 10 minutes with nobody reconnected; 24 hours at
+  most). Run `mace gui connect` again with the same folder: it says
+  "Reattached to the server still running on dev-node-01 (1 task running)."
+- **Enter** in the terminal of `mace gui connect` opens a new sign-in link
+  (each link works once).
+- **Your local port** is `--local-port` (default 8765), so your browser's
+  drafts come back on the next run; when it is busy, the next free one is used
+  and it says so.
+- **On Windows, closing or killing** `mace gui connect` also ends its `ssh`
+  (MACE puts ssh in a Windows job object that ends with it), so no stray
+  `ssh.exe` keeps the tunnel open. The PowerShell script does not do that:
+  if its PowerShell is killed (Task Manager) instead of stopped with Ctrl+C,
+  a leftover `ssh.exe` may keep the tunnel open; end it in Task Manager.
+
+#### Dry-run quoting
+
+`mace gui connect --dry-run` prints each ssh command as one line in POSIX
+shell quoting (with `'"'"'` for a quote inside quotes): paste it into bash,
+zsh, Git Bash, MobaXterm's terminal or WSL. On Windows it also prints a
+second line, `ssh --% ...`, to paste into PowerShell (5.1 or 7): `--%` makes
+PowerShell hand the rest of the line to `ssh.exe` unchanged, quoted the way
+`ssh.exe` reads its command line. Neither line is for `cmd.exe`, whose
+quoting differs. The scripts' `--dry-run` (`-DryRun`) print one argument per
+line, and `mace-gui-connect.ps1 -DryRun` adds the same `ssh --% ...` line.
+
+### Only MACE on the cluster
+
+You do not need MACE on your own computer: the standalone scripts
+`mace-gui-connect.sh` (bash: Linux, macOS, Git Bash, MobaXterm's local
+terminal) and `mace-gui-connect.ps1` (Windows PowerShell) need only ssh, and
+no Python. They take the same flags as `mace gui connect` and read the same
+`connect.toml` profiles, but they cannot save a profile (`--save` needs
+`mace gui connect`), and they have no `--slurm`. So either type the flags each
+time (keep the line in a small text file), or make a copy with your settings
+filled in, on the cluster:
+
+```
+mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs --export-script bash -o mace-gui-connect.sh
+```
+
+(`--export-script powershell -o mace-gui-connect.ps1` for Windows), and copy
+that file to your computer. `mace gui` on a node prints this line for you,
+with the node and folder filled in.
+
+Or download them from a release tag (not `main`), with the tag's checksums,
+and check them before running. Each release is tagged `vX.Y.Z-preview` first
+and `vX.Y.Z` when it is final; set `TAG` to one that exists on the
+[tags page](https://github.com/DjokicMa/MACE/tags).
+
+<!-- RELEASE-TAG: the TAG= and $Tag = lines below name the release; set both at release time -->
+```
+TAG=v1.1.6        # or v1.1.6-preview while only the preview is tagged
+curl -fsSLO https://raw.githubusercontent.com/DjokicMa/MACE/$TAG/scripts/mace-gui-connect.sh
+curl -fsSLO https://raw.githubusercontent.com/DjokicMa/MACE/$TAG/scripts/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS     # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
+chmod +x mace-gui-connect.sh
+./mace-gui-connect.sh --gateway me@hpcc.example.edu --node dev-node-01 --update-remote release
+```
+
+Windows (PowerShell; `curl.exe` comes with Windows 10 and 11):
+
+```
+$Tag = "v1.1.6"   # or v1.1.6-preview while only the preview is tagged
+curl.exe -fsSLO "https://raw.githubusercontent.com/DjokicMa/MACE/$Tag/scripts/mace-gui-connect.ps1"
+curl.exe -fsSLO "https://raw.githubusercontent.com/DjokicMa/MACE/$Tag/scripts/SHA256SUMS"
+(Get-FileHash .\mace-gui-connect.ps1).Hash.ToLower()   # must equal its line in SHA256SUMS
+Unblock-File .\mace-gui-connect.ps1
+powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway me@hpcc.example.edu -Node dev-node-01 -UpdateRemote release
+```
+
+`--update-remote [release|preview|latest]` (`-UpdateRemote`) runs
+`mace update` in the cluster's MACE checkout before the GUI starts (it shows
+what changes and asks, in the same window); on connecting the scripts print
+the cluster's MACE version. Updating needs MACE 1.1.6 or newer there; update
+an older one once by hand (`git -C <MACE folder> pull`). With MACE on your
+computer, `mace update --remote` does the same:
+[docs/update.md](update.md).
+
+### Linux, macOS and Git Bash (mace-gui-connect.sh)
+
+*For: Linux, macOS, or Windows with Git Bash, with nothing installed but ssh
+and bash (macOS's bash 3.2 is enough). In MobaXterm, see
+[MobaXterm](#mobaxterm).*
+
+1. **Get the script** and check it ([Only MACE on the
+   cluster](#only-mace-on-the-cluster)), then `chmod +x mace-gui-connect.sh`.
+2. **Check your ssh setup** (read-only):
+   `./mace-gui-connect.sh --gateway me@hpcc.example.edu --node dev-node-01 --check`.
+3. **First connection:**
+   `./mace-gui-connect.sh --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs`,
+   plus `--setup 'module load Python'` and `--mace ~/MACE/mace_cli` when
+   `mace` is not on the node's PATH. Answer the host-key questions and the
+   2FA prompts ([First use of a node](#first-use-of-a-node-with---hop-jump)).
+   Your browser opens signed in.
+4. **Every day:** the same line (or `./mace-gui-connect.sh` alone, with a
+   copy made by `--export-script`, or a profile `mace gui connect --save`
+   wrote). `--update-remote release` updates the cluster's MACE first.
+5. **Stop it:** Ctrl+C in that terminal, or File › Sign Out and Stop
+   Server… in the browser. Closing the tab does not stop it.
+
+Pitfalls: the same as for `mace gui connect` ([Troubleshooting](#troubleshooting));
+in Git Bash, the script reads `%APPDATA%\mace\connect.toml` (the profile
+Windows' `mace gui connect --save` writes) when its own home has none, and
+says which file it read.
+
+### Windows (PowerShell)
+
+*For: Windows 10 or 11 with nothing installed (Windows PowerShell 5.1, which
+comes with Windows, is enough; PowerShell 7 works too).*
+
+1. **Check ssh:** `ssh -V` in PowerShell must say OpenSSH 8.1 or newer (the
+   script warns when it is older).
+2. **Get the script** and check it: the PowerShell lines in [Only MACE on
+   the cluster](#only-mace-on-the-cluster), or a copy with your settings
+   from `--export-script powershell` on the cluster. Run `Unblock-File
+   .\mace-gui-connect.ps1` once.
+3. **Check your ssh setup** (read-only):
+   `powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway me@hpcc.example.edu -Node dev-node-01 -Check`.
+4. **First connection:** the line below. Answer the host-key questions and
+   the 2FA prompts ([First use of a node](#first-use-of-a-node-with---hop-jump)).
+   Windows' ssh has no connection sharing, so 2FA asks on each connection.
+5. **Every day:** the same line. `-UpdateRemote release` updates the
+   cluster's MACE first.
+6. **Stop it:** Ctrl+C in that PowerShell window, or File › Sign Out and
+   Stop Server… in the browser. Closing the tab does not stop it.
+
+Windows 10 1809 and later ship `ssh`; `-J` (the jump through the gateway)
+needs OpenSSH 8.1 or newer: check with `ssh -V` (the script warns when it is
+older). Get the script on your computer in one of two ways: run
+`mace gui connect --export-script powershell -o mace-gui-connect.ps1` on the
+cluster and copy the file (your profile is filled in), or take
+`scripts/mace-gui-connect.ps1` from MACE's repository. Downloaded files are
+blocked by Windows: run `Unblock-File .\mace-gui-connect.ps1` once. Then:
+
+```
+powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway me@hpcc.example.edu -Node dev-node-01 -Dir ~/runs
+```
+
+The parameters match the flags of `mace gui connect` (`-Jump`, `-Hop`,
+`-Mace`, `-Setup`, `-Conda`, `-LocalPort`, `-SshOption`, `-Root`, `-NoOpen`,
+`-DryRun`), and it reads the same `connect.toml`. Two differences: it has
+no `--slurm`, and `-Hop auto` (the default of a saved profile) works as
+`jump`: it does not retry with `nested` by itself when the node refuses the
+login (it says to pass `-Hop nested`). For either, run `mace gui connect`
+itself (`python <MACE>\mace_cli gui connect`, above). If no password or 2FA
+prompt appears and the connection ends, set up an ssh key or agent, or use
+`-Manual`, which prints the two-terminal commands of the manual tunnel.
+
+The `Unblock-File` and `-ExecutionPolicy Bypass` steps are for Windows'
+default execution policy (Restricted or RemoteSigned), and have not been
+tested on such a computer yet. `Get-ExecutionPolicy` shows yours: where it is
+already Bypass or Unrestricted, neither step is needed. Where your
+organization sets the policy, `-ExecutionPolicy Bypass` may be refused; run
+`mace gui connect` with Python then. With
+PuTTY instead, set the tunnel under Connection › SSH › Tunnels (source port
+8765, destination `127.0.0.1:8765`) and connect to the node through the
+gateway.
+
+### MobaXterm
+
+*For: Windows with MobaXterm, and nothing else installed. MobaXterm keeps
+its own home folder and its own `~/.ssh`, separate from Windows' `ssh`,
+PowerShell and VS Code.*
+
+1. **Get `mace-gui-connect.sh`** ([Only MACE on the
+   cluster](#only-mace-on-the-cluster)) into MobaXterm's home folder
+   (drive C: is `/drives/c` there).
+2. **Keys:** set MobaXterm up with a key of its own, or point it at your
+   Windows key (the **Keys** item below), or use MobAgent
+   ([docs/ssh-setup.md](ssh-setup.md#2-load-the-key-into-an-agent)).
+3. **First connection,** in MobaXterm's **local terminal** (not a session on
+   the cluster):
+   `bash mace-gui-connect.sh --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs`.
+   ssh asks the host-key questions here even when Windows' `ssh` already
+   trusts both hosts. Your browser opens signed in.
+4. **Every day:** the same line; `--update-remote release` updates the
+   cluster's MACE first.
+5. **Stop it:** Ctrl+C in the local terminal, or File › Sign Out and Stop
+   Server… in the browser. Closing the tab does not stop it.
+
+The details, and the two other ways (a MobaXterm session plus an ssh line,
+or the MobaSSHTunnel tool):
+
+(a) Open MobaXterm's **local terminal** and run `mace-gui-connect.sh` (bash
+comes with it): `bash mace-gui-connect.sh --gateway me@hpcc.example.edu --node
+dev-node-01 --dir ~/runs`. Get the script with `mace gui connect
+--export-script bash -o mace-gui-connect.sh` on the cluster, or from MACE's
+`scripts/` folder.
+
+- **Profiles:** the script reads `~/.config/mace/connect.toml` in
+  MobaXterm's own home folder (its "persistent home directory", set under
+  Settings › Configuration › General). When that file is missing, it reads
+  `%APPDATA%\mace\connect.toml`, the file Windows' `mace gui connect --save`
+  writes, and says which file it read. Git Bash and Cygwin do the same.
+- **Keys:** MobaXterm keeps its own `~/.ssh` (keys, `config`,
+  `known_hosts`) in that home folder, separate from `C:\Users\<you>\.ssh`,
+  which Windows' `ssh`, PowerShell and VS Code use. A key, a Host alias or a
+  trusted host key in one is not seen by the other. So, the first time from
+  MobaXterm:
+  - ssh asks the **host-key questions again**, for the gateway and (with the
+    jump hop) for the node, even when Windows' `ssh` already trusts both
+    (see [First use of a node with --hop jump](#first-use-of-a-node-with---hop-jump));
+  - with the **jump hop**, the node checks a key from MobaXterm's `~/.ssh`
+    (or its agent): without one there, ssh asks for the **node's password**
+    (and the gateway's), even if Windows' `ssh` logs in with a key.
+
+  To use your Windows key in MobaXterm, either set MobaXterm's persistent
+  home directory (Settings › Configuration › General; MobaXterm's
+  documentation: "Choose a folder that MobaXterm will use as its HOME
+  directory ... so you can store your SSH keys in it") to your Windows user
+  folder, `C:\Users\<you>`, so that its `~/.ssh` is that `.ssh`; or copy
+  the key into MobaXterm's `~/.ssh` (MobaXterm shows drive C: as
+  `/drives/c`) and make it private, since ssh refuses a private key that
+  others can read:
+
+  ```
+  mkdir -p ~/.ssh
+  cp /drives/c/Users/YOU/.ssh/id_ed25519 /drives/c/Users/YOU/.ssh/id_ed25519.pub ~/.ssh/
+  chmod 600 ~/.ssh/id_ed25519
+  ```
+
+  (replace YOU with your Windows user name). Or name the key for one run:
+  `--ssh-option=-oIdentityFile=/drives/c/Users/<you>/.ssh/id_ed25519`.
+- **"stty: standard input: Inappropriate ioctl for device"** before the
+  link: a login profile on the node ran `stty` with no terminal (every hop
+  runs `bash -l` without one). It is harmless; `mace gui connect` and
+  `mace-gui-connect.sh` no longer show it before the server is ready, and
+  `mace-gui-connect.ps1` (which leaves ssh's messages on the console) may.
+- **"channel 2: open failed: connect failed: Connection refused"** before
+  the link (mostly with the jump hop): the tunnel's local port listens as
+  soon as ssh connects, and something connected to it before the server on
+  the node was listening, typically a browser tab left open from an earlier
+  session, which keeps retrying. Harmless; `mace gui connect` and
+  `mace-gui-connect.sh` hide it until the tunnel answers, and show it when
+  the tunnel never does. `mace-gui-connect.ps1` may show it.
+
+(b) Or, in a normal MobaXterm session on `dev-node-01`, run `mace gui
+--dir ~/runs` and paste the `ssh -N -J ... -L ...` line it prints into
+MobaXterm's **local terminal** (leave it running), then open the link it
+printed. Use that line as printed: it ends at `127.0.0.1` on the node.
+
+**MobaSSHTunnel** (Tools › MobaSSHTunnel) needs **two** tunnels for this,
+because `mace gui` listens only on the node's own `127.0.0.1`: a single
+tunnel with SSH server the gateway and remote server `dev-node-01` asks the
+gateway to connect to `dev-node-01:<port>`, which the server never sees (the
+browser then keeps loading and nothing appears). Chain them, as MobaXterm's
+own guide does for a host behind a jump host
+([Mobatek: SSH tunnels and port forwarding](https://blog.mobatek.net/post/ssh-tunnels-and-port-forwarding/)):
+
+1. A local tunnel with forwarded port `2222`, SSH server the gateway (your
+   user, port 22), remote server `dev-node-01`, remote port `22`.
+2. A second local tunnel with forwarded port `<port>`, SSH server
+   `localhost` port `2222` (your user: this logs in to `dev-node-01` through
+   the first tunnel), remote server `127.0.0.1`, remote port `<port>`.
+
+Start both, run `mace gui --dir ~/runs --port <port>` on `dev-node-01`, and
+open the link it prints. A dev node is shared, so a fixed port such as
+8765 may already be taken by someone else's server: pick your own, any port
+from 8000 to 60999 (`mace gui` says "cannot listen" when it is taken; then
+pick another), and keep it in `~/.bashrc` on the cluster as `export
+MACE_GUI_PORT=<port>`, so it stays the same and your browser drafts come
+back. `mace gui connect` and the scripts avoid this by choosing a random
+free port on the node themselves.
+
+**A browser that keeps loading** (no page, no error) means the tunnel does
+not reach the server: it ends on the wrong node, or at the node's name
+instead of its `127.0.0.1`. Check it against the line `mace gui` prints.
+
+### VS Code Remote-SSH
+
+*For: any OS with VS Code and its Remote-SSH extension. VS Code forwards the
+port itself, so you need no script; the GUI opens in VS Code's built-in
+browser or in your own browser.*
+
+1. **Install** VS Code and the Remote-SSH extension, and add the ssh config
+   below.
+2. **Connect:** "Remote-SSH: Connect to Host..." `<dev-node>`. The first
+   connection asks the host-key question in VS Code's window; for a 2FA
+   prompt turn on `remote.SSH.showLoginTerminal`
+   ([docs/ssh-setup.md](ssh-setup.md#2-load-the-key-into-an-agent)).
+3. **Start it** in VS Code's integrated terminal (on the node):
+   `mace gui --dir ~/runs`.
+4. **Open it:** Ctrl+click the sign-in link it prints. It opens in VS Code's
+   built-in browser or in your own browser (the setting below picks).
+5. **Every day:** connect, run `mace gui`, Ctrl+click.
+6. **Stop it:** File › Sign Out and Stop Server… in MACE GUI, or Ctrl+C in
+   the terminal that runs `mace gui`. Closing the tab does not stop it.
+
+Add the gateway and the node to your ssh config (Windows:
+`C:\Users\<you>\.ssh\config`; Linux and macOS: `~/.ssh/config`):
+
+```
+Host hpcc
+    HostName hpcc.example.edu
+    User <user>
+Host <dev-node>
+    ProxyJump hpcc
+    User <user>
+```
+
+where `<dev-node>` is the dev node you use (for example `dev-node-01`). On
+Windows, VS Code uses Windows' own `ssh` (its `ProxyJump` needs OpenSSH 8.1
+or newer: `ssh -V`) and that `C:\Users\<you>\.ssh` folder, not MobaXterm's;
+the first connection to the node asks the host-key question in VS Code's
+window. Then
+"Remote-SSH: Connect to Host..." `<dev-node>`, and in VS Code's
+integrated terminal run `mace gui --dir ~/runs`. **Ctrl+click the sign-in link
+it prints**: VS Code forwards the port and rewrites the link (a different
+local port is fine). The Ports tab's "Open in Browser" opens the address
+without the link, which shows the sign-in page; use the link from the
+terminal (or `mace gui login-url`). `mace gui --open` uses VS Code's own
+`$BROWSER`, so it opens on your computer.
+
+- **Ctrl+click may open VS Code's integrated browser** (an editor tab)
+  instead of your own browser: recent VS Code versions open `localhost` and
+  `127.0.0.1` links there by default. To open them in your default browser,
+  turn off the setting `workbench.browser.openLocalhostLinks` (Settings,
+  search "open localhost links"); `workbench.externalBrowser` picks another
+  browser than the system default. A link the integrated browser opened is
+  used up (each works once): run `mace gui login-url` in the terminal for a
+  new one, then copy it into your browser or Ctrl+click it.
+- **Closing the browser tab does not stop the server.** It keeps running on
+  the node until you choose File › Sign Out and Stop Server… in MACE GUI
+  ([Sign out and stop the server](#sign-out-and-stop-the-server)) or press
+  Ctrl+C in the VS Code terminal that runs `mace gui`.
+
+### Plain ssh tunnel (any OS)
+
+*For: any OS with an ssh client and nothing else. On Windows, PowerShell's
+`ssh` works the same way; with PuTTY, see the end of [Windows
+(PowerShell)](#windows-powershell).*
+
+The manual way, with two terminals: the server on the node, the tunnel on
+your computer.
+
+1. Log in to a **dev node** (or to a compute node in an `salloc`), load your
+   cluster's Python 3.11 or newer (e.g. `module load Python`) and start the
+   GUI:
+
+   ```
+   ssh hpcc
+   ssh dev-node-01
+   module load Python
+   cd /mnt/scratch/$USER/my_calcs
+   mace gui
+   ```
+
+   In an ssh session it names the exact node and prints the tunnel lines:
+
+   ```
+   This server runs on dev-node-01. The tunnel must go to this exact node.
+   From your computer, with MACE installed there:
+     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs
+   Without MACE there (MobaXterm's local terminal, Git Bash, PowerShell): make the standalone script here, copy
+   it to your computer and run it there (...):
+     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs --export-script bash -o mace-gui-connect.sh
+   Or with ssh alone (leave it running), then open the URL above:
+     ssh -N -J you@LOGIN_HOST -L 8765:127.0.0.1:8765 you@dev-node-01
+   ...
+   (replace LOGIN_HOST with your cluster's login host; ...)
+   ```
+
+2. On **your computer**, in a second terminal, run that `ssh -N -J ... -L ...`
+   line (it prints nothing and keeps running; that is expected), then open the
+   `http://127.0.0.1:8765/s/.../?login=...` link in your browser. The tunnel
+   must go to the node `mace gui` names: another dev node behind the same
+   gateway does not see the server.
+
+If you have an `~/.ssh/config` entry for the gateway (for example `Host hpcc`),
+`ssh -N -J hpcc -L 8765:127.0.0.1:8765 dev-node-01` does the same thing. If port
+8765 is already in use on your computer, change the first number and use that
+port in the link. The hint prints `LOGIN_HOST` (a word you can paste and then
+replace; `<...>` would be a redirect in bash) unless it knows your cluster's
+login host: from `--gateway`, `export MACE_GUI_GATEWAY=login.example.edu` (in
+`~/.bashrc`), or `gateway = "login.example.edu"` in the `[gui]` table of
+`site.toml` (where a cluster's administrators can set it for everyone, in
+`/etc/mace/site.toml`). The script line is for a computer without MACE:
+`--export-script` writes the standalone script with these settings filled in;
+copy it over and run `bash mace-gui-connect.sh` (or use `--export-script
+powershell -o mace-gui-connect.ps1` and run `.\mace-gui-connect.ps1`). On a shared node pick a personal port so you do not collide
+with other users and your drafts stay on one port: `export MACE_GUI_PORT=8xxx`
+in `~/.bashrc`.
+
+**Stop it:** File › Sign Out and Stop Server… in the browser, or Ctrl+C in
+the terminal that runs `mace gui`; then Ctrl+C the tunnel. Closing the tab
+does not stop the server.
+
+## Common steps for every cluster setup
+
+### First use of a node with --hop jump
+
+With `--hop jump` (and the first try of `--hop auto`) your computer reaches
+the node through the gateway with `ssh -J`, and checks **two** host keys
+itself, against your own `known_hosts` (Windows:
+`C:\Users\<you>\.ssh\known_hosts`): the **gateway's** first, then the
+**node's**. The gateway leg runs as a separate ssh process that does not get
+the command line's `-o` options, so it always uses your real `known_hosts`.
+The first time, ssh asks in the terminal, once per host it has not seen:
+
+```
+The authenticity of host 'dev-node-01 (<no hostip for proxy command>)' can't be established.
+ED25519 key fingerprint is SHA256:....
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+Compare the fingerprint with the one your cluster publishes, and type `yes`.
+`mace gui connect` waits for the answer, and after 15 s says "(waiting:
+approve the 2FA prompt if there is one. If ssh asks whether to continue
+connecting (the host-key yes/no question), check the fingerprint and answer
+yes ...)". When the question could not be answered (or was answered no),
+ssh says "Host key verification failed." and MACE prints the exact line to
+run once, then connect again. When ssh's message names the gateway, that is
+`ssh me@hpcc.example.edu true`; when it names the node, `ssh -J
+me@hpcc.example.edu dev-node-01 true`; when it names neither (or with
+`mace-gui-connect.ps1`, which leaves ssh's messages on the console), both, in
+this order:
+
+```
+ssh me@hpcc.example.edu true
+ssh -J me@hpcc.example.edu dev-node-01 true
+```
+
+Or use `--hop nested`, where the gateway checks the node's key with its own
+list of known hosts (the gateway's own key is still checked on your
+computer). MACE never turns host-key checking off or accepts a new
+key for you, and `--hop auto` does not switch to `nested` after a host-key
+failure: trusting a key is your decision. A key that has *changed* gets a
+different message: ask your administrators before you remove the old key.
+
+### Jump hosts and nodes that accept logins only from the login node
+
+- `--jump bastion.example.edu` (comma separated for several) reaches the
+  gateway through a bastion: `ssh -J bastion,gateway node`.
+- `--hop jump` (one ssh path from your computer to the node, through `-J`)
+  needs the node to accept your own login (key, agent, password). If the
+  node asks for 2FA too, you see two prompts.
+- `--hop nested` makes the gateway log in to the node itself
+  (`ssh gateway "ssh node ..."`), for clusters whose nodes accept logins only
+  from the login node. The inner login cannot ask anything (it runs with
+  BatchMode): it works with host-based logins or keys on the gateway. The
+  forwarded port then also sits on the gateway's own `127.0.0.1`, where other
+  users of the login node could reach it; the session token still guards
+  every request there, as on the node.
+- `--hop auto` (the default) tries `jump`; when the node refuses the login
+  through the gateway, it tries `nested` once and says "connecting through the
+  gateway instead (hop = nested). Save it with --save so this is not tried
+  twice." (A 2FA gateway then asks twice on that first run.)
+
+### Sign out and stop the server
+
+**File › Sign Out and Stop Server…** (also in the command search, "quit" or
+"logout", and as Stop Server… in the connection dialog of the status bar)
+ends your session and stops MACE GUI on the server, cleanly: its temporary
+folders and state files go, the port is free again, and every open tab shows
+"MACE GUI has stopped" with the command that starts it again. Modified
+documents ask first (Save All, or Don't Save, which keeps them as drafts in
+this browser). The dialog lists the GUI tasks still running; stopping cancels
+them, while **Stop When Tasks Finish** keeps the server (and your session)
+until they end, with a banner in every tab and **Cancel Stop** to undo it.
+Your SLURM jobs keep running; only MACE GUI stops. "Also remove the drafts and
+recent files for this folder" is for a shared computer. Through `mace gui
+connect`, its terminal then says "The server on dev-node-01 was stopped from
+the browser." and exits.
+
+### Updating MACE from the GUI
+
+MACE GUI looks for a newer MACE with `mace update --check --json` 20 s after
+it starts and then every 6 hours (Settings › Server: **Check for MACE
+updates**, **Update channel** release, preview or latest, release by
+default, and the interval). Offline, the check fails quietly. **Help › Check
+for Updates…** looks at once, whatever the setting.
+
+An available update shows a quiet **MACE 1.1.7 available** in the status
+bar. Its dialog shows the installed and the new version, the CHANGELOG
+sections in between, and what to know first:
+
+- `mace update`'s refusal, word for word: local changes (with the `git -C
+  <MACE folder> stash` line to copy), local commits, or a checkout you cannot
+  write (a read-only or someone else's install: ask its maintainer);
+- your queued or running SLURM jobs: their completion callbacks run this
+  install's code. Updating while they run is generally safe for a
+  fast-forward, but workflows in progress continue their next steps with the
+  new code;
+- GUI tasks still running (the restart would cancel them);
+- a changed requirements.txt, with the pip command for the Python that runs
+  MACE. **Also run this pip command during the update** is off unless you
+  tick it; on a system or module Python, install them yourself (or set up
+  your own environment, docs/update.md).
+
+The choices:
+
+- **Update Now and Restart** (**Update When Tasks Finish** while GUI tasks
+  run): MACE GUI runs `mace update --yes --no-pip` (`--pip` when ticked),
+  checks that the new code starts (every module compiles and every GUI
+  module imports), and restarts the server in the same
+  process: the same port, session path and sign-in, so the page reloads by
+  itself with the new version. A local `mace gui` restarts in its terminal
+  (a new sign-in link is printed there too); through `mace gui connect` or
+  the connect scripts the connection and the tunnel stay, with no new browser
+  tab, and sessions reattached to a lingering server stay attached;
+  `mace gui --slurm` restarts inside the same job and stays up as long as
+  its login-node session does. If the new code does
+  not start (often: new requirements not installed yet), the old server keeps
+  running and the dialog says what to fix; then stop it and start `mace gui`
+  (or `mace gui connect`) again.
+- **Update When I Sign Out**: **File › Sign Out and Stop Server…** says so,
+  and the update runs after the server has stopped (no code is replaced under
+  a running server), from a small helper; under `mace gui --slurm` it runs in
+  the job before the job ends. The next start shows the result.
+- **Not Now** reminds you in the next session; **Skip This Version** stays
+  quiet until a newer one appears.
+
+A server started with `--insecure-network` never updates from the browser:
+anyone with the token could replace the code. Run `mace update` in a
+terminal there.
+
+### Why port forwarding and not X11
+
+`ssh -X` with a GUI program draws every frame on the cluster and sends the
+pixels to you. The HPCC dev nodes only have software OpenGL (llvmpipe), so a
+3D viewer gets a few frames per second at best. With port forwarding, only a
+few KB of JSON per structure cross the network, and your browser draws the 3D
+view on your laptop's GPU. X11 still works as a fallback if you cannot open a
+tunnel: run `firefox` on the dev node (if it is installed there) over
+`ssh -X` and open the URL in it. It is slow, but it works.
 
 ## The window
 
@@ -34,18 +869,33 @@ The page is laid out like a desktop structure editor:
   the P1/Sym switch, Clean and Calculation Setup;
 - the **Explorer** on the left (open documents, the folder grouped into
   outputs, results, structures and this folder; long names lose their middle,
-  and the tooltip shows the full path);
+  and the tooltip shows the full path). Its sections (Open Editors, Files,
+  Materials.db, Recent) fold from their headings. Drag the line between two
+  sections to resize them, or focus it and use the arrow keys; double-click
+  it to reset. Drag a heading, or press Alt+Up or Alt+Down on it, to move a
+  section. Right-click a heading for Move Up, Move Down, the sections to
+  show and Reset Sidebar Layout (also under View › Explorer Sections);
 - **document tabs** in the middle: each file you open is a tab. A `.cif`,
   `.d12` or single-point `.out` opens as a structure, an OPT `.out` as a
   trajectory, a BAND/DOSS file as a plot and `materials.db` as a database;
 - the **Inspector** on the right (selection, structure, cell, symmetry and
   display for a structure; the selected material for a database), which the
   **Calculation Setup** panel (the old Deck tab) replaces while it is open.
+  Click a section's heading to open or shut it. The two buttons at the top
+  right of the Inspector (when it has more than one section) and of
+  Calculation Setup open or shut every section at once (View › Inspector
+  Sections › Expand All, **Ctrl+Alt+]**, and Collapse All, **Ctrl+Alt+[**);
+  **Shift-click** on a heading does the same (Alt-click too, but many Linux
+  desktops, KDE and Xfce among them, take Alt-drag to move the window).
+  Which sections are open is remembered. The × at the end of the
+  Inspector's header hides the whole Inspector (View › Inspector brings it
+  back).
   In a window narrower than 1100 px it is a drawer over the viewport, shut
   until you ask for it (View › Inspector, **Ctrl+Alt+B**);
 - a **bottom panel** with Atoms, Measurements, History, Timeline (the OPT
-  energy chart and the cell, bond and displacement tables), Tasks and
-  Problems;
+  energy chart and the cell, bond and displacement tables), Modes,
+  Coordination, Tasks, Jobs and Problems (see
+  [What the side panels show](#what-the-side-panels-show));
 - a **status bar**: the connection to the server, the selection, the space
   group, the cell parameters, the atom under the pointer and whether the
   document is modified.
@@ -78,6 +928,57 @@ heartbeat over Server-Sent Events drives the status bar's **Connected**. If
 the tunnel drops, a banner shows the `ssh -L` line to run again. The 3D
 views paint only when something changes, at most once per frame, and the
 server's caches stay under `MACE_GUI_CACHE_MB` (512 MB by default).
+
+### What the side panels show
+
+The Inspector and the bottom panel always refer to the document in focus in
+the center (with the editor split, the focused group's document), and each
+names it in its header, for example **Inspector · NaCl.cif** and
+**Atoms · NaCl.cif**. Nothing an earlier document showed stays behind.
+
+| Panel | Follows | What it shows |
+|---|---|---|
+| Inspector | the document | its own sections (Selection, Nudge, Structure, Cell and Symmetry for a structure; Plot Options for a plot; Mode for normal modes; the volume's controls; the selected material); a plot, spectrum, volume or properties file adds its run's Structure and Cell, read-only |
+| Atoms, Coordination | the document | the structure, or the run's frame on screen; for a plot, spectrum, volume, `.d3` or job log, the structure of the run it came from, read-only |
+| Measurements | the document | a structure's or a run's measurements |
+| History | the document | a structure's undo steps (and its Calculation Setup history) |
+| Timeline | the document | an optimization run's energy chart and its cell, bond and displacement tables |
+| Modes | the document | a FREQ output's normal modes |
+| Tasks, Problems | every document | the session's tasks, and the problems of every open output and deck |
+| Jobs | the folder | the SLURM jobs of the served folder |
+
+When a panel has nothing for the document in focus, it shows a short note
+instead, such as "No timeline: mgo_doss.DOSS.DAT is a DOS plot. The
+Timeline tab applies to optimization runs.", often with a button such as
+**Open mgo_doss.out**. Its tab is dimmed but stays where it is and can
+still be clicked. Screen readers read the note, and Tab reaches it.
+
+A band or DOS plot, an IR or Raman spectrum, a volume (cube), a 2D map, a
+properties deck (`.d3`) or a job log has no atoms of its own. For these,
+the Atoms table, Coordination and the Inspector show the structure of the
+run the file came from, read-only and labeled with its source, for example
+**Atoms · from mgo_doss.out (a DOS plot mgo_doss.DOSS.DAT)**. There is no
+Nudge or Edit Cell, and the table refuses edits; **Open mgo_doss.out** opens
+that run so you can edit it. MACE finds the run by name, nearest first:
+
+1. the run of the same name beside the file (the FREQ run of
+   `water_freq_IRSPEC.DAT`, the run of a job log `water_opt-123456.o`);
+2. the material's SCF run (`<material>_sp.out`, `_opt.out` or `.out`) in
+   the same folder, the folder above, or a folder beside it (a workflow's
+   steps);
+3. the properties run that wrote the file (its cell and atoms);
+4. the material's `.d12`;
+5. for a file with one of CRYSTAL's own names (`DENS_CUBE.DAT`, `fort.25`),
+   the one output in its folder;
+6. for a cube, the atoms in its header.
+
+When two runs fit equally well, for example `Si_sp.out` and `Si_opt.out`
+beside `Si_doss.d3`, the panel says so, offers both, and shows the one you
+pick. A DOS plot's projections are listed with the atoms each one covers
+("Projections: Mg (s, p, d, all) on atom 1").
+
+When you switch back to a document, its panels are as you left them: the
+scroll position, the selected atoms, and which sections are open.
 
 ## Keys, the command search, settings and context menus
 
@@ -175,13 +1076,18 @@ soon"); Settings › Advanced › Show command ids adds each command's id.
 
 ### Settings (Ctrl+,)
 
-Eight sections: Appearance, Viewport, Units and numbers, Editor, Keyboard,
-Files and data, MACE defaults and Advanced, with a search over all of them.
+Thirteen sections: Appearance, Viewport, Units and numbers, Plots, Editor,
+Keyboard, Files and data, MACE defaults, Server, Cluster, This folder,
+Advanced and Advanced: cluster defaults, with a search over all of them.
 Changes apply at once; a **Reset** link shows next to anything you changed.
 Rows marked "Not used in this version yet" are kept for a later version.
 
+- **Appearance** › **Theme**: a card per theme (see "Themes and element
+  colors" below); pointing at one previews it, a click keeps it. **Plot
+  background** and **Plot style** are below it (see "Plot style" below).
 - **Viewport** settings redraw the 3D views live with the camera kept: color
-  scheme (VESTA, the default, or Jmol), atom scale, bond radius, bond
+  scheme (VESTA, the default, Jmol, Colorblind safe, or one of your own
+  palettes; **Edit Element Colors…** opens the editor), atom scale, bond radius, bond
   tolerance (drawn bonds only; the bond table keeps 1.2), bonds between
   metals, labels and their size, background, cell color, the axis triad,
   the cell and the boundary atoms.
@@ -190,10 +1096,258 @@ Rows marked "Not used in this version yet" are kept for a later version.
   GUI value means "use the CLI default".
 - **Advanced** exports, imports and resets the settings (the file is a
   browser download; nothing is written into the served folder).
+- **Advanced: cluster defaults** shows the site settings MACE writes into
+  every job script as `mace site` prints them, with where each value comes
+  from (built-in, site.toml, a group file or `env MACE_...`). **Set** and
+  **Unset** run `mace site set KEY VALUE` and `mace site unset KEY` (the key
+  box lists every key, for example `resources.ntasks`,
+  `resources.OPT.walltime` or `slurm.account`), and **Create site.toml**
+  runs `mace site --init`. The CLI's answer shows below, a refusal in its own
+  words. These are your own site settings
+  (`~/.config/mace/site.toml`, or `MACE_SITE_CONFIG`), the same file the
+  CLI uses. They are read-only while MACE GUI listens on the network, and an
+  edit from a page whose folder has changed asks you to reload.
 
 The server checks each value's type and range when it saves; a bad value is
 named in a toast and goes back to its previous value, while the others are
 saved.
+
+### Themes and element colors
+
+**Themes.** Settings › Appearance, View › Theme and **Color Theme…** in the
+command search show the 18 themes in three groups:
+
+- **Light & Dark**: System (the default: light or dark, as your computer is
+  set), Light, Dark, **Sepia** (an e-reader's page: brown text on warm tan
+  paper, a little softer than black on white, with warm accents only (rust,
+  ochre, olive, plum: no blue), for long reading sessions; it was called
+  Paper, and "paper" still finds it)
+  and **True Black** (pure black surfaces for OLED screens);
+- **Accessibility**: **High Contrast Light** and **High Contrast Dark**
+  (black on white or white on black, text at 7:1, WCAG AAA, strong control
+  borders, plot series and axes at 3:1 or more; the dark one has a yellow
+  focus ring) and **Colorblind Safe** (the Okabe–Ito hues for the accent,
+  status colors, plot series, the axis triad and Compare's two tones, so
+  red–green color vision deficiency loses none of them);
+- **Editor themes**, after popular editor color schemes, a family's dark
+  and light flavors side by side: Catppuccin Mocha and Catppuccin Latte,
+  Dracula, Gruvbox Dark, Nord, One Dark, Solarized Dark and Solarized Light,
+  Tokyo Night and Tokyo Night Storm. Each takes its surfaces, accents,
+  selection, borders, status colors, file badges, plot colors and 3D
+  background from its published palette (all MIT licensed; the sources are
+  noted in `css/tokens.css`); the layout and fonts stay MACE's. Where a
+  palette color fell short of the contrast below, it is lightened or
+  darkened in its own hue, and the 3D background is a shade of the theme
+  that keeps the common element colors visible.
+
+Every theme is a full set of design tokens (`css/tokens.css`).
+`tests/gui/test_tokens_contrast.py` checks every one for WCAG 2.1 contrast:
+body, muted and disabled text, links and status colors at 4.5:1 on every
+surface (the page, panels, menu hover, a selected row), text on buttons,
+banners, badges, the tooltip and toasts at 4.5:1, the focus ring and
+control borders at 3:1, plot text, frame, grid and series on the plot
+background, and the axis triad, cell and selection on the 3D background (the
+high-contrast themes at AAA). Plots and the 3D views' backgrounds follow the
+theme. Point at a card in Settings to preview it; in Color Theme… the arrow
+keys preview each theme, Enter keeps it and Esc goes back. The choice is
+part of your profile (gui.json) and is on the page's first paint in any
+browser. Ctrl+Alt+T still cycles System, Light and Dark.
+
+**Dark interface, light plots (or the other way round).** Settings ›
+Appearance › **Plot background** is Follow theme (the default), Light or
+Dark. Light or Dark gives the band, DOS, run (SCF, optimization), spectrum,
+volume-slice and Gallery plots and the FREQ stick spectrum a surface of
+their own with matching text, grid, axes, Fermi and zero lines, legend and
+series colors, in any theme; PNG and SVG exports from the GUI match what is
+shown (with Follow theme they keep a see-through background, as before).
+`mace plotting` figures are made by the CLI and do not depend on the GUI
+theme.
+
+**Plot style.** Settings › Appearance › **Plot style** sets the look of every
+plot, and **Band & DOS style**, **Spectra style**, **Maps & volumes style** and
+**SCF & run charts style** below it can each take a preset of their own ("Same
+as Plot style" follows it). The presets (`mace/plotting/presets.py`, the same
+for `mace plotting --style`):
+
+| Preset | What it draws |
+|---|---|
+| Default | The theme's series colors and grid |
+| Publication | A figure for a paper in any theme and on any Plot background: Okabe–Ito colors after a first series in black (white on a dark plot), black axes, frame and outside ticks, larger tick labels, heavier lines, no decorative grid (the band structure keeps its lines at the high-symmetry k-points); spin colors black/vermilion |
+| VESTA-like | Maps and volumes only: VESTA's rainbow section map with black contour lines, yellow (+) and cyan (−) isosurfaces. Other plots draw Default |
+| Presentation | Large text, thick lines and frame: readable from the back of a room |
+| Print grayscale | Black and grays, the series of spectra and run charts told apart by line style and markers; spin down gray dashed |
+| Colorblind safe | Okabe–Ito colors, a blue / vermilion spin pair of its own, cividis maps |
+
+The band, DOS, run (SCF, optimization), IR/Raman and transport plots, volume
+slices and isosurfaces, 2D maps, the Gallery and the FREQ stick spectrum all
+follow their family's preset. PNG and SVG exports from the GUI are the figure
+as shown, and Export › Publication Figure… passes the same style, DOS colors
+and spin styling to `mace plotting`. A folder's `mace-folder.toml` can set
+`[plots] style`, `spin_colors`, `spin_up_color`, `spin_down_color`,
+`band_color`, `spin_down_style`, `dos_colors`, `dos_spin`, `dos_total` and `dos_smooth` for the GUI and the
+CLI: the same names as the plot's Style controls and `mace plotting`'s flags
+(`--style`, `--spin-colors`, `--spin-up-color`, `--spin-down-color`,
+`--band-color`, `--spin-down-style`/`--spin-down-solid`, `--dos-colors`, `--dos-spin`,
+`--no-dos-total`/`--dos-total`, `--dos-smooth`). Two more `[plots]` keys are for `mace plotting` only:
+`energy_reference` (`--energy-reference`: `auto`, `fermi` or `vacuum`) and
+`backend` (`--backend`: `plotly` or `matplotlib`). For the backend,
+`--backend` wins, then the folder's file, then `site.toml`'s `[plots] backend`,
+then the `MACE_PLOT_BACKEND` environment variable, so a `site.toml` value
+overrides the variable.
+
+**DOS colors.** Settings › Plots › **DOS colors** (and a DOS plot's own Plot
+options › DOS colors): **Auto** (by orbital for one element, element × orbital
+for two or three, by element for more), **Total only**, **By element** (each
+element in its 3D color, Viewport › Color scheme, darkened where too light to
+read), **By orbital** (s, p, d, f in four hues, the same for every element;
+elements by line style) or **Element × orbital** (shades of each element's
+color, s strongest, s/p/d/f also by line style). **DOS total** draws the total
+beside them. The legend names projections "Mg s", "O p", "Mg".
+
+**The DOS layout.** A DOS draws the 2 to 4 projections that carry the most
+DOS in the energy window (each at least 4% of it); the others are listed,
+unchecked, in Plot options › Projections (a click on a projection's legend
+swatch hides it too). With DOS colors Auto they take colors that keep clear of
+the spin pair. A spin-polarized DOS is mirrored: spin up on the right, spin
+down on the left, "↑ up" and "down ↓" over each half, magnitudes on both
+sides, each total lightly filled in its spin's color and each projection in
+one color on both sides, dashed on the spin down side. A closed-shell DOS is
+one-sided: the total as a light fill under a line in the band color, the
+projections on top. The legend has two titled groups: **Spin** (neutral keys,
+spin up solid and spin down dashed, or "α = β (closed shell)") and
+**Projections** (color swatches). A band plot alone has it on one line above
+the frame, a DOS alone inside the plot where it covers no curve (else right of
+it), band + DOS right of the plot. E<sub>F</sub> is dotted (a dash means spin
+down). Energies the DOS run did not compute are shaded and, on a DOS alone,
+labeled "outside the DOS window (no data)". **DOS smoothing** (Settings ›
+Plots, a plot's Style section and Style ▾; `mace plotting --dos-smooth EV`,
+`[plots] dos_smooth`) applies a Gaussian of σ = 0.05 eV (or the σ given) to
+the drawn curves only, and the plot says so; it is off by default.
+
+**Spin.** Settings › Plots › **Spin colors** picks the spin up / spin down
+pair, one pair for a light plot and one for a dark plot, the same in
+`mace plotting --spin-colors`:
+
+| Spin colors | Light plot (up / down) | Dark plot (up / down) |
+|---|---|---|
+| Auto | the plot style's: Blue/red in Default and Presentation, Black/vermilion in Publication; Print grayscale and Colorblind safe keep their own pairs | |
+| MACE pink/cyan | `#e0218a` / `#00a0a4` | `#fa26a0` / `#2ff3e0` |
+| Blue/red | `#1f4e9c` / `#c0392b` | `#7aa7f0` / `#f08a7c` |
+| Black/vermilion | `#000000` / `#d55e00` | `#ffffff` / `#e8803a` |
+| Custom | **Spin up color** and **Spin down color** | |
+
+A color set in Spin up/down color also applies with Auto. A run that is not
+spin-polarized (closed shell, or α = β) is drawn in one neutral **Band color**:
+its bands and its one-sided DOS total in the plot's text color by default
+(Publication, Print grayscale and Colorblind safe set their own), with the
+legend key "α = β (closed shell)"; Settings › Plots › Band color, a plot's Style section, `mace plotting
+--band-color`. **Spin down line**
+is dashed by default in every scheme, so the two spins read apart without
+color (dotted, dash-dot or solid; `--spin-down-solid` in the CLI), and **Spin DOS**: Auto draws a
+spin-polarized run mirrored (spin down on the left) and a closed-shell run
+one-sided, as `mace plotting` does; Mirrored or Overlaid (both spins on the
+right). An unrestricted run whose α and β DOS are equal (non-magnetic; MACE's
+spin-polarized default) is drawn one-sided as the total, α + β; Mirrored draws
+one spin on each side. Spin down is drawn over spin up, so a weakly polarized run reads in
+both colors; the subtitle says how far apart α and β are. With both spins
+drawn, the DOS projections are all solid and told apart by color (each
+element's orbitals by a shade of its color, the largest strongest), so a dash
+always means spin down.
+
+**A plot's own style.** Every plot's Plot options has a **Style** section:
+**Plot style**, and for a band or DOS plot **Spin colors** (with two color
+pickers for Custom), **β dashed**, **DOS colors**, **DOS spin layout**,
+**DOS total** and **DOS smoothing**. Each starts at "Settings (…)", which follows Settings and names
+what that is; a choice applies to this plot only, redraws at once and is
+undone with Mod+Z like every plot option. **Reset Plot Options** goes back to
+Settings. **Make This the Default** writes the plot's style into Settings (and
+the plot follows Settings again). The **Style ▾** menu in the plot's toolbar,
+next to Export, has the same choices one click away, **Follow Settings**, and
+**Copy CLI Command**.
+
+**Copy CLI Command** (Style ▾ and Export ▾) copies the `mace plotting` command
+that draws the plot on screen: `--band`, `--dos`, or `--band-dos` when the
+plot shows both, with the file, `--e-lower`/`--e-upper`, `--fermi-shift`,
+`--energy-reference=vacuum` with a POTC run, `--units` other than eV and the
+style flags that are not the defaults; an edited k-path comes first as a
+`band_path.json` written by the command, then `--band-path band_path.json`.
+When the folder has a `mace-folder.toml`, the command also names the values
+equal to `mace plotting`'s defaults (`--style=default`, `--spin-colors=auto`,
+`--fermi-shift=0`, `--units=eV`, `--energy-reference=fermi`, `--dos-total`,
+...), because the folder file's `[plots]` and `[units]` values would replace
+any default left out. Run in the data's folder it draws the same figure.
+
+*White figures* for a paper or slides: Plot style **Publication** with Plot
+background **Light** gives black-on-white plots in any theme; for the 3D
+view add Settings › Viewport › Rendering preset **Publication** (white
+background, outlines, ambient occlusion). For the 3D view, Settings › Viewport › **Background** (or Inspector ›
+Display) White or Black keeps it light or dark in any theme: when it is the
+other lightness from the theme, its axis triad, labels, measurement chips,
+cell lines and selection switch to that lightness's colors, so they stay
+legible (a background of the theme's own lightness changes nothing).
+
+**Atom sizes.** Settings › Viewport › **Radii** picks the radius every view
+draws an atom at, times **Atom scale**: **Atomic** (the default: VESTA's atomic
+radii, so Atom scale 0.4 is VESTA's ball and stick, 40 % of the radius: Na
+0.76, Ti 0.59, Fe 0.50, O 0.30 Å), **Covalent** (Cordero 2008), **Ionic**
+(Shannon, six-coordinate) or **van der Waals** (the sizes drawn before 1.1.6:
+0.28 × the van der Waals radius, every transition metal the same size).
+
+**Element colors.** View › Element Colors… (also Settings › Viewport ›
+Color scheme › Edit Element Colors…) shows the periodic table in the
+palette being edited. Click an element, then pick its color or type it as
+`#rrggbb`; every 3D view (structures, the editor, FREQ modes, slabs,
+volumes, Compare and both editor groups), the periodic-table picker, the
+slab preview and exported images draw the change at once. **Reset to …**
+gives an element back its preset color; atomic radii are not affected.
+
+- Presets: **VESTA (MACE default)**, **Jmol (CPK)**, **Colorblind safe**
+  (MACE's own scheme, from the Okabe–Ito hues; families of elements share a
+  hue and step in lightness, and the common elements are set one by one) and
+  **Legacy** (the colors `mace plotting` drew structures in before 1.1.6;
+  as the default, the CLI draws every plot in its own old colors).
+- **Save as New** stores the palette under a name; **Save**, **Rename** and
+  **Delete** manage your own; **Set as Default** makes it the palette of
+  every view, in every browser, and of `mace plotting`.
+- **Export…** downloads the palette as JSON (the changed elements and every
+  element's color); **Import…** adds such a file as a new palette.
+
+Your palettes and the default are kept in
+`~/.config/mace/element_colors.json` (`$XDG_CONFIG_HOME/mace/`), beside
+gui.json, so the CLI reads them too:
+
+```json
+{"version": 1, "rev": 3, "default": "user:My oxides",
+ "palettes": {"My oxides": {"base": "vesta", "colors": {"O": "#d55e00"}}}}
+```
+
+`default` is a preset (`vesta`, `jmol`, `cvd`, `legacy`) or `user:<name>`; a palette
+stores its base preset and only the elements it changes. A hand-edited file
+with a bad entry loses only that entry. `mace plotting` draws atoms in the
+default palette (VESTA when none is saved, as in the GUI), or in
+`--palette NAME` (`docs/cli.md`).
+
+### Element legends
+
+**File › Export Element Legend…** (also in the 3D view's right-click menu)
+makes a legend of the structure's elements, for figures. The Explorer's
+right-click menu has it for the selected files or a folder (the union of
+their elements), Batch Setup has an **Element Legend…** button for the
+selected files, and **File › Export Element Legend of All Open
+Documents…** takes every open structure. The dialog previews the legend
+as you change it: the palette (the default, any other, or the one being
+edited in Element Colors), the order (atomic number, first appearance,
+alphabetical), vertical, horizontal or grid layout, circle or square
+swatches and their size, the font size, symbol, full name or both, dark
+or light text (from the theme; Plot style Publication gives black on white) and the
+background. Export writes SVG (each element is its own group with real
+text: editable in Inkscape, Illustrator or PowerPoint), PNG at a DPI, or
+a TSV/CSV/JSON table (symbol, name, Z, hex color, RGB). The server makes
+the file with the same function as `mace plotting --legend`, so the two
+give the same file for the same choices.
+
+**Export Image…** has an **Element legend** option that puts the legend
+in a corner of the PNG or SVG (in the SVG as its own editable group).
 
 ### Settings and your profile
 
@@ -247,6 +1401,114 @@ Settings › Advanced:
 
 These cover the GUI profile only; the profiles of `mace gui connect` are
 never exported, imported or reset here.
+
+### Folder settings (mace-folder.toml)
+
+A project folder can carry its own defaults, for everyone who works in it:
+a `mace-folder.toml` in the folder (or in a parent folder below your home).
+While `mace gui` serves that folder, its values override your own defaults;
+the CLI commands run inside it read the same file for the settings they
+have (below). The file is commented TOML, holds data only and is safe to
+keep in git or share with your group. Settings > Save to this folder writes
+it, and so does `mace site set --folder [DIR] KEY VALUE` from the shell
+(docs/cli.md, "Folder settings from the shell"), with the same checks:
+
+```toml
+[viewer]                      # theme-independent display options
+color_scheme = "vesta"        # or "jmol", "cvd", "legacy" (a preset)
+atom_scale = 0.4
+bond_tolerance = 1.15
+show_cell = true
+projection = "orthographic"   # or "perspective"
+[units]
+energy = "meV"                # eV, meV, Ha, kJ/mol, kcal/mol
+[plots]
+energy_window = [-6.0, 6.0]   # band/DOS, eV; also mace plotting --e-lower/--e-upper
+fermi_shift = 0.0
+log_delta_e = true
+energy_reference = "auto"     # or "fermi", "vacuum": mace plotting --energy-reference only
+backend = "plotly"            # or "matplotlib": mace plotting --backend only
+[setup]
+functional = "HSE06"
+basis_set = "POB-TZVP-REV2"
+opt2d12_config = "presets/sp.json"    # mace opt2d12 --config-file, when none is given
+opt2d3_config = "presets/band.json"   # mace opt2d3 --config-file, when none is given
+cif2d12_options = "presets/cif.json"  # mace convert --batch --options_file, when none is given
+[database]
+columns = ["material_id", "formula", "space_group", "status", "updated_at"]
+[submit]                      # within what site.toml's [folders] table allows
+ntasks = 64
+walltime = "2-00:00:00"
+[submit.properties]
+ntasks = 16
+walltime = "4:00:00"
+```
+
+**Which value wins**, per setting: a change you make in this GUI session or
+a command-line option > the folder's file > your own defaults
+(`gui.json`; `site.toml` for cluster resources) > MACE's built-in values.
+For cluster resources the folder's `[submit]` values sit among site.toml's
+`[resources]` tables, not above all of them: the environment
+(`MACE_SLURM_*`) and a `[resources.<TYPE>]` table still win over the
+folder; the folder's `[submit.properties]` wins over `[resources.properties]`,
+but its plain `[submit]` values do not (its walltime covers properties jobs
+only when neither sets one); a folder's walltime is never above the
+partition's MaxTime (docs/cli.md, "Per key, the first of these wins").
+The nearest `mace-folder.toml` is used (files are not merged);
+`MACE_FOLDER_SETTINGS=none` turns folder settings off and
+`MACE_FOLDER_SETTINGS=/path/mace-folder.toml` names one.
+
+**In Settings**, once the folder has a file, each value that a folder can
+hold shows where it comes from: *Built-in*, *Mine*, *This folder* or *This
+session*. A change you make to a value the folder sets stays in this
+session (it is not written to your `gui.json` or to the folder's file)
+until you choose:
+
+- **Save to this folder** writes the value into the folder's
+  `mace-folder.toml` (it creates the file, commented, the first time). It
+  shows next to any such setting when you point at it.
+- **Save as my default** keeps the value as your own default. Here the
+  folder's value still applies; elsewhere yours does.
+- **Reset to my default** removes the folder's value from its file (or
+  forgets the session's change), so your own default applies.
+
+**Calculation Setup** starts a deck made from a CIF with Settings'
+Functional and Basis set (from this session, the folder's file or your own
+settings, in that order) and says where its default came from; a
+follow-up deck keeps its parent's method. Blank means the CLI's own default.
+
+Settings › **This folder** shows the file, anything in it MACE ignored and
+why, the GUI values it sets and its command-line values. The previous
+version of the file goes to File History before each save. A file in a
+parent of the served folder is read but not written (open its folder to
+change it), and so is a file MACE refuses (below).
+
+**On the command line**, run inside the folder:
+
+| Command | Reads |
+|---|---|
+| `mace plotting` | `[plots] energy_window` as `--e-lower`/`--e-upper` when they are not given, and as the energy range its interactive questions offer; `fermi_shift`, `energy_reference`, `backend`, `style`, `dos_colors`, `dos_spin`, `dos_total`, `spin_colors`, `spin_up_color`, `spin_down_color` and `spin_down_style` as the flags of the same names (`dos_total = false` is `--no-dos-total`) when they are not given; `[units] energy` as `--units` |
+| `mace convert` (cif2d12) | `[setup] functional` and `basis_set` as the defaults of a deck made from a CIF (a name with `-D3`, such as `PBE0-D3`, turns D3 on; without it D3 follows the built-in default) |
+| `mace opt2d12` | the same `functional`, only where the parent's functional cannot be used (instead of HSE06); a follow-up otherwise keeps its parent's method |
+| `mace opt2d12`, `mace opt2d3` | `[setup] opt2d12_config` / `opt2d3_config` as `--config-file` when none is given (and no `--save-options` / `--save-config`). GUI Calculation Setup does not start from these presets (its command names its own file); it says so above its form |
+| `mace convert --batch` | `[setup] cif2d12_options` as `--options_file` when none is given (never with `--save_options`) |
+| `mace submit`, GUI Submit | `[submit]` job size and walltime per job kind (CRYSTAL; properties), and a partition, within `site.toml`'s `[folders]` rules; `--walltime`, `-i` answers and `MACE_SLURM_*` still win |
+| `mace workflow` plans | the same `[submit]` job size and walltime, stored in the plan (a folder's walltime is not scaled by calculation type) |
+
+Each command says once which value it took from which file. Cluster
+resources stay the site's: by default a folder may set `ntasks` and
+`walltime`, and may choose a partition only from `[folders] partitions`
+in `site.toml`; `allow`, `max_ntasks` and `max_walltime` narrow that
+(`mace site` shows what a folder set). A value outside these rules is
+ignored with a warning.
+
+**Safety.** The file can never run anything: it has a fixed set of keys,
+each checked for its type and range, and a key MACE does not know or a bad
+value is ignored with a warning. Paths in it are relative to its folder and
+must stay inside it (no absolute paths, no `..`, no symbolic link out). A
+file that everyone can change, one in a folder everyone can write to (a
+scratch root), a symbolic link, or invalid TOML is ignored as a whole.
+Without a `mace-folder.toml`, MACE behaves exactly as before.
 
 ### Context menus
 
@@ -764,12 +2026,13 @@ wave functions.
 | `.xyz`, `.extxyz`, POSCAR/CONTCAR/`.vasp`, `.mol`, `.sdf`, `.pdb`, `.gen`, `fort.34` | a structure (a file with no cell is a molecule, drawn with no cell, view only) |
 | CRYSTAL `.out` (crystal, Pcrystal), also when named `.o` or `.log` | OPT: the optimization trajectory; SP: the structure; FREQ: **Normal modes** (Settings › Open FREQ outputs as: Structure brings back the structure); molecules too (their Angstrom geometry tables) |
 | a CRYSTAL `.out` that stopped before printing a geometry | its text, with a Problems row saying so |
-| properties `.out` (Pproperties: BAND, DOSS, CHARGE+POTENTIAL, TRANSPORT) | a properties document: the run's type and status, its data files (each opens its plot or volume), and the structure from the SCF output beside it |
+| properties `.out` (Pproperties: BAND, DOSS, CHARGE+POTENTIAL, TRANSPORT, ORBITALS) | a properties document: the run's type and status, its data files (each opens its plot or volume), and the structure from the SCF output beside it |
 | SLURM job logs (`<job>-<id>.o`, `<job>.o<id>`, array logs `<tag>-<A>_<T>.o`, `slurm-<id>.out`, `.e`, `.err`) | read-only text with a header naming the job and its calculation (**Open**); a `.e`/`.err` adds its first line to Problems. A log is never parsed for geometry |
 | `.d3` | text |
 | `*.BAND.DAT`, `*.DOSS.DAT`, `*_IRSPEC.DAT`, `*_RAMSPEC.DAT` | plots |
+| `.molden` (CRYSTAL23 ORBITALS: `<job>_orb.molden`, `<job>_orb_<n>_K<ijk>_real.molden`, `_complex.molden`) | the Volume document with the orbital picker (below); the files are never changed |
 | cube files: `*_DENS.CUBE`, `*_POT.CUBE`, `*_SPIN.CUBE`, `.cube`, and CRYSTAL's own names `DENS_CUBE.DAT`, `POT_CUBE.DAT`, `SPIN_CUBE.DAT`, `<input>_WAN_CUBE.DAT` | the Volume document (below) |
-| `fort.25` / `.f25` | a 2D map (ECHG charge density, POTM potential: the MAPN block) opens as a contour plot of the A-B-C plane with its corners labeled, a log scale for a positive map, and the spin density as a second map; each map is named by the properties output of the same name beside it (CRYSTAL's fort.25 does not say whether a block is a density or a potential), else "2D map"; a BAND or DOSS fort.25 says so and opens the `.DAT` beside it |
+| `fort.25` / `.f25` | a 2D map (ECHG charge density, POTM potential: the MAPN block) opens as a contour plot of the A-B-C plane with its corners labeled, a log scale for a positive map, and the spin density as a second map; the colors span the 1st to 99th percentile of the map (symmetric about zero for a signed map), so the spikes at the nuclei do not take the whole scale (Plot options › **Color range**: Auto, Full min to max, or Custom from/to); each map is named by the properties output of the same name beside it (CRYSTAL's fort.25 does not say whether a block is a density or a potential), else "2D map"; a BAND or DOSS fort.25 says so and opens the `.DAT` beside it |
 | BOLTZTRA `*.SEEBECK.dat`, `*.SIGMA.dat`, `*.SIGMAS.dat`, `*.KAPPA.dat`, `*.TDF.dat` | a transport plot |
 | `FREQINFO.DAT`, `BORN.DAT`, `HESSOPT.DAT`, `OPTINFO.DAT`, `SCFOUT.LOG`, ...; `.f9`, `.f98` | a note on what the file is (MACE uses wave functions for GUESSP restarts and properties runs), with **Reveal the run's output**; never read past 4 KB |
 | `.sh` job scripts | text |
@@ -793,17 +2056,47 @@ many are new), and warnings and errors also appear under Problems.
 
 **Calculation › Calculation Setup…** (Ctrl+Shift+R) opens the settings of the
 structure in front: `mace convert` (cif2d12) for a CIF or a built structure,
-`mace opt2d12` for a follow-up from a CRYSTAL `.out`, and `mace opt2d3` for
-BAND, DOSS and the other properties runs. For an `.out` the calculation types
-come in rows of three: SP, OPT and FREQ (opt2d12) above the properties of its
-wavefunction (opt2d3); the arrow keys move through them.
+`mace opt2d12` for a follow-up from a CRYSTAL `.out` or a `.d12` deck, and
+`mace opt2d3` for BAND, DOSS and the other properties runs. For an `.out` the
+calculation types come in rows of three: SP, OPT and FREQ (opt2d12) above the
+properties of its wavefunction (opt2d3); the arrow keys move through them.
+Right-click a CIF, an `.out` or a `.d12` in the Explorer: **Set Up
+Calculation**; or open the file (Ctrl+O) with Setup open.
+
+- **No CIF needed: start from a finished run or a deck.** Step 1 names the
+  parent and the command: an `.out` is `mace opt2d12 --out-file` (the run's
+  geometry, the settings of the `.d12` beside it) or `mace opt2d3 -i`; a
+  `.d12` is `mace opt2d12 --d12-file` (the deck's own geometry records and
+  settings; the new deck is named `<deck>_<calc>_<functional>.d12`). The
+  fields say "from parent .out" or "from parent .d12". The preview, the
+  saved settings and the written deck are the CLI's own, byte for byte.
+  - A deck offers SP, OPT and FREQ only: BAND, DOSS and the other properties
+    read a finished run's wavefunction, so set them up from its `.out`.
+  - SLAB, POLYMER and MOLECULE outputs keep their dimensionality. The GUI
+    draws no SLAB, POLYMER or MOLECULE deck (it names the run's `.out`
+    instead), so Set Up Calculation on such a deck says the same; Batch
+    Setup's *Decks* filter takes them (`mace opt2d12 --d12-file` writes them).
+  - A deck with no geometry of its own (EXTERNAL or DLVINPUT read fort.34),
+    or one that edits its geometry after the atoms (SUPERCEL, ATOMSUBS,
+    SLABCUT, ...), shows the CLI's refusal: set up from its run's `.out`,
+    which holds the structure CRYSTAL built.
+  - An unfinished or unconverged optimization: the deck is the one the CLI
+    writes (the run's starting geometry, as `mace opt2d12` does) and step 1
+    shows the CLI's warning under the parent's name.
+  - An edited `.d12` (unsaved changes) is set up as a new structure
+    (cif2d12), as before.
 
 - **The CLI is the source of the defaults.** The form lists the CLI's own
   questions, its menus and its defaults, read from the CLI at the moment you
   open Setup. A follow-up starts from the parent's settings (functional, basis,
   SPIN, tolerances), as `opt2d12` does on the command line, and its fields say
-  "parent"; opt2d3's fields start from opt2d3's own defaults and say
-  "default". Each changed field says what it was and has a Reset. Fields the CLI
+  "from parent .out" (or ".d12"); opt2d3's fields start from opt2d3's own
+  defaults and say "default". TRANSPORT, CHARGE, POTENTIAL and
+  CHARGE+POTENTIAL list every question opt2d3 asks under "Other questions"
+  (a menu by its heading, such as "Charge density type"); a question asked
+  in both CHARGE+POTENTIAL blocks is a row for each, named after its block
+  ("(charge density)", "(electrostatic potential)"), and a change applies to
+  that block only. Each changed field says what it was and has a Reset. Fields the CLI
   ignores for a choice are read-only and say why ("auto from the cell: SHRINK
   12 24" for cif2d12's mesh).
 - **Preview While Editing** (`setupAutoPreview`, on by default) previews after
@@ -832,10 +2125,74 @@ wavefunction (opt2d3); the arrow keys move through them.
 - **Undo.** Setup has its own history (the History panel's **Settings** chip);
   Reset All Settings goes back to the CLI's defaults in one undo step.
 - **Copy CLI Command** (Ctrl+Alt+C) copies the printed command.
+- **Submit…** (the sidebar, under Preview) writes the deck these settings
+  make (Save with *Write decks now*, under Save's own rules) unless Setup
+  already wrote it, then opens the [Submit dialog](#submit-and-jobs) on it:
+  nothing is submitted until the dialog's own Submit. While MACE GUI listens
+  on the network it says that submitting is off and writes nothing.
+- **Batch Prepare + Submit…** opens [Batch Setup](#batch-setup) on the file's
+  folder with the same kind of file (CIFs, runs needing this follow-up, or
+  decks), this calculation, this file as the representative and the fields
+  you changed as the settings for all files; its step 4 writes the decks and
+  opens Submit on them. A hand-edited settings file and the k-point mesh
+  stay in Setup.
+- **Spin-orbit coupling (SOC).** For a single point (SP) from a CIF, an
+  `.out` or a `.d12`, Settings has a **Spin-orbit coupling** section.
+  Switching it on makes the deck a two-component SCF with SOC (TWOCOMPON).
+  Choose the ECP route: INPSOC (the default), CRYSTAL's internal STUTSC
+  (grayed out, with the CLI's reason, for Hf, whose internal STUTSC is not
+  the published potential) or the official pob-TZVP-rev2-SOC basis. For a
+  follow-up from a run, choose the starting guess: from scratch, GUESSPNOSO
+  from a spin-polarized parent run without symmetry, or a GUESSPSO restart
+  from a two-component parent. Only the guesses the parent allows are
+  offered, each other one with the CLI's reason (a `.d12` parent has no
+  wavefunction, so it starts from scratch). A **SMEAR** width for metals is
+  optional (empty = none; MACE never adds SMEAR by itself): **Use 0.005**
+  fills in the width fcc Au converged with on HPCC, and is suggested more
+  strongly when the CLI finds the parent looks metallic.
+  These choices are the keys `"soc"`, `"soc_ecp"`, `"soc_basis"`,
+  `"soc_guess"` and `"smear"` of the CLI's own settings file, so the deck is
+  the one `mace convert` or `mace opt2d12` writes from that file, byte for
+  byte (see [SOC decks](cli.md#spin-orbit-coupling-soc-decks)). Each choice
+  has the same origin badge and **Reset** as the other rows. The section
+  shows the CLI's SOC warnings (all-electron atoms that lose their
+  spin-orbit splitting, with the measured InAs numbers; f elements; metals
+  and the k-mesh), its refusal word for word, and the lines saying what the
+  CLI changed in the deck. With **Charged system** switches too, the CLI
+  refuses the deck when they would add CHARGED, DOPING or SPINLOCK (CRYSTAL's
+  two-component SCF does not list them), and the section shows its reason.
+  A SOC deck from a CIF needs an external basis
+  (for example `full.basis.triplezeta`) and a functional the two-component
+  SCF runs (PBE0, PBE, B3LYP and others); with the defaults (HSE06 and the
+  internal POB-TZVP-REV2) the CLI refuses and says why. For OPT, FREQ and
+  properties runs the section is grayed out with the CLI's reason (CRYSTAL23
+  has no optimization or frequencies in a two-component run, manual p. 166;
+  properties of a SOC run are limited to what manual sec. 6.4 lists). A
+  follow-up of a SOC run is a SOC deck too, as `opt2d12` writes it ("from
+  parent"). With a GUESSPNOSO or GUESSPSO restart, **Write decks now** also
+  copies the parent's `.f9` as `<deck>.f20`: it needs room for the copy and
+  never replaces a different `.f20`.
 - **Run Preflight** without a serial `crystal` on the machine runs MACE's
   structure check alone and says so; a failure there reads "Structure check
   failed (CRYSTAL not run)", never "REJECTED", which is kept for CRYSTAL's own
   TESTPDIM rejection.
+- **Charged system** (cif2d12 and opt2d12; shut until you give a switch):
+  the charged-system switches of `mace convert` and `mace opt2d12`.
+  **Find ions** is `--ion-charges auto`, then **Net charge**
+  (`--net-charge`), **Site states** (`--site-states`, the JSON list itself,
+  for example `[{"atom": 1, "shell_charges": [2, 0, 0, 0, 0]}]`; Setup does
+  not read it from a file), **CHEMOD** (`--chemod auto|yes|no`), **Fragment
+  bond scale** (`--fragment-bond-scale`, with Find ions only), **SPINLOCK**
+  (`--spinlock`) and **SPINLOCK cycles** (`--spinlock-cycles`). Each row
+  names its switch. Setup passes the switches as they are, on the command
+  it runs and on the command it prints and saves, so the deck is the one the
+  CLI writes when you type the same switches. The CLI checks what they mean
+  and refuses in its own words, for example "site_states set the starting
+  guess only; give the net charge too" or a SPINLOCK that does not fit the
+  electron count. The refusal shows in Problems and no deck is written.
+  opt2d3 (BAND, DOSS and the other properties) takes none of these switches.
+  The defect builder's **Apply** for its charge hint sets the net charge
+  here.
 
 ## Submit and Jobs
 
@@ -897,15 +2254,20 @@ Enter never submits.
   the reason is `mace run`'s own. The run is a task in Tasks; Cancel sends
   one SIGTERM and waits for `mace run` to stop its job (up to 25 s) before
   anything is killed. The run stops when MACE GUI stops.
-- **Submitting and canceling jobs are off while MACE GUI listens on the
-  network** (`--insecure-network`).
+- **Submitting, canceling and recovering jobs are off while MACE GUI listens
+  on the network** (`--insecure-network`).
 
 **Jobs** (bottom panel, **View › Jobs**, or the status bar's "Jobs: 2 running
 · 1 pending") lists your own SLURM jobs: *This folder* (their working folder
 is inside the served folder) or *All my jobs*, job arrays grouped as "Array
 A: 1 running, 2 pending". Each row has **Open Output** (the job's
 `<deck>.out`), **Show Log** and **Cancel**; *Finished (last 2 days)* lists
-ended jobs from `sacct`. It asks SLURM (`squeue`) every
+ended jobs from `sacct`. Above the table a line shows your queue budget
+("Queue budget: 120 of 940 in use (limit 1040, reserve 100) · 15 held"), and
+*Held* lists the jobs MACE holds for a free slot (calculation, material,
+reason, since when, folder; *All my jobs* lists those of every workflow);
+they are not in SLURM yet, so they have no job id. The `mace-drain` job,
+when MACE runs one, is one of your SLURM jobs (see `mace queue`). It asks SLURM (`squeue`) every
 `cluster.pollSeconds` (Settings › Cluster › Job poll interval, 60 s, 30 to
 300) while it is shown or while a job this session submitted is pending or
 running, through the same cached answer as the Cluster view and `mace
@@ -916,6 +2278,24 @@ completed), once, however many views noticed it.
 for your own single jobs and array tasks only: a whole array (whether MACE
 submitted it or not), a task range, another user's job and the job MACE GUI
 runs in are refused with the reason.
+**Recover…** (a failed tracked job under *Finished*) and **Recover Failed…**
+(every failed tracked calculation in the folder) run `mace recover`, the CLI
+itself: first `mace recover --dry-run`, whose text (the table of error class,
+proposed fix and retries, the diff of every file a fix would write and the
+`sbatch` command) the confirmation shows with the command it will run; then,
+once confirmed, that command (`mace recover ... --yes`). Jobs that ended more
+than `MACE_RECOVER_MAX_AGE_DAYS` (default 3) days ago get a second question
+(`--include-stale`). Like Submit and Cancel, Recover is off while MACE GUI
+listens on the network.
+
+**Runtime estimate.** Once the preview is in, the dialog shows `mace
+cluster estimate DECK --cores N` for the first three `.d12` decks: the
+median and the 10 to 90 % range from similar finished runs in the deck's
+folder, or why it cannot say (no similar runs, an unknown core count, a
+history too scattered to trust). **Details** shows the CLI's own text and
+the command. The estimate is advisory: it changes nothing in the job and
+never holds the **Submit** button back. While MACE GUI listens on the
+network it says it cannot estimate.
 
 ## Batch Setup
 
@@ -924,19 +2304,39 @@ Setup…**) opens a "Batch: <folder>" tab that sets up many decks at once, in
 four steps:
 
 1. **Pick files:** the folder's *CIF files*, *Completed runs needing a
-   follow-up* (SP, OPT, FREQ, BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL), or
-   *Failed runs*, optionally with subfolders. A file that is not offered
+   follow-up* (SP, OPT, FREQ, BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL,
+   ORBITALS),
+   *Decks (.d12) as parents* (SP, OPT or FREQ through `mace opt2d12
+   --d12-file`; an EXTERNAL deck or one that edits its geometry says why
+   not), or *Failed runs*, optionally with subfolders. A file that is not offered
    says why: the follow-up is already beside it, in an earlier
    `batch_*/batch.json`, in the folder's or a workflow's database, or next
    in a workflow plan; FREQ needs a converged OPT; properties need the
    wavefunction; a name with spaces or shell characters cannot be submitted.
    Failed runs show what can be done; a tracked one shows the `mace recover`
-   command (it prepares fixed inputs and job scripts for every failed tracked
-   calculation of that database and prints the command that submits each).
+   command (it lists every failed tracked calculation of that database with
+   its fix and, once confirmed, applies the fixes and resubmits them; Jobs ›
+   **Recover Failed…** does the same from the GUI).
 2. **Settings for all files:** the Setup form of one representative file.
    Only the fields you change are applied, to each file on its own through
    the CLI, so every follow-up keeps its own parent's functional, basis and
-   settings otherwise.
+   settings otherwise. For CIFs and SCF follow-ups, **Charged system** takes
+   Calculation Setup's charged-system switches except `--site-states`, which
+   names atoms of one structure. Each command of the batch carries them, as
+   `commands.sh` and `batch.json` show, and the CLI checks each file on its
+   own.
+   For an SP batch, the **Spin-orbit coupling** choices of Calculation Setup
+   (SOC on, ECP route, starting guess, SMEAR) apply to every file. They are
+   written into each file's settings file as the same keys, so `bash
+   commands.sh` re-creates the SOC decks; Preview shows the CLI's refusal
+   of a file (for example STUTSC for Hf) and its SOC warnings. STUTSC is
+   named "refused for Hf in 1 of 3 files", with the CLI's reason, when a
+   selected file holds an element whose internal STUTSC the CLI refuses
+   (grayed out when every file does). A file's **Override…** has the SOC
+   switch and ECP route for that file alone (INPSOC for the Hf file of a
+   STUTSC batch, say), also for a file the CLI refused. **Batch
+   Prepare + Submit…** in Calculation Setup brings the charged-system
+   switches and the SOC choices along.
 3. **Preview:** each file's deck, how many lines differ from its default,
    **Diff**, and **Override...** for one file only. Files the CLI refuses are
    shown with its words and left out.
@@ -945,7 +2345,8 @@ four steps:
    parent, and `template.json`), `inputs/` (cif2d12's CIF groups), `decks/`,
    `commands.sh` and `batch.json`. `bash commands.sh` in that folder's parent
    re-creates every deck with the same commands (`mace convert --batch`,
-   `mace opt2d12 ... --yes`, `mace opt2d3 ...`). **Submit...** opens the Submit
+   `mace opt2d12 --out-file ... --yes` or `--d12-file ... --yes`, `mace
+   opt2d3 ...`). **Submit...** opens the Submit
    dialog on `batch_*/decks`, with job arrays ticked for two or more decks; it
    is submitted from the folder that holds the batch, so tracked rows join
    the parents' `materials.db` there (`mace status` in that folder lists
@@ -962,9 +2363,11 @@ searches material ids and formulas and narrows by dimensionality, calculation
 type and status, a space-group range, and a property the material has. Selecting a row shows its calculations and properties in
 the inspector, with links that open the input and output files; a property
 that several of the material's calculations have names its calculation, as
-in `total_cpu_time (OPT)`. **Export
-Table** (CSV or JSON) writes the filtered, sorted rows with the CLI's own
-columns. The table keyboard: arrows, Page Up/Down, Home/End over the whole
+in `cpu_time_total_s (OPT)`. **Export
+Table** (CSV, JSON, Excel, LaTeX or HTML) writes the filtered, sorted rows
+with the same code as `mace database --action export`: for the same rows the
+file is the CLI's, byte for byte apart from the export time; a JSON, Excel,
+LaTeX or HTML export names the filters in its metadata. The table keyboard: arrows, Page Up/Down, Home/End over the whole
 result, Enter to open.
 
 The Database view reads the database; Create or Update Database from a
@@ -999,9 +2402,12 @@ mace analyze --extract-properties runs --db-path runs/materials.db --register --
   from the GUI: the dialog shows the command to run in a terminal instead.
 - **Register calculations (recommended)** (`--register`) records the
   folder's completed calculations first, so the Database view lists their
-  materials. **Only new and changed files** (`--skip-unchanged`) extracts
+  materials; turned off, the command carries `--no-register` (the
+  terminal's default for a folder is to register). **Only new and changed files** (`--skip-unchanged`) extracts
   only what changed since the last build (size or content, never the file
-  time alone). **Back up the database first** (`--backup`) is always on for an
+  time alone); after an update that stopped before its end (canceled, or a
+  CPU-time limit) it continues where that one stopped and says "Resumed: N
+  of M already done". **Back up the database first** (`--backup`) is always on for an
   existing database: a consistent copy goes to `backups/` beside it, and the
   last 3 are kept (`--keep-backups`); the dialog lists them and says which one
   the update would prune.
@@ -1065,6 +2471,33 @@ mace analyze --convergence runs/mat1_opt.out --energy                       # co
 mace analyze --convergence runs/mat1_opt.out --energy --segments separate --relative-to first --unit eV
 ```
 
+**The SCF card** under it draws one SCF cycle by cycle: |ΔE| per cycle on a
+log axis against the run's TOLDEE (dashed; where it came from in its
+tooltip), or with Log |ΔE| off each cycle's energy minus the last cycle's.
+Cycles where the energy went up are red; dotted lines mark the notable
+cycles CRYSTAL reports after them: Fock/KS mixing, the cycle DIIS took over,
+the cycle a SPINLOCK was released, a "possibly conducting" state and a
+quasi-degeneracy warning, and TOO MANY CYCLES. **Step** (when the output
+prints more than one SCF per cycle, e.g. a FREQ) picks it; the default,
+Latest, follows a running job as the run view refreshes. An optimization's
+`.out` prints the cycles of its first point only: CRYSTAL writes the rest
+to `SCFOUT.LOG` in the job's scratch directory, which a MACE job copies
+back next to the output as `<job>.SCFOUT.LOG` (only the one this run
+wrote). With it there, Step lists every point (each SCF matched to its
+point by the energy it ended with) and Latest is the last point; `mace
+analyze --convergence FILE --scf --step point:N` reads it too. Units, Copy TSV (cycle, E in Ha, ΔE, the spin density of a
+spin-polarized run, the events) and **Open as Plot** (Run Analysis › SCF)
+work as on the energy card. A single-point output (which opens as a
+structure, without the run view) shows the same card as the inspector's
+first section, **SCF**, above its Run card; a FREQ output shows it under
+Mode. Both read an output still being written again every 15 s. The run
+card has an **SCF** button that opens Run Analysis › SCF. The terminal prints
+the same:
+
+```bash
+mace analyze --convergence runs/mat1_sp.out --scf --unit meV        # --step first|N|point:N, --json
+```
+
 **Run Analysis** (Open as Plot, or Analysis › Run) is a plot document with
 five tabs:
 
@@ -1072,7 +2505,7 @@ five tabs:
 |---|---|
 | Energy | E − E_ref per point (default: the final energy), one curve across the FINALRUN restarts, each marked by a dotted line. A restart re-references the integrals: **Segments: Separate** (Plot Options) gives each segment its own reference instead. **Log Y** shows CRYSTAL's printed energy change per point (`DE`, red when it went up) and each point's distance to the final energy (the run's, or its segment's when Separate), with the TOLDEE line. |
 | Convergence | The maximum and RMS gradient and displacement per point on a log axis, each with its threshold (dashed) and where the threshold came from (the `.out`, the `.d12`, or the CRYSTAL23 default and its manual page). Filled markers met their criterion. Gradients and displacements are in CRYSTAL's internal coordinates for cell optimizations ("given without units", as CRYSTAL says). |
-| SCF | SCF cycles per point, and |ΔE| per SCF cycle where the `.out` prints it: CRYSTAL prints the cycles of the first point only and moves the rest to `SCFOUT.LOG`, which stays in the job's scratch directory. |
+| SCF | SCF cycles per point, and the chosen SCF cycle by cycle (the SCF card's plot: \|ΔE\| against TOLDEE, or E minus the last cycle's, with the notable cycles marked; Step picks the SCF when the `.out` prints several). CRYSTAL prints the cycles of an optimization's first point only and moves the rest to `SCFOUT.LOG`, which stays in the job's scratch directory. |
 | Cell | a, b, c, α, β, γ and the volume per point, absolute or in % of the first. |
 | Tracked | Distances and angles followed through every frame (below). |
 
@@ -1181,6 +2614,181 @@ a browser notification when one of your jobs leaves the queue; clicking it
 opens the job. The browser asks for permission first; it works on
 `localhost` (the tunnel), not on a plain `http` address of another host.
 
+## Workflows
+
+**View › Workflows** (also **Calculation › Workflows** and the command search:
+"workflow") lists the workflows under the folder: every plan in a
+`workflow_configs/` folder here or up to two levels down, whether it was
+started from the command line (`mace submit --progress`, `mace workflow
+--execute`, `mace submit --progress-plan`) or written by MACE 1.1.4 or 1.1.5.
+It shows the same states as `mace workflow --status ID`, and its buttons run
+the CLI's own commands (see **Actions** below).
+
+Pick a workflow on the left. The grid has one row per material and one
+column per step; each cell is the step's state in plain words:
+
+| State | Meaning |
+|---|---|
+| Not started | Waits for the step it is built from |
+| Starting | The step it is built from finished; its job's completion step submits this one |
+| Not submitted | The step it is built from finished a while ago (30 min) and this one was not submitted: the completion step did not run (**Process Now** continues it) |
+| Held | Waiting for a free slot of your queue budget (`mace queue`): the budget is full, the workflow's own *Keep at most N* is reached, or SLURM refused it at your submit limit (the reason shows on hover). MACE submits it as slots free up |
+| On hold | The plan has automatic progression off |
+| Paused / Canceled | **Pause** / **Cancel Workflow…** (`mace workflow --pause` / `--cancel`); **Resume** lifts either |
+| Queued / Running | Submitted; SLURM has not started it yet / is running it. A running step shows its time left and a progress bar, from the same estimate as the Job details |
+| Finishing | The job left the queue; its completion step has not recorded the result yet |
+| Completed / Failed | Finished and recorded / the job failed |
+| Being recovered | The failure was fixed and the job resubmitted (the cell counts the attempts) |
+| Blocked | The step it is built from failed or was canceled |
+
+Select a cell for its job id, run time, progress, attempts and error, and
+buttons that open its output, input deck, job script and **Job Details**.
+**What the states mean** under the grid repeats this table.
+
+All your workflows and manual submissions share one queue budget (your SLURM
+submit limit minus a reserve, `[queue]` in site.toml; see `mace queue` in
+docs/cli.md). A job that does not fit is held, not lost: the list shows a
+**Held N** count beside each workflow that has some, the counts above the
+grid show **Held** (the reasons on hover), and a note says how many are held
+and why. Held jobs start after each job's completion step, from **Process
+Now**, and while the GUI is open (at most every two minutes it submits what
+fits, the way `mace queue drain` does).
+
+The view follows your jobs: each poll of your jobs (Settings › Cluster › Job
+poll interval) that changes a step updates it at once, and while it is shown it
+refreshes on the same interval so the time left moves on. Where SLURM cannot
+be asked, queued and running states are the database's. A job MACE submitted
+in the last two minutes shows as Queued even when the last answer of `squeue`
+predates it.
+
+#### Actions
+
+Each button runs one CLI command in the workflow's folder, the command you
+would type; the GUI changes nothing itself.
+
+| Button | Runs | What happens |
+|---|---|---|
+| **Pause** | `mace workflow --pause ID` | Completions are still recorded; no next step and no recovery job is submitted. Queued and running jobs go on. |
+| **Resume** | `mace workflow --resume ID` | Lifts a pause or a cancel and submits the steps held meanwhile. |
+| **Cancel Workflow…** | `mace workflow --cancel ID`, then `--yes` | First lists the workflow's own queued and running jobs (job id, step, material, state) and asks; **Cancel Workflow and N Jobs** stops progression and cancels exactly those jobs with `scancel`. If the list changed meanwhile (a job ended, a step was submitted), nothing is canceled and you are asked to look again. |
+| **Recover…** (a Failed step) | `mace recover --db DB --calc-id ID --dry-run`, then `--yes` | Shows the error class, the fix and the diff of every file it writes; **Resubmit** applies it and resubmits that one step, which stays in the workflow (the cell counts the attempts). Off while the workflow is paused or canceled. |
+| **Process Now** (a Not submitted step) | `mace workflow --process ID` | Submits the steps whose completion step did not run, the way the finished job's callback would have, for this workflow only. Off while it is paused or canceled (Resume does it). |
+| **Clone…** | (reads only) | Opens New Workflow… with the same structures, steps, settings and resources (see below). |
+
+Resume, Cancel, Recover and Process Now change SLURM's state, so they are
+turned off while MACE GUI is open to the network; Pause still works.
+
+**Clone…** fills the builder from what the workflow was started with:
+for a workflow made in New Workflow…, exactly the builder's choices (saved
+next to its spec as `builder_draft.json`); for one started from a spec on the
+command line, the spec as launched (`workflow_configs/spec_<id>/spec.json`:
+the methods, BAND/DOSS settings files and resources; anything the builder
+cannot show is named in a note); for one started with `mace submit
+--progress`, the plan's structures, steps and job sizes (each step's
+calculation settings then start from MACE's defaults, and a note says so).
+The name gets `-copy`. Clone is off, with the reason, when the structures
+are no longer in the folder.
+
+### New Workflow…
+
+**Calculation › New Workflow…** (also **New Workflow…** in the Workflows
+view, and **New Workflow…** on CIFs, decks or a folder in the Explorer)
+builds a workflow without the command line. Nothing is submitted until you
+click **Submit** in the last section; **Back** and **Next**, or the numbered
+list on the left, move between the sections.
+
+1. **Structures.** Pick CIF files (MACE writes each first deck) or `.d12`
+   decks you already made (the first step runs them as they are), from one
+   folder. Each file shows the name it gets in MACE. The workflow's files
+   (plan, inputs, outputs) are written in that folder.
+2. **Steps.** Pick a ready-made chain (OPT → SP → BAND → DOSS and the
+   others), or add and remove steps; only the steps that can follow are
+   offered (BAND needs an SP or OPT before it; OPT2 and SP2 repeat a step).
+   Each step type is explained under the chain. The name is optional (it
+   is shown in the Workflows view; it starts as the folder and the chain).
+3. **Settings.** Each step's settings in Calculation Setup's form: the
+   CLI's own questions, answered by the CLI.
+   - A CIF start's first step shows the settings the workflow converts every
+     CIF with. These are the workflow's own defaults (B3LYP-D3,
+     POB-TZVP-REV2, ...), not `mace convert`'s; what you change is all that
+     differs, and **Reset** goes back.
+   - A later SP, OPT2 or FREQ starts from each structure's own result of the
+     step it is built from and keeps its settings (marked "inherited from
+     …"). Only the method can change there: the functional (3c methods get
+     their basis) and the D3 dispersion.
+   - An SP step (a later one, or the first step of a CIF start) has a
+     **Spin-orbit coupling** group: switch it on to make that step a
+     two-component (SOC) single point, choose the ECP route (INPSOC, the
+     default; STUTSC, named "refused for Hf" with the CLI's reason when a
+     structure holds an element whose internal STUTSC the CLI refuses, and
+     grayed out when every structure does; or the official
+     pob-TZVP-rev2-SOC basis) and, for a
+     metal, a SMEAR width (empty = none; 0.005 Ha converged the HPCC fcc Au
+     runs). The choices become that step's `overrides` in the spec, the keys
+     `opt2d12` reads, and the form shows the deck `opt2d12` writes with
+     them, with the CLI's SOC warnings or its refusal. The workflow's
+     defaults use an internal basis set, which SOC refuses: set an external
+     basis (`full.basis.triplezeta`) and a functional the two-component SCF
+     runs (PBE0, for example) on the first step. A SOC step here always
+     starts from scratch; a GUESSPNOSO or GUESSPSO restart needs a parent
+     known to be spin-polarized without symmetry or two-component, so set
+     `soc_guess` in a spec by hand. OPT, FREQ and properties steps show the
+     group grayed out with CRYSTAL's reason (no optimization or frequencies
+     in a two-component run, manual p. 166), and a step that cannot start
+     from a SOC run (OPT, FREQ, TRANSPORT or CHARGE+POTENTIAL after it) is
+     flagged in the check.
+   - BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL and ORBITALS show opt2d3's form, worked
+     out on a stand-in of the parent output (no step has run yet); the same
+     settings apply to every structure. A step left as it is runs with the
+     workflow's defaults for it; a changed one runs opt2d3's settings file
+     from the form, so its deck is the one `mace opt2d3 --config-file` writes
+     with that file on the same parent (for example a TRANSPORT temperature
+     range, or CHARGE+POTENTIAL's potential at the atoms, POTC).
+4. **Resources.** One row per step: cores, memory (per job or per core),
+   time limit, partition, account and nodes to avoid. Each value says where
+   it comes from: MACE default, site setting (`~/.config/mace/site.toml`, or
+   a group file), environment variable, or "set here" for a value you typed
+   (with **Reset**). A time limit longer than the partition allows is
+   flagged. **Account** is exactly what each job script gets, as the CLI
+   works it out (`mace workflow --spec SPEC --json` names it per step): your
+   own (`[slurm] account` or `MACE_SLURM_ACCOUNT`), MACE's built-in one
+   only where you are a member of it, or empty with "no account line" when
+   the job script has no `#SBATCH -A` and SLURM charges your default
+   account. Where your SLURM accounts cannot be read and MACE keeps its
+   built-in account on a cluster other than MSU HPCC, the cell says so: type
+   your account there or set it in your site settings. Below the table: submit the first step as a job array (and how
+   many tasks run at once), and how many of the workflow's jobs may be
+   queued.
+5. **Review and submit.** What Submit does, in a sentence; the commands it
+   runs, to copy; each structure's first deck and job script, exactly; the
+   later steps of the first structure, **projected**: written by the engine
+   from a stand-in parent output, so the structure and anything read from
+   the output are placeholders while the settings and resources are the
+   ones the workflow uses; the workflow spec, the plan, the job-script
+   templates and every file written.
+
+How it runs: the GUI writes only a workflow spec,
+`<folder>/workflow_configs/gui_specs/<name>_<time>/spec.json` (and the
+BAND/DOSS settings files beside it), then runs the CLI in the folder,
+exactly as you would:
+
+```
+cd <folder> && mace workflow --spec workflow_configs/gui_specs/<name>_<time>/spec.json --write-plan
+mace workflow --execute workflow_configs/workflow_plan_<time>.json                # CIFs
+mace submit --progress-plan workflow_configs/workflow_plan_<time>.json <decks>    # decks
+```
+
+The review runs these same commands in a staged copy of the folder, with
+SLURM's commands that change something recorded instead of run (queries
+reach the cluster), and Submit runs them for real; the job scripts are then
+compared with the review's and a difference is reported under Problems.
+Submit needs a fresh review (15 minutes, used once) of unchanged structures
+and site settings; one launch at a time runs in a folder; structures that
+still have queued or running steps in a workflow in that folder are refused
+(wait for them, or cancel that workflow first); and Submit is turned off
+while MACE GUI is open to the network. After Submit the new workflow opens
+in the Workflows view.
+
 ## Plots: band, DOS, IR, Raman and FREQ modes
 
 Plots are documents with their own options (with their own undo) in the
@@ -1196,7 +2804,27 @@ opens, once; nothing loads from another site.
 | Vibrational modes | a FREQ `.out`, Analysis › Vibrational Modes | the mode table (Modes panel), amplitude, speed, arrow scale, Play, Export Mode as XYZ |
 | IR/Raman from the modes | Modes › IR or Raman (or Analysis › IR/Raman Spectrum) on a FREQ output with intensities but no SPEC.DAT | peak width (FWHM), line shape (IR Lorentzian or Gaussian; Raman Lorentzian share η) |
 | Transport | `*.SEEBECK.dat` and its siblings | the quantity (tabs), temperature, tensor component (average of the diagonal, xx, yy, zz); KAPPA.dat is shown as κ₀: the manual's κₑ (Eq. 14.3) is the zero-field coefficient κ₀; MACE derives the electronic κₑ = κ₀ − T·σ·S² |
+| Transport ZT | the **ZT** tab of a transport document (with the run's SEEBECK, SIGMA and KAPPA files) | temperature, lattice κ_L, relaxation time τ, line width; see below |
 | Convergence | Explorer › Compare Convergence | line width, logarithmic axis |
+
+**Transport ZT.** The ZT tab draws the figure of merit against μ at one
+temperature. The dashed curve is the electronic ZTₑ = S²σT/κₑ (electrons only,
+κₑ = κ₀ − T·σ·S²), which has no lattice term and so is an upper bound. Type the
+lattice thermal conductivity into **Lattice κ_L** to add the solid **ZT total**
+= S²σT/(κₑ + κ_L) curve. Give one value in W/(m·K), or the name of a CSV file
+with `T,kappa_L` rows: beside the run (`kappa.csv` next to it), else a path from
+the served folder. MACE interpolates the table linearly and never
+extrapolates: a temperature outside the table has no total curve, and the panel
+says why. SIGMA.dat and KAPPA.dat are σ and κ₀ at the run's relaxation time
+(RELAXTIM, read from the run's `.out`). ZTₑ does not depend on it, but the total
+does, because κ_L has no τ. **Relaxation time τ** is blank by default, which uses
+the run's τ; a value rescales σ and κ₀ by τ/τ_run. With no `.out` beside the
+data, MACE does not know τ and draws no total. For an open-shell run the alpha
+and beta σ and κ₀ blocks are summed, as the CLI does, and the SIGMA and KAPPA
+plots show the total too. The panel lists both peaks. The
+numbers are the ones `mace analyze --extract-properties --kappa-lattice`
+stores (`transport_zt_total_max`), computed by the same code. Export › CSV
+writes μ, T, ZTₑ and ZT total.
 
 The FREQ document animates one normal mode at a time in the viewport, at most
 30 frames a second and never while the tab is hidden. The arrows follow their
@@ -1218,7 +2846,7 @@ The rest of the band and DOS notes:
 - Energies are in eV relative to the Fermi level. When a POTC run of the same
   material sits beside the data (`<material>_POTC.POTC.DAT` and
   `<material>_POTC.out`), the plotters put everything on the vacuum scale. The
-  axis then reads E − E<sub>vac</sub>, and the dashed Fermi line sits at that
+  axis then reads E − E<sub>vac</sub>, and the dotted Fermi line sits at that
   shift instead of 0.
 - CRYSTAL writes two spin blocks even for a closed-shell run. When the beta
   block equals the alpha block (bands) or its negative (DOS), the run is
@@ -1231,6 +2859,24 @@ The rest of the band and DOS notes:
 - Only bands within 25 eV of the Fermi level are sent, at most 400 per spin;
   the plot says when bands were left out.
 - `api/plot` still makes `mace plotting`'s static PNG/SVG, for scripts.
+- **Export › Publication Figure…** is `mace plotting --band` / `--dos`, or
+  `--band-dos` when the plot shows the band structure and its DOS, run on
+  the data. `mace plotting` draws it with plotly from the same figure code as
+  the plot on screen (`--backend plotly`, the default where plotly and kaleido
+  can export), at a white Light background, with an `E_F` legend entry for
+  the dotted line (the screen has the note line instead) and the legends
+  fitted by plotly's margins. It uses what the plot on screen uses: the plot's
+  style (Plot style, spin colors, β line, DOS colors, DOS spin layout, total,
+  unit), the energy window
+  (`--e-lower`/`--e-upper`), the Fermi shift, dragged or typed
+  (`--fermi-shift`), and with a POTC run the vacuum scale
+  (`--energy-reference vacuum`; the POTC files are copied along with the
+  data). The command it shows draws the same figure when run in the data's
+  folder. `api/plot` takes the same as `emin`, `emax`, `shift` and
+  `reference` (`auto`, `fermi` or `vacuum`), `kind=bandos` for the band + DOS
+  figure, `unit`, and the style by its option names (`style`, `spin_colors`,
+  `spin_up_color`, `spin_down_color`, `band_color`, `spin_down_style`, `dos_colors`,
+  `dos_spin`, `dos_total`, `dos_smooth`).
 
 The IR and Raman notes:
 
@@ -1263,7 +2909,8 @@ The IR and Raman notes:
 Every plot (band, DOS, IR, Raman, FREQ modes, the run card and Run Analysis)
 has the same toolbar: **Log Y**, **Units** (eV, meV, Ha, kJ/mol, kcal/mol for
 energies; cm⁻¹, meV, THz for frequencies), **Export** (PNG, SVG, Image… at a size and
-DPI, CSV, Copy as TSV, Publication Figure…) and **Plot Options**: Log X, Relative to, Per (cell,
+DPI, CSV, Copy as TSV, Publication Figure…, Copy CLI Command), **Style ▾** (the plot's own style,
+above) and **Plot Options**: Log X, Relative to, Per (cell,
 atom, formula unit), the axis ranges, the line width and Reset Zoom. A log
 axis of values that are zero or negative plots |value| and says so. Each plot
 document remembers its own choices; new plots start from Settings › Units and
@@ -1284,6 +2931,23 @@ skewed (hexagonal) cell's surface sits on its atoms.
   + and − lobes (spin up and down, an orbital's two phases), opacity,
   wireframe, atoms, cell. The first level is the middle of the CLI's own list of
   isovalues, so the first view matches `mace plotting --cube`.
+- **The toolbar's display options** work in a volume as in a structure
+  (and the Inspector's Cell box is the same setting as **Show Unit Cell**):
+  **Display Range** (the supercell: 2×2×2, Cycle Display Range, Custom), **Show
+  Unit Cell**, **Show Bonds**, **Labels** (Element, Index, Element+Index;
+  Wyckoff is drawn as Element+Index, a cube has no symmetry), **Boundary
+  Atoms**, **Show Axes**, **View Along** a, b, c (and a\*, b\*, c\*), Reset
+  View, the 90° turns and Orthographic / Perspective. A supercell draws every
+  cell's atoms and, for a cube, the isosurface again in each cell (the grid
+  is periodic: the same grid, moved by whole lattice vectors; surfaces are
+  drawn for the first 27 cells of a larger range, and the atoms and cell for
+  all, with a message). The range is per document, like a structure's, and a
+  periodic axis only: a slab's vacuum axis stays one cell. A volume of a
+  molecule has no cell, so Display Range, Boundary Atoms and View Along are
+  grayed out with that reason; bonds and labels still work, and Show Axes has
+  nothing to draw.
+  The atoms keep the volume's own look (the atom style options are for
+  structures).
 - **Slice**: a lattice plane (a, b or c) at full resolution as a contour map
   under the 3D view, resampled on Cartesian in-plane axes for a skewed cell,
   drawn as a plane in 3D; the arrow keys step it.
@@ -1334,6 +2998,53 @@ skewed (hexagonal) cell's surface sits on its atoms.
   grid do not make it signed. A lobe with no surface at the current level is
   not drawn.
 
+## Orbitals (ORBITALS .molden files)
+
+An ORBITALS step (Calculation Setup, Batch Setup or the workflow builder,
+like BAND or DOSS; see docs/cli.md, mace plotting › Orbitals, for the deck
+and the k-point rules) leaves CRYSTAL23's Molden files beside the job.
+Opening any of them (or **Open Orbitals** on the properties document) shows
+the run in a Volume document with an orbital picker on the left:
+
+- **k points** from the ORBITALS `.out`, with an R (real) or C (complex)
+  badge. Complex k points of slabs and crystals are grayed out: CRYSTAL23's
+  coefficients there fail the orthonormality check, and the tooltip says so.
+  A polymer's complex k points work.
+- **Spin tabs** (Alpha, Beta) for an open-shell run.
+- **The level diagram**, highest level on top, spaced by energy (eV from the
+  HOMO; from E<sub>F</sub> for a metal, with "E<sub>F</sub> ± n" tags).
+  Occupied levels are filled, the HOMO and LUMO are marked, and degenerate
+  sets are bracketed with a ×n badge. A closed-shell level reads "2 e (closed
+  shell)" (periodic files list 1.0 per band). Use Up/Down, Page Up/Down,
+  Home/End to move and Enter or Space to show a level.
+- **View**: Re ψ (+ and − lobes in the theme's --vol-plus/--vol-minus
+  colors, the default), Im ψ (complex k only) or \|ψ\|². **Sum the set**
+  (for a degenerate level) shows the summed \|ψ\|² of the set, never a
+  signed sum: a single member of a degenerate set is one arbitrary mixing,
+  and the inspector says so.
+- **Cells** repeats a periodic orbital along its periodic axes (default 4 for
+  a polymer, 2×2 for a slab, 2×2×2 for a crystal, at most 4 per axis) so lobes
+  are not cut at the cell edge; the atoms, bonds and the box are drawn. It is
+  the toolbar's **Display Range** (View › Display Range, Cycle Display Range,
+  Shift+R), not a second control: the three fields show the range, and
+  typing in them or choosing a range in the toolbar gives the same new grid.
+  A range above 4 along an axis is brought back to 4 (the server draws that
+  many); a non-periodic axis stays at 1. Each orbital grid is computed again
+  for a new range, so the view is busy for a moment.
+  **Quality** is Preview, Normal or Fine (0.40, 0.25, 0.15 bohr; budgets of
+  0.3 M, 1 M, 2 M points), following Settings › Volume quality at first.
+- The **Level** slider starts at the isovalue that encloses about 90% of
+  \|ψ\|²; **Default Level** goes back to it.
+- Each file is checked when it opens (orthonormality under the analytic
+  overlap); a file that fails is not drawn.
+
+Grids are computed in the GUI's worker pool and kept only in its cache (quick
+previews). **Save Cube** writes the shown orbital as a Gaussian cube in
+`<job>_orbitals/` beside the job (Normal or Fine quality), reusing a cube
+already there; it warns when that folder holds many or large cubes (HPCC
+counts files against a 1M-file quota). Slices and Color by Potential are cube
+tools and are not offered on an orbital.
+
 ## Molecules, slabs and polymers
 
 - A file with no cell (`.xyz`, `.mol`, `.sdf`, `.pdb`) opens as a molecule:
@@ -1356,6 +3067,41 @@ skewed (hexagonal) cell's surface sits on its atoms.
   oriented CIF. A cell whose vacuum is not along its vectors is refused with the
   reason. Save for such a source asks for a CIF first, as for any unsaved
   structure.
+
+## Plot Gallery
+
+Many outputs' plots of one kind at once: **Analysis › Plot Gallery…**, or
+**Plot Gallery** in the Explorer's menu of a folder or of several picked
+files. The same grid as `mace plotting --gallery KIND FILES/FOLDER`.
+
+- **Set**: a folder (searched with its subfolders), the Explorer's selection
+  (Ctrl-click; a file of another kind brings its run's file of this kind, so
+  picking outputs and asking for band structures works), a Batch Setup folder
+  (`batch_*`: its decks and the files it was made from) or an open database's
+  materials, with the Database view's filters (their files below the
+  database's folder).
+- **Plot**: Band structure, Density of states, Band structure + DOS (each
+  BAND file with the DOSS file of its run in a second panel), IR spectrum,
+  Raman spectrum, Optimization energy (E − E(final) along each run), SCF
+  convergence (|ΔE| per cycle of the last SCF) or Structure (thumbnails seen
+  along c).
+- **Columns** (1-8), **Axes** shared (every pane the same ranges) or
+  independent, and for band and DOS panes the **Energy** window around the
+  Fermi level (-6 to 6 eV by default, the same for every pane).
+- **One at a Time** shows one pane large and interactive: Left and Right
+  arrows (or Page Up/Down) move through the set and wrap at the ends, Home
+  and End go to the first and the last.
+- The **caption table** under the grid: number, material id, formula, band
+  gap and energy (eV) from the `materials.db` beside the files (or up to
+  three folders above), when it has them. Click a row to go to its pane;
+  double-click a pane to open its file as a plot of its own.
+- **SVG** and **PNG** export the grid as one figure: the server runs `mace
+  plotting --gallery` in its own cache folder (never the browsed one) and the
+  file downloads. **Captions CSV** downloads the table; **CLI** copies the
+  command.
+- A set is capped at 200 panes, with a message naming how many there were.
+  Panes are read and drawn as they come near the view and dropped when they
+  leave it, so a large set stays light.
 
 ## Compare
 
@@ -1537,469 +3283,9 @@ Export Image writes the comparison as SVG, with one group per pane when side
 by side. 8000 atoms take about 0.2 s, written in chunks so the page never
 blocks.
 
-## Run it locally
+## Long sessions and SLURM jobs
 
-```
-cd /path/to/your/calculations
-mace gui                       # or: mace gui --dir examples/gui --open
-```
-
-It prints something like:
-
-```
-MACE GUI serving /home/you/calcs
-  http://127.0.0.1:8765/s/Xq3…/?login=k8F…
-  (the link signs in once; mace gui login-url prints another)
-Token (for the sign-in form): 9vQ…
-Press Ctrl+C to stop.
-```
-
-Open the link. It signs in **once**: the code in it becomes a session cookie
-on the first load and the address bar drops it, so the same link from the
-browser's history signs nobody in. For a new link run `mace gui login-url`
-(`--port P` when several servers run; `--open` opens it), or paste the token
-into the sign-in page. For a server started by `mace gui connect`, run `mace
-gui login-url` on the computer where `mace gui connect` runs: the link uses
-the forwarded port there (on the node it says so instead of printing a link). The `/s/…/` part is this session's own path; the
-server answers nothing outside it.
-
-- `--port P` (or `MACE_GUI_PORT=P`) picks the port; `--port 0` picks a free
-  one for a one-off run. Browser drafts are kept per port, so if you rely on
-  them use the same port every time (see [Drafts](#drafts)).
-- `--open` opens a browser on this machine. On an ssh session with no display
-  and no `$BROWSER` it opens nothing (a text browser would take over the
-  terminal) and says so.
-- `--verbose` (`-v`) logs each request on stderr (the token is never logged).
-- `--root DIR` (repeatable, or `MACE_GUI_ROOTS`) sets the folders File ›
-  Open Folder… may switch within (default: your home and scratch folders);
-  `--root none` turns Open Folder off (see [Open Folder](#open-folder)).
-- `--managed` is the mode `mace gui connect` uses over ssh: one
-  machine-readable `MACE_GUI_READY` line on stdout, control lines on stdin,
-  and the server stops when that connection closes and no task is running
-  (see [First run from your computer](#first-run-from-your-computer)).
-- When stdout is not a terminal (`nohup`, `sbatch`, `> gui.log`), neither the
-  link nor the token is printed: the token goes to a state file only you can
-  read, named in the output and removed when the server stops
-  (`$XDG_RUNTIME_DIR/mace-gui-<port>.json`, or
-  `~/.cache/mace/gui/url-<host>-<port>.json`, with the base URL, the token
-  and the folder), and `mace gui login-url --port <port>` prints a sign-in
-  link. `MACE_GUI_PRINT_TOKEN=1` prints the link and the token instead, for
-  scripts. Scripts can also use the token in an `X-Mace-Token` header.
-- `MACE_GUI_TOKEN` (or `--token`) sets the token instead of a random one per
-  run. It must be at least 16 characters, each a letter, a digit or one of
-  `. _ ~ -` (`python -c "import secrets; print(secrets.token_urlsafe(24))"`
-  makes one); anything else is refused. `--token` on the command line is
-  visible to other users in `ps`; `MACE_GUI_TOKEN` is not. A fixed token
-  survives restarts (so does the session path derived from it).
-
-To try it on the example folder shipped with MACE:
-
-```
-mace gui --dir examples/gui --open
-```
-
-## First run from your computer
-
-The server runs where the data is (a cluster's dev node, a workstation); the
-browser runs on your computer; an ssh tunnel joins them. Your computer needs a
-current browser with WebGL2 (Firefox, Chrome, Edge or Safari) and an OpenSSH
-client (it comes with macOS and Linux, and with Windows 10 and 11 as `ssh` in
-PowerShell).
-
-**SSH keys:** [docs/ssh-setup.md](ssh-setup.md) sets up a key with a
-passphrase, an agent (Linux, macOS Keychain, the Windows OpenSSH agent,
-MobaXterm's MobAgent, VS Code) and an `~/.ssh/config` for the gateway and the
-dev nodes, so you type the passphrase (and, on Linux and macOS, 2FA) once.
-
-**Which method should I use?**
-
-| You have | Use |
-|---|---|
-| MACE on your Linux or macOS computer (or WSL) | `mace gui connect` |
-| Linux or macOS without MACE | `mace-gui-connect.sh` |
-| Windows | `mace-gui-connect.ps1` (PowerShell), or `mace gui connect` run as `python <MACE>\mace_cli gui connect` (`py` instead of `python` where the Python launcher is installed) |
-| MobaXterm | its local terminal + `mace-gui-connect.sh`, or MobaSSHTunnel |
-| VS Code Remote-SSH | `mace gui` in VS Code's terminal, then Ctrl+click the URL |
-| Nothing but ssh | the manual tunnel ([below](#run-it-on-a-cluster-and-view-it-on-your-computer)) |
-
-### mace gui connect (Linux, macOS, WSL, Windows)
-
-`mace gui connect` does everything in one ssh session: it logs in through
-your cluster's login host (the *gateway*) to the node you name, starts `mace
-gui` there in the folder you name, forwards a free local port to it, and opens
-the browser with a sign-in link. It needs only Python 3 and ssh on your
-computer (none of MACE's scientific packages).
-
-```
-mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs
-```
-
-**On Windows** (PowerShell, Windows' own `ssh`; OpenSSH 8.1 or newer for
-`-J`, see `ssh -V`) run it with the Python you have, from a copy of MACE's
-folder: `python <MACE>\mace_cli gui connect --gateway ...`. Anaconda and
-Miniconda install no `py` launcher, so use `python` there (from the Anaconda
-Prompt, or with Anaconda's `python.exe` on PATH); with the python.org
-installer `py <MACE>\mace_cli gui connect ...` works too. The flags, the
-profile and the messages are the same as below.
-
-- **The first run** with no profile asks for the gateway, a jump host (blank
-  for none), the node (blank runs on the gateway itself, which is shared: a
-  dev node is better), the folder, setup lines (e.g. `module load Python`),
-  the `mace` command on the node and a profile name, and saves them in
-  `~/.config/mace/connect.toml` (Windows: `%APPDATA%\mace\connect.toml`), with
-  no passwords. On Linux and macOS only you can read it (mode 0600); on
-  Windows it has the access rights of your AppData folder, which only you
-  (and the computer's administrators) can read. Later runs need only `mace
-  gui connect` (the default profile) or `mace gui connect <name>`.
-- **Flags override the profile** for one run: `--gateway`, `--jump`,
-  `--node`, `--hop`, `--dir`, `--mace`, `--setup`, `--conda`,
-  `--local-port`, `--ssh-option` (repeatable), `--root` (repeatable),
-  `--no-open`. `--save [NAME]` writes them back; `--list` and
-  `--forget NAME` manage the profiles; `--dry-run` prints the exact ssh
-  command and exits (see [dry-run quoting](#dry-run-quoting) for which
-  shell each printed form is for).
-- **Paths on the node under `~`**: your shell expands an unquoted `~`
-  before `mace gui connect` sees it, so `--mace ~/mace/mace_cli` arrives as
-  `/home/you/mace/mace_cli`, a path on *this* computer. When the node's home
-  is elsewhere (`/mnt/home/netid`), that path is not there. So a `--mace`,
-  `--dir`, `--root` or `--conda` value (or a saved profile value) under this
-  computer's home folder is sent as `~/...`, which the node expands to its
-  own home, and a note says so: "Note: treated /home/you/mace/mace_cli as
-  ~/mace/mace_cli on the remote ...". Quote the `~` (`--mace '~/mace/mace_cli'`)
-  to pass it as is. `--setup` is shell code you quote, so it is left alone.
-  The standalone scripts do the same.
-- **The ~/.ssh/config way** works too: a `Host hpcc` block for the gateway
-  (with `User`), and `--gateway hpcc`. `mace gui connect` asks `ssh -G` which
-  user that alias logs in as, and uses the same user on the node.
-- **Ctrl+C** stops the server on the node and its cache folder. When GUI
-  tasks are still running (a local CRYSTAL run, a database build, a Clean),
-  it asks first: "2 tasks are running on dev-node-01 (...). Stop them too?
-  [y/N]". No (the default) leaves the server running only for them.
-- **A dropped connection** (a closed lid, a network change) stops the server
-  when no task runs. With tasks running it keeps them running and stops after
-  the last one ends (plus 10 minutes with nobody reconnected; 24 hours at
-  most). Run `mace gui connect` again with the same folder: it says
-  "Reattached to the server still running on dev-node-01 (1 task running)."
-- **Enter** in the terminal of `mace gui connect` opens a new sign-in link
-  (each link works once).
-- **Your local port** is `--local-port` (default 8765), so your browser's
-  drafts come back on the next run; when it is busy, the next free one is used
-  and it says so.
-- **On Windows, closing or killing** `mace gui connect` also ends its `ssh`
-  (MACE puts ssh in a Windows job object that ends with it), so no stray
-  `ssh.exe` keeps the tunnel open. The PowerShell script does not do that:
-  if its PowerShell is killed (Task Manager) instead of stopped with Ctrl+C,
-  a leftover `ssh.exe` may keep the tunnel open; end it in Task Manager.
-
-#### Dry-run quoting
-
-`mace gui connect --dry-run` prints each ssh command as one line in POSIX
-shell quoting (with `'"'"'` for a quote inside quotes): paste it into bash,
-zsh, Git Bash, MobaXterm's terminal or WSL. On Windows it also prints a
-second line, `ssh --% ...`, to paste into PowerShell (5.1 or 7): `--%` makes
-PowerShell hand the rest of the line to `ssh.exe` unchanged, quoted the way
-`ssh.exe` reads its command line. Neither line is for `cmd.exe`, whose
-quoting differs. The scripts' `--dry-run` (`-DryRun`) print one argument per
-line, and `mace-gui-connect.ps1 -DryRun` adds the same `ssh --% ...` line.
-
-#### First use of a node with --hop jump
-
-With `--hop jump` (and the first try of `--hop auto`) your computer reaches
-the node through the gateway with `ssh -J`, and checks **two** host keys
-itself, against your own `known_hosts` (Windows:
-`C:\Users\<you>\.ssh\known_hosts`): the **gateway's** first, then the
-**node's**. The gateway leg runs as a separate ssh process that does not get
-the command line's `-o` options, so it always uses your real `known_hosts`.
-The first time, ssh asks in the terminal, once per host it has not seen:
-
-```
-The authenticity of host 'dev-node-01 (<no hostip for proxy command>)' can't be established.
-ED25519 key fingerprint is SHA256:....
-Are you sure you want to continue connecting (yes/no/[fingerprint])?
-```
-
-Compare the fingerprint with the one your cluster publishes, and type `yes`.
-`mace gui connect` waits for the answer, and after 15 s says "(waiting:
-approve the 2FA prompt if there is one. If ssh asks whether to continue
-connecting (the host-key yes/no question), check the fingerprint and answer
-yes ...)". When the question could not be answered (or was answered no),
-ssh says "Host key verification failed." and MACE prints the exact line to
-run once, then connect again. When ssh's message names the gateway, that is
-`ssh me@hpcc.example.edu true`; when it names the node, `ssh -J
-me@hpcc.example.edu dev-node-01 true`; when it names neither (or with
-`mace-gui-connect.ps1`, which leaves ssh's messages on the console), both, in
-this order:
-
-```
-ssh me@hpcc.example.edu true
-ssh -J me@hpcc.example.edu dev-node-01 true
-```
-
-Or use `--hop nested`, where the gateway checks the node's key with its own
-list of known hosts (the gateway's own key is still checked on your
-computer). MACE never turns host-key checking off or accepts a new
-key for you, and `--hop auto` does not switch to `nested` after a host-key
-failure: trusting a key is your decision. A key that has *changed* gets a
-different message: ask your administrators before you remove the old key.
-
-### Windows (PowerShell)
-
-Windows 10 1809 and later ship `ssh`; `-J` (the jump through the gateway)
-needs OpenSSH 8.1 or newer: check with `ssh -V` (the script warns when it is
-older). Get the script on your computer in one of two ways: run
-`mace gui connect --export-script powershell -o mace-gui-connect.ps1` on the
-cluster and copy the file (your profile is filled in), or take
-`scripts/mace-gui-connect.ps1` from MACE's repository. Downloaded files are
-blocked by Windows: run `Unblock-File .\mace-gui-connect.ps1` once. Then:
-
-```
-powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway me@hpcc.example.edu -Node dev-node-01 -Dir ~/runs
-```
-
-The parameters match the flags of `mace gui connect` (`-Jump`, `-Hop`,
-`-Mace`, `-Setup`, `-Conda`, `-LocalPort`, `-SshOption`, `-Root`, `-NoOpen`,
-`-DryRun`), and it reads the same `connect.toml`. Two differences: it has
-no `--slurm`, and `-Hop auto` (the default of a saved profile) works as
-`jump`: it does not retry with `nested` by itself when the node refuses the
-login (it says to pass `-Hop nested`). For either, run `mace gui connect`
-itself (`python <MACE>\mace_cli gui connect`, above). If no password or 2FA
-prompt appears and the connection ends, set up an ssh key or agent, or use
-`-Manual`, which prints the two-terminal commands of the manual tunnel.
-
-The `Unblock-File` and `-ExecutionPolicy Bypass` steps are for Windows'
-default execution policy (Restricted or RemoteSigned), and have not been
-tested on such a computer yet. `Get-ExecutionPolicy` shows yours: where it is
-already Bypass or Unrestricted, neither step is needed. Where your
-organization sets the policy, `-ExecutionPolicy Bypass` may be refused; run
-`mace gui connect` with Python then. With
-PuTTY instead, set the tunnel under Connection › SSH › Tunnels (source port
-8765, destination `127.0.0.1:8765`) and connect to the node through the
-gateway.
-
-### MobaXterm
-
-(a) Open MobaXterm's **local terminal** and run `mace-gui-connect.sh` (bash
-comes with it): `bash mace-gui-connect.sh --gateway me@hpcc.example.edu --node
-dev-node-01 --dir ~/runs`. Get the script with `mace gui connect
---export-script bash -o mace-gui-connect.sh` on the cluster, or from MACE's
-`scripts/` folder.
-
-- **Profiles:** the script reads `~/.config/mace/connect.toml` in
-  MobaXterm's own home folder (its "persistent home directory", set under
-  Settings › Configuration › General). When that file is missing, it reads
-  `%APPDATA%\mace\connect.toml`, the file Windows' `mace gui connect --save`
-  writes, and says which file it read. Git Bash and Cygwin do the same.
-- **Keys:** MobaXterm keeps its own `~/.ssh` (keys, `config`,
-  `known_hosts`) in that home folder, separate from `C:\Users\<you>\.ssh`,
-  which Windows' `ssh`, PowerShell and VS Code use. A key, a Host alias or a
-  trusted host key in one is not seen by the other. So, the first time from
-  MobaXterm:
-  - ssh asks the **host-key questions again**, for the gateway and (with the
-    jump hop) for the node, even when Windows' `ssh` already trusts both
-    (see [First use of a node with --hop jump](#first-use-of-a-node-with---hop-jump));
-  - with the **jump hop**, the node checks a key from MobaXterm's `~/.ssh`
-    (or its agent): without one there, ssh asks for the **node's password**
-    (and the gateway's), even if Windows' `ssh` logs in with a key.
-
-  To use your Windows key in MobaXterm, either set MobaXterm's persistent
-  home directory (Settings › Configuration › General; MobaXterm's
-  documentation: "Choose a folder that MobaXterm will use as its HOME
-  directory ... so you can store your SSH keys in it") to your Windows user
-  folder, `C:\Users\<you>`, so that its `~/.ssh` is that `.ssh`; or copy
-  the key into MobaXterm's `~/.ssh` (MobaXterm shows drive C: as
-  `/drives/c`) and make it private, since ssh refuses a private key that
-  others can read:
-
-  ```
-  mkdir -p ~/.ssh
-  cp /drives/c/Users/YOU/.ssh/id_ed25519 /drives/c/Users/YOU/.ssh/id_ed25519.pub ~/.ssh/
-  chmod 600 ~/.ssh/id_ed25519
-  ```
-
-  (replace YOU with your Windows user name). Or name the key for one run:
-  `--ssh-option=-oIdentityFile=/drives/c/Users/<you>/.ssh/id_ed25519`.
-- **"stty: standard input: Inappropriate ioctl for device"** before the
-  link: a login profile on the node ran `stty` with no terminal (every hop
-  runs `bash -l` without one). It is harmless; `mace gui connect` and
-  `mace-gui-connect.sh` no longer show it before the server is ready, and
-  `mace-gui-connect.ps1` (which leaves ssh's messages on the console) may.
-- **"channel 2: open failed: connect failed: Connection refused"** before
-  the link (mostly with the jump hop): the tunnel's local port listens as
-  soon as ssh connects, and something connected to it before the server on
-  the node was listening, typically a browser tab left open from an earlier
-  session, which keeps retrying. Harmless; `mace gui connect` and
-  `mace-gui-connect.sh` hide it until the tunnel answers, and show it when
-  the tunnel never does. `mace-gui-connect.ps1` may show it.
-
-(b) Or, in a normal MobaXterm session on `dev-node-01`, run `mace gui
---dir ~/runs` and paste the `ssh -N -J ... -L ...` line it prints into
-MobaXterm's **local terminal** (leave it running), then open the link it
-printed. Use that line as printed: it ends at `127.0.0.1` on the node.
-
-**MobaSSHTunnel** (Tools › MobaSSHTunnel) needs **two** tunnels for this,
-because `mace gui` listens only on the node's own `127.0.0.1`: a single
-tunnel with SSH server the gateway and remote server `dev-node-01` asks the
-gateway to connect to `dev-node-01:<port>`, which the server never sees (the
-browser then keeps loading and nothing appears). Chain them, as MobaXterm's
-own guide does for a host behind a jump host
-([Mobatek: SSH tunnels and port forwarding](https://blog.mobatek.net/post/ssh-tunnels-and-port-forwarding/)):
-
-1. A local tunnel with forwarded port `2222`, SSH server the gateway (your
-   user, port 22), remote server `dev-node-01`, remote port `22`.
-2. A second local tunnel with forwarded port `<port>`, SSH server
-   `localhost` port `2222` (your user: this logs in to `dev-node-01` through
-   the first tunnel), remote server `127.0.0.1`, remote port `<port>`.
-
-Start both, run `mace gui --dir ~/runs --port <port>` on `dev-node-01`, and
-open the link it prints. A dev node is shared, so a fixed port such as
-8765 may already be taken by someone else's server: pick your own, any port
-from 8000 to 60999 (`mace gui` says "cannot listen" when it is taken; then
-pick another), and keep it in `~/.bashrc` on the cluster as `export
-MACE_GUI_PORT=<port>`, so it stays the same and your browser drafts come
-back. `mace gui connect` and the scripts avoid this by choosing a random
-free port on the node themselves.
-
-**A browser that keeps loading** (no page, no error) means the tunnel does
-not reach the server: it ends on the wrong node, or at the node's name
-instead of its `127.0.0.1`. Check it against the line `mace gui` prints.
-
-### VS Code Remote-SSH
-
-Add the gateway and the node to your ssh config (Windows:
-`C:\Users\<you>\.ssh\config`; Linux and macOS: `~/.ssh/config`):
-
-```
-Host hpcc
-    HostName hpcc.example.edu
-    User <user>
-Host <dev-node>
-    ProxyJump hpcc
-    User <user>
-```
-
-where `<dev-node>` is the dev node you use (for example `dev-node-01`). On
-Windows, VS Code uses Windows' own `ssh` (its `ProxyJump` needs OpenSSH 8.1
-or newer: `ssh -V`) and that `C:\Users\<you>\.ssh` folder, not MobaXterm's;
-the first connection to the node asks the host-key question in VS Code's
-window. Then
-"Remote-SSH: Connect to Host..." `<dev-node>`, and in VS Code's
-integrated terminal run `mace gui --dir ~/runs`. **Ctrl+click the sign-in link
-it prints**: VS Code forwards the port and rewrites the link (a different
-local port is fine). The Ports tab's "Open in Browser" opens the address
-without the link, which shows the sign-in page; use the link from the
-terminal (or `mace gui login-url`). `mace gui --open` uses VS Code's own
-`$BROWSER`, so it opens on your computer.
-
-- **Ctrl+click may open VS Code's integrated browser** (an editor tab)
-  instead of your own browser: recent VS Code versions open `localhost` and
-  `127.0.0.1` links there by default. To open them in your default browser,
-  turn off the setting `workbench.browser.openLocalhostLinks` (Settings,
-  search "open localhost links"); `workbench.externalBrowser` picks another
-  browser than the system default. A link the integrated browser opened is
-  used up (each works once): run `mace gui login-url` in the terminal for a
-  new one, then copy it into your browser or Ctrl+click it.
-- **Closing the browser tab does not stop the server.** It keeps running on
-  the node until you choose File › Sign Out and Stop Server… in MACE GUI
-  ([Sign out and stop the server](#sign-out-and-stop-the-server)) or press
-  Ctrl+C in the VS Code terminal that runs `mace gui`.
-
-### Jump hosts and nodes that accept logins only from the login node
-
-- `--jump bastion.example.edu` (comma separated for several) reaches the
-  gateway through a bastion: `ssh -J bastion,gateway node`.
-- `--hop jump` (one ssh path from your computer to the node, through `-J`)
-  needs the node to accept your own login (key, agent, password). If the
-  node asks for 2FA too, you see two prompts.
-- `--hop nested` makes the gateway log in to the node itself
-  (`ssh gateway "ssh node ..."`), for clusters whose nodes accept logins only
-  from the login node. The inner login cannot ask anything (it runs with
-  BatchMode): it works with host-based logins or keys on the gateway. The
-  forwarded port then also sits on the gateway's own `127.0.0.1`, where other
-  users of the login node could reach it; the session token still guards
-  every request there, as on the node.
-- `--hop auto` (the default) tries `jump`; when the node refuses the login
-  through the gateway, it tries `nested` once and says "connecting through the
-  gateway instead (hop = nested). Save it with --save so this is not tried
-  twice." (A 2FA gateway then asks twice on that first run.)
-
-## Run it on a cluster and view it on your computer
-
-The manual way, with two terminals: the server on the node, the tunnel on
-your computer.
-
-1. Log in to a **dev node** (or to a compute node in an `salloc`), load your
-   cluster's Python 3.11 or newer (e.g. `module load Python`) and start the
-   GUI:
-
-   ```
-   ssh hpcc
-   ssh dev-node-01
-   module load Python
-   cd /mnt/scratch/$USER/my_calcs
-   mace gui
-   ```
-
-   In an ssh session it names the exact node and prints the tunnel lines:
-
-   ```
-   This server runs on dev-node-01. The tunnel must go to this exact node.
-   From your computer, with MACE installed there:
-     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs
-   Without MACE there (MobaXterm's local terminal, Git Bash, PowerShell): make the standalone script here, copy
-   it to your computer and run it there (...):
-     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs --export-script bash -o mace-gui-connect.sh
-   Or with ssh alone (leave it running), then open the URL above:
-     ssh -N -J you@LOGIN_HOST -L 8765:127.0.0.1:8765 you@dev-node-01
-   ...
-   (replace LOGIN_HOST with your cluster's login host; ...)
-   ```
-
-2. On **your computer**, in a second terminal, run that `ssh -N -J ... -L ...`
-   line (it prints nothing and keeps running; that is expected), then open the
-   `http://127.0.0.1:8765/s/.../?login=...` link in your browser. The tunnel
-   must go to the node `mace gui` names: another dev node behind the same
-   gateway does not see the server.
-
-If you have an `~/.ssh/config` entry for the gateway (for example `Host hpcc`),
-`ssh -N -J hpcc -L 8765:127.0.0.1:8765 dev-node-01` does the same thing. If port
-8765 is already in use on your computer, change the first number and use that
-port in the link. The hint prints `LOGIN_HOST` (a word you can paste and then
-replace; `<...>` would be a redirect in bash) unless it knows your cluster's
-login host: from `--gateway`, `export MACE_GUI_GATEWAY=login.example.edu` (in
-`~/.bashrc`), or `gateway = "login.example.edu"` in the `[gui]` table of
-`site.toml` (where a cluster's administrators can set it for everyone, in
-`/etc/mace/site.toml`). The script line is for a computer without MACE:
-`--export-script` writes the standalone script with these settings filled in;
-copy it over and run `bash mace-gui-connect.sh` (or use `--export-script
-powershell -o mace-gui-connect.ps1` and run `.\mace-gui-connect.ps1`). On a shared node pick a personal port so you do not collide
-with other users and your drafts stay on one port: `export MACE_GUI_PORT=8xxx`
-in `~/.bashrc`.
-
-### Why port forwarding and not X11
-
-`ssh -X` with a GUI program draws every frame on the cluster and sends the
-pixels to you. The HPCC dev nodes only have software OpenGL (llvmpipe), so a
-3D viewer gets a few frames per second at best. With port forwarding, only a
-few KB of JSON per structure cross the network, and your browser draws the 3D
-view on your laptop's GPU. X11 still works as a fallback if you cannot open a
-tunnel: run `firefox` on the dev node (if it is installed there) over
-`ssh -X` and open the URL in it. It is slow, but it works.
-
-### Sign out and stop the server
-
-**File › Sign Out and Stop Server…** (also in the command search, "quit" or
-"logout", and as Stop Server… in the connection dialog of the status bar)
-ends your session and stops MACE GUI on the server, cleanly: its temporary
-folders and state files go, the port is free again, and every open tab shows
-"MACE GUI has stopped" with the command that starts it again. Modified
-documents ask first (Save All, or Don't Save, which keeps them as drafts in
-this browser). The dialog lists the GUI tasks still running; stopping cancels
-them, while **Stop When Tasks Finish** keeps the server (and your session)
-until they end, with a banner in every tab and **Cancel Stop** to undo it.
-Your SLURM jobs keep running; only MACE GUI stops. "Also remove the drafts and
-recent files for this folder" is for a shared computer. Through `mace gui
-connect`, its terminal then says "The server on dev-node-01 was stopped from
-the browser." and exits.
+For long or heavy sessions on a cluster.
 
 ### Long sessions on shared nodes
 
@@ -2017,10 +3303,12 @@ there, so when such a limit is set:
   process) stopped the task."), and the other tasks run again;
 - at 80 % it warns, and at 97 % the server stops itself cleanly ("stopped
   before this node's CPU-time limit"); start it again for a fresh limit;
-- a database update the limit stops keeps every file it already wrote; start
-  it again with "Only new and changed files" on (from a terminal, the same
-  `mace analyze` command with `--skip-unchanged`) and it continues where it
-  stopped. Continuing by itself is planned for MACE 1.1.6.
+- a database update the limit stops keeps every file it already wrote and
+  says so ("The database update reached this node's CPU-time limit after 40
+  files; what it wrote is kept. ..."); start it again with "Only new and
+  changed files" on (from a terminal, the same `mace analyze` command with
+  `--skip-unchanged`) and it continues where it stopped, saying "Resumed: 40
+  of 120 already done" in its progress and its summary.
 
 Only per-process limits (`ulimit -t`) are detected; limits enforced in other
 ways (cgroups, a site's monitoring daemon) are not. For long, heavy work,
@@ -2093,6 +3381,46 @@ Smaller requests start sooner and cost less fairshare. `mace gui --slurm
 --dry-run` prints the sbatch command and the job script without submitting.
 The standalone scripts in `scripts/` do not support `--slurm`; use `mace gui
 connect --slurm`.
+
+## `mace gui` options and sign-in links
+
+**The sign-in link** signs in **once**: the code in it becomes a session cookie
+on the first load and the address bar drops it, so the same link from the
+browser's history signs nobody in. For a new link run `mace gui login-url`
+(`--port P` when several servers run; `--open` opens it), or paste the token
+into the sign-in page. For a server started by `mace gui connect`, run `mace
+gui login-url` on the computer where `mace gui connect` runs: the link uses
+the forwarded port there (on the node it says so instead of printing a link). The `/s/…/` part is this session's own path; the
+server answers nothing outside it.
+
+- `--port P` (or `MACE_GUI_PORT=P`) picks the port; `--port 0` picks a free
+  one for a one-off run. Browser drafts are kept per port, so if you rely on
+  them use the same port every time (see [Drafts](#drafts)).
+- `--open` opens a browser on this machine. On an ssh session with no display
+  and no `$BROWSER` it opens nothing (a text browser would take over the
+  terminal) and says so.
+- `--verbose` (`-v`) logs each request on stderr (the token is never logged).
+- `--root DIR` (repeatable, or `MACE_GUI_ROOTS`) sets the folders File ›
+  Open Folder… may switch within (default: your home and scratch folders);
+  `--root none` turns Open Folder off (see [Open Folder](#open-folder)).
+- `--managed` is the mode `mace gui connect` uses over ssh: one
+  machine-readable `MACE_GUI_READY` line on stdout, control lines on stdin,
+  and the server stops when that connection closes and no task is running
+  (see [First run from your computer](#first-run-from-your-computer)).
+- When stdout is not a terminal (`nohup`, `sbatch`, `> gui.log`), neither the
+  link nor the token is printed: the token goes to a state file only you can
+  read, named in the output and removed when the server stops
+  (`$XDG_RUNTIME_DIR/mace-gui-<port>.json`, or
+  `~/.cache/mace/gui/url-<host>-<port>.json`, with the base URL, the token
+  and the folder), and `mace gui login-url --port <port>` prints a sign-in
+  link. `MACE_GUI_PRINT_TOKEN=1` prints the link and the token instead, for
+  scripts. Scripts can also use the token in an `X-Mace-Token` header.
+- `MACE_GUI_TOKEN` (or `--token`) sets the token instead of a random one per
+  run. It must be at least 16 characters, each a letter, a digit or one of
+  `. _ ~ -` (`python -c "import secrets; print(secrets.token_urlsafe(24))"`
+  makes one); anything else is refused. `--token` on the command line is
+  visible to other users in `ps`; `MACE_GUI_TOKEN` is not. A fixed token
+  survives restarts (so does the session path derived from it).
 
 ## Security
 
@@ -2214,6 +3542,8 @@ GUI port for other tunnels.
 | Batch Setup › Write | a new `batch_*/` folder inside `--dir`, nothing outside it | a replaced deck keeps a `.bak` |
 | Submit | exactly the files `mace submit` writes (`<deck>.sh`, `.mace_arrays/`, `workflow_configs/`, `.mace_context_*`, `materials.db` rows) | for a tracked submit, one backup of the folder's `materials.db` in `backups/` (the newest three are kept) and File History copies of the files the submit replaces; the jobs then write their `<deck>.out`, `<deck>.f9` and logs |
 | Run on This Node | what `mace run` writes (`.mace_local/`, the outputs) | |
+| New Workflow… › Submit | the workflow spec in `<folder>/workflow_configs/gui_specs/<name>_<time>/` (and the properties steps' settings files and the builder's `builder_draft.json` beside it), then exactly what `mace workflow --spec … --write-plan` and the launch command write (the plan, `workflow_configs/spec_<id>/`, `workflow_scripts/`, `.mace_context_<id>/`, `workflow_outputs/`, the first step's decks and job scripts) | a lock file `workflow_configs/.gui_launch.lock` while the launch runs; the review writes nothing in the folder (it runs in a staged copy) |
+| Workflows view: Pause, Resume, Cancel, Recover, Process Now | what `mace workflow --pause/--resume/--cancel/--process ID` and `mace recover --calc-id ID` write (the control file `workflow_configs/workflow_control_<id>.json`, the next steps' or the recovered step's decks and job scripts, database rows) | the CLI runs in the workflow's folder; Recover's preview and Cancel's job list change nothing |
 | Create or Update Database from a Folder | the database you choose inside `--dir` (its `-wal`/`-journal` while it is written, `structures.db` beside it) and `backups/` beside it | written by the `mace analyze --extract-properties` command the dialog shows; a consistent backup first (the last 3 kept); nothing is deleted from the database |
 | File History: the previous version of every file a GUI write replaces | `~/.local/state/mace/gui/history/` (or `$XDG_STATE_HOME/mace/gui/history`, or `MACE_GUI_HISTORY_DIR`), never inside `--dir` | per folder and file; the last 20 versions of the past 30 days, 500 MB for inputs and 1000 MB for copies of outputs, never the newest copy of a file; files over 50 MB are not copied (their `.bak` stays). If the copy cannot be written, the GUI refuses the write |
 | Settings | `~/.config/mace/gui.json` (or `$XDG_CONFIG_HOME/mace/gui.json`) | written atomically |
@@ -2273,11 +3603,18 @@ The page uses:
   taken from pymatgen's `ElementColorSchemes.yaml` (MIT License, The Materials
   Project / LBNL, commit 9100860d; license text in
   `element_colors.LICENSE.txt`; `mace/gui/tools/make_element_colors.py`
-  regenerates the file from that YAML);
+  regenerates the file from that YAML), and MACE's own colorblind-safe scheme
+  in the same file (MIT, as MACE; made by that script from the hues of the
+  Okabe–Ito palette, a published recommendation free to use; noted in
+  `element_colors.LICENSE.txt`);
 - the **Lucide 0.469** icons the shell uses, as one sprite
   `mace/gui/static/icons/lucide.svg` (ISC License, which covers the Feather
   portions under MIT; license text in `icons/LICENSE-lucide.txt`), next to
   MACE's own crystal glyphs in `icons/mace-icons.svg`;
+- the colors of the editor themes in `mace/gui/static/css/tokens.css`
+  (Catppuccin, Dracula, Gruvbox, Nord, One Dark, Solarized, Tokyo Night), as
+  their projects publish them (each MIT License; notices and license text in
+  `css/THEMES.LICENSE.txt`);
 - the MACE logo (`mace/gui/static/brand/`, copies of [docs/logo](logo/README.md); MIT, this repository);
 - **plotly.js**, served from the `plotly` Python package that MACE already requires
   (`plotly/package_data/plotly.min.js`).
@@ -2318,13 +3655,12 @@ the DOS plotter reads).
   with kaleido and Pillow; `mace plotting` does not pass `--save-gif` on).
 - Two editor groups at most (Split Editor Right); a tab dragged from the right
   group goes back with Move to Other Group (its tab menu or Ctrl+Shift+\\).
-  A gallery of many outputs in panes, cycled with a caption table, is planned
-  for MACE 1.1.6; Compare Runs overlays convergence meanwhile.
-- GUI preferences are per user; per-folder overrides (`.mace/gui.json` in a
-  project) are planned for MACE 1.1.6.
-- A database update stopped by a dev node's CPU-time limit does not continue
-  by itself yet (planned for MACE 1.1.6); start it again with "Only new and
-  changed files".
+- Folder settings (`mace-folder.toml`) cover the theme-independent display,
+  plot, Setup, database and Submit defaults listed above; the theme, layout
+  and keybindings stay per user.
+- A database update stopped by a dev node's CPU-time limit does not start
+  again by itself; start it again with "Only new and changed files" and it
+  continues where it stopped ("Resumed: N of M already done").
 - Editing stops at 5000 atoms (viewing does not).
 - The structure readers cover CIF, 3D `.d12` and CRYSTAL `.out`. SLAB, POLYMER
   and MOLECULE geometry is read from the `.out`. spglib symmetry is reported for
@@ -2346,12 +3682,17 @@ the DOS plotter reads).
 - FREQ normal modes are animated by the GUI itself, from the output's FREQ
   section. The HTML pages `mace plotting --freq` writes load plotly from a CDN
   and stay blank on nodes without internet access; the GUI needs neither.
+- Spin-orbit coupling is for single points only (CRYSTAL23 has no
+  optimization, frequencies or response properties in a two-component run,
+  manual p. 166). In the workflow builder a SOC step starts from scratch; a
+  GUESSPNOSO or GUESSPSO restart is set in a workflow spec by hand.
 - MACE drives CRYSTAL only. Export Structure lists a Quantum ESPRESSO input
   but disables it ("Needs the Quantum ESPRESSO backend"); there is no Quantum
   ESPRESSO support yet.
-- The page follows the light and dark themes and reduced motion, and its
-  colors meet WCAG 2.1 AA contrast; a high-contrast theme
-  (`prefers-contrast: more`) is not there yet.
+- The page follows its theme and reduced motion, and every theme's colors
+  meet WCAG 2.1 AA contrast (the two high-contrast themes AAA). The OS
+  setting `prefers-contrast: more` does not pick a high-contrast theme by
+  itself; choose one in Settings › Appearance.
 
 ## Troubleshooting
 
@@ -2426,6 +3767,51 @@ Your key must also be in `~/.ssh/authorized_keys` in your home on the
 cluster; most clusters share that home between the login and dev nodes.
 Setting up keys, agents and the config from scratch, per platform:
 [docs/ssh-setup.md](ssh-setup.md).
+
+### mace gui connect --check
+
+`mace gui connect --check` (with a profile, or the same flags you connect
+with) checks the ssh setup one piece at a time and prints an `OK`, `WARN`,
+`FAIL`, `INFO` or `SKIP` line for each, with one `fix:` line under each
+problem:
+
+```
+mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --check
+mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --check --no-net
+mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --fix-config
+```
+
+It checks your `ssh` and its version, what `ssh -G` says for the gateway and
+the node (key files, `ProxyJump`, connection sharing, and whether a plain
+`ssh -J` would ask for the node's password), the agent (fingerprints only),
+the permissions of `~/.ssh`, and then, unless `--no-net`, logs in to the
+gateway and to the node by each hop running only `true` (with
+`BatchMode=yes`: a gateway that wants a password or a 2FA code is reported,
+not probed). The last line is the verdict: which hop works, and the
+`mace gui connect` line to use. `--fix-config` prints a suggested
+`~/.ssh/config` block and writes nothing. It reads no private key and asks
+for nothing. The standalone scripts take `--check` (`-Check` in PowerShell)
+too. Details and an example: [docs/ssh-setup.md](ssh-setup.md#5-check-your-setup).
+
+Other messages from `mace gui connect`:
+
+- **"cannot reach host … (timeout)"**, **"(DNS: the name does not
+  resolve)"**, **"(connection refused)"**: ssh could not reach that host. ssh
+  waits 20 seconds (`ConnectTimeout`; a `ConnectTimeout` in your
+  `~/.ssh/config` for that host, or `--ssh-option=-oConnectTimeout=60`,
+  replaces it, also for the nested hop's inner ssh). Check the name and your
+  network or VPN.
+- **"… matches no Host in ~/.ssh/config and does not resolve (DNS)"**: a
+  warning before connecting, when the gateway is neither a `Host` alias nor a
+  name your computer can resolve (usually a typo). MACE still tries.
+- **"Warning: MACE on dev-node-01 is 1.1.5, older than 1.1.6 here"**: the
+  page comes from the cluster's MACE; update that install (the message names
+  its folder: `git -C <folder> pull`), then connect again.
+- **"mace is not on dev-node-01's PATH there; using …/mace_cli"**: the default
+  `mace` command was not found in the node's login shell, so MACE looked for
+  `mace_cli` in `$MACE_HOME`, `~/mace` and `~/MACE` (and, for a `--mace`
+  path that is not there, in that path's folder) and used the first one.
+  Save it to skip the search: `mace gui connect --mace <that path> --save`.
 
 ### Messages
 

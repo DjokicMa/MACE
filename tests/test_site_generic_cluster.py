@@ -100,7 +100,7 @@ def test_other_cluster_scripts_name_nothing_of_msu(tmp_path, kind):
     # the CRYSTAL module of this cluster, the Python that runs MACE, its queue limits
     assert "module load CRYSTAL/23-foss-2023b" in script
     assert _python_line(script) == f'python() {{ "{os.path.abspath(sys.executable)}" "$@"; }}'
-    assert "--max-jobs 190 --reserve 10 --max-submit 10" in script and "--max-jobs 950" not in script
+    assert "--max-jobs 200 --reserve 20 --max-submit 10" in script and "--max-jobs 950" not in script
     if kind == "d12":
         assert "#SBATCH -t 2-00:00:00" in script               # the default partition's MaxTime
     else:
@@ -184,7 +184,7 @@ def test_other_cluster_site_and_describe(tmp_path):
     assert "Account:     (your SLURM default account)" in r.stdout
     assert "SLURM charges your default account (grp_x)" in r.stdout
     assert "(the Python that runs MACE" in r.stdout
-    assert "--max-jobs 190 --reserve 10  (MaxSubmitJobs 200)" in r.stdout
+    assert "--max-jobs 200 --reserve 20  (MaxSubmitJobs 200)" in r.stdout
     assert "at most 2-00:00:00 (partition short)" in r.stdout
     d = json.loads(_mace(tmp_path, env, "site", "--json").stdout)
     assert d["account"]["value"] is None and d["account_check"]["status"] == "default"

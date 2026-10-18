@@ -273,6 +273,27 @@ def _peak_click(drv, scale):
     no_errors(drv)
 
 
+def test_redraws_keep_the_top_margin(fresh):
+    """Redrawing the same spectrum (an option change) keeps its top margin: the margin fitted to the
+    peak labels was taken as the base of the next fit, so the plot shrank by the labels' height on
+    every redraw until a peak click landed on the axis."""
+    drv = fresh[0]
+    click_file(drv, "spectra/cold_freq_IRSPEC.DAT")
+    H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.drawn && s.peaks > 0", 90)
+    seen = []
+    for i in range(5):
+        time.sleep(0.6)
+        seen.append(drv.execute_script("const fl = window.__mace.plotView.el()._fullLayout; return [fl.margin.t, fl._size.h]"))
+        drv.execute_script("const i = document.querySelector('#po-width'); i.value = String(1.5 + (arguments[0] % 2) * 0.5);"
+                           "i.dispatchEvent(new Event('change', {bubbles: true}))", i)
+        H.wait(drv, "const s = window.__mace.plotView.state(); return s && s.drawn", 30)
+    time.sleep(0.6)
+    seen.append(drv.execute_script("const fl = window.__mace.plotView.el()._fullLayout; return [fl.margin.t, fl._size.h]"))
+    tops = [t for t, _ in seen]
+    assert max(tops) - min(tops) <= 2, seen
+    no_errors(drv)
+
+
 def test_spectrum_broadened_from_the_modes(fresh):
     """A FREQ output with IR intensities and no SPEC.DAT: Modes › IR draws the curve
     broadened from the modes with CRYSTAL's width; one with no intensities says so."""

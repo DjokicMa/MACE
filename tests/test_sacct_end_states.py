@@ -138,8 +138,9 @@ def _stale_with_deck(tmp_path, state, with_output):
     renv.update(fake.env)
     renv.update(env)
     renv.pop("PYTHONPATH", None)
+    # --prepare-only: 1.1.5's mace recover (1.1.6's plain one resubmits after a confirmation)
     r = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "recover", "--action", "recover",
-                        "--db", str(db_path)], cwd=work, stdin=subprocess.DEVNULL,
+                        "--prepare-only", "--db", str(db_path)], cwd=work, stdin=subprocess.DEVNULL,
                        capture_output=True, text=True, timeout=300, env=renv)
     return status, error_type, slurm_state, r.stdout + r.stderr, fake
 

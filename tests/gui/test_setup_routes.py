@@ -295,3 +295,21 @@ def test_follow_up_fmixing_changes_only_fmixing(served):
     assert changed == ["- 30", "+ 40"], changed
     assert json.loads(b["json_text"])["fmixing"] == 40
     assert _block(b["deck"], "SMEAR") == _block(a["deck"], "SMEAR")
+
+
+def test_band_path_edit_keeps_the_kpath_editor(served):
+    """A BAND preview with a band_path edit still returns the k-path editor's data (the unedited
+    segments), before and after the unedited preview is cached: the editor stays after an edit."""
+    root, base = served
+    edit = [{"from": "GAMMA", "to": "X"}, {"from": "GAMMA", "to": "L"}, {"from": "L", "to": "W"},
+            {"from": "W", "to": "GAMMA"}]
+    body = {"source": {"path": "outputs/Si_sp.out"}, "calc_type": "BAND"}
+    first = gui_run(base, {**body, "patches": {"band_path": edit}})
+    plain = gui_run(base, {**body, "patches": {}})
+    again = gui_run(base, {**body, "patches": {"band_path": edit}})
+    assert plain["kpath"] and plain["kpath"]["computed"], plain.get("refused") or plain.get("log")
+    for r in (first, again):
+        assert r["deck"], r.get("refused") or r.get("log")
+        assert r.get("kpath"), "the k-path editor's data is missing after an edit"
+        assert r["kpath"]["computed"] == plain["kpath"]["computed"]
+        assert r["kpath"]["edited"] == edit

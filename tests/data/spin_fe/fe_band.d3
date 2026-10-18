@@ -1,0 +1,10 @@
+BAND
+fe - Electronic Band Structure - bcc - GAMMA-H-N-GAMMA-P-H|P-N
+6 0 200 10 31 1 0
+G H
+H N
+N G
+G P
+P H
+P N
+END

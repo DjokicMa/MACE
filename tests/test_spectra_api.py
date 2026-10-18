@@ -97,3 +97,24 @@ def test_average_spectrum_skips_mismatched_grid(tmp_path):
     files = [str(tmp_path / "m-conf1_IRSPEC.DAT"), str(tmp_path / "m-conf2_IRSPEC.DAT")]
     avg, n = api.average_spectrum(files, min_cols=3)
     assert n == 1   # second skipped, no ragged crash
+
+
+def test_grayscale_spectrum_draws_no_grid_and_no_warning(tmp_path):
+    """Print grayscale has no grid: the axes get none, with no matplotlib UserWarning (grid(False,
+    alpha=...) warned and turned the grid on)."""
+    import warnings
+    import numpy as np
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from mace.plotting.handlers import spectra_api as SA
+    SA.use_style("grayscale")
+    try:
+        fig, ax = plt.subplots()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            SA._decorate(ax, "t")
+        assert not any(l.get_visible() for l in ax.get_xgridlines() + ax.get_ygridlines())
+        plt.close(fig)
+    finally:
+        SA.use_style("default")

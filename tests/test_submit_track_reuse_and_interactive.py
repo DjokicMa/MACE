@@ -119,3 +119,15 @@ def test_tracked_array_does_not_replace_an_edited_script(tmp_path):
     assert p.returncode == 1, p.stdout + p.stderr
     assert not fake.calls("sbatch")
     assert (d / "x.sh").read_text() == edited
+
+
+@pytest.mark.parametrize("array", [False, True])
+def test_tracked_submit_from_outside_reads_the_decks_folder_file(tmp_path, array):
+    # review fix: the decks' folder's mace-folder.toml, as the callback there reads it
+    env, fake, d = _setup(tmp_path, nosubmit_first=False)
+    (d / "mace-folder.toml").write_text('[submit]\nntasks = 12\n')
+    p = _mace(tmp_path, env, "submit", "--track", *(["--array"] if array else []),
+              str(d / "x.d12") if not array else str(d))
+    assert p.returncode == 0, p.stdout + p.stderr
+    (call,) = fake.calls("sbatch")
+    assert "#SBATCH --ntasks=12" in call["script_text"]

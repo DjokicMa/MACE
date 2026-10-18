@@ -34,7 +34,7 @@ def _batch(tmp_path, config):
 def test_batch_takes_the_calc_type_from_the_config(tmp_path):
     r = _batch(tmp_path, CONFIG)
     log = r.stdout + r.stderr
-    assert "Select type (1-6)" not in log, log[-3000:]
+    assert "Select type (1-" not in log, log[-3000:]
     assert "Traceback" not in log, log[-3000:]
     assert r.returncode == 0, log[-3000:]
     for name in ("p1", "p2"):

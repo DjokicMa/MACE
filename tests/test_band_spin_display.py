@@ -16,6 +16,7 @@ import pytest
 
 from conftest import REPO_ROOT, find_data
 from test_gui_results import HA, write_band, write_band_crystal
+from mace.gui import results
 
 sys.path.insert(0, str(REPO_ROOT / "Plotting"))
 
@@ -77,24 +78,65 @@ def _cli_figure(monkeypatch, path):
     assert saved
     ax = saved[-1].axes[0]
     legend = [t.get_text() for t in ax.get_legend().get_texts()]
-    dashed = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--" and len(ln.get_xdata())]
+    # (matplotlib names every custom dash pattern "--", the dotted Fermi line's too)
+    dashed = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--" and len(ln.get_xdata())
+              and not ln.get_label().startswith("$E_F")]
+    fermi = [ln for ln in ax.get_lines() if ln.get_label().startswith("$E_F")]
+    _cli_figure.fermi_dashes = [ln._unscaled_dash_pattern for ln in fermi]
+    colors = {ln.get_color() for ln in ax.get_lines() if len(ln.get_xdata()) > 2}      # the bands (not k ticks)
+    _cli_figure.colors = colors
     return legend, dashed
 
 
 def test_cli_draws_a_non_magnetic_run_once(monkeypatch, tmp_path):
     path, _, _ = write_band_crystal(tmp_path, noise=1e-4)
     legend, dashed = _cli_figure(monkeypatch, path)
-    assert legend[0] == "Spin ↑ = ↓ (non-magnetic)" and "Spin ↓" not in legend
-    assert not dashed
+    # one set, in the plot's ink, with no spin legend (Marcus 2026-10-16: not spin up's pink)
+    assert not any("spin" in t or "α" in t for t in legend)
+    assert not dashed and _cli_figure.colors == {"#000000"}
 
 
 def test_cli_keeps_both_spins_of_a_magnetic_run(monkeypatch, tmp_path):
     path, _, _ = write_band_crystal(tmp_path, beta_shift=0.002)
     legend, dashed = _cli_figure(monkeypatch, path)
-    assert legend[:2] == ["Spin ↑", "Spin ↓"] and dashed
+    assert legend[:2] == ["spin up (α)", "spin down (β)"] and dashed
+    # the Fermi line is dotted, as in the DOS and the GUI (dashed is spin down)
+    from mace.plotting.presets import MPL_DASH
+    assert _cli_figure.fermi_dashes == [MPL_DASH["dot"]]
 
 
 def test_cli_closed_shell_is_one_set(monkeypatch, tmp_path):
     path, _, _ = write_band_crystal(tmp_path)
     legend, dashed = _cli_figure(monkeypatch, path)
-    assert legend[0] == "Bands" and not dashed
+    assert not any("spin" in t or "bands" in t for t in legend)
+    assert not dashed and _cli_figure.colors == {"#000000"}
+
+
+BAND_4LG = REPO_ROOT / "test" / "BAND" / "4LG_FSI_2x2_AA_opt_HSESOL3C_optimized_band.BAND.DAT"
+
+
+@pytest.mark.skipif(not BAND_4LG.is_file(), reason="test/ corpus not present")
+def test_a_wide_cli_window_keeps_every_band_in_it():
+    """1.1.6 review F4-4: mace plotting's band data (a requested window) keep every band that enters
+    it, no 400 cap (the 4LG cell lost 5 bands in -20..10 eV); the GUI's capped data keep the bands
+    that come nearest E_F, so every band crossing the default +/-6 eV window is still there."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "Plotting"))
+    import ipBANDS_V2 as ipb
+    _E, B, _Eb, _Bb, _t, maxV, _k, _n = ipb.read_band_data(str(BAND_4LG))
+    ef = float(maxV)
+
+    def inside(lo, hi):
+        return {tuple(np.round(B[:, j], 6)) for j in range(B.shape[1]) if B[:, j].max() > ef + lo and B[:, j].min() < ef + hi}
+
+    def sent(b):
+        n = b["n_kpoints"]
+        cols = np.array([[v for v in col if v is not None][:n] for col in b["up"]])
+        return {tuple(np.round(c, 6)) for c in cols}
+
+    cli = results.band_data(BAND_4LG, window=(-20.0, 10.0))
+    assert not cli["truncated"] and inside(-20, 10) <= sent(cli)
+    assert len(inside(-20, 10)) > 250                   # a large cell: the old cap bit here
+    gui = results.band_data(BAND_4LG)
+    assert gui["truncated"] and len(gui["up"]) == results.MAX_BANDS
+    assert inside(-6, 6) <= sent(gui)

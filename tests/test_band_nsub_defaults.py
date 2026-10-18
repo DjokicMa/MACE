@@ -22,7 +22,8 @@ OPT2D3_BAND_NSUB = 1000
 def _opt2d3_defaults():
     import CRYSTALOptToD3
     import d3_interactive
-    writer = inspect.getsource(CRYSTALOptToD3.D3Generator._write_band_d3)
+    # the computed path's deck (an edited path, band_path, is written from it)
+    writer = inspect.getsource(CRYSTALOptToD3.D3Generator._write_computed_band_d3)
     prompt = inspect.getsource(d3_interactive)
     return ({int(v) for v in re.findall(r'config\.get\("n_points", (\d+)\)', writer)},
             re.search(r'Total number of k-points along path \[(\d+)\]: ", default=(\d+)', prompt)

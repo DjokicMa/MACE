@@ -175,9 +175,10 @@ SLIP_TICKS = (0.0, 0.53414, 0.57266, 0.98978, 1.38128, 1.79454, 1.83691, 2.2284,
               2.97352, 3.32331, 3.85746)
 
 
-def write_band_path(directory, stem="slip_band", path=SLIP_PATH, ticks=SLIP_TICKS, step=0.0039):
+def write_band_path(directory, stem="slip_band", path=SLIP_PATH, ticks=SLIP_TICKS, step=0.0039, points=None):
     """A closed-shell BAND.DAT in CRYSTAL's layout for any path: one point per
-    ``step`` along x, each tick's point ending its panel (no repeated x)."""
+    ``step`` along x, each tick's point ending its panel (no repeated x).
+    ``points`` ({label: fractional k}) adds the .d3's segment records (ISS 6)."""
     ticks = list(ticks)
     xs = [0.0]
     tick_idx = [1]
@@ -199,8 +200,15 @@ def write_band_path(directory, stem="slip_band", path=SLIP_PATH, ticks=SLIP_TICK
 
     out += block() + block()
     (directory / f"{stem}.BAND.DAT").write_text("\n".join(out) + "\n")
+    recs = ""
+    if points:
+        toks, segs = path.split("-"), []
+        for a, b in zip(toks, toks[1:]):
+            if "|" not in (a, b):
+                segs.append(" ".join(str(round(6 * v)) for v in points[a]) + "  " + " ".join(str(round(6 * v)) for v in points[b]))
+        recs = "\n".join(segs) + "\nEND\n"
     (directory / f"{stem}.d3").write_text(f"BAND\nslip - Band Structure - SeeKPath (w.I) - {path}\n"
-                                          f"{len(ticks) - 1} 8 1000 1 2 1 0\n")
+                                          f"{len(ticks) - 1} {6 if points else 8} 1000 1 2 1 0\n" + recs)
     return directory / f"{stem}.BAND.DAT"
 
 
@@ -214,3 +222,50 @@ def test_seekpath_oa2_path_three_breaks_and_subscripts(tmp_path):
     assert len(gaps) == 3
     for i, t in zip(gaps, (0.57266, 1.79454, 2.2284)):
         assert b["x"][i - 1] == pytest.approx(t, abs=1e-4) and b["x"][i + 1] > b["x"][i - 1]
+
+
+def test_related_does_not_read_a_huge_out_whole(tmp_path, monkeypatch):
+    """api/related read a 2 GB .out beside a band file whole (minutes, 2 GB of
+    memory) before its 400 000-line guard; a file over the cap is not read."""
+    from pathlib import Path
+    from mace.gui import related
+    big = tmp_path / "x.out"
+    with open(big, "wb") as fh:
+        fh.truncate(related._PROPS_OUT_MAX + 1)
+    monkeypatch.setattr(Path, "read_text", lambda *a, **k: (_ for _ in ()).throw(AssertionError("read")))
+    assert related._props_geometry(big) is None
+
+
+def test_band_data_counts_the_bands_it_does_not_load(tmp_path):
+    """The GUI keeps the bands within ±25 eV of E_F; it says how many it left
+    out (the page notes them for a wider window), and mace plotting's window
+    loads them."""
+    import numpy as np
+    from mace.gui import results
+    B = np.array([[-60.0, -1.0, 1.0], [-59.0, -0.5, 2.0]])
+    assert results._near_count(B, 0.0) == 2
+    from conftest import REPO_ROOT
+    fe = REPO_ROOT / "tests" / "data" / "spin_fe" / "fe_band.BAND.DAT"
+    d = results.band_data(fe)
+    assert d["window_ev"] == results.WINDOW_EV
+    assert d["n_beyond"] == d["n_bands"] - results._near_count(_bands(fe), d["fermi"])
+    assert results.band_data(fe, window=(-60, 10))["n_beyond"] == 0
+
+
+def _bands(path):
+    from mace.gui import results
+    ipb, _ = results._plotters()
+    return ipb.read_band_data(str(path))[1]
+
+
+def test_volume_stats_note_numerical_noise():
+    """A closed-shell run's SPIN cube (|values| ~ 1e-13) opened at level 6.6e-14
+    with no note; mace plotting warns. The inspector says it is noise."""
+    import numpy as np
+    from types import SimpleNamespace
+    from mace.gui import volume
+    noise = SimpleNamespace(data=np.full((3, 3, 3), 1e-13), data_type="spin")
+    st = volume.stats(noise)
+    assert "numerical noise" in st["noise_note"] and "closed-shell" in st["noise_note"]
+    real = SimpleNamespace(data=np.linspace(-0.1, 0.2, 27).reshape(3, 3, 3), data_type="spin")
+    assert "noise_note" not in volume.stats(real)

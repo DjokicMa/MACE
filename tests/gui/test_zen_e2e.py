@@ -61,6 +61,8 @@ def enter_by_menu(drv):
     top = [b for b in drv.find_elements("css selector", ".menu-top") if b.text == "View"][0]
     ActionChains(drv).move_to_element(top).click().perform()
     item = H.wait(drv, "return document.querySelector('.menu [data-cmd-id=\"view.zen\"]')", 3)
+    # the View menu is taller than this window since 1.1.6: it scrolls, so bring the item into view
+    drv.execute_script("arguments[0].scrollIntoView({block: 'nearest'})", item)
     w = item.size["width"]
     ActionChains(drv).move_to_element_with_offset(item, int(-w / 2 + 16), 0).pause(0.05).click().perform()
     H.wait(drv, ZEN, 3)

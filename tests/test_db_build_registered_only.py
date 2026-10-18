@@ -125,10 +125,12 @@ def test_an_old_temp_registration_is_kept_and_the_run_output_files_under_it(tmp_
 def test_untracked_outputs_of_a_build_get_a_materials_row(tmp_path):
     """Register off (the GUI's checkbox): no calculation rows, but the rows
     the build writes are under a material the Database view can open."""
+    pytest.importorskip("ase", reason="the formula comes from the structure reader, which needs ase")
     d = _folder(tmp_path, ["OPT/1_dia_opt_rev1.out", "OPT/1_dia_opt_rev1.d12",
                            "FAILED_QA/3_dia3_opt_killed_signal9_oom.out"])
     db = tmp_path / "materials.db"
-    p = _build(d, db, "--progress-json")
+    # (the GUI passes --no-register: registering is the CLI's default for a folder)
+    p = _build(d, db, "--progress-json", "--no-register")
     assert _q(db, "SELECT count(*) FROM calculations")[0][0] == 0
     # the failed run too is extracted (as a plain run extracts it), under its own row
     mats = _q(db, "SELECT material_id, formula, dimensionality FROM materials ORDER BY 1")
@@ -156,13 +158,13 @@ def test_without_register_a_partial_run_is_extracted_as_a_plain_run_does(tmp_pat
     a plain extraction; only --register skips it (it registers none)."""
     d = _folder(tmp_path, ["FAILED_QA/3_dia3_opt_killed_signal9_oom.out"])
     built, plain = tmp_path / "built.db", tmp_path / "plain.db"
-    p = _build(d, built, "--progress-json")
+    p = _build(d, built, "--progress-json", "--no-register")
     rec = [r for r in _lines(p) if "i" in r][0]
     assert rec["status"] == "extracted" and rec["class"] == "incomplete", rec
-    _build(d, plain)
+    _build(d, plain, "--no-register")
     q = "SELECT material_id, property_name FROM properties ORDER BY 1, 2"
     assert _q(built, q) == _q(plain, q) != []
     assert not _q(built, "SELECT material_id FROM properties WHERE material_id NOT IN "
                          "(SELECT material_id FROM materials)")
-    dry = _build(d, tmp_path / "dry.db", "--dry-run", "--json")
+    dry = _build(d, tmp_path / "dry.db", "--dry-run", "--json", "--no-register")
     assert [f["class"] for f in json.loads(dry.stdout)["files"]] == ["incomplete"]

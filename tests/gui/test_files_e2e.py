@@ -13,6 +13,7 @@ import p4util as U
 
 pytestmark = pytest.mark.gui
 pytest.importorskip("selenium.webdriver")
+from selenium.webdriver.common.action_chains import ActionChains  # noqa: E402
 ase_io = pytest.importorskip("ase.io")
 np = pytest.importorskip("numpy")
 
@@ -59,10 +60,30 @@ def wait_download(folder, name, timeout=15):
     end = time.time() + timeout
     p = Path(folder) / name
     while time.time() < end:
-        if p.exists() and p.stat().st_size > 0 and not list(Path(folder).glob("*.part")):
+        busy = [x for x in Path(folder).iterdir() if x.suffix in (".part", ".crdownload")]   # Firefox, Chromium
+        if p.exists() and p.stat().st_size > 0 and not busy:
             return p
         time.sleep(0.1)
     raise AssertionError(f"no download {name}: {[x.name for x in Path(folder).iterdir()]}")
+
+
+def menu_pick(drv, top, sub, cmd):
+    """Top menu › submenu › entry with real pointer input, as a student does it:
+    a click on the top menu, a hover on the submenu's row, then right into the
+    submenu along that row and down to the entry (a diagonal would cross other
+    rows), and a click. Rows are measured afresh: an open menu may redraw."""
+    ActionChains(drv).move_to_element(H.wait(drv, "return [...document.querySelectorAll('#menus .menu-top')]"
+                                                  ".find((b) => b.textContent.trim() === arguments[0])", 5, top)).click().perform()
+    row = H.wait(drv, "return [...document.querySelectorAll('.menu .menu-item[aria-haspopup]')]"
+                      ".find((b) => b.textContent.trim() === arguments[0])", 5, sub)
+    ActionChains(drv).move_to_element(row).pause(0.05).perform()
+    r, it = H.wait(drv, """const row = [...document.querySelectorAll('.menu .menu-item[aria-haspopup]')]
+            .find((b) => b.textContent.trim() === arguments[0]);
+        const it = document.querySelector('.menu [data-cmd-id="' + arguments[1] + '"]');
+        return row && it && [row.getBoundingClientRect().toJSON(), it.getBoundingClientRect().toJSON()]""", 5, sub, cmd)
+    x0, y0 = int(r["left"] + r["width"] / 2), int(r["top"] + r["height"] / 2)      # where the pointer is
+    x1, y1 = int(it["left"] + 16), int(it["top"] + it["height"] / 2)
+    ActionChains(drv).move_by_offset(x1 - x0, 0).pause(0.05).move_by_offset(0, y1 - y0).pause(0.05).click().perform()
 
 
 def test_export_formats_download_and_no_write(fresh):
@@ -74,7 +95,10 @@ def test_export_formats_download_and_no_write(fresh):
         ref = ase_io.read(str(H.EXAMPLES / "structures" / "NaCl.cif"))
     for cmd, name, reader in (("file.export.CIF", "NaCl.cif", "cif"), ("file.export.POSCAR", "NaCl.vasp", "vasp"),
                               ("file.export.XYZ", "NaCl.xyz", "xyz"), ("file.export.extXYZ", "NaCl.extxyz", "extxyz")):
-        drv.execute_script("window.__mace.run(arguments[0])", cmd)
+        # each export is a real click on its menu entry, as a student makes it: Chromium-based
+        # browsers (Chrome, Brave, Edge) let a page download a second file only after a user
+        # input since the first; four scripted runs in a row are blocked from the second on
+        menu_pick(drv, "File", "Export Structure", cmd)
         p = wait_download(downloads, name)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -88,6 +112,37 @@ def test_export_formats_download_and_no_write(fresh):
                                                      "path": "structures/NaCl_saveas.cif", "format": "cif"})
     assert st == 200 and (root / "structures" / "NaCl_saveas.cif").read_bytes() == cif
     (root / "structures" / "NaCl_saveas.cif").unlink()
+    U.no_errors(drv)
+
+
+def test_submenu_stays_open_on_a_slow_move_into_it(fresh):
+    """A pointer that slides along File › Export Structure into its submenu (many
+    small moves, as a hand makes them) keeps both menus open: crossing the row's
+    label and icon used to rebuild the submenu 120 ms later, and the old
+    submenu's own hover timer then closed every menu, so the entry under the
+    pointer was gone before the click (any browser; Firefox's input showed it)."""
+    drv = fresh[0]
+    U.open_doc(drv, "structures/NaCl.cif")
+    ActionChains(drv).move_to_element(H.wait(drv, "return [...document.querySelectorAll('#menus .menu-top')]"
+                                                  ".find((b) => b.textContent.trim() === 'File')", 5)).click().perform()
+    row = H.wait(drv, "return [...document.querySelectorAll('.menu .menu-item[aria-haspopup]')]"
+                      ".find((b) => b.textContent.trim() === 'Export Structure')", 5)
+    ac = ActionChains(drv).move_to_element_with_offset(row, -row.size["width"] // 2 + 8, 0)   # its left end
+    ac.pause(0.3).perform()                                                              # the submenu opens
+    H.wait(drv, "return document.querySelectorAll('.menu').length === 2", 5)
+    r, it = drv.execute_script("""const it = document.querySelector('.menu [data-cmd-id="file.export.CIF"]');
+        return [arguments[0].getBoundingClientRect().toJSON(), it.getBoundingClientRect().toJSON()]""", row)
+    x, y = int(r["left"] + 8), int(r["top"] + r["height"] / 2)
+    x1 = int(it["left"] + it["width"] / 2)
+    ac = ActionChains(drv, duration=16)                     # a hand's speed: 6 px every 16 ms
+    for _ in range((x1 - x) // 6):                          # rightwards along the row, into the submenu
+        ac.move_by_offset(6, 0)
+    ac.pause(0.5).perform()
+    assert drv.execute_script("return [...document.querySelectorAll('.menu')].map((m) => m.getAttribute('aria-label'))") == \
+        ["File", "Export Structure"]
+    downloads = fresh[5]
+    ActionChains(drv).click().perform()
+    wait_download(downloads, "NaCl.cif")
     U.no_errors(drv)
 
 
@@ -150,6 +205,27 @@ def test_changed_on_disk_banner_reload(fresh):
         drv.execute_script("window.__mace.checkDisk()")
         time.sleep(0.6)
         assert drv.execute_script("return document.querySelector('#disk-banner').hidden")
+    finally:
+        p.write_text(original)
+    U.no_errors(drv)
+
+
+def test_changed_on_disk_checked_right_after_the_page_loads(fresh):
+    """The first focus check after a page load runs, however soon it comes: the
+    2 s throttle measured from performance.now(), which starts at 0 on a load,
+    with 0 meaning 'never checked', so every check in a page's first 2 s was
+    dropped (and the test hook's diskCheckAt = 0 too: a flaky banner test in
+    Chromium, which loads the page fast enough to be inside that window)."""
+    drv, base, root = fresh[0], fresh[1], fresh[2]
+    p = root / "structures" / "LiF.cif"
+    original = p.read_text()
+    try:
+        H.load(drv, base)
+        U.open_doc(drv, "structures/LiF.cif", wait_atoms=False)
+        p.write_text(original + "\n# touched\n")
+        age = drv.execute_script("window.dispatchEvent(new Event('focus')); return performance.now()")
+        H.wait(drv, "return !document.querySelector('#disk-banner').hidden", 5)
+        print(f"checked {age:.0f} ms after the page load")
     finally:
         p.write_text(original)
     U.no_errors(drv)

@@ -23,6 +23,8 @@ config/secrets.yml
 # Large binary files - computational data
 *.f9
 *.cube
+# the orbital reader's CRYSTAL reference grids (tests/test_orbitals_reader.py)
+!tests/data/orbitals/ref/*.cube
 *.CUBE
 *.zip
 

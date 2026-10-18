@@ -1,7 +1,8 @@
 """Per-process CPU-time limits (plan D18/D19): the limit and per-pid use, the
 banner, clirun's classification of a kernel kill, the pool (a worker killed
 by its limit fails only its own task; idle recycling), the ML worker restart
-rule, the server's own clean stop, and the database build's relaunch rule."""
+rule and the server's own clean stop. (A database build the limit stops is
+continued by the next build: tests/test_db_build_resume.py.)"""
 import http.client
 import json
 import os
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytest
 
 import guiharness as H
-from mace.gui import buildresume, clirun, cpulimit
+from mace.gui import clirun, cpulimit
 
 linux = pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
 
@@ -276,52 +277,3 @@ def test_ml_worker_restarts_before_the_limit(monkeypatch):
     finally:
         burner.kill()
         burner.wait(5)
-
-
-def test_build_relaunch_rule():
-    argv = ["analyze", "--extract-properties", "--skip-unchanged", "--backup", "--keep-backups", "3", "--register"]
-    assert buildresume.resume_argv(argv) == ["analyze", "--extract-properties", "--skip-unchanged", "--register"]
-    assert buildresume.resume_argv(["x", "--keep-backups=2", "--backup"]) == ["x"]
-
-    class R:
-        def __init__(self, cpu):
-            self.cpu_limit = cpu
-    seen, notes = [], []
-    results = iter([R(True), R(True), R(False)])
-    out = buildresume.run_with_resume(lambda a: seen.append(a) or next(results), argv, note=notes.append,
-                                      limit_minutes="120")
-    assert not out.cpu_limit and len(seen) == 3
-    assert seen[0] == argv and seen[1] == seen[2] == buildresume.resume_argv(argv)
-    assert "attempt 2 of 4" in notes[0] and "attempt 3 of 4" in notes[1] and "Files already written are kept" in notes[0]
-    with pytest.raises(buildresume.BuildStopped, match="Turn on 'Only new and changed files'"):
-        buildresume.run_with_resume(lambda a: R(True), ["analyze", "--backup"])
-    calls = []
-    with pytest.raises(buildresume.BuildStopped, match="4 times"):
-        buildresume.run_with_resume(lambda a: calls.append(a) or R(True), argv)
-    assert len(calls) == 4
-
-    class Ctx:
-        canceled = True
-    calls = []
-    res = buildresume.run_with_resume(lambda a: calls.append(a) or R(True), argv, ctx=Ctx())
-    assert len(calls) == 1 and res.cpu_limit
-
-
-@linux
-@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
-def test_build_relaunch_after_a_real_kernel_kill(tmp_path):
-    """The first attempt (with --backup) runs under a 1 s RLIMIT_CPU and is
-    killed by the kernel; the relaunch (no --backup) finishes."""
-    marker = tmp_path / "attempts.txt"
-    script = tmp_path / "build.py"
-    script.write_text("import sys, time\nopen(sys.argv[1], 'a').write(' '.join(sys.argv[2:]) + '\\n')\n"
-                      "if '--backup' in sys.argv:\n    end = time.process_time() + 30\n"
-                      "    while time.process_time() < end: pass\n")
-
-    def attempt(argv):
-        wrap = "ulimit -t 1; exec \"$@\"" if "--backup" in argv else "exec \"$@\""
-        return clirun.run(["bash", "-c", wrap, "x", sys.executable, str(script), str(marker), *argv], tmp_path,
-                          timeout=60)
-    res = buildresume.run_with_resume(attempt, ["--skip-unchanged", "--backup"])
-    assert res.returncode == 0 and not res.cpu_limit
-    assert marker.read_text().splitlines() == ["--skip-unchanged --backup", "--skip-unchanged"]

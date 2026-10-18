@@ -106,3 +106,13 @@ def test_javascript_parses(path, tmp_path):
     r = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True,
                        timeout=60)
     assert r.returncode == 0, r.stderr
+
+
+def test_editor_themes_ship_their_mit_notices():
+    """Every editor theme credited in tokens.css has its copyright notice and
+    the MIT text in css/THEMES.LICENSE.txt (MIT asks for both)."""
+    lic = (STATIC / "css" / "THEMES.LICENSE.txt").read_text()
+    assert "Permission is hereby granted" in lic and "THE SOFTWARE IS PROVIDED" in lic
+    for project in ("Catppuccin", "Dracula", "Gruvbox", "Nord", "One Dark", "Solarized", "Tokyo Night"):
+        assert project in lic, project
+    assert "THEMES.LICENSE.txt" in (STATIC / "css" / "tokens.css").read_text()

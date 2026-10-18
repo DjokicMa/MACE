@@ -146,3 +146,24 @@ def test_submit_refuses_a_d3_without_its_f9(tmp_path):
     p = _mace(tmp_path, env, "submit", "--nosubmit", "--overwrite-sh", "decks")
     assert p.returncode == 0, p.stdout + p.stderr
     assert all((d / f"{n}_band.sh").is_file() for n in "abc")
+
+
+def test_scf_script_copies_back_an_scfout_log_this_run_wrote(tmp_path):
+    """SCFOUT.LOG (an optimization's later points' SCF cycles) comes back as
+    <job>.SCFOUT.LOG, only when this run wrote it: an earlier run's in the scratch
+    directory, or none, leaves the job folder alone."""
+    d = tmp_path / "job"
+    d.mkdir()
+    (d / "x.d12").write_text(DECK)
+    scratch = tmp_path / "scr"
+    job_dir = scratch / "crys23" / "x"
+    job_dir.mkdir(parents=True)
+    (job_dir / "SCFOUT.LOG").write_text("left by an earlier run")
+    os.utime(job_dir / "SCFOUT.LOG", (1_700_000_000, 1_700_000_000))
+    script = _generate(d, "crystal", "x")
+    r = _run(tmp_path, script, scratch, STUB_WRITES="fort.9")       # an SP: no SCFOUT.LOG of its own
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (d / "x.SCFOUT.LOG").exists()
+    r = _run(tmp_path, script, scratch, STUB_WRITES="fort.9 SCFOUT.LOG")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (d / "x.SCFOUT.LOG").read_text().startswith("SCFOUT.LOG from")

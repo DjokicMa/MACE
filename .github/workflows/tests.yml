@@ -71,8 +71,10 @@ jobs:
     # example data, so a GUI regression is caught on push (the jobs above skip
     # every browser test: they install no selenium). MACE_GUI_REQUIRE_BROWSER
     # turns a missing browser, driver or software WebGL into a failure, not a skip.
+    # The smoke set includes the accessibility scan (axe, from requirements-gui-test.txt) on the light,
+    # dark and one high-contrast theme, the Tab walk and one dialog's Esc; it takes about 8 minutes more.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 

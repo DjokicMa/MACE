@@ -177,9 +177,11 @@ def test_held_submit_record_release_order(tmp_path, monkeypatch):
 
     (p,) = submit_prepared(prepared, record)
     calls = [c["argv"] for c in fake.calls() if c["tool"] in ("sbatch", "scontrol")]
-    assert calls == [["scontrol", "show", "assoc_mgr", "users=tester", "accounts=mendoza_q",
-                      "flags=assoc"],
-                     ["sbatch", "--hold", p.wrapper.name], ["scontrol", "release", "4242"]]
+    # the queue budget counts the user's queue first (squeue), then: held,
+    # recorded, released
+    assert ["squeue", "-a", "-u", "tester", "-h", "-r", "-o", "%i|%T|%j"] in [c["argv"] for c in fake.calls("squeue")]
+    calls = [c for c in calls if c[0] in ("sbatch",) or c[:2] == ["scontrol", "release"]]
+    assert calls == [["sbatch", "--hold", p.wrapper.name], ["scontrol", "release", "4242"]]
     assert ["scontrol", "release"] not in seen[0]
     assert seen[1] == ["4242_0", "4242_1", "4242_2"]
     data = json.loads((p.array_dir / "submitted.json").read_text())
@@ -200,7 +202,8 @@ def test_partial_wave_is_removed_again(tmp_path, monkeypatch):
     assert not recorded
     tools = [(c["tool"], c["argv"][1:]) for c in fake.calls()
              if c["tool"] in ("sbatch", "scancel", "squeue", "scontrol")
-             and c["argv"][1:3] != ["show", "assoc_mgr"]]
+             and c["argv"][1:3] != ["show", "assoc_mgr"]
+             and c["argv"][1:] != ["-a", "-u", "tester", "-h", "-r", "-o", "%i|%T|%j"]]   # the queue budget's count
     assert tools[:2] == [("sbatch", ["--hold", prepared[0].wrapper.name]),
                          ("sbatch", ["--hold", prepared[1].wrapper.name])]
     assert ("squeue", ["-h", "-r", "-j", "4242", "-o", "%T,%r"]) in tools
@@ -208,20 +211,42 @@ def test_partial_wave_is_removed_again(tmp_path, monkeypatch):
     assert not fake.calls("scontrol") or all(c["argv"][1] != "release" for c in fake.calls("scontrol"))
 
 
-def test_no_sbatch_at_all_when_the_tasks_exceed_free_submit_slots(tmp_path, monkeypatch):
+def _queue_with(fake, n):
+    for i in range(n):
+        fake.add_record(id=str(900000 + i), state="RUNNING", user="tester", name=f"other{i}")
+
+
+def test_no_sbatch_at_all_when_the_tasks_exceed_the_budget_and_nobody_holds_them(tmp_path, monkeypatch):
+    """Without a caller that holds the rest (on_overflow), a wave that does
+    not fit in the queue budget is refused before any sbatch."""
     fake = FakeSlurm(tmp_path / "slurm", {"assoc_mgr":
         "ClusterName=c Account=mendoza_q UserName=tester(1) ID=1\n"
-        "    MaxJobs=520(3) MaxSubmitJobs=1000(998) MaxWallPJ="})
+        "    MaxJobs=520(3) MaxSubmitJobs=1000(898) MaxWallPJ="})
     _fake_env(monkeypatch, fake)
+    _queue_with(fake, 898)                    # budget 1000 - 100 = 900: two slots free
     ms = [member(tmp_path, f"m{i}") for i in range(3)]
     arrays, _ = plan_groups(ms)
     prepared = prepare_arrays(arrays, tmp_path, "sp", max_tasks=10)
-    with pytest.raises(ArrayRefusal, match="MaxSubmitJobs is 1000 and 998"):
+    with pytest.raises(ArrayRefusal, match="do not fit in the queue budget"):
         submit_prepared(prepared)
     assert not fake.calls("sbatch")
-    (q,) = [c for c in fake.calls("scontrol")]
-    assert q["argv"] == ["scontrol", "show", "assoc_mgr", "users=tester",
-                         "accounts=mendoza_q", "flags=assoc"]
+
+
+def test_the_tasks_that_fit_are_submitted_and_the_rest_handed_back(tmp_path, monkeypatch):
+    fake = FakeSlurm(tmp_path / "slurm", {"assoc_mgr":
+        "ClusterName=c Account=mendoza_q UserName=tester(1) ID=1\n"
+        "    MaxJobs=520(3) MaxSubmitJobs=1000(898) MaxWallPJ="})
+    _fake_env(monkeypatch, fake)
+    _queue_with(fake, 898)
+    ms = [member(tmp_path, f"m{i}") for i in range(3)]
+    arrays, _ = plan_groups(ms)
+    prepared = prepare_arrays(arrays, tmp_path, "sp", max_tasks=10)
+    rest = []
+    subs = submit_prepared(prepared, on_overflow=rest.extend)
+    assert [len(p.members) for p in subs] == [2] and [m.job for m in rest] == ["m2"]
+    assert "--array=0-1" in subs[0].wrapper.read_text()
+    assert len(ja.read_manifest(subs[0].manifest)) == 2
+    assert len([r for r in fake.records() if r.get("array")]) == 2
 
 
 def test_recording_failure_removes_the_held_arrays(tmp_path, monkeypatch):

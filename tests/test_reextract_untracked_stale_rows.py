@@ -62,7 +62,7 @@ def _seed(db, material, rows):
                       (material, cat, name, val, text, unit, OLD))
 
 
-def _extract_twice(tmp_path, outs, material, stale, extra_args=()):
+def _extract_twice(tmp_path, outs, material, stale, extra_args=("--no-register",)):
     d = tmp_path / "d"
     d.mkdir()
     for o in outs:
@@ -104,8 +104,9 @@ def test_a_sibling_left_out_keeps_the_material_untouched(tmp_path):
     shutil.copy(DATA / "li_fsi_ec_neutral.out", d / "li_x_sp.out")
     shutil.copy(DATA / "odd_hse06_0d_crash.out", d / "li_x_doss.out")
     db = tmp_path / "c.db"
-    _mace(["analyze", "--extract-properties", str(d), "--db-path", str(db)], tmp_path)
+    _mace(["analyze", "--extract-properties", str(d), "--db-path", str(db), "--no-register"], tmp_path)
     _seed(db, "li_x", STALE_111)
-    _mace(["analyze", "--extract-properties", str(d), "--db-path", str(db), "--filter-type", "SP"],
+    _mace(["analyze", "--extract-properties", str(d), "--db-path", str(db), "--filter-type", "SP",
+           "--no-register"],
           tmp_path)
     assert "total_bands" in _rows(db, "li_x")

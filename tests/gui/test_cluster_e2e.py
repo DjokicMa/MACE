@@ -72,10 +72,18 @@ def app(tmp_path_factory):
 
 
 def click(drv, css, timeout=15):
-    el = H.wait(drv, f"return document.querySelector({css!r})", timeout)
-    drv.execute_script("arguments[0].scrollIntoView({block: 'center'})", el)
-    el.click()
-    return el
+    """A real click; the Job document draws its body again on each poll, so an element found a moment
+    before may be gone: find it again."""
+    from selenium.common.exceptions import StaleElementReferenceException
+    for _ in range(10):
+        el = H.wait(drv, f"return document.querySelector({css!r})", timeout)
+        try:
+            drv.execute_script("arguments[0].scrollIntoView({block: 'center'})", el)
+            el.click()
+            return el
+        except StaleElementReferenceException:
+            time.sleep(0.1)
+    raise AssertionError(f"{css} kept being replaced")
 
 
 def pane_text(drv):
@@ -500,6 +508,10 @@ def test_job_document_array_tasks(app):
         H.wait(drv, "return document.querySelector('#job-host .jbv-array')", 20)
         txt = drv.execute_script("return document.querySelector('#job-host .jbv-array').innerText")
         assert "5000_1" in txt and "5000_3" in txt and "this task" in txt
+        # 1.1.6: the array's total, beyond this job (no task finished yet: the time per task is unknown)
+        arr = drv.execute_script("const li = document.querySelector('#job-host .jbv-totals li[data-total=\"array\"]');"
+                                 " return li ? li.innerText : ''")
+        assert arr.startswith("Array 5000: 2 running, 1 pending, 0 finished"), arr
         click(drv, '#job-host .jbv-array [data-job="5000_3"]')
         H.wait(drv, "return ((document.querySelector('#job-host h2') || {}).textContent || '').startsWith('Job 5000_3')", 20)
         U.shot(drv, "cluster-job-array")

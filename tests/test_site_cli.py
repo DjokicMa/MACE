@@ -50,7 +50,7 @@ def test_init_writes_once_and_changes_nothing(tmp_path):
     assert r.returncode == 0 and path.is_file() and oct(path.stat().st_mode & 0o777) == "0o644"
     import tomllib
     data = tomllib.loads(path.read_text())
-    assert set(data) == {"slurm", "resources", "mpi", "modules", "crystal", "paths", "queue", "local_run"}
+    assert set(data) == {"slurm", "resources", "mpi", "modules", "crystal", "paths", "queue", "local_run", "folders"}
     assert data["resources"] == {"properties": {}}
     assert all(v == {} for k, v in data.items() if k != "resources")      # no active key
     d = json.loads(_site(tmp_path, env, "--json").stdout)
@@ -85,7 +85,7 @@ def test_invalid_config_exits_2(tmp_path):
 
 def test_listed_in_help(tmp_path):
     r = subprocess.run([sys.executable, str(MACE_CLI), "--help"], env=_env(tmp_path), capture_output=True, text=True)
-    assert "  site        Show the site settings for job scripts" in r.stdout
+    assert "  site        Show job-script site settings" in r.stdout
     r = _site(tmp_path, _env(tmp_path), "--help")
     assert r.returncode == 0 and "usage: mace site" in r.stdout and "--init" in r.stdout
 
@@ -118,14 +118,18 @@ def test_docs_match_help(tmp_path):
     from mace.submission.site_cli import build_parser
     for opt in [o for o in build_parser()._option_string_actions if o.startswith("--")]:
         if opt != "--help":
-            assert f"mace site {opt}" in sec or f"mace site check {opt}" in sec, opt
+            assert any(f"mace site {sub}{opt}" in sec for sub in ("", "check ", "suggest ", "set ", "unset ")), opt
     from mace.submission import site
     for var in ("MACE_SLURM_ACCOUNT", "MACE_SLURM_PARTITION", "MACE_CRYSTAL_MODULE", "MACE_SITE_CONFIG"):
         assert var in sec, var
     for section, keys in site.KNOWN.items():
         assert f"[{section}]" in sec
         for k in keys:
+            if section == "resources" and k in site.RESOURCE_TYPES:     # a table: [resources.OPT]
+                assert f"`{k}`" in sec or f'`"{k}"`' in sec, k
+                continue
             assert re.search(rf"^{k}\s*=", sec, re.M), k
+    assert "MACE_SLURM_WALLTIME" in sec and "mace site set" in sec and "mace site unset" in sec
 
 
 def test_invalid_account_hint_for_arrays(tmp_path):
@@ -148,9 +152,10 @@ def test_init_text_names_every_key():
     text = site.INIT_TEXT
     for section, keys in site.KNOWN.items():
         assert f"[{section}]" in text, section
-        for k in keys - {"properties"} if section == "resources" else keys:
+        for k in keys - {"properties", *site.RESOURCE_TYPES} if section == "resources" else keys:
             assert re.search(rf"^# {k}\s*=", text, re.M), (section, k)
     assert "[resources.properties]" in text
+    assert all(t in text for t in site.RESOURCE_TYPES) and "[resources.FREQ]" in text
     data = tomllib.loads(text)
     assert all(not v or v == {"properties": {}} for v in data.values())
 

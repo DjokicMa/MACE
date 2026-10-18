@@ -81,3 +81,102 @@ def test_output_dir_is_honored_and_stays_out_of_the_title(parent):
     assert (dest / name).exists(), sorted(p.name for p in parent.rglob("*.d12"))
     assert not (parent / name).exists(), "deck also written to the current directory"
     assert (dest / name).read_text().splitlines()[0] == name[:-len(".d12")]
+
+
+# --non-interactive never waits for an answer. Answers are read only when
+# they are already on stdin (the workflow engine's piped answers); a pipe that
+# stays open with nothing on it (a GUI or script that never closes the child's
+# stdin), or a terminal, is not someone to ask. In 1.1.6 previews the run
+# blocked on "Use these exact settings for the new calculation?" forever.
+
+CONFIRM = "Use these exact settings for the new calculation?"
+
+
+def _popen(cwd, args, **kw):
+    return subprocess.Popen(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{PARENT}.out", *args],
+        cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
+
+
+def _finish(proc, timeout=120):
+    """Wait for the run with its stdin left as it is (communicate() would
+    close a pipe, which is end of input, not an open pipe)."""
+    import threading
+    chunks = []
+    reader = threading.Thread(target=lambda: chunks.append(proc.stdout.read()), daemon=True)
+    reader.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        reader.join(10)
+        pytest.fail(f"opt2d12 --non-interactive waited for an answer:\n{''.join(chunks)[-800:]}")
+    reader.join(30)
+    return "".join(chunks)
+
+
+@pytest.mark.parametrize("calc_type", ["SP", "FREQ"])
+def test_open_empty_pipe_is_not_waited_on(parent, calc_type):
+    proc = _popen(parent, ["--calc-type", calc_type, "--non-interactive"], stdin=subprocess.PIPE)
+    try:
+        out = _finish(proc)
+    finally:
+        proc.stdin.close()
+    assert proc.returncode == 0, out[-1500:]
+    assert CONFIRM not in out, out[-1500:]
+    assert "No answers on stdin" in out
+    assert (parent / f"{PARENT}_{calc_type.lower()}_B3LYP-D3_optimized.d12").exists()
+
+
+def test_directory_mode_open_empty_pipe_is_not_waited_on(parent):
+    proc = subprocess.Popen(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--directory", ".", "--calc-type", "SP",
+         "--non-interactive"],
+        cwd=parent, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True)
+    try:
+        out = _finish(proc)
+    finally:
+        proc.stdin.close()
+    assert proc.returncode == 0, out[-1500:]
+    assert CONFIRM not in out, out[-1500:]
+    assert (parent / f"{PARENT}_sp_B3LYP-D3_optimized.d12").exists()
+
+
+def test_answers_on_a_pipe_left_open_are_still_read(parent):
+    """The engine's answers, written to a pipe the writer keeps open: read
+    as before (the deck equals the one from the same answers and a closed
+    pipe), and the run does not wait once they are used up."""
+    engine_answers = "n\n" + "\n" * 39
+    closed = _run(parent, "SP", engine_answers)
+    assert closed.returncode == 0, (closed.stdout + closed.stderr)[-1500:]
+    deck = parent / f"{PARENT}_sp_B3LYP-D3_optimized.d12"
+    expected = deck.read_text()
+    deck.unlink()
+
+    proc = _popen(parent, ["--calc-type", "SP", "--non-interactive"], stdin=subprocess.PIPE)
+    proc.stdin.write(engine_answers)
+    proc.stdin.flush()
+    try:
+        out = _finish(proc)
+    finally:
+        proc.stdin.close()
+    assert proc.returncode == 0, out[-1500:]
+    assert "No answers on stdin" not in out
+    assert deck.read_text() == expected
+
+
+def test_a_terminal_is_not_asked(parent):
+    pty = pytest.importorskip("pty")
+    import os
+    master, slave = pty.openpty()
+    try:
+        proc = _popen(parent, ["--calc-type", "SP", "--non-interactive"], stdin=slave)
+        os.close(slave)
+        out = _finish(proc)
+    finally:
+        os.close(master)
+    assert proc.returncode == 0, out[-1500:]
+    assert CONFIRM not in out, out[-1500:]
+    assert (parent / f"{PARENT}_sp_B3LYP-D3_optimized.d12").exists()

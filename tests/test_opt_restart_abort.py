@@ -446,9 +446,17 @@ def _without_twocompon_guess(script):
     return script[:a] + script[b + 2:]
 
 
+def _without_2c_restart_branch(script):
+    """The script without the GUESSPSO / GUESSPNOSO staging branch (1.1.6), the
+    last branch of the GUESSP chain."""
+    a = script.index("elif MACE_GUESS2C=")
+    b = script.index("fi\n# EXTERNAL geometry", a)
+    return script[:a] + script[b:]
+
+
 def _as_before_this_change(script):
     """The same script as generated before the RESTART staging existed."""
-    script = _without_twocompon_guess(script)
+    script = _without_2c_restart_branch(_without_twocompon_guess(script))
     start = script.index("# OPTGEOM RESTART")
     end = script.index("# GUESSP restart")
     old = script[:start] + script[end:]
@@ -460,8 +468,11 @@ def test_old_script_gets_exactly_the_current_staging(tmp_path):
     old = _as_before_this_change(new)
     assert "# OPTGEOM RESTART" not in old and "RESTART_KEEPS_FORT20" not in old
     refreshed, what = opt_restart.refresh_restart_staging(old)
-    # the RESTART staging and the TWOCOMPON guess branch: the current script
-    assert refreshed == new, what
+    # the RESTART staging and the TWOCOMPON guess branch: the current script,
+    # less the GUESSPSO / GUESSPNOSO branch, which a refreshed script never
+    # needs (see refresh_restart_staging: it runs only a killed OPT deck, and a
+    # two-component deck has no OPTGEOM, manual p. 166)
+    assert refreshed == _without_2c_restart_branch(new), what
     assert opt_restart.refresh_restart_staging(new) == (new, "already has the RESTART staging")
 
 
@@ -478,10 +489,26 @@ def test_script_with_an_older_restart_staging_gets_the_current_one(tmp_path):
         older_block[older_block.index('    if sed -n -E'):older_block.index('    elif [ -s "$scratch/$JOB/fort.20" ]')]
         + "    elif", "    if")
     older = _without_twocompon_guess(new[:start] + older_block + new[end:])
-    assert "TWOCOMPON" not in older
+    # (the last GUESSPSO / GUESSPNOSO branch names TWOCOMPON in its own warning
+    # for a record outside the block; it is not what this script lacks)
+    assert "TWOCOMPON" not in older[:older.index("elif MACE_GUESS2C=")]
     refreshed, what = opt_restart.refresh_restart_staging(older)
     assert refreshed == new, what
     assert "TWOCOMPON guess branch" in what
+
+
+def test_a_114_script_gets_the_twocompon_branch_and_keeps_its_guessp_line(tmp_path):
+    """A 1.1.4 script: RESTART staging, a GUESSP line that matches every
+    GUESSP* record, no TWOCOMPON branch. The branch goes in front of that
+    line, which is left as it is."""
+    new = _generated_script(tmp_path)
+    older = _without_twocompon_guess(new).replace(opt_restart._NEW_GUESSP_IF,
+                                                  opt_restart._PREV_GUESSP_IF)
+    assert "# Inside a TWOCOMPON block" not in older
+    refreshed, what = opt_restart.refresh_restart_staging(older)
+    assert "TWOCOMPON guess branch" in what
+    assert "# Inside a TWOCOMPON block" in refreshed
+    assert "el" + opt_restart._PREV_GUESSP_IF in refreshed
 
 
 def _run_staging(tmp_path, deck, scratch_files=(), dir_files=()):

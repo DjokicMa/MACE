@@ -1028,7 +1028,7 @@
   "cif2d12/mixed_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "776aa1c443332e5516e6d7ef8b8be6a1d33cd251e1b00cc89bd08c859e2e5cad",
   "d12_writer/full.basis.doublezeta": "836db1f52af62705dbe3764121813d3401c8942d3514d6e80590f8cd319c8ac5",
   "d12_writer/full.basis.triplezeta": "f5b1c619960d117689168a68d7c7c8fe9664699dedfa115c3ab07f96085f0b6c",
-  "opt2d12/tqc_agbr_sp_B3LYP-D3_optimized.d12": "54136940306d600e09160ff211a8148c0b8c682d12e179a6c842b815e4d8a033"
+  "opt2d12/tqc_agbr_sp_B3LYP-D3_optimized.d12": "5f84237c59e9d3ac938e66ab136a68c980d2c685d6f296270197f3b6a2dcf445"
  },
  "files": {
   "full.basis.doublezeta": {
@@ -1349,12 +1349,12 @@
   "full.basis.doublezeta/10/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ne (Z=10) (no record 10 in <BASIS>/)"
   },
   "full.basis.doublezeta/10/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ne (Z=10) (no record 10 in <BASIS>/)"
   },
   "full.basis.doublezeta/11/EXTERNAL": {
    "empty": false,
@@ -1429,12 +1429,12 @@
   "full.basis.doublezeta/18/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ar (Z=18) (no record 18 in <BASIS>/)"
   },
   "full.basis.doublezeta/18/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ar (Z=18) (no record 18 in <BASIS>/)"
   },
   "full.basis.doublezeta/19/EXTERNAL": {
    "empty": false,
@@ -1449,12 +1449,12 @@
   "full.basis.doublezeta/2/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for He (Z=2) (no record 2 in <BASIS>/)"
   },
   "full.basis.doublezeta/2/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for He (Z=2) (no record 2 in <BASIS>/)"
   },
   "full.basis.doublezeta/20/EXTERNAL": {
    "empty": false,
@@ -1629,12 +1629,12 @@
   "full.basis.doublezeta/36/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Kr (Z=36) (no record 36 in <BASIS>/)"
   },
   "full.basis.doublezeta/36/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Kr (Z=36) (no record 36 in <BASIS>/)"
   },
   "full.basis.doublezeta/37/EXTERNAL": {
    "empty": false,
@@ -1644,7 +1644,7 @@
   "full.basis.doublezeta/37/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 37 (Z=37) not found in <BASIS>/ (tried: 37)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Rb (Z=37) (no record 37 in <BASIS>/)"
   },
   "full.basis.doublezeta/38/EXTERNAL": {
    "empty": false,
@@ -1654,7 +1654,7 @@
   "full.basis.doublezeta/38/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 38 (Z=38) not found in <BASIS>/ (tried: 38)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Sr (Z=38) (no record 38 in <BASIS>/)"
   },
   "full.basis.doublezeta/39/EXTERNAL": {
    "empty": false,
@@ -1664,7 +1664,7 @@
   "full.basis.doublezeta/39/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 39 (Z=39) not found in <BASIS>/ (tried: 39)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Y (Z=39) (no record 39 in <BASIS>/)"
   },
   "full.basis.doublezeta/4/EXTERNAL": {
    "empty": false,
@@ -1684,7 +1684,7 @@
   "full.basis.doublezeta/40/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 40 (Z=40) not found in <BASIS>/ (tried: 40)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Zr (Z=40) (no record 40 in <BASIS>/)"
   },
   "full.basis.doublezeta/41/EXTERNAL": {
    "empty": false,
@@ -1694,7 +1694,7 @@
   "full.basis.doublezeta/41/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 41 (Z=41) not found in <BASIS>/ (tried: 41)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Nb (Z=41) (no record 41 in <BASIS>/)"
   },
   "full.basis.doublezeta/42/EXTERNAL": {
    "empty": false,
@@ -1704,7 +1704,7 @@
   "full.basis.doublezeta/42/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 42 (Z=42) not found in <BASIS>/ (tried: 42)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Mo (Z=42) (no record 42 in <BASIS>/)"
   },
   "full.basis.doublezeta/43/EXTERNAL": {
    "empty": false,
@@ -1724,7 +1724,7 @@
   "full.basis.doublezeta/44/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 44 (Z=44) not found in <BASIS>/ (tried: 44)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ru (Z=44) (no record 44 in <BASIS>/)"
   },
   "full.basis.doublezeta/45/EXTERNAL": {
    "empty": false,
@@ -1734,7 +1734,7 @@
   "full.basis.doublezeta/45/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 45 (Z=45) not found in <BASIS>/ (tried: 45)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Rh (Z=45) (no record 45 in <BASIS>/)"
   },
   "full.basis.doublezeta/46/EXTERNAL": {
    "empty": false,
@@ -1744,7 +1744,7 @@
   "full.basis.doublezeta/46/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 46 (Z=46) not found in <BASIS>/ (tried: 46)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pd (Z=46) (no record 46 in <BASIS>/)"
   },
   "full.basis.doublezeta/47/EXTERNAL": {
    "empty": false,
@@ -1754,7 +1754,7 @@
   "full.basis.doublezeta/47/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 47 (Z=47) not found in <BASIS>/ (tried: 47)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ag (Z=47) (no record 47 in <BASIS>/)"
   },
   "full.basis.doublezeta/48/EXTERNAL": {
    "empty": false,
@@ -1764,7 +1764,7 @@
   "full.basis.doublezeta/48/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 48 (Z=48) not found in <BASIS>/ (tried: 48)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Cd (Z=48) (no record 48 in <BASIS>/)"
   },
   "full.basis.doublezeta/49/EXTERNAL": {
    "empty": false,
@@ -1774,7 +1774,7 @@
   "full.basis.doublezeta/49/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 49 (Z=49) not found in <BASIS>/ (tried: 49)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for In (Z=49) (no record 49 in <BASIS>/)"
   },
   "full.basis.doublezeta/5/EXTERNAL": {
    "empty": false,
@@ -1794,7 +1794,7 @@
   "full.basis.doublezeta/50/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 50 (Z=50) not found in <BASIS>/ (tried: 50)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Sn (Z=50) (no record 50 in <BASIS>/)"
   },
   "full.basis.doublezeta/51/EXTERNAL": {
    "empty": false,
@@ -1804,7 +1804,7 @@
   "full.basis.doublezeta/51/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 51 (Z=51) not found in <BASIS>/ (tried: 51)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Sb (Z=51) (no record 51 in <BASIS>/)"
   },
   "full.basis.doublezeta/52/EXTERNAL": {
    "empty": false,
@@ -1814,7 +1814,7 @@
   "full.basis.doublezeta/52/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 52 (Z=52) not found in <BASIS>/ (tried: 52)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Te (Z=52) (no record 52 in <BASIS>/)"
   },
   "full.basis.doublezeta/53/EXTERNAL": {
    "empty": false,
@@ -1824,17 +1824,17 @@
   "full.basis.doublezeta/53/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 53 (Z=53) not found in <BASIS>/ (tried: 53)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for I (Z=53) (no record 53 in <BASIS>/)"
   },
   "full.basis.doublezeta/54/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Xe (Z=54) (no record 54 in <BASIS>/)"
   },
   "full.basis.doublezeta/54/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Xe (Z=54) (no record 54 in <BASIS>/)"
   },
   "full.basis.doublezeta/55/EXTERNAL": {
    "empty": false,
@@ -1844,7 +1844,7 @@
   "full.basis.doublezeta/55/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 55 (Z=55) not found in <BASIS>/ (tried: 55)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Cs (Z=55) (no record 55 in <BASIS>/)"
   },
   "full.basis.doublezeta/56/EXTERNAL": {
    "empty": false,
@@ -1854,7 +1854,7 @@
   "full.basis.doublezeta/56/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 56 (Z=56) not found in <BASIS>/ (tried: 56)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ba (Z=56) (no record 56 in <BASIS>/)"
   },
   "full.basis.doublezeta/57/EXTERNAL": {
    "empty": false,
@@ -1864,7 +1864,7 @@
   "full.basis.doublezeta/57/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 57 (Z=57) not found in <BASIS>/ (tried: 57)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for La (Z=57) (no record 57 in <BASIS>/)"
   },
   "full.basis.doublezeta/58/EXTERNAL": {
    "empty": false,
@@ -1874,7 +1874,7 @@
   "full.basis.doublezeta/58/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 58 (Z=58) not found in <BASIS>/ (tried: 58)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ce (Z=58) (no record 58 in <BASIS>/)"
   },
   "full.basis.doublezeta/59/EXTERNAL": {
    "empty": false,
@@ -1884,7 +1884,7 @@
   "full.basis.doublezeta/59/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 59 (Z=59) not found in <BASIS>/ (tried: 59)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pr (Z=59) (no record 59 in <BASIS>/)"
   },
   "full.basis.doublezeta/6/EXTERNAL": {
    "empty": false,
@@ -1904,7 +1904,7 @@
   "full.basis.doublezeta/60/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 60 (Z=60) not found in <BASIS>/ (tried: 60)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Nd (Z=60) (no record 60 in <BASIS>/)"
   },
   "full.basis.doublezeta/61/EXTERNAL": {
    "empty": false,
@@ -1914,7 +1914,7 @@
   "full.basis.doublezeta/61/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 61 (Z=61) not found in <BASIS>/ (tried: 61)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pm (Z=61) (no record 61 in <BASIS>/)"
   },
   "full.basis.doublezeta/62/EXTERNAL": {
    "empty": false,
@@ -1924,7 +1924,7 @@
   "full.basis.doublezeta/62/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 62 (Z=62) not found in <BASIS>/ (tried: 62)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Sm (Z=62) (no record 62 in <BASIS>/)"
   },
   "full.basis.doublezeta/63/EXTERNAL": {
    "empty": false,
@@ -1934,7 +1934,7 @@
   "full.basis.doublezeta/63/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 63 (Z=63) not found in <BASIS>/ (tried: 63)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Eu (Z=63) (no record 63 in <BASIS>/)"
   },
   "full.basis.doublezeta/64/EXTERNAL": {
    "empty": false,
@@ -1944,7 +1944,7 @@
   "full.basis.doublezeta/64/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 64 (Z=64) not found in <BASIS>/ (tried: 64)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Gd (Z=64) (no record 64 in <BASIS>/)"
   },
   "full.basis.doublezeta/65/EXTERNAL": {
    "empty": false,
@@ -1954,7 +1954,7 @@
   "full.basis.doublezeta/65/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 65 (Z=65) not found in <BASIS>/ (tried: 65)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Tb (Z=65) (no record 65 in <BASIS>/)"
   },
   "full.basis.doublezeta/66/EXTERNAL": {
    "empty": false,
@@ -1964,7 +1964,7 @@
   "full.basis.doublezeta/66/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 66 (Z=66) not found in <BASIS>/ (tried: 66)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Dy (Z=66) (no record 66 in <BASIS>/)"
   },
   "full.basis.doublezeta/67/EXTERNAL": {
    "empty": false,
@@ -1974,7 +1974,7 @@
   "full.basis.doublezeta/67/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 67 (Z=67) not found in <BASIS>/ (tried: 67)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ho (Z=67) (no record 67 in <BASIS>/)"
   },
   "full.basis.doublezeta/68/EXTERNAL": {
    "empty": false,
@@ -1984,7 +1984,7 @@
   "full.basis.doublezeta/68/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 68 (Z=68) not found in <BASIS>/ (tried: 68)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Er (Z=68) (no record 68 in <BASIS>/)"
   },
   "full.basis.doublezeta/69/EXTERNAL": {
    "empty": false,
@@ -1994,7 +1994,7 @@
   "full.basis.doublezeta/69/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 69 (Z=69) not found in <BASIS>/ (tried: 69)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Tm (Z=69) (no record 69 in <BASIS>/)"
   },
   "full.basis.doublezeta/7/EXTERNAL": {
    "empty": false,
@@ -2014,7 +2014,7 @@
   "full.basis.doublezeta/70/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 70 (Z=70) not found in <BASIS>/ (tried: 70)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Yb (Z=70) (no record 70 in <BASIS>/)"
   },
   "full.basis.doublezeta/71/EXTERNAL": {
    "empty": false,
@@ -2024,7 +2024,7 @@
   "full.basis.doublezeta/71/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 71 (Z=71) not found in <BASIS>/ (tried: 71)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Lu (Z=71) (no record 71 in <BASIS>/)"
   },
   "full.basis.doublezeta/72/EXTERNAL": {
    "empty": false,
@@ -2034,7 +2034,7 @@
   "full.basis.doublezeta/72/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 72 (Z=72) not found in <BASIS>/ (tried: 72)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Hf (Z=72) (no record 72 in <BASIS>/)"
   },
   "full.basis.doublezeta/73/EXTERNAL": {
    "empty": false,
@@ -2044,7 +2044,7 @@
   "full.basis.doublezeta/73/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 73 (Z=73) not found in <BASIS>/ (tried: 73)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ta (Z=73) (no record 73 in <BASIS>/)"
   },
   "full.basis.doublezeta/74/EXTERNAL": {
    "empty": false,
@@ -2054,7 +2054,7 @@
   "full.basis.doublezeta/74/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 74 (Z=74) not found in <BASIS>/ (tried: 74)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for W (Z=74) (no record 74 in <BASIS>/)"
   },
   "full.basis.doublezeta/75/EXTERNAL": {
    "empty": false,
@@ -2064,7 +2064,7 @@
   "full.basis.doublezeta/75/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 75 (Z=75) not found in <BASIS>/ (tried: 75)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Re (Z=75) (no record 75 in <BASIS>/)"
   },
   "full.basis.doublezeta/76/EXTERNAL": {
    "empty": false,
@@ -2074,7 +2074,7 @@
   "full.basis.doublezeta/76/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 76 (Z=76) not found in <BASIS>/ (tried: 76)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Os (Z=76) (no record 76 in <BASIS>/)"
   },
   "full.basis.doublezeta/77/EXTERNAL": {
    "empty": false,
@@ -2084,7 +2084,7 @@
   "full.basis.doublezeta/77/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 77 (Z=77) not found in <BASIS>/ (tried: 77)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ir (Z=77) (no record 77 in <BASIS>/)"
   },
   "full.basis.doublezeta/78/EXTERNAL": {
    "empty": false,
@@ -2094,7 +2094,7 @@
   "full.basis.doublezeta/78/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 78 (Z=78) not found in <BASIS>/ (tried: 78)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pt (Z=78) (no record 78 in <BASIS>/)"
   },
   "full.basis.doublezeta/79/EXTERNAL": {
    "empty": false,
@@ -2104,7 +2104,7 @@
   "full.basis.doublezeta/79/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 79 (Z=79) not found in <BASIS>/ (tried: 79)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Au (Z=79) (no record 79 in <BASIS>/)"
   },
   "full.basis.doublezeta/8/EXTERNAL": {
    "empty": false,
@@ -2124,7 +2124,7 @@
   "full.basis.doublezeta/80/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 80 (Z=80) not found in <BASIS>/ (tried: 80)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Hg (Z=80) (no record 80 in <BASIS>/)"
   },
   "full.basis.doublezeta/81/EXTERNAL": {
    "empty": false,
@@ -2134,7 +2134,7 @@
   "full.basis.doublezeta/81/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 81 (Z=81) not found in <BASIS>/ (tried: 81)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Tl (Z=81) (no record 81 in <BASIS>/)"
   },
   "full.basis.doublezeta/82/EXTERNAL": {
    "empty": false,
@@ -2144,7 +2144,7 @@
   "full.basis.doublezeta/82/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 82 (Z=82) not found in <BASIS>/ (tried: 82)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pb (Z=82) (no record 82 in <BASIS>/)"
   },
   "full.basis.doublezeta/83/EXTERNAL": {
    "empty": false,
@@ -2154,57 +2154,57 @@
   "full.basis.doublezeta/83/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 83 (Z=83) not found in <BASIS>/ (tried: 83)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Bi (Z=83) (no record 83 in <BASIS>/)"
   },
   "full.basis.doublezeta/84/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 284)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Po (Z=84) (no record 284 in <BASIS>/)"
   },
   "full.basis.doublezeta/84/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 84)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Po (Z=84) (no record 84 in <BASIS>/)"
   },
   "full.basis.doublezeta/85/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 285)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for At (Z=85) (no record 285 in <BASIS>/)"
   },
   "full.basis.doublezeta/85/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 85)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for At (Z=85) (no record 85 in <BASIS>/)"
   },
   "full.basis.doublezeta/86/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Rn (Z=86) (no record 86 in <BASIS>/)"
   },
   "full.basis.doublezeta/86/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Rn (Z=86) (no record 86 in <BASIS>/)"
   },
   "full.basis.doublezeta/87/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 287)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Fr (Z=87) (no record 287 in <BASIS>/)"
   },
   "full.basis.doublezeta/87/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 87)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Fr (Z=87) (no record 87 in <BASIS>/)"
   },
   "full.basis.doublezeta/88/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 288)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ra (Z=88) (no record 288 in <BASIS>/)"
   },
   "full.basis.doublezeta/88/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 88)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ra (Z=88) (no record 88 in <BASIS>/)"
   },
   "full.basis.doublezeta/89/EXTERNAL": {
    "empty": false,
@@ -2214,7 +2214,7 @@
   "full.basis.doublezeta/89/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 89 (Z=89) not found in <BASIS>/ (tried: 89)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Ac (Z=89) (no record 89 in <BASIS>/)"
   },
   "full.basis.doublezeta/9/EXTERNAL": {
    "empty": false,
@@ -2234,7 +2234,7 @@
   "full.basis.doublezeta/90/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 90 (Z=90) not found in <BASIS>/ (tried: 90)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Th (Z=90) (no record 90 in <BASIS>/)"
   },
   "full.basis.doublezeta/91/EXTERNAL": {
    "empty": false,
@@ -2244,7 +2244,7 @@
   "full.basis.doublezeta/91/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 91 (Z=91) not found in <BASIS>/ (tried: 91)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pa (Z=91) (no record 91 in <BASIS>/)"
   },
   "full.basis.doublezeta/92/EXTERNAL": {
    "empty": false,
@@ -2254,7 +2254,7 @@
   "full.basis.doublezeta/92/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 92 (Z=92) not found in <BASIS>/ (tried: 92)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for U (Z=92) (no record 92 in <BASIS>/)"
   },
   "full.basis.doublezeta/93/EXTERNAL": {
    "empty": false,
@@ -2264,7 +2264,7 @@
   "full.basis.doublezeta/93/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 93 (Z=93) not found in <BASIS>/ (tried: 93)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Np (Z=93) (no record 93 in <BASIS>/)"
   },
   "full.basis.doublezeta/94/EXTERNAL": {
    "empty": false,
@@ -2274,7 +2274,7 @@
   "full.basis.doublezeta/94/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 94 (Z=94) not found in <BASIS>/ (tried: 94)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Pu (Z=94) (no record 94 in <BASIS>/)"
   },
   "full.basis.doublezeta/95/EXTERNAL": {
    "empty": false,
@@ -2284,7 +2284,7 @@
   "full.basis.doublezeta/95/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 95 (Z=95) not found in <BASIS>/ (tried: 95)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Am (Z=95) (no record 95 in <BASIS>/)"
   },
   "full.basis.doublezeta/96/EXTERNAL": {
    "empty": false,
@@ -2294,7 +2294,7 @@
   "full.basis.doublezeta/96/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 96 (Z=96) not found in <BASIS>/ (tried: 96)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Cm (Z=96) (no record 96 in <BASIS>/)"
   },
   "full.basis.doublezeta/97/EXTERNAL": {
    "empty": false,
@@ -2304,7 +2304,7 @@
   "full.basis.doublezeta/97/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 97 (Z=97) not found in <BASIS>/ (tried: 97)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Bk (Z=97) (no record 97 in <BASIS>/)"
   },
   "full.basis.doublezeta/98/EXTERNAL": {
    "empty": false,
@@ -2314,7 +2314,7 @@
   "full.basis.doublezeta/98/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 98 (Z=98) not found in <BASIS>/ (tried: 98)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Cf (Z=98) (no record 98 in <BASIS>/)"
   },
   "full.basis.doublezeta/99/EXTERNAL": {
    "empty": false,
@@ -2324,7 +2324,7 @@
   "full.basis.doublezeta/99/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 99 (Z=99) not found in <BASIS>/ (tried: 99)\n"
+   "warning": "refused: the basis set 'full.basis.doublezeta' has no basis for Es (Z=99) (no record 99 in <BASIS>/)"
   },
   "full.basis.triplezeta/1/EXTERNAL": {
    "empty": false,
@@ -2339,12 +2339,12 @@
   "full.basis.triplezeta/10/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ne (Z=10) (no record 10 in <BASIS>/)"
   },
   "full.basis.triplezeta/10/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ne (Z=10) (no record 10 in <BASIS>/)"
   },
   "full.basis.triplezeta/11/EXTERNAL": {
    "empty": false,
@@ -2419,12 +2419,12 @@
   "full.basis.triplezeta/18/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ar (Z=18) (no record 18 in <BASIS>/)"
   },
   "full.basis.triplezeta/18/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ar (Z=18) (no record 18 in <BASIS>/)"
   },
   "full.basis.triplezeta/19/EXTERNAL": {
    "empty": false,
@@ -2439,12 +2439,12 @@
   "full.basis.triplezeta/2/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for He (Z=2) (no record 2 in <BASIS>/)"
   },
   "full.basis.triplezeta/2/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for He (Z=2) (no record 2 in <BASIS>/)"
   },
   "full.basis.triplezeta/20/EXTERNAL": {
    "empty": false,
@@ -2619,12 +2619,12 @@
   "full.basis.triplezeta/36/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Kr (Z=36) (no record 36 in <BASIS>/)"
   },
   "full.basis.triplezeta/36/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Kr (Z=36) (no record 36 in <BASIS>/)"
   },
   "full.basis.triplezeta/37/EXTERNAL": {
    "empty": false,
@@ -2634,7 +2634,7 @@
   "full.basis.triplezeta/37/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 37 (Z=37) not found in <BASIS>/ (tried: 37)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Rb (Z=37) (no record 37 in <BASIS>/)"
   },
   "full.basis.triplezeta/38/EXTERNAL": {
    "empty": false,
@@ -2644,7 +2644,7 @@
   "full.basis.triplezeta/38/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 38 (Z=38) not found in <BASIS>/ (tried: 38)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Sr (Z=38) (no record 38 in <BASIS>/)"
   },
   "full.basis.triplezeta/39/EXTERNAL": {
    "empty": false,
@@ -2654,7 +2654,7 @@
   "full.basis.triplezeta/39/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 39 (Z=39) not found in <BASIS>/ (tried: 39)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Y (Z=39) (no record 39 in <BASIS>/)"
   },
   "full.basis.triplezeta/4/EXTERNAL": {
    "empty": false,
@@ -2674,7 +2674,7 @@
   "full.basis.triplezeta/40/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 40 (Z=40) not found in <BASIS>/ (tried: 40)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Zr (Z=40) (no record 40 in <BASIS>/)"
   },
   "full.basis.triplezeta/41/EXTERNAL": {
    "empty": false,
@@ -2684,7 +2684,7 @@
   "full.basis.triplezeta/41/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 41 (Z=41) not found in <BASIS>/ (tried: 41)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Nb (Z=41) (no record 41 in <BASIS>/)"
   },
   "full.basis.triplezeta/42/EXTERNAL": {
    "empty": false,
@@ -2694,7 +2694,7 @@
   "full.basis.triplezeta/42/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 42 (Z=42) not found in <BASIS>/ (tried: 42)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Mo (Z=42) (no record 42 in <BASIS>/)"
   },
   "full.basis.triplezeta/43/EXTERNAL": {
    "empty": false,
@@ -2714,7 +2714,7 @@
   "full.basis.triplezeta/44/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 44 (Z=44) not found in <BASIS>/ (tried: 44)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ru (Z=44) (no record 44 in <BASIS>/)"
   },
   "full.basis.triplezeta/45/EXTERNAL": {
    "empty": false,
@@ -2724,7 +2724,7 @@
   "full.basis.triplezeta/45/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 45 (Z=45) not found in <BASIS>/ (tried: 45)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Rh (Z=45) (no record 45 in <BASIS>/)"
   },
   "full.basis.triplezeta/46/EXTERNAL": {
    "empty": false,
@@ -2734,7 +2734,7 @@
   "full.basis.triplezeta/46/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 46 (Z=46) not found in <BASIS>/ (tried: 46)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pd (Z=46) (no record 46 in <BASIS>/)"
   },
   "full.basis.triplezeta/47/EXTERNAL": {
    "empty": false,
@@ -2744,7 +2744,7 @@
   "full.basis.triplezeta/47/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 47 (Z=47) not found in <BASIS>/ (tried: 47)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ag (Z=47) (no record 47 in <BASIS>/)"
   },
   "full.basis.triplezeta/48/EXTERNAL": {
    "empty": false,
@@ -2754,7 +2754,7 @@
   "full.basis.triplezeta/48/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 48 (Z=48) not found in <BASIS>/ (tried: 48)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Cd (Z=48) (no record 48 in <BASIS>/)"
   },
   "full.basis.triplezeta/49/EXTERNAL": {
    "empty": false,
@@ -2764,7 +2764,7 @@
   "full.basis.triplezeta/49/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 49 (Z=49) not found in <BASIS>/ (tried: 49)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for In (Z=49) (no record 49 in <BASIS>/)"
   },
   "full.basis.triplezeta/5/EXTERNAL": {
    "empty": false,
@@ -2784,7 +2784,7 @@
   "full.basis.triplezeta/50/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 50 (Z=50) not found in <BASIS>/ (tried: 50)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Sn (Z=50) (no record 50 in <BASIS>/)"
   },
   "full.basis.triplezeta/51/EXTERNAL": {
    "empty": false,
@@ -2794,7 +2794,7 @@
   "full.basis.triplezeta/51/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 51 (Z=51) not found in <BASIS>/ (tried: 51)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Sb (Z=51) (no record 51 in <BASIS>/)"
   },
   "full.basis.triplezeta/52/EXTERNAL": {
    "empty": false,
@@ -2804,7 +2804,7 @@
   "full.basis.triplezeta/52/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 52 (Z=52) not found in <BASIS>/ (tried: 52)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Te (Z=52) (no record 52 in <BASIS>/)"
   },
   "full.basis.triplezeta/53/EXTERNAL": {
    "empty": false,
@@ -2814,17 +2814,17 @@
   "full.basis.triplezeta/53/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 53 (Z=53) not found in <BASIS>/ (tried: 53)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for I (Z=53) (no record 53 in <BASIS>/)"
   },
   "full.basis.triplezeta/54/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Xe (Z=54) (no record 54 in <BASIS>/)"
   },
   "full.basis.triplezeta/54/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Xe (Z=54) (no record 54 in <BASIS>/)"
   },
   "full.basis.triplezeta/55/EXTERNAL": {
    "empty": false,
@@ -2834,7 +2834,7 @@
   "full.basis.triplezeta/55/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 55 (Z=55) not found in <BASIS>/ (tried: 55)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Cs (Z=55) (no record 55 in <BASIS>/)"
   },
   "full.basis.triplezeta/56/EXTERNAL": {
    "empty": false,
@@ -2844,7 +2844,7 @@
   "full.basis.triplezeta/56/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 56 (Z=56) not found in <BASIS>/ (tried: 56)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ba (Z=56) (no record 56 in <BASIS>/)"
   },
   "full.basis.triplezeta/57/EXTERNAL": {
    "empty": false,
@@ -2854,7 +2854,7 @@
   "full.basis.triplezeta/57/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 57 (Z=57) not found in <BASIS>/ (tried: 57)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for La (Z=57) (no record 57 in <BASIS>/)"
   },
   "full.basis.triplezeta/58/EXTERNAL": {
    "empty": false,
@@ -2864,7 +2864,7 @@
   "full.basis.triplezeta/58/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 58 (Z=58) not found in <BASIS>/ (tried: 58)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ce (Z=58) (no record 58 in <BASIS>/)"
   },
   "full.basis.triplezeta/59/EXTERNAL": {
    "empty": false,
@@ -2874,7 +2874,7 @@
   "full.basis.triplezeta/59/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 59 (Z=59) not found in <BASIS>/ (tried: 59)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pr (Z=59) (no record 59 in <BASIS>/)"
   },
   "full.basis.triplezeta/6/EXTERNAL": {
    "empty": false,
@@ -2894,7 +2894,7 @@
   "full.basis.triplezeta/60/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 60 (Z=60) not found in <BASIS>/ (tried: 60)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Nd (Z=60) (no record 60 in <BASIS>/)"
   },
   "full.basis.triplezeta/61/EXTERNAL": {
    "empty": false,
@@ -2904,7 +2904,7 @@
   "full.basis.triplezeta/61/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 61 (Z=61) not found in <BASIS>/ (tried: 61)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pm (Z=61) (no record 61 in <BASIS>/)"
   },
   "full.basis.triplezeta/62/EXTERNAL": {
    "empty": false,
@@ -2914,7 +2914,7 @@
   "full.basis.triplezeta/62/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 62 (Z=62) not found in <BASIS>/ (tried: 62)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Sm (Z=62) (no record 62 in <BASIS>/)"
   },
   "full.basis.triplezeta/63/EXTERNAL": {
    "empty": false,
@@ -2924,7 +2924,7 @@
   "full.basis.triplezeta/63/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 63 (Z=63) not found in <BASIS>/ (tried: 63)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Eu (Z=63) (no record 63 in <BASIS>/)"
   },
   "full.basis.triplezeta/64/EXTERNAL": {
    "empty": false,
@@ -2934,7 +2934,7 @@
   "full.basis.triplezeta/64/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 64 (Z=64) not found in <BASIS>/ (tried: 64)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Gd (Z=64) (no record 64 in <BASIS>/)"
   },
   "full.basis.triplezeta/65/EXTERNAL": {
    "empty": false,
@@ -2944,7 +2944,7 @@
   "full.basis.triplezeta/65/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 65 (Z=65) not found in <BASIS>/ (tried: 65)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Tb (Z=65) (no record 65 in <BASIS>/)"
   },
   "full.basis.triplezeta/66/EXTERNAL": {
    "empty": false,
@@ -2954,7 +2954,7 @@
   "full.basis.triplezeta/66/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 66 (Z=66) not found in <BASIS>/ (tried: 66)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Dy (Z=66) (no record 66 in <BASIS>/)"
   },
   "full.basis.triplezeta/67/EXTERNAL": {
    "empty": false,
@@ -2964,7 +2964,7 @@
   "full.basis.triplezeta/67/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 67 (Z=67) not found in <BASIS>/ (tried: 67)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ho (Z=67) (no record 67 in <BASIS>/)"
   },
   "full.basis.triplezeta/68/EXTERNAL": {
    "empty": false,
@@ -2974,7 +2974,7 @@
   "full.basis.triplezeta/68/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 68 (Z=68) not found in <BASIS>/ (tried: 68)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Er (Z=68) (no record 68 in <BASIS>/)"
   },
   "full.basis.triplezeta/69/EXTERNAL": {
    "empty": false,
@@ -2984,7 +2984,7 @@
   "full.basis.triplezeta/69/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 69 (Z=69) not found in <BASIS>/ (tried: 69)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Tm (Z=69) (no record 69 in <BASIS>/)"
   },
   "full.basis.triplezeta/7/EXTERNAL": {
    "empty": false,
@@ -3004,7 +3004,7 @@
   "full.basis.triplezeta/70/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 70 (Z=70) not found in <BASIS>/ (tried: 70)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Yb (Z=70) (no record 70 in <BASIS>/)"
   },
   "full.basis.triplezeta/71/EXTERNAL": {
    "empty": false,
@@ -3014,7 +3014,7 @@
   "full.basis.triplezeta/71/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 71 (Z=71) not found in <BASIS>/ (tried: 71)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Lu (Z=71) (no record 71 in <BASIS>/)"
   },
   "full.basis.triplezeta/72/EXTERNAL": {
    "empty": false,
@@ -3024,7 +3024,7 @@
   "full.basis.triplezeta/72/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 72 (Z=72) not found in <BASIS>/ (tried: 72)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Hf (Z=72) (no record 72 in <BASIS>/)"
   },
   "full.basis.triplezeta/73/EXTERNAL": {
    "empty": false,
@@ -3034,7 +3034,7 @@
   "full.basis.triplezeta/73/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 73 (Z=73) not found in <BASIS>/ (tried: 73)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ta (Z=73) (no record 73 in <BASIS>/)"
   },
   "full.basis.triplezeta/74/EXTERNAL": {
    "empty": false,
@@ -3044,7 +3044,7 @@
   "full.basis.triplezeta/74/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 74 (Z=74) not found in <BASIS>/ (tried: 74)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for W (Z=74) (no record 74 in <BASIS>/)"
   },
   "full.basis.triplezeta/75/EXTERNAL": {
    "empty": false,
@@ -3054,7 +3054,7 @@
   "full.basis.triplezeta/75/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 75 (Z=75) not found in <BASIS>/ (tried: 75)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Re (Z=75) (no record 75 in <BASIS>/)"
   },
   "full.basis.triplezeta/76/EXTERNAL": {
    "empty": false,
@@ -3064,7 +3064,7 @@
   "full.basis.triplezeta/76/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 76 (Z=76) not found in <BASIS>/ (tried: 76)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Os (Z=76) (no record 76 in <BASIS>/)"
   },
   "full.basis.triplezeta/77/EXTERNAL": {
    "empty": false,
@@ -3074,7 +3074,7 @@
   "full.basis.triplezeta/77/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 77 (Z=77) not found in <BASIS>/ (tried: 77)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ir (Z=77) (no record 77 in <BASIS>/)"
   },
   "full.basis.triplezeta/78/EXTERNAL": {
    "empty": false,
@@ -3084,7 +3084,7 @@
   "full.basis.triplezeta/78/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 78 (Z=78) not found in <BASIS>/ (tried: 78)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pt (Z=78) (no record 78 in <BASIS>/)"
   },
   "full.basis.triplezeta/79/EXTERNAL": {
    "empty": false,
@@ -3094,7 +3094,7 @@
   "full.basis.triplezeta/79/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 79 (Z=79) not found in <BASIS>/ (tried: 79)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Au (Z=79) (no record 79 in <BASIS>/)"
   },
   "full.basis.triplezeta/8/EXTERNAL": {
    "empty": false,
@@ -3114,7 +3114,7 @@
   "full.basis.triplezeta/80/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 80 (Z=80) not found in <BASIS>/ (tried: 80)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Hg (Z=80) (no record 80 in <BASIS>/)"
   },
   "full.basis.triplezeta/81/EXTERNAL": {
    "empty": false,
@@ -3124,7 +3124,7 @@
   "full.basis.triplezeta/81/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 81 (Z=81) not found in <BASIS>/ (tried: 81)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Tl (Z=81) (no record 81 in <BASIS>/)"
   },
   "full.basis.triplezeta/82/EXTERNAL": {
    "empty": false,
@@ -3134,7 +3134,7 @@
   "full.basis.triplezeta/82/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 82 (Z=82) not found in <BASIS>/ (tried: 82)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pb (Z=82) (no record 82 in <BASIS>/)"
   },
   "full.basis.triplezeta/83/EXTERNAL": {
    "empty": false,
@@ -3144,57 +3144,57 @@
   "full.basis.triplezeta/83/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 83 (Z=83) not found in <BASIS>/ (tried: 83)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Bi (Z=83) (no record 83 in <BASIS>/)"
   },
   "full.basis.triplezeta/84/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 284)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Po (Z=84) (no record 284 in <BASIS>/)"
   },
   "full.basis.triplezeta/84/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 84)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Po (Z=84) (no record 84 in <BASIS>/)"
   },
   "full.basis.triplezeta/85/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 285)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for At (Z=85) (no record 285 in <BASIS>/)"
   },
   "full.basis.triplezeta/85/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 85)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for At (Z=85) (no record 85 in <BASIS>/)"
   },
   "full.basis.triplezeta/86/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Rn (Z=86) (no record 86 in <BASIS>/)"
   },
   "full.basis.triplezeta/86/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Rn (Z=86) (no record 86 in <BASIS>/)"
   },
   "full.basis.triplezeta/87/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 287)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Fr (Z=87) (no record 287 in <BASIS>/)"
   },
   "full.basis.triplezeta/87/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 87)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Fr (Z=87) (no record 87 in <BASIS>/)"
   },
   "full.basis.triplezeta/88/EXTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 288)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ra (Z=88) (no record 288 in <BASIS>/)"
   },
   "full.basis.triplezeta/88/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 88)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ra (Z=88) (no record 88 in <BASIS>/)"
   },
   "full.basis.triplezeta/89/EXTERNAL": {
    "empty": false,
@@ -3204,7 +3204,7 @@
   "full.basis.triplezeta/89/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 89 (Z=89) not found in <BASIS>/ (tried: 89)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Ac (Z=89) (no record 89 in <BASIS>/)"
   },
   "full.basis.triplezeta/9/EXTERNAL": {
    "empty": false,
@@ -3224,7 +3224,7 @@
   "full.basis.triplezeta/90/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 90 (Z=90) not found in <BASIS>/ (tried: 90)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Th (Z=90) (no record 90 in <BASIS>/)"
   },
   "full.basis.triplezeta/91/EXTERNAL": {
    "empty": false,
@@ -3234,7 +3234,7 @@
   "full.basis.triplezeta/91/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 91 (Z=91) not found in <BASIS>/ (tried: 91)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pa (Z=91) (no record 91 in <BASIS>/)"
   },
   "full.basis.triplezeta/92/EXTERNAL": {
    "empty": false,
@@ -3244,7 +3244,7 @@
   "full.basis.triplezeta/92/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 92 (Z=92) not found in <BASIS>/ (tried: 92)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for U (Z=92) (no record 92 in <BASIS>/)"
   },
   "full.basis.triplezeta/93/EXTERNAL": {
    "empty": false,
@@ -3254,7 +3254,7 @@
   "full.basis.triplezeta/93/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 93 (Z=93) not found in <BASIS>/ (tried: 93)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Np (Z=93) (no record 93 in <BASIS>/)"
   },
   "full.basis.triplezeta/94/EXTERNAL": {
    "empty": false,
@@ -3264,7 +3264,7 @@
   "full.basis.triplezeta/94/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 94 (Z=94) not found in <BASIS>/ (tried: 94)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Pu (Z=94) (no record 94 in <BASIS>/)"
   },
   "full.basis.triplezeta/95/EXTERNAL": {
    "empty": false,
@@ -3274,7 +3274,7 @@
   "full.basis.triplezeta/95/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 95 (Z=95) not found in <BASIS>/ (tried: 95)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Am (Z=95) (no record 95 in <BASIS>/)"
   },
   "full.basis.triplezeta/96/EXTERNAL": {
    "empty": false,
@@ -3284,7 +3284,7 @@
   "full.basis.triplezeta/96/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 96 (Z=96) not found in <BASIS>/ (tried: 96)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Cm (Z=96) (no record 96 in <BASIS>/)"
   },
   "full.basis.triplezeta/97/EXTERNAL": {
    "empty": false,
@@ -3294,7 +3294,7 @@
   "full.basis.triplezeta/97/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 97 (Z=97) not found in <BASIS>/ (tried: 97)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Bk (Z=97) (no record 97 in <BASIS>/)"
   },
   "full.basis.triplezeta/98/EXTERNAL": {
    "empty": false,
@@ -3304,7 +3304,7 @@
   "full.basis.triplezeta/98/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 98 (Z=98) not found in <BASIS>/ (tried: 98)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Cf (Z=98) (no record 98 in <BASIS>/)"
   },
   "full.basis.triplezeta/99/EXTERNAL": {
    "empty": false,
@@ -3314,7 +3314,7 @@
   "full.basis.triplezeta/99/INTERNAL": {
    "empty": true,
    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-   "warning": "Warning: Basis set file for element 99 (Z=99) not found in <BASIS>/ (tried: 99)\n"
+   "warning": "refused: the basis set 'full.basis.triplezeta' has no basis for Es (Z=99) (no record 99 in <BASIS>/)"
   }
  }
 }

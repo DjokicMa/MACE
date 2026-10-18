@@ -74,3 +74,29 @@ def test_excel_without_openpyxl_writes_no_fake_xlsx(workdir, tmp_path):
     assert proc.returncode != 0, out
     assert not (workdir / "mgo.xlsx").exists(), out
     assert "openpyxl" in out
+
+
+def test_excel_export_of_a_material_with_metadata(tmp_path):
+    """Every database a build writes has materials metadata (a dict): the
+    Excel export failed on it ("Cannot convert {...} to Excel"). The cell
+    now holds the dict's JSON text."""
+    pytest.importorskip("openpyxl")
+    pytest.importorskip("pandas")
+    sys.path.insert(0, str(REPO_ROOT))
+    from mace.database.materials import MaterialDatabase
+    db = MaterialDatabase(str(tmp_path / "materials.db"))
+    db.create_material("C", "C", space_group=227, metadata={"cell_formula": "C2"})
+    proc = _export(tmp_path, "--format", "excel", "--output", "c.xlsx")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    from openpyxl import load_workbook
+    ws = load_workbook(tmp_path / "c.xlsx")["Materials Data"]
+    header, row = [c.value for c in ws[1]], [c.value for c in ws[2]]
+    assert json.loads(row[header.index("metadata")]) == {"cell_formula": "C2"}
+
+
+def test_html_export_escapes_the_filter_text(workdir):
+    """A filter such as 'band_gap < 9' is shown as text in the HTML export, not read as markup."""
+    proc = _export(workdir, "--format", "html", "--output", "f.html", "--filter", "band_gap < 9")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    html = (workdir / "f.html").read_text()
+    assert "band_gap &lt; 9" in html and "band_gap < 9" not in html

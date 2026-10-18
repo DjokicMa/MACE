@@ -581,3 +581,26 @@ def test_stopped_progress_marks_stages_not_reached():
         "IR/Raman tensors: stopped here (TIMEOUT)", "Frequencies and output: not reached"]
     assert got["levels"][3]["remaining_s"] == {"low": None, "high": None}
     assert prog["levels"][2]["status"] == "running" and prog["risk"]["level"] == "tight"
+
+
+# ------------------------------------------------------------------ 1.1.6: totals beyond the job
+def test_job_text_queue_and_array_totals(fs, tmp_path):
+    from datetime import datetime
+    d = tmp_path / "arr2"
+    d.mkdir()
+    soon = datetime.fromtimestamp(time.time() + 7200).strftime("%Y-%m-%dT%H:%M:%S")
+    fs.add_record(id="6000_1", array="6000", task=1, state="RUNNING", name="a", workdir=str(d), cpus=4, elapsed="0:30:00")
+    fs.add_record(id="6000_2", array="6000", task=2, state="PENDING", name="a", workdir=str(d), cpus=4, start=soon,
+                  reason="Priority")
+    row = "|a|COMPLETED|{e}|01:00:00|4|1G|1G|0:00|cpu=4|n1|0:0|2026-10-14T00:00:00|2026-10-14T01:00:00|{d}|1|0:00|1"
+    fs.update(sacct_rows={"6000": [f"6000_3{row.format(e='01:00:00', d=d)}", f"6000_4{row.format(e='01:30:00', d=d)}"]},
+              job_text={"6000_2": f"JobId=6002 ArrayJobId=6000 ArrayTaskId=2 JobName=a UserId=user1(1001) JobState=PENDING "
+                                  f"Reason=Priority RunTime=00:00:00 TimeLimit=02:00:00 WorkDir={d} NumNodes=1 NumCPUs=4 "
+                                  f"Partition=general-short Account=acct1"})
+    rc, out, err = mace(fs, "cluster", "job", "6000_2")
+    assert rc == 0, err
+    assert re.search(r"Queue wait: about [12] h \d+ min \(starts around .*, queue wait estimate from SLURM\)", out), out
+    assert "Array 6000: 1 running, 1 pending, 2 finished; about " in out and "until the last task ends (rough)" in out
+    rc, out, err = mace(fs, "cluster", "job", "6000_2", "--json")
+    ids = [t["id"] for t in json.loads(out)["totals"]]
+    assert ids == ["queue", "array"]

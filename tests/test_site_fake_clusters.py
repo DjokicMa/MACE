@@ -147,7 +147,7 @@ def test_small_max_submit_and_gpu_spellings(tmp_path):
         _deck(d, "m.d12")
         p = _mace(d, env, "submit", "--nosubmit", "m.d12")
         assert p.returncode == 0 and want in (d / "m.sh").read_text()
-        assert "--max-jobs 38 --reserve 2 --max-submit 10" in (d / "m.sh").read_text()
+        assert "--max-jobs 40 --reserve 4 --max-submit 10" in (d / "m.sh").read_text()
 
 
 INJECTIONS = [

@@ -25,7 +25,11 @@ def _setup(tmp_path, stale=0, queued=0):
     w = tmp_path / "w"
     w.mkdir()
     (w / "newmat.d12").write_text(SP_D12)
-    env = {"HOME": str(home), "USER": "tester", "TMPDIR": str(tmp_path / "tmp")}
+    # the manager's own limit when no --max-jobs is given is the queue
+    # budget (mace/queue/budget.py): 225 queued of max_jobs 250
+    (tmp_path / "site.toml").write_text("[queue]\nmax_jobs = 250\nreserve = 25\n")
+    env = {"HOME": str(home), "USER": "tester", "TMPDIR": str(tmp_path / "tmp"),
+           "MACE_SITE_CONFIG": str(tmp_path / "site.toml")}
     (tmp_path / "tmp").mkdir()
     return fake, w, env
 

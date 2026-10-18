@@ -7,6 +7,7 @@ multiple of 3; with the usual ISS = 16 they were rounded to 5/16 = 0.3125.
 The shrink is already raised when it is too small for a path; it is now also
 raised to the next common multiple of the points' denominators.
 """
+import contextlib
 import io
 from fractions import Fraction
 
@@ -70,3 +71,35 @@ def test_phonon_bands_header_matches_exact_hexagonal_points():
     records = [[int(v) for v in ln.split()] for ln in lines[i + 3:i + 3 + int(lines[i + 2])]]
     assert [6, 6, 0] in [r[:3] for r in records] + [r[3:] for r in records]
 
+
+
+def test_an_edited_point_stays_exact_when_the_iss_is_raised_for_thirds():
+    """An added point at 0.123 raised the ISS to 1000, then the thirds and
+    quarters raised it to 1008, where 0.123 is written as 124/1008 = 0.12302.
+    The ISS is now a common multiple of both, so every point is exact."""
+    frac = [[0.0, 0.0, 0.0, 1 / 3, 1 / 3, 0.0], [1 / 3, 1 / 3, 0.0, 0.25, 0.0, 0.0],
+            [0.25, 0.0, 0.0, 0.123, 0.0, 0.0]]
+    with contextlib.redirect_stdout(io.StringIO()):
+        ints, shrink = scale_kpoint_segments(frac, 16)
+    assert shrink == 3000
+    _assert_exact(frac, ints, shrink)
+
+
+def test_the_corpus_band_deck_with_an_edited_point_is_exact():
+    """The reviewer's recipe: write_band_deck on the corpus diamond BAND deck
+    with added points at (0.123, 0, 0) and (1/3, 1/3, 0)."""
+    from conftest import find_data
+    import d3_band_path as bp
+
+    computed = find_data("BAND/1_dia*_band.d3").read_text()
+    deck = bp.parse_band_deck(computed)
+    segs = [dict(s) for s in deck["segments"]]
+    path = segs + [{"from": segs[-1]["to"], "to": "P1", "k_to": [0.123, 0.0, 0.0]},
+                   {"from": "P1", "to": "P2", "k_from": [0.123, 0.0, 0.0], "k_to": [1 / 3, 1 / 3, 0.0]}]
+    with contextlib.redirect_stdout(io.StringIO()):
+        text = bp.write_band_deck(computed, path, scale_kpoint_segments)
+    lines = text.splitlines()
+    iss = int(lines[2].split()[1])
+    last = [int(v) for v in lines[-2].split()]
+    assert Fraction(last[0], iss) == Fraction(123, 1000), (iss, last)
+    assert Fraction(last[3], iss) == Fraction(1, 3), (iss, last)

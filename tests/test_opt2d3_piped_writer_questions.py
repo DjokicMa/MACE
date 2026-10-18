@@ -65,3 +65,27 @@ def test_shared_settings_ask_each_files_plane_on_the_pipe(tmp_path):
     assert "Completed processing 2 of 2 files" in log, log[-3000:]
     for name in ("p1", "p2"):
         assert (d / f"{name}_charge.d3").read_text().split()[0] == "ECHG"
+
+
+@pytest.mark.parametrize("unit", ["", "C"], ids=["fractional", "cartesian"])
+def test_a_115_era_enter_for_the_plane_question_is_refused_cleanly(tmp_path, unit):
+    """1.1.5 asked "Define charge density map plane? [Y/n]" before the unit;
+    its Enter now answers the unit, and the old unit answer reached "Point A":
+    a ValueError or IndexError traceback. A point that is not three numbers is
+    refused, with no deck and no traceback."""
+    shutil.copy(PARENT, tmp_path / "p.out")
+    r = _opt2d3(tmp_path, "p.out", "y\n2\n0\n50\n\n" + unit + "\n0 0 0\n1 0 0\n0 1 0\n" + "\n" * 10)
+    log = r.stdout + r.stderr
+    assert "Traceback" not in log, log[-3000:]
+    assert r.returncode != 0 and not list(tmp_path.glob("*.d3"))
+    assert "Point A is three numbers" in log, log[-3000:]
+
+
+def test_potential_type_takes_only_1_or_2(monkeypatch):
+    """CHARGE+POTENTIAL: a 1.1.5-era "y" for the removed plane question landed
+    on "Select type (1-2)" and chose POTC; it is refused."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "Crystal_d3"))
+    import d3_interactive as D
+    monkeypatch.setattr(D, "_nav_read", lambda *a, **k: "y")
+    with pytest.raises(SystemExit):
+        D.configure_potential_calculation()

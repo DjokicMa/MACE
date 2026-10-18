@@ -54,6 +54,8 @@ def app(tmp_path_factory):
 
 @pytest.fixture
 def fresh(app):
+    # Calculation Setup left open by a test before re-renders the inspector when its preview lands
+    app[0].execute_script("if (window.__mace.ctx().setupOpen) window.__mace.run('calc.setup')")
     U.reset(app[0])
     return app
 
@@ -67,8 +69,36 @@ def _axe(drv, label):
         "const done = arguments[arguments.length - 1];"
         f"axe.run({__import__('json').dumps(ctx)}, {AXE_OPTIONS}).then((r) => done(r), (e) => done({{error: String(e)}}))")
     assert "error" not in res, res
-    bad = [v for v in res["violations"] if v.get("impact") in ("serious", "critical")]
-    return [(label, v["id"], v["impact"], [n["target"] for n in v["nodes"]][:5]) for v in bad]
+    out = []
+    for v in res["violations"]:
+        if v.get("impact") not in ("serious", "critical"):
+            continue
+        nodes = [n["target"] for n in v["nodes"] if (v["id"], (n["target"] or [""])[-1]) not in KNOWN_OLD_AXE
+                 and not _unreadable_background(v["id"], n)]
+        if nodes:
+            out.append((label, v["id"], v["impact"], nodes[:5]))
+    return out
+
+
+def _unreadable_background(rule, node):
+    """axe-core 3.1.1 reads no CSS Color 4 value: a color-mix() background computes to
+    color(srgb ...), which it reports as "#0NaN0NaN0NaN" with no ratio. Not a finding; the
+    tests that show such a box measure its contrast themselves (_contrast)."""
+    return rule == "color-contrast" and any("NaN" in str((c.get("data") or {}).get("bgColor", "")) for c in node.get("any", []))
+
+
+def _contrast(drv, selector):
+    """The WCAG contrast ratio of an element's text on the nearest background behind it,
+    with every color resolved by the browser (a canvas reads color-mix() and color())."""
+    return drv.execute_script("""const e = document.querySelector(arguments[0]); if (!e) return null;
+        const c = document.createElement('canvas'); c.width = c.height = 1; const g = c.getContext('2d', {willReadFrequently: true});
+        const rgba = (css) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = css; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data]; };
+        let b = e, bg = null;
+        while (b) { const v = getComputedStyle(b).backgroundColor; const px = rgba(v); if (px[3] === 255 && v !== 'transparent') { bg = px; break; } b = b.parentElement; }
+        bg = bg || [255, 255, 255, 255];
+        const fg = rgba(getComputedStyle(e).color);
+        const lum = (p) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(p[0]) + 0.7152 * f(p[1]) + 0.0722 * f(p[2]); };
+        const a = lum(fg), z = lum(bg); return (Math.max(a, z) + 0.05) / (Math.min(a, z) + 0.05);""", selector)
 
 
 def _theme(drv, theme):
@@ -78,7 +108,8 @@ def _theme(drv, theme):
 
 def _close_dialogs(drv):
     drv.execute_script("document.querySelectorAll('dialog[open]').forEach((d) => d.close());"
-                       "document.querySelectorAll('.menu').forEach((m) => m.remove())")
+                       "document.querySelectorAll('.menu').forEach((m) => m.remove());"
+                       "if (window.__mace.palette && window.__mace.palette.isOpen && window.__mace.palette.isOpen()) window.__mace.palette.close()")
 
 
 SCREENS = [
@@ -99,14 +130,37 @@ SCREENS = [
     ("setup", "run:calc.setup"),
     ("tasks", "bottom:tasks"),
     ("menu", "menu:Build"),
+    # 1.1.6's dialogs and pickers
+    ("element-colors", "run:view.elementColors"),
+    ("legend", "run:file.exportLegend"),
+    ("color-theme", "run:view.themePicker"),
+    ("gallery", "run:analysis.gallery"),
 ]
+# every theme a user can pick (View › Color Theme…; "system" is light or dark): light and dark on every
+# screen, the others on the screens that show each kind of surface (and 1.1.6's dialogs)
+THEMES = ["light", "dark", "hc-light", "hc-dark", "cvd", "sepia", "black",
+          "catppuccin-mocha", "catppuccin-latte", "dracula", "gruvbox-dark", "nord", "one-dark",
+          "solarized-dark", "solarized-light", "tokyo-night", "tokyo-night-storm"]
+THEME_SCREENS = {"welcome", "structure", "band", "settings", "setup", "menu", "element-colors", "legend", "color-theme", "gallery"}
+# axe-core 3.1.1 (what axe-selenium-python bundles) checks a combobox by ARIA 1.1, where it had to own a
+# textbox and a listbox; the command search's <input role="combobox" aria-controls=listbox> is ARIA 1.2's
+# pattern (no required children; axe-core 4 accepts it), so that one finding is not a defect
+KNOWN_OLD_AXE = {("aria-required-children", 'input[role="combobox"]')}
+NO_STRUCTURE = {"run:file.settings", "run:help.about", "run:help.docs", "run:help.shortcuts", "run:file.new",
+                "run:view.themePicker", "run:analysis.gallery"}
 
 
-@pytest.mark.parametrize("theme", ["light", "dark"])
+# the CI gui-smoke job (repo data only) runs axe on these: light, dark and one high-contrast theme
+SMOKE_THEMES = {"light", "dark", "hc-dark"}
+
+
+@pytest.mark.parametrize("theme", [pytest.param(t, marks=pytest.mark.guismoke) if t in SMOKE_THEMES else t for t in THEMES])
 def test_axe_finds_no_serious_violation(fresh, theme):
     drv, root = fresh[0], fresh[2]
     found = []
     for label, how in SCREENS:
+        if theme not in ("light", "dark") and label not in THEME_SCREENS:
+            continue
         _close_dialogs(drv)
         _theme(drv, theme)
         if how is None:
@@ -118,8 +172,7 @@ def test_axe_finds_no_serious_violation(fresh, theme):
             U.open_doc(drv, path, wait_atoms=path.endswith(".cif"))
             time.sleep(0.8)
         elif how.startswith("run:"):
-            if how != "run:file.settings" and how != "run:help.about" and how != "run:help.docs" \
-                    and how != "run:help.shortcuts" and how != "run:file.new":
+            if how not in NO_STRUCTURE:
                 U.open_doc(drv, "structures/MgO.cif")
             drv.execute_script("window.__mace.run(arguments[0])", how[4:])
             time.sleep(1.0)
@@ -147,6 +200,70 @@ def test_axe_finds_no_serious_violation(fresh, theme):
     assert not found, found
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_axe_on_the_spin_orbit_section(fresh, theme):
+    """Calculation Setup's spin-orbit coupling section (1.1.6): on (PbTe SP, an external basis
+    and PBE0, the CLI's "SOC deck:" lines), off with the CLI's reason (OPT), and STUTSC grayed
+    out with its reason (Hf)."""
+    from test_setup_e2e import READY
+    from test_setup_soc_api import HFO_CIF, PBTE_CIF, SOC_READY
+    drv, root = fresh[0], fresh[2]
+    d = root / "soc"
+    if not d.is_dir():
+        d.mkdir()
+        (d / "PbTe.cif").write_text(PBTE_CIF)
+        (d / "HfO.cif").write_text(HFO_CIF)
+        drv.execute_script("window.MACE.loadFiles()")
+        time.sleep(0.5)
+    drv.execute_script("try { Object.keys(localStorage).filter((k) => k.startsWith('mace.gui.setup.')).forEach((k) => localStorage.removeItem(k)); } catch (e) {}")
+    _theme(drv, theme)
+
+    def ready():
+        H.wait(drv, READY, 180)
+        time.sleep(0.3)
+
+    def setup(path, calc):
+        U.open_doc(drv, path)
+        if not drv.execute_script("return window.__mace.ctx().setupOpen"):
+            drv.execute_script("window.__mace.run('calc.setup', {open: true})")
+        H.wait(drv, "return !!document.querySelector('#inspector .setup')", 30)
+        ready()
+        if calc != drv.execute_script("return window.__mace.setup.state().calc"):
+            drv.execute_script("document.querySelector(`#inspector .su-calc [data-calc='${arguments[0]}']`).click()", calc)
+            ready()
+
+    def soc_on():
+        drv.execute_script("const s = document.querySelector('#su-soc-on'); s.scrollIntoView({block: 'center'}); s.click()")
+        H.wait(drv, "const s = window.__mace.setup.state(); return s.patches.soc === true && s.result && !s.busy && !s.pendingRun && s.result.soc.values.soc === true", 180)
+        time.sleep(0.3)
+
+    found = []
+    setup("soc/PbTe.cif", "OPT")
+    assert drv.execute_script("return document.querySelector('#su-soc-on').disabled")
+    found += _axe(drv, "soc-off-opt")
+    setup("soc/PbTe.cif", "SP")
+    for fid, v in SOC_READY.items():
+        drv.execute_script("""const c = document.querySelector(`#inspector .su-row[data-field="${arguments[0]}"]`).querySelector('select, input');
+            c.value = arguments[1]; c.dispatchEvent(new Event('change', {bubbles: true}));""", fid, v)
+        ready()
+    soc_on()
+    assert drv.execute_script("return document.querySelectorAll('#su-soc-notes .su-soc-changes li').length") > 0
+    drv.execute_script("document.querySelector('#su-soc-notes').scrollIntoView({block: 'center'})")
+    U.shot(drv, f"a11y_{theme}_soc_on")
+    found += _axe(drv, "soc-on-pbte")
+    drv.execute_script("window.__mace.closeAll()")
+    setup("soc/HfO.cif", "SP")
+    soc_on()
+    assert drv.execute_script("return document.querySelector('#su-soc-route-stutsc').disabled")
+    found += _axe(drv, "soc-stutsc-hf")
+    # the CLI's refusal (the defaults: an internal basis) in its tinted box, and the reason under STUTSC
+    for sel in ("#su-soc-notes .su-soc-refusal p", "#su-soc-why-stutsc", ".su-soc .su-opt-sub"):
+        ratio = _contrast(drv, sel)
+        assert ratio is not None and ratio >= 4.5, (theme, sel, ratio)
+    drv.execute_script("window.__mace.closeAll()")
+    assert not found, found
+
+
 def test_icon_only_buttons_have_names(fresh):
     drv = fresh[0]
     U.open_doc(drv, "structures/MgO.cif")
@@ -168,27 +285,43 @@ def _region(drv):
       return a.tagName.toLowerCase() + (a.id ? '#' + a.id : '');""")
 
 
+@pytest.mark.guismoke
 def test_tab_reaches_every_region_without_a_trap(fresh):
     drv = fresh[0]
     U.open_doc(drv, "structures/MgO.cif")
-    drv.execute_script("document.activeElement && document.activeElement.blur(); document.body.focus()")
+    # start the walk at the top of the page: Firefox resumes sequential focus
+    # navigation from the selection/caret, which an earlier test can leave inside
+    # the inspector; blur() alone keeps that starting point
+    drv.execute_script("document.activeElement && document.activeElement.blur(); document.body.focus();"
+                       "getSelection().collapse(document.body, 0)")
     seen, last, stuck = [], None, 0
     want = {"menubar", "toolbar", "explorer", "tabs", "status"}
     for _ in range(600):
         if want <= set(seen):
             break
         U.keys(drv, Keys.TAB)
+        if not drv.execute_script("return document.hasFocus()"):
+            # Tab past the last stop moves into the browser's own UI: the page wraps, no trap
+            # and no ring to look at; the next Tabs come back to the top of the page
+            last, stuck = None, 0
+            continue
         el = drv.execute_script("return document.activeElement")
         stuck = stuck + 1 if el == last else 0
         assert stuck < 3, f"focus stuck on {drv.execute_script('return document.activeElement.outerHTML.slice(0, 120)')}"
         last = el
         seen.append(_region(drv))
         # a visible focus indicator: the element looks different focused than not
-        ring = drv.execute_script("""const a = document.activeElement; if (!a || a === document.body) return true;
-          const look = () => { const cs = getComputedStyle(a); return [cs.outlineStyle, cs.outlineWidth, cs.outlineColor,
-            cs.boxShadow, cs.backgroundColor, cs.borderColor, cs.color].join('|'); };
-          const on = look(); a.blur(); const off = look(); a.focus();
-          return on !== off;""")
+        # an element a re-render replaced meanwhile (detached) has no ring to compare: not a finding
+        # the ring check once more after a moment when the first look races a re-render or a transition
+        for _try in range(2):
+            ring = drv.execute_script("""const a = document.activeElement; if (!a || a === document.body || !a.isConnected) return true;
+              const look = () => { const cs = getComputedStyle(a); return [cs.outlineStyle, cs.outlineWidth, cs.outlineColor,
+                cs.boxShadow, cs.backgroundColor, cs.borderColor, cs.color].join('|'); };
+              const on = look(); a.blur(); const off = look(); a.focus();
+              return on !== off;""")
+            if ring:
+                break
+            time.sleep(0.15)
         assert ring, drv.execute_script("return document.activeElement.outerHTML.slice(0, 160)")
     for region in ("menubar", "toolbar", "explorer", "tabs", "status"):
         assert region in seen, (region, sorted(set(seen)))
@@ -202,7 +335,7 @@ DIALOG_COMMANDS = ["file.settings", "help.about", "help.docs", "help.shortcuts",
                    "file.new", "build.supercell", "build.slab", "build.symmetrize", "build.clean", "edit.editCell"]
 
 
-@pytest.mark.parametrize("cmd", DIALOG_COMMANDS)
+@pytest.mark.parametrize("cmd", [pytest.param(c, marks=pytest.mark.guismoke) if c == "file.settings" else c for c in DIALOG_COMMANDS])
 def test_every_dialog_closes_on_esc_and_returns_focus(fresh, cmd):
     drv = fresh[0]
     U.open_doc(drv, "structures/MgO.cif")

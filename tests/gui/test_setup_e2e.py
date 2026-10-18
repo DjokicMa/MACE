@@ -120,7 +120,7 @@ def test_row1_keys_open_setup_and_mod_enter_gives_the_printed_commands_deck(fres
     open_setup(drv, "structures/MgO.cif")
     st = state(drv)
     assert st["mode"] == "cif2d12" and st["calc"] == "OPT"
-    ui_rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-row')].map((r) => r.dataset.field)")
+    ui_rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-row[data-field]')].map((r) => r.dataset.field)")
     assert ui_rows == [f for f in st["form"] if f != "calc_type"] or set(ui_rows) == set(st["form"]) - {"calc_type"}
     shown = drv.execute_script("return document.querySelector('[data-field=functional] select').value")
     assert shown == "HSE06" and "SPIN" in st["deck"].splitlines()
@@ -159,7 +159,7 @@ def test_follow_up_rows_keep_the_parent(fresh, tmp_path, calc, row):
     st = state(drv)
     assert json.loads(st["json"])["functional"] == "PBE0"           # the parent's
     badge = drv.execute_script("return document.querySelector('[data-field=functional] .su-badge').textContent")
-    assert badge == "parent"
+    assert badge == "from parent .out"
     assert st["deckName"] == f"Si_sp_{calc.lower()}_PBE0_optimized.d12"
     # the manual route: the parent's settings ("y")
     d = tmp_path / "m"
@@ -185,11 +185,12 @@ def test_properties_rows(fresh, tmp_path, calc):
     probs = drv.execute_script("return window.__mace.problems().map((p) => p.message)")
     assert any("empty stand-in for Si_sp.f9" in p for p in probs), probs
     # opt2d3's fields start from its own defaults (not the parent's), and every type reads whole:
-    # rows of three under SP / OPT / FREQ, no TRANSP… or POTENT…
+    # rows of three under SP / OPT / FREQ (ORBITALS, the seventh properties type, on a row of its own),
+    # no TRANSP… or POTENT…
     badges = drv.execute_script("return [...document.querySelectorAll('#inspector .su-row .su-badge')].map((b) => b.textContent)")
     assert badges and all(b == "default" for b in badges), badges
     rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-calc-row')].map((r) => [...r.children].map((b) => [b.textContent, b.scrollWidth <= b.clientWidth]))")
-    assert [[t for t, _ in r] for r in rows] == [["SP", "OPT", "FREQ"], ["BAND", "DOSS", "TRANSPORT"], ["CHARGE", "POTENTIAL", "CHG+POT"]]
+    assert [[t for t, _ in r] for r in rows] == [["SP", "OPT", "FREQ"], ["BAND", "DOSS", "TRANSPORT"], ["CHARGE", "POTENTIAL", "CHG+POT"], ["ORBITALS"]]
     assert all(fits for r in rows for _, fits in r), rows
     d = tmp_path / "m"
     shutil.copytree(root / "outputs", d / "in")
@@ -419,3 +420,26 @@ def test_p1_cif_offers_a_symmetrized_copy(fresh):
     fmt = drv.execute_script("return [...document.querySelectorAll('dialog[open] select')].map((s) => s.value)")
     assert "cif:symmetrized" in fmt, fmt
     drv.execute_script("document.querySelectorAll('dialog[open]').forEach((d) => d.close())")
+
+
+def test_batch_prepare_names_what_stays_behind(fresh):
+    """Batch Prepare + Submit takes the form's fields; its toast names what does not go along
+    (an edited k-path, the k-point mesh, the hand-edited settings file), never the wrong one."""
+    drv = fresh[0]
+    open_setup(drv, "structures/NaCl.cif", keys=False)
+    msgs = "return [...document.querySelectorAll('#toasts .toast2 .msg')].map((m) => m.textContent)"
+    drv.execute_script("document.querySelectorAll('#toasts .toast2').forEach((t) => t.remove());"
+                       "const s = window.__mace.setup.state(); s.patches = {band_path: [{from: 'GAMMA', to: 'X'}]}; s.hand = null;"
+                       "window.__mace.setup.batchFrom()")
+    H.wait(drv, "return [...document.querySelectorAll('#toasts .toast2 .msg')].some((m) => /Batch Setup/.test(m.textContent))", 10)
+    t = next(m for m in drv.execute_script(msgs) if "Batch Setup" in m)
+    assert "k-path" in t and "k-point mesh" not in t and "hand-edited" not in t, t
+    drv.execute_script("window.__mace.closeAll()")
+    open_setup(drv, "structures/NaCl.cif", keys=False)
+    drv.execute_script("document.querySelectorAll('#toasts .toast2').forEach((t) => t.remove());"
+                       "const s = window.__mace.setup.state(); s.patches = {k_points_for_all_files: '4 4 4'}; s.hand = '{}';"
+                       "window.__mace.setup.batchFrom()")
+    H.wait(drv, "return [...document.querySelectorAll('#toasts .toast2 .msg')].some((m) => /Batch Setup/.test(m.textContent))", 10)
+    t = next(m for m in drv.execute_script(msgs) if "Batch Setup" in m)
+    assert "k-point mesh" in t and "hand-edited settings file" in t and "k-path" not in t, t
+    drv.execute_script("window.__mace.closeAll()")

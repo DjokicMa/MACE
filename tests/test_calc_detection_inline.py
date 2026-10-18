@@ -106,7 +106,7 @@ def test_d12_calc_type_needs_the_whole_record():
 # --- d3_calc_type -----------------------------------------------------------
 
 def test_property_calc_types_table():
-    assert PROPERTY_CALC_TYPES == ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL")
+    assert PROPERTY_CALC_TYPES == ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
     assert CHARGE_POTENTIAL_RECORDS == frozenset({"ECH3", "ECHG", "POT3", "POTC"})
 
 

@@ -13,7 +13,7 @@ dropped on the floor.
     |Seebeck| with its (T, mu) and carrier type, peak power factor, peak
     electronic ZT, units, and the source ``.dat`` files referenced), and
   - flat queryable scalar rows (``transport_seebeck_max_uv_per_k``,
-    ``transport_power_factor_max``, ``transport_zt_max``,
+    ``transport_power_factor_max_avg``, ``transport_zt_electronic_max_avg``,
     ``transport_n_temperatures``).
 
 These tests exercise the REAL extractor on the REAL ``test/TRANSPORT/*.out``
@@ -139,8 +139,8 @@ def test_power_factor_and_zt_finite_and_consistent(afi_props):
     # kappa_e = kappa0 - T*sigma*S^2 (KAPPA.dat is kappa0), so it is large
     # near the gap edge: 19.55 here (test_transport_zt_kappa0.py)
     assert zt < 100.0
-    assert afi_props["transport_power_factor_max"] == pytest.approx(pf)
-    assert afi_props["transport_zt_max"] == pytest.approx(zt)
+    assert afi_props["transport_power_factor_max_avg"] == pytest.approx(pf)
+    assert afi_props["transport_zt_electronic_max_avg"] == pytest.approx(zt)
     # Peak locations are at real grid temperatures.
     for key in ("power_factor_max_at", "zt_electronic_max_at"):
         loc = t[key]
@@ -218,11 +218,11 @@ def test_all_real_transport_files_extract_sane():
             assert t["carrier_type"] in ("n-type", "p-type")
             # Flat scalars present only when usable.
             assert props["transport_seebeck_max_uv_per_k"] == pytest.approx(s_uv)
-            assert props["transport_zt_max"] == pytest.approx(t["zt_electronic_max"])
+            assert props["transport_zt_electronic_max_avg"] == pytest.approx(t["zt_electronic_max"])
         else:
             # Degenerate file: no spurious peak scalars emitted.
             assert "transport_seebeck_max_uv_per_k" not in props
-            assert "transport_zt_max" not in props
+            assert "transport_zt_electronic_max_avg" not in props
             assert props.get("transport_data_available") is False
     # The corpus must contain at least one genuinely usable transport file.
     assert usable_count >= 1, "expected >=1 usable transport file in test/TRANSPORT"
@@ -245,7 +245,7 @@ def test_degenerate_transport_file_graceful():
     if not t["has_usable_data"]:
         assert t["seebeck_max_abs_uv_per_k"] == 0.0
         assert "transport_seebeck_max_uv_per_k" not in props
-        assert "transport_zt_max" not in props
+        assert "transport_zt_electronic_max_avg" not in props
 
 
 def test_non_transport_file_has_no_transport_key(extractor):
@@ -299,8 +299,8 @@ def test_seebeck_only_run_not_zeroed(tmp_path):
     assert t["zt_electronic_max"] is None
     assert props["transport_data_available"] is True
     assert props["transport_seebeck_max_uv_per_k"] > 0.0
-    assert "transport_power_factor_max" not in props
-    assert "transport_zt_max" not in props
+    assert "transport_power_factor_max_avg" not in props
+    assert "transport_zt_electronic_max_avg" not in props
 
 
 def test_full_dat_set_behavior_unchanged(tmp_path):

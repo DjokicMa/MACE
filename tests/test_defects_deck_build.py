@@ -463,7 +463,10 @@ ALLOWED_RECORDS = {"SUPERCON", "SUPERCEL", "2 0 0", "0 2 0", "0 0 2", "2 0", "0 
 def test_real_writer_hosts_keep_every_host_line(tmp_path, variant):
     changes = {
         "internal": {},
-        "explicit": {"basis_set_type": "EXTERNAL", "basis_set": "full.basis.triplezeta"},
+        # A real library path: the bare family name is not a directory, and was
+        # once written as a deck with no basis at all.
+        "explicit": {"basis_set_type": "EXTERNAL",
+                     "basis_set": str(REPO_ROOT / "Crystal_d12" / "basis_sets" / "full.basis.triplezeta") + "/"},
         "slabcut": {"slabcut": {"miller": [0, 0, 1], "isup": 1, "nlayers": 3}},
         "3c": {"dft_functional": "HSESOL3C", "basis_set": "SOLDEF2MSVP"},
         "hf": {"method": "HF", "hf_method": "RHF", "is_spin_polarized": False},

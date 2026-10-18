@@ -208,9 +208,9 @@ def test_keyboard_and_names(app):
     btns = drv.execute_script("return [...document.querySelectorAll('#plot-host .pv-acts > button, #plot-host .pv-acts .pk-wrap > button')].map((b) => b.textContent.trim())")
     assert all(btns) and len(btns) >= 4
     drv.execute_script("document.querySelector('#plot-host .pk-logy').focus()")
-    U.keys(drv, Keys.TAB)
-    U.keys(drv, Keys.TAB)
-    U.keys(drv, Keys.TAB)
+    # Log Y, Units, Style (1.1.6: the plot's own style), Export, Plot Options
+    for _ in range(4):
+        U.keys(drv, Keys.TAB)
     assert drv.execute_script("return document.activeElement.classList.contains('pk-more')")
     U.keys(drv, Keys.ENTER)
     H.wait(drv, "return !!document.querySelector('.pk-pop')", 5)

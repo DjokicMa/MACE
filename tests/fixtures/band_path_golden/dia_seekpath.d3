@@ -1,0 +1,10 @@
+BAND
+1_dia_opt_rev1 - Band Structure - SeeKPath (w.I) - GAMMA-X-U-|-K-GAMMA-L-W-X
+6 8 1000 1 36 1 0
+0 0 0  4 0 4
+4 0 4  5 2 5
+3 3 6  0 0 0
+0 0 0  4 4 4
+4 4 4  4 2 6
+4 2 6  4 0 4
+END

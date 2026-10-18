@@ -141,7 +141,8 @@ def test_read_basis_file_of_a_readable_file_is_unchanged():
     import basis_library
     text = d12_constants.read_basis_file(STUTTGART, 82)
     assert text == basis_library.load_family("stuttgart").record("282")
-    assert d12_constants.read_basis_file(STUTTGART, 86) == ""     # no file: as before
+    with pytest.raises(BasisFileError, match=r"Rn \(Z=86\)"):   # no file: refused
+        d12_constants.read_basis_file(STUTTGART, 86)
 
 
 def test_the_coverage_check_refuses_an_unreadable_file_before_any_question():

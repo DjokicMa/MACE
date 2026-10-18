@@ -40,17 +40,22 @@ NVOX = (18, 18, 18)
 CENTER = (2.7, 2.7, 2.7)
 
 
-def test_zslice_preserves_skew_via_surface(tmp_path):
+def test_zslice_preserves_skew_as_a_flat_2d_map(tmp_path):
+    """A single slice is a flat 2D map (no 3D scene: its edge-on axis strip showed in PNGs),
+    resampled on Cartesian in-plane axes so a skewed cell keeps its parallelogram."""
     f = tmp_path / "tri_DENS.cube"
     _write_cube(f, TRI_VOX, NVOX, CENTER)
     cube = ccp.CubeFile(str(f))
     fig = ccp.plot_slice_plotly(cube, "z", position=9, show_atoms=False)
     tr = fig.data[0]
-    assert tr.type == "surface", f"slice still rectilinear ({tr.type}); skew lost"
-    x = np.asarray(tr.x)
-    assert x.ndim == 2, f"slice x collapsed to {x.ndim}D; skew lost"
-    # off-diagonal v2x means x must vary across the j-direction (rows differ)
-    assert not np.allclose(x[0, :], x[-1, :]), "rows identical; parallelogram not rendered"
+    assert tr.type == "heatmap"
+    assert not any(t.type in ("surface", "scatter3d", "mesh3d") for t in fig.data)
+    z = np.asarray(tr.z, float)
+    # the parallelogram leaves NaN corners: its bottom row starts at x = 0, its top row is shifted
+    nan_bottom = np.isnan(z[0]).argmin()
+    nan_top = np.isnan(z[-1]).argmin()
+    assert np.isnan(z).any() and nan_top > nan_bottom, "skew lost"
+    assert fig.layout.xaxis.scaleanchor == "y"
 
 
 def test_orthogonal_slice_still_renders(tmp_path):
@@ -58,8 +63,10 @@ def test_orthogonal_slice_still_renders(tmp_path):
     _write_cube(f, ORTHO_VOX, NVOX, CENTER)
     cube = ccp.CubeFile(str(f))
     fig = ccp.plot_slice_plotly(cube, "z", position=9, show_atoms=False)
-    assert fig.data[0].type == "surface"
-    assert np.asarray(fig.data[0].x).ndim == 2
+    z = np.asarray(fig.data[0].z, float)
+    assert fig.data[0].type == "heatmap" and not np.isnan(z).any()
+    assert fig.layout.xaxis.title.text == "X (Å)" and fig.layout.yaxis.title.text == "Y (Å)"
+    assert np.nanmax(z) > np.nanmin(z)
 
 
 def test_slice_with_atoms_renders(tmp_path):
@@ -67,8 +74,9 @@ def test_slice_with_atoms_renders(tmp_path):
     _write_cube(f, TRI_VOX, NVOX, CENTER)
     cube = ccp.CubeFile(str(f))
     fig = ccp.plot_slice_plotly(cube, "z", position=9, show_atoms=True)
-    # surface + atom overlay both present, no exception
-    assert any(t.type == "surface" for t in fig.data)
+    assert any(t.type == "heatmap" for t in fig.data)
+    assert any(t.type == "scatter" and t.mode == "markers+text" for t in fig.data)
+    assert "e/bohr³" in fig.data[0].colorbar.title.text
 
 
 # ---- --slice-all (grid of subplots) ----

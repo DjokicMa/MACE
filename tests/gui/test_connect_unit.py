@@ -20,22 +20,22 @@ PROF = {"gateway": "me@gw.example.edu", "node": "dev-node-01", "dir": "~/runs"}
 def test_jump_argv_exact():
     argv = C.build_ssh_argv({**PROF, "jump": "bastion.example.edu"}, 8765, 40000, 40001, "jump")
     assert argv[:3] == ["ssh", "-J", "bastion.example.edu,me@gw.example.edu"]
-    assert argv[3:9] == ["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
-                         "-o", "ServerAliveCountMax=4"]
-    assert argv[9:12] == ["-L", "127.0.0.1:8765:127.0.0.1:40000", "dev-node-01"]
-    assert argv[12].startswith("exec bash -lc ") and len(argv) == 13
+    assert argv[3:11] == ["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
+                          "-o", "ServerAliveCountMax=4", "-o", "ConnectTimeout=20"]
+    assert argv[11:14] == ["-L", "127.0.0.1:8765:127.0.0.1:40000", "dev-node-01"]
+    assert argv[14].startswith("exec bash -lc ") and len(argv) == 15
     assert "-n" not in argv and "-t" not in argv and "-N" not in argv
 
 
 def test_nested_argv_exact():
     argv = C.build_ssh_argv(PROF, 8765, 40000, 40001, "nested")
-    assert argv[:7] == ["ssh", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
-                        "-o", "ServerAliveCountMax=4"]
-    assert argv[7:10] == ["-L", "127.0.0.1:8765:127.0.0.1:40001", "me@gw.example.edu"]
-    inner = shlex.split(argv[10])
-    assert inner[:7] == ["ssh", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-L",
-                         "127.0.0.1:40001:127.0.0.1:40000"]
-    assert inner[7] == "dev-node-01" and inner[8] == C.remote_command(PROF, 40000)
+    assert argv[:9] == ["ssh", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
+                        "-o", "ServerAliveCountMax=4", "-o", "ConnectTimeout=20"]
+    assert argv[9:12] == ["-L", "127.0.0.1:8765:127.0.0.1:40001", "me@gw.example.edu"]
+    inner = shlex.split(argv[12])
+    assert inner[:9] == ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ExitOnForwardFailure=yes",
+                         "-L", "127.0.0.1:40001:127.0.0.1:40000"]
+    assert inner[9] == "dev-node-01" and inner[10] == C.remote_command(PROF, 40000)
     assert "-n" not in inner and "-t" not in inner
 
 
@@ -177,7 +177,12 @@ def test_no_tty_and_no_gateway_exits_2(tmp_path):
            "me@gw.example.edu: Permission denied (publickey)."], [], "key"),
     (255, ["me@gw.example.edu: Permission denied (password)."], [], "ssh"),
     (255, ["Host key verification failed."], [], "host-key"),
-    (255, ["ssh: Could not resolve hostname gw: Name or service not known"], [], "ssh"),
+    (255, ["ssh: Could not resolve hostname gw: Name or service not known"], [], "unreachable"),
+    (255, ["ssh: connect to host gw.example.edu port 22: Connection timed out"], [], "unreachable"),
+    (255, ["ssh: connect to host gw.example.edu port 22: Connection refused"], [], "unreachable"),
+    (255, ["channel 0: open failed: connect failed: Name or service not known", "stdio forwarding failed"], [],
+     "unreachable"),
+    (255, ["kex_exchange_identification: Connection closed by remote host"], [], "ssh"),
 ])
 def test_classify_failure(code, err, out, kind):
     got, msg = C.classify_failure(code, err, "dev-node-01", "me@gw.example.edu", out)
@@ -502,7 +507,7 @@ def test_node_key_options_carry_the_gateways_key(tmp_path, monkeypatch):
 def test_node_keys_go_to_the_jump_hop_only():
     keys = ["-o", "IdentityFile=~/.ssh/id_cluster"]
     argv = C.build_ssh_argv({**PROF, "ssh_options": ["-v"]}, 8765, 40000, 40001, "jump", node_keys=keys)
-    assert argv[9:12] == keys + ["-v"] and argv[12:14] == ["-L", "127.0.0.1:8765:127.0.0.1:40000"]
+    assert argv[11:14] == keys + ["-v"] and argv[14:16] == ["-L", "127.0.0.1:8765:127.0.0.1:40000"]
     assert "IdentityFile=~/.ssh/id_cluster" not in C.build_ssh_argv(PROF, 8765, 40000, 40001, "nested",
                                                                      node_keys=keys)
 
@@ -514,3 +519,68 @@ def test_node_refusal_points_to_the_password_doc():
     doc = (Path(C.__file__).resolve().parents[2] / "docs" / "gui.md").read_text()
     assert "\n### mace gui connect: the node asks for a password\n" in doc
     assert C.DOCS_NODE_PASSWORD == "docs/gui.md#mace-gui-connect-the-node-asks-for-a-password"
+
+
+# ---- ConnectTimeout: the default only when neither --ssh-option nor your ssh config sets one (1.1.6 review)
+class _GRun:
+    """A runner whose ``ssh -G`` prints ``text`` (or fails)."""
+    def __init__(self, text="", rc=0, raise_=False):
+        self.text, self.rc, self.raise_, self.calls = text, rc, raise_, []
+
+    def __call__(self, argv, **kw):
+        self.calls.append(argv)
+        if self.raise_:
+            raise OSError("no ssh")
+        return subprocess.CompletedProcess(argv, self.rc, self.text, "")
+
+
+@pytest.mark.parametrize("text,rc,raise_,want", [
+    ("user me\nconnecttimeout 90\n", 0, False, "90"),
+    ("user me\nconnecttimeout none\n", 0, False, None),
+    ("user me\n", 0, False, None),
+    ("", 255, False, None),
+    ("", 0, True, None),
+])
+def test_config_connect_timeout(text, rc, raise_, want):
+    r = _GRun(text, rc, raise_)
+    assert C.config_connect_timeout("gw", r) == want
+    assert r.calls == [["ssh", "-G", "gw"]]
+
+
+def test_the_ssh_config_timeout_is_not_overridden_and_reaches_the_inner_hop():
+    for hop in ("jump", "nested"):
+        argv = C.build_ssh_argv(PROF, 8765, 40000, 40001, hop, timeout="90")
+        assert not any("ConnectTimeout=20" in a for a in argv), hop
+    inner = C.build_ssh_argv(PROF, 8765, 40000, 40001, "nested", timeout="90")[-1]
+    assert "ConnectTimeout=90" in inner
+    argv = C.build_ssh_argv({"gateway": "gw"}, 8765, 40000, 40001, "jump", timeout="90")
+    assert not any("ConnectTimeout" in a for a in argv)
+
+
+def test_an_ssh_option_timeout_reaches_the_inner_hop():
+    prof = {**PROF, "ssh_options": ["-oConnectTimeout=45"]}
+    argv = C.build_ssh_argv(prof, 8765, 40000, 40001, "nested")
+    assert "ConnectTimeout=45" in argv[-1] and "ConnectTimeout=20" not in " ".join(argv)
+    prof = {**PROF, "ssh_options": ["-o", "ConnectTimeout=50"]}
+    assert "ConnectTimeout=50" in C.build_ssh_argv(prof, 8765, 40000, 40001, "nested")[-1]
+
+
+def test_without_a_timeout_of_yours_the_default_stays():
+    argv = C.build_ssh_argv(PROF, 8765, 40000, 40001, "nested")
+    assert argv.count("ConnectTimeout=20") == 1 and "ConnectTimeout=20" in argv[-1]
+
+
+def test_ssh_destination_is_the_host_the_options_apply_to():
+    assert C.ssh_destination(PROF, "jump") == "dev-node-01"
+    assert C.ssh_destination(PROF, "jump", "alice") == "alice@dev-node-01"
+    assert C.ssh_destination(PROF, "nested") == "me@gw.example.edu"
+    assert C.ssh_destination({"gateway": "gw"}, "jump") == "gw"
+    assert C.ssh_destination({"node": "n1"}, "nested") == "n1"
+
+
+def test_update_remote_keeps_the_config_timeout():
+    from mace import update as U
+    argv = U.remote_argv({"gateway": "gw"}, ["--channel", "release"], False, runner=_GRun("connecttimeout 90\n"))
+    assert "ConnectTimeout=20" not in argv
+    argv = U.remote_argv({"gateway": "gw"}, ["--channel", "release"], False, runner=_GRun(""))
+    assert "ConnectTimeout=20" in argv

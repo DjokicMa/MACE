@@ -51,6 +51,12 @@ class FakeSlurm:
                                 pending tasks whatever the environment says
       fail_sbatch_call          the n-th sbatch call (1-based, --test-only
                                 not counted) fails with a submit-limit error
+                                (fail_sbatch_text: with this error instead)
+      max_submit                a per-user MaxSubmitJobs: sbatch refuses
+                                (QOSMaxSubmitJobPerUserLimit) once running +
+                                pending (each array task) would exceed it;
+                                refused counts the refusals, peak_live the
+                                most jobs queued after an accepted sbatch
       fail_scontrol_release     scontrol release fails
       assoc_mgr                 text printed by ``scontrol show assoc_mgr``
       max_array_tasks           in ``scontrol show config`` (10000)
@@ -74,6 +80,8 @@ class FakeSlurm:
       cluster_name              ClusterName in ``scontrol show config``
       delay                     {tool: seconds} sleep before answering
       fail                      {tool: "stderr text"} exit 1 with it
+      scancel_refuse            {job id: reason}: scancel fails for those ids
+                                (exit 1), still canceling the others
     Records may also carry: time_limit, elapsed, nodes, cpus, partition,
     account, nodelist, workdir (squeue %l %M %D %C %P %a %N %Z).
       nodes                     text printed by ``scontrol show nodes``
@@ -354,6 +362,9 @@ def sbatch(argv):
         state["sbatch_calls"] = state.get("sbatch_calls", 0) + 1
         if state.get("fail_sbatch_call") == state["sbatch_calls"]:
             Path(state_file).write_text(json.dumps(state, indent=1))
+            if state.get("fail_sbatch_text"):
+                sys.stderr.write(f"sbatch: error: {state['fail_sbatch_text']}\n")
+                return 1
             sys.stderr.write("sbatch: error: QOSMaxSubmitJobPerUserLimit\n"
                              "sbatch: error: Batch job submission failed: Job violates "
                              "accounting/QOS policy (job submit limit, user's size and/or "
@@ -361,6 +372,21 @@ def sbatch(argv):
             return 1
         directives = _leading_directives(text)
         spec = _array_spec(opts, directives)
+        # a per-user MaxSubmitJobs: running + pending, each array task
+        # counted; past it sbatch refuses with SLURM's own text
+        live = sum(1 for r in state.get("records", [])
+                   if r.get("state") in ("PENDING", "RUNNING", "CONFIGURING", "COMPLETING"))
+        new = len(_expand_spec(spec)[0]) if spec else 1
+        if state.get("max_submit"):
+            if live + new > int(state["max_submit"]):
+                state["refused"] = state.get("refused", 0) + 1
+                Path(state_file).write_text(json.dumps(state, indent=1))
+                sys.stderr.write("sbatch: error: QOSMaxSubmitJobPerUserLimit\n"
+                                 "sbatch: error: Batch job submission failed: Job violates "
+                                 "accounting/QOS policy (job submit limit, user's size and/or "
+                                 "time limits)\n")
+                return 1
+        state["peak_live"] = max(state.get("peak_live", 0), live + new)
         hold = "--hold" in opts and not state.get("no_array_hold")
         name = Path(script).stem
         for d in directives + [o for o in opts if o.startswith("--job-name=")]:
@@ -641,6 +667,13 @@ def scancel(argv):
             sys.stderr.write("scancel: error: Kill job error on job id\n")
             return 1
         ids = [a for a in argv if not a.startswith("-")]
+        # scancel_refuse {id: reason}: those ids fail (as SLURM reports a
+        # job that ended meanwhile), the others are canceled, exit 1
+        refuse = state.get("scancel_refuse") or {}
+        for jid in [i for i in ids if i in refuse]:
+            sys.stderr.write(f"scancel: error: Kill job error on job id {jid}: {refuse[jid]}\n")
+        rc = 1 if any(i in refuse for i in ids) else 0
+        ids = [i for i in ids if i not in refuse]
         recs = state.get("records", [])
         for jid in ids:
             for r in recs:
@@ -655,7 +688,7 @@ def scancel(argv):
             recs = [r for r in recs if r["id"] != jid and str(r.get("array")) != jid]
         state["records"] = recs
         Path(state_file).write_text(json.dumps(state, indent=1))
-    return 0
+    return rc
 
 
 def scontrol(argv):

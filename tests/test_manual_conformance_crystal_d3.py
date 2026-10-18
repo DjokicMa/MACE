@@ -322,21 +322,18 @@ def test_echg_derivative_menu_rejects_undefined_order(monkeypatch):
     assert config["derivative_order"] == 0
 
 
-def test_echg_declining_the_map_plane_warns(monkeypatch, capsys):
-    """Answering "no" to the map plane silently produced an invalid deck.
-
-    Real failure prevented: MAPNET records are unconditional for ECHG, so a
-    deck of ECHG / IDER / END makes CRYSTAL read END as the integer NPY and
-    abort. The escape hatch is kept (it is the only non-interactive route) but
-    it now says so.
+def test_echg_does_not_ask_whether_to_define_the_plane(monkeypatch, capsys):
+    """Answering "no" to "Define charge density map plane?" wrote ECHG / IDER /
+    END with rc 0: MAPNET records are unconditional for ECHG (manual p. 324)
+    and CRYSTAL read END as the integer NPY. The question is gone; the plane
+    is asked when the deck is written (or refused in batch).
     """
-    _Prompts({"Select type": "2", "Select order": "0",
-              "map plane": "n"}).install(monkeypatch)
+    _Prompts({"Select type": "2", "Select order": "0"}).install(monkeypatch)
 
     config = d3int.configure_charge_density_calculation()
 
-    assert config["need_map_points"] is False
-    assert "MAPNET" in capsys.readouterr().out
+    assert config["need_map_points"] is True
+    assert "map plane?" not in capsys.readouterr().out
 
 
 # --------------------------------------------------------------- POTC -------

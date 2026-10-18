@@ -111,7 +111,11 @@ def test_external_missing_file_is_caught():
 
 
 def test_external_nondirectory_does_not_blame_elements():
-    """A bad basis directory is not the elements' fault -- don't mis-report."""
-    ok, missing = check_basis_set_compatibility(
-        "/nonexistent/basis/dir", [6, 82], "EXTERNAL")
-    assert ok and missing == []
+    """A bad basis directory is not the elements' fault -- don't mis-report.
+
+    It used to pass the check, and the deck was then written with no basis at
+    all; it is refused now, naming the directory, not the elements."""
+    from basis_file_check import BasisFileError
+
+    with pytest.raises(BasisFileError, match="/nonexistent/basis/dir does not exist"):
+        check_basis_set_compatibility("/nonexistent/basis/dir", [6, 82], "EXTERNAL")

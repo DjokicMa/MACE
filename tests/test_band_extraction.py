@@ -5,7 +5,7 @@ It now also stores the actual band structure via the REAL extractor:
   - a compact ``band_structure`` JSON summary (k-path with real high-symmetry
     labels from the .d3, band energies AT the high-symmetry points, direct vs
     indirect gap with their k-locations, counts, Fermi energy, source file), and
-  - queryable scalar rows (``band_direct_gap_ev``, ``band_indirect_gap_ev``,
+  - queryable scalar rows (``band_direct_gap_ev``,
     ``band_fundamental_gap_ev``, ``band_gap_is_direct``, ...).
 
 These tests exercise the real invocation path
@@ -23,6 +23,19 @@ import pytest
 
 from conftest import TEST_DATA, find_data
 from mace.utils.property_extractor import CrystalPropertyExtractor, HARTREE_TO_EV
+
+
+def _legacy_gap(props):
+    """The gap DatFileProcessor recomputes from the BAND.DAT by band index
+    (stored as band_dat_band_gap_ev before 1.1.6, when it was merged into
+    band_fundamental_gap_ev): an independent check of the summary's gap."""
+    from mace.utils.dat_file_processor import DatFileProcessor
+    bs = props.get("band_structure") or {}
+    dat = Path(props["band_file_analyzed"]) if props.get("band_file_analyzed") else None
+    if not bs.get("occupied_bands") or dat is None:
+        return None
+    info = DatFileProcessor().process_band_dat_file(dat, num_occupied_bands=bs["occupied_bands"])
+    return (info.get("electronic_properties") or {}).get("band_gap_ev")
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +109,7 @@ def test_fundamental_gap_consistent_with_scalar(diamond_props):
     """The new structured fundamental gap matches the pre-existing scalar
     ``band_dat_band_gap_ev`` (the validated band-index recompute)."""
     bs = diamond_props["band_structure"]
-    scalar_gap = diamond_props["band_dat_band_gap_ev"]
+    scalar_gap = _legacy_gap(diamond_props)
     assert scalar_gap is not None
     assert bs["fundamental_gap_ev"] == pytest.approx(scalar_gap, abs=0.01)
 
@@ -107,7 +120,6 @@ def test_queryable_scalar_rows_added(diamond_props):
     p = diamond_props
     for k in (
         "band_direct_gap_ev",
-        "band_indirect_gap_ev",
         "band_fundamental_gap_ev",
         "band_vbm_kpoint_index",
         "band_cbm_kpoint_index",
@@ -116,7 +128,7 @@ def test_queryable_scalar_rows_added(diamond_props):
     assert isinstance(p["band_gap_is_direct"], bool)
     assert isinstance(p["band_kpath_label_string"], str) and p["band_kpath_label_string"]
     # Legacy scalars preserved (layered, not rewritten).
-    assert p["band_dat_band_gap_ev"] is not None
+    assert "band_dat_band_gap_ev" not in p and "band_indirect_gap_ev" not in p   # merged (1.1.6)
     assert p["band_dat_num_bands"] > 0
     assert p["calculation_type"] == "BAND"
 
@@ -235,7 +247,7 @@ def test_fundamental_gap_consistent_across_all_band_files():
     checked = 0
     for out in outs:
         props = extractor.extract_all_properties(out)
-        legacy = props.get("band_dat_band_gap_ev")
+        legacy = _legacy_gap(props)
         fundamental = props.get("band_fundamental_gap_ev")
         if legacy is None or fundamental is None:
             continue
@@ -260,7 +272,7 @@ def test_fundamental_gap_consistent_on_magnetic_file():
         )
     extractor = CrystalPropertyExtractor(enable_tracking=False)
     props = extractor.extract_all_properties(out)
-    legacy = props.get("band_dat_band_gap_ev")
+    legacy = _legacy_gap(props)
     fundamental = props.get("band_fundamental_gap_ev")
     assert legacy is not None and fundamental is not None
     assert fundamental == pytest.approx(legacy, abs=0.01), (
@@ -339,7 +351,7 @@ def test_ragged_file_no_spurious_vbm_or_index_corruption():
     nk = bs["num_kpoints"]
     assert nk > 0
 
-    legacy = props.get("band_dat_band_gap_ev")
+    legacy = _legacy_gap(props)
     fundamental = props.get("band_fundamental_gap_ev")
     assert legacy is not None and fundamental is not None
     # No spurious gap: clamped >= 0 and consistent with the legacy scalar

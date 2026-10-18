@@ -104,7 +104,31 @@ def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path, monkeypatch):
         assert saved, label
         drawn.append(_artists(saved[-1]))
         plt.close("all")
-    assert drawn[0] == drawn[1]
+    # the intended changes since (1.1.6): the Fermi line is dotted, as in the band plot and the GUI; a
+    # alpha = beta DOS is one-sided (B2: the GUI's rule), each curve the spin sum alpha + |beta| (both blocks
+    # of an unrestricted run hold one spin each, so the one-sided curve is the total); the projections
+    # are named and colored as in the GUI ("O p", T7); the total is an ink line over a light fill (T5); the
+    # figure is 3.5 x 5 in without a title (T8). The data drawn are the same.
+    old, new = drawn
+    old_curves = {lab.strip(): xy for lab, _c, _ls, xy in old["lines"] if not lab.startswith(("$E_F", "_"))}
+    new_curves = {lab: xy for lab, _c, _ls, xy in new["lines"] if lab and lab != "Total" and not lab.startswith(("$E_F", "_"))}
+    # T5 / 1.1.6 N1: a closed-shell total is an ink line (the GUI's plot ink) over a light neutral fill
+    from mace.plotting.plotly_bands import tokens
+    assert [c for lab, c, _ls, _xy in new["lines"] if lab == "Total"] == [tokens("default")["--plot-ink"]]
+    names = {"O (s)": "O s", "O (p)": "O p"}
+    assert set(new_curves) == {names[k] for k in old_curves}, (old_curves.keys(), new_curves.keys())
+    for k, xy in old_curves.items():
+        half = len(xy) // 2
+        summed = [[round(a[0] + abs(b[0]), 9), a[1]] for a, b in zip(xy[:half], xy[half:])]
+        assert np.allclose(new_curves[names[k]], summed, atol=1e-8), k   # alpha + |beta|: one-sided total
+    # one-sided: from 0 to the largest drawn (summed) DOS in the window plus 8% (1.1.6, the GUI's range)
+    lo, hi = new["lim"][1]
+    top = max(abs(x) for lab, _c, _ls, xy in new["lines"] if lab and not lab.startswith(("$E_F", "_"))
+              for x, y in xy if lo <= y <= hi)
+    assert new["lim"][0][0] == 0 and new["lim"][0][1] == pytest.approx(1.08 * top) and new["lim"][1] == old["lim"][1]
+    # 1.1.6: the energy title plain, not bold (the GUI's), and the DOS unit "states/eV"
+    assert new["labels"][2] == "" and new["labels"][1] == "$E - E_F$ (eV)"
+    assert [lab for lab, _c, ls, _xy in new["lines"] if lab.startswith("$E_F")] == ["$E_F$"]
 
 
 def test_frozen_base_is_the_base_commit_file():

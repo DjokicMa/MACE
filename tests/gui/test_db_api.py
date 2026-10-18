@@ -171,7 +171,7 @@ def test_export_has_the_clis_columns(served, tmp_path):
     st, h, body = U.req(base, "api/db/export?path=big.db&format=json&dim=SLAB")
     data = body if isinstance(body, dict) else json.loads(body)
     st, _, c = U.req(base, "api/db/count?path=big.db&dim=SLAB")
-    assert len(data["data"]) == c["count"] == data["record_count"]
+    assert len(data["data"]) == c["count"] == data["metadata"]["record_count"]     # the CLI's layout
 
 
 def _parity_db(path):

@@ -221,6 +221,11 @@ def test_kill_9_of_ssh_stops_an_idle_server(world, hop):
     assert not list(world["node_tmp"].glob("mace_gui_cache_*"))
 
 
+# Headroom for a loaded machine: the task outlasts the second connect's
+# reattach (up to 60 s) by a wide margin, and the waits after it cover the task.
+LINGER_TASK_S = 75
+
+
 def test_kill_9_during_a_task_lingers_and_a_second_connect_reattaches(world):
     import http.client
     tok = "e2e-node-token-0001"
@@ -230,7 +235,7 @@ def test_kill_9_during_a_task_lingers_and_a_second_connect_reattaches(world):
     pid = server_pid(world)
     prefix = re.search(r"(/s/[^/]+/)", url).group(1)
     conn = http.client.HTTPConnection("127.0.0.1", c.lp, timeout=10)
-    conn.request("POST", prefix + "api/test/task", body=json.dumps({"seconds": 30, "job": "sleep", "wait": 0,
+    conn.request("POST", prefix + "api/test/task", body=json.dumps({"seconds": LINGER_TASK_S, "job": "sleep", "wait": 0,
                                                                     "title": "Long test task"}),
                  headers={"X-Mace-Token": tok, "X-Requested-With": "mace-gui", "Content-Type": "application/json"})
     assert conn.getresponse().status == 202
@@ -250,7 +255,8 @@ def test_kill_9_during_a_task_lingers_and_a_second_connect_reattaches(world):
         H.wait(drv, "return document.documentElement.dataset.appReady === '1'", 60)
         drv.find_element("css selector", '#activity [data-cmd="view.tasks"]').click()
         H.wait(drv, """const r = [...document.querySelectorAll('.task-row')].find(
-            e => e.textContent.includes("Long test task")); return r && r.classList.contains("s-done")""", 60)
+            e => e.textContent.includes("Long test task")); return r && r.classList.contains("s-done")""",
+               LINGER_TASK_S + 90)
     finally:
         drv.quit()
     assert alive(pid)
@@ -258,8 +264,8 @@ def test_kill_9_during_a_task_lingers_and_a_second_connect_reattaches(world):
     time.sleep(1.0)
     if c2.master is not None:
         os.write(c2.master, b"y\n")
-    c2.wait_for(r"Stopped the server on n1", 20)
-    assert wait_gone(pid, 10)
+    c2.wait_for(r"Stopped the server on n1", 60)
+    assert wait_gone(pid, 30)
 
 
 def test_bash_script_through_the_fake_ssh(world):

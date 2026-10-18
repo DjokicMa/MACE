@@ -28,6 +28,11 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 # (NO_COLOR-behavior tests are unaffected: NO_COLOR still overrides.)
 os.environ.setdefault("COLORTERM", "truecolor")
 
+# MACE GUI's background update check (update_gui.py) runs `mace update
+# --check`, which fetches from the checkout's origin: never from a test's
+# server (the update tests turn it on with their own checkout).
+os.environ.setdefault("MACE_GUI_UPDATE_CHECK", "0")
+
 # No group site settings (/etc/mace/site.toml, $XDG_CONFIG_DIRS/mace) of the
 # machine the suite runs on reach a test or the subprocesses it starts; a
 # test that wants a group file names it (mace/submission/site.py).
@@ -160,6 +165,14 @@ def seekpath_path():
         return result
 
     return get_path
+
+
+@pytest.fixture(autouse=True)
+def _queue_state_in_tmp(tmp_path_factory, monkeypatch):
+    """The queue budget's lock, ledger and registry of active workflows
+    (mace/queue/budget.py) live in a temp dir of each test, never in ~ and
+    never shared between tests (subprocesses inherit it)."""
+    monkeypatch.setenv("MACE_QUEUE_STATE_DIR", str(tmp_path_factory.mktemp("queue_state")))
 
 
 @pytest.fixture(autouse=True)

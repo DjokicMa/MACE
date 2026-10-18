@@ -39,7 +39,7 @@ import pytest
 
 import CRYSTALOptToD12 as opt2d12
 from conftest import REPO_ROOT, TEST_DATA
-from d12_constants import DEFAULT_TOLERANCES
+from d12_constants import ATOMIC_NUMBER_TO_SYMBOL, DEFAULT_TOLERANCES
 from d12_parsers import CrystalInputParser
 
 DATA = Path(__file__).parent / "data"
@@ -346,17 +346,30 @@ def test_real_slab_deck_round_trips(tmp_path):
     assert round_trip(deck, tmp_path) == deck.read_text()
 
 
+def _ecp_atoms_labeled(lines):
+    """``lines`` with the geometry comment "X" of an ECP atom (2xx) replaced
+    by its element, as opt2d12 writes it since round 6."""
+    return [re.sub(r"^(2(\d\d) .* Biso 1\.000000) X$",
+                   lambda m: f"{m.group(1)} {ATOMIC_NUMBER_TO_SYMBOL[int(m.group(2))]}", ln)
+            for ln in lines]
+
+
 @pytest.mark.parametrize("deck", sorted((DATA / "ecp_decks").glob("*.d12")),
                          ids=lambda p: p.name[:6])
 def test_real_external_ecp_decks_round_trip_after_the_title(tmp_path, deck):
     """Decks opt2d12 wrote and CRYSTAL ran: EXTERNAL basis read verbatim from
     full.basis.triplezeta (its own spacing), Pb and Ag as ECP atoms 282/247
     labeled X. Their title is "./<name>" (see the module docstring).
+    opt2d12 now labels an ECP atom with its element (the comment field after
+    Biso, which CRYSTAL does not read), so X becomes Pb / Ag; nothing else
+    changes.
     (tests/data/opt_restart holds the same kind of deck with a RESTART that
     mace/recovery put into OPTGEOM, a record the deck writer has no input for.)"""
     original = deck.read_text().split("\n")
     assert original[0].startswith("./")
-    assert round_trip(deck, tmp_path).split("\n")[1:] == original[1:]
+    labeled = _ecp_atoms_labeled(original[1:])
+    assert labeled != original[1:]
+    assert round_trip(deck, tmp_path).split("\n")[1:] == labeled
 
 
 # ------------------------------------------------------ what the parse reads
@@ -469,7 +482,8 @@ def test_every_corpus_deck_mace_wrote_round_trips(tmp_path):
         if _hand_edited(text):
             continue
         checked += 1
-        if round_trip(deck, tmp_path).split("\n")[1:] != text.split("\n")[1:]:
+        # (an ECP atom's "X" comment is written as its element since round 6)
+        if round_trip(deck, tmp_path).split("\n")[1:] != _ecp_atoms_labeled(text.split("\n")[1:]):
             different.append(deck.name)
     assert checked >= 300
     assert not different, different

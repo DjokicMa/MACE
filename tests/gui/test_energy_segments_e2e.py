@@ -72,8 +72,14 @@ def card(drv):
 
 
 def pick(drv, sel, value):
-    from selenium.webdriver.support.ui import Select
-    Select(drv.find_element("css selector", sel)).select_by_value(value)
+    """Choose an option as a click does (the change event), without clicking an <option>: Firefox
+    refuses to scroll one into view while the inspector scrolls or renders again."""
+    el = drv.find_element("css selector", sel)
+    ok = drv.execute_script("const s = arguments[0]; if (![...s.options].some((o) => o.value === arguments[1])) return false;"
+                            "s.scrollIntoView({block: 'nearest'}); s.value = arguments[1];"
+                            "s.dispatchEvent(new Event('input', {bubbles: true})); s.dispatchEvent(new Event('change', {bubbles: true})); return true",
+                            el, value)
+    assert ok, (sel, value)
 
 
 def tsv_rows(text):

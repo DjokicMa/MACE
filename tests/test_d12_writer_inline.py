@@ -362,13 +362,16 @@ def test_external_basis_block_concatenates_files_in_z_order_and_ends_with_99_0(t
                      "282 1", "HAYWSC", "0 0 1 2.0 1.0", "3.0 1.0", "99 0"]
 
 
-def test_external_basis_block_skips_a_missing_element_file(tmp_path, capsys):
+def test_external_basis_block_refuses_a_missing_element_file(tmp_path):
+    """A missing element's record is refused, not skipped: a block without F
+    writes a deck CRYSTAL rejects."""
+    from basis_file_check import BasisFileError
+
     (tmp_path / "6").write_text("6 1\n0 0 1 2.0 1.0\n1.0 1.0\n")
-    lines = _lines(write_basis_block,
-                   {"basis_set_type": "EXTERNAL", "basis_set": str(tmp_path)},
-                   {"elements": [6, 9]})
-    assert lines == ["6 1", "0 0 1 2.0 1.0", "1.0 1.0", "99 0"]
-    assert "element 9" in capsys.readouterr().out
+    with pytest.raises(BasisFileError, match=r"F \(Z=9\)"):
+        _lines(write_basis_block,
+               {"basis_set_type": "EXTERNAL", "basis_set": str(tmp_path)},
+               {"elements": [6, 9]})
 
 
 @pytest.mark.parametrize("k_points,dimensionality,expected", [

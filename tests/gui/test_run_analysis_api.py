@@ -120,7 +120,7 @@ def test_meta_card_equals_the_extractor_and_creates_no_db(served):
     x = CrystalPropertyExtractor(db_path=None, enable_tracking=False)
     text = (root / "runs" / "1_dia_opt_rev1.out").read_text()
     assert m["energy_au"] == x._extract_energy_properties(text)["total_energy_au"]
-    assert m["cpu_s"] == x._extract_computational_properties(text)["total_cpu_time"]
+    assert m["cpu_s"] == x._extract_computational_properties(text)["cpu_time_total_s"]
     assert m["calc_type"] == "OPT" and m["atoms"] == 2 and m["scf_cycles"] == {"min": 3, "median": 5.0, "max": 6}
     assert sorted(p.name for p in (root / "runs").iterdir()) == before
     assert not list(root.rglob("*.db")) or all(p.name == "materials.db" for p in root.rglob("*.db"))

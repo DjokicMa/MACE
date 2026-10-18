@@ -72,7 +72,8 @@ def test_non_magnetic_bands_once_with_a_gap_at_the_break(fresh):
     open_plot(drv, "gr/gra_band.BAND.DAT")
     tr = drv.execute_script(TRACES)
     bands = [t for t in tr if t["meta"] in ("up", "down")]
-    assert [t["name"] for t in bands] == ["α = β (non-magnetic)"] and bands[0]["showlegend"]
+    # one set, no spin legend (it is drawn in the plot's ink; the note says α = β)
+    assert [t["name"] for t in bands] == ["α = β (non-magnetic)"] and not bands[0]["showlegend"]
     # 9 points per band, a null after band 1 and band 2, and one after the X|K tick (point 4)
     assert bands[0]["nulls"][:2] == [5, 10] and bands[0]["x"][4] == pytest.approx(1.0) and bands[0]["x"][6] == pytest.approx(1.25)
     note = drv.find_element("css selector", "#plot-host .pv-note").text
@@ -85,31 +86,34 @@ def test_both_dos_spins_filled_and_in_the_legend(fresh):
     open_plot(drv, "gr/gra_band.BAND.DAT")
     every = drv.execute_script(TRACES)
     tr = {t["name"]: t for t in every if t["meta"] == "dos"}
-    assert {"Total ↑", "Total ↓", "C (s) ↑", "C (s) ↓", "C (p) ↑", "C (p) ↓"} <= set(tr)
+    # DOS colors Auto, one element: by orbital, named as the legend names them (1.1.6)
+    assert {"Total ↑", "Total ↓", "C s ↑", "C s ↓", "C p ↑", "C p ↓"} <= set(tr)
     assert tr["Total ↑"]["fill"] == "tozerox" and tr["Total ↓"]["fill"] == "tozerox"
-    assert tr["Total ↓"]["pattern"] == "/" and tr["Total ↑"]["pattern"] is None
-    # the legend names each projection once (both spins in one group) and has one spin key
+    assert tr["Total ↓"]["pattern"] is None and tr["Total ↑"]["pattern"] is None
+    # the 1.1.6 legend: a Projections group of swatches (the total first) and neutral Spin keys
     assert not any(t["showlegend"] for t in tr.values())
-    assert [t["name"] for t in every if t["meta"] == "dos-key"] == ["C (s)", "C (p)", "Total"]
-    assert [(t["name"], t["dash"]) for t in every if t["meta"] == "key"] == [("↑ solid, right", "solid"), ("↓ dotted, left", "dot")]
-    assert tr["Total ↓"]["dash"] == "dot" and tr["Total ↑"]["dash"] == "solid"
-    for theme in ("dark", "light"):                  # the fills are neutral gray in both themes
+    swatches = [t["name"] for t in every if t["meta"] == "key-proj"]
+    assert swatches[0] == "Total" and set(swatches) == {"Total", "C s", "C p"}
+    assert [(t["name"], t["dash"]) for t in every if t["meta"] == "key-spin"] == [("spin up (α)", "solid"), ("spin down (β)", "dash")]
+    assert tr["Total ↓"]["dash"] == "dash" and tr["Total ↑"]["dash"] == "solid"
+    for theme in ("dark", "light"):                  # each total filled lightly in its spin's color, in both themes
         drv.execute_script("window.__mace.settings.set('theme', arguments[0])", theme)
         time.sleep(0.5)
         fills = drv.execute_script("return document.querySelector('#plot-host .pv-plot').data"
                                    ".filter((t) => t.meta === 'dos' && t.fill === 'tozerox').map((t) => t.fillcolor)")
-        assert len(fills) == 2 and all(f.startswith("rgba(128,128,128") for f in fills)
+        assert len(fills) == 2 and fills[0] != fills[1] and all(f.startswith("rgba(") and f.endswith(",0.126)") for f in fills)
     U.no_errors(drv)
 
 
-def test_magnetic_bands_keep_both_spins_beta_under_alpha(fresh):
+def test_magnetic_bands_keep_both_spins_beta_over_alpha(fresh):
     drv = fresh[0]
     open_plot(drv, "mag/fe_band.BAND.DAT")
     tr = [t for t in drv.execute_script(TRACES) if t["meta"] in ("up", "down")]
-    assert [t["name"] for t in tr] == ["spin down (β)", "spin up (α)"]      # beta drawn first, under alpha
-    assert tr[0]["dash"] == "dot" and tr[1]["dash"] == "solid"
+    # beta drawn last, dashed over alpha (1.1.6, as mace plotting): coinciding bands read in both colors
+    assert [t["name"] for t in tr] == ["spin up (α)", "spin down (β)"]
+    assert tr[0]["dash"] == "solid" and tr[1]["dash"] == "dash"
     note = drv.find_element("css selector", "#plot-host .pv-note").text
-    assert "α solid, β dotted" in note
+    assert "α solid, β dashed" in note
     U.no_errors(drv)
 
 
@@ -127,7 +131,8 @@ FIG = """const p = document.querySelector('#plot-host .pv-plot'), dos = p.data.f
 
 def test_widening_the_energy_range_keeps_the_dos_scaled_to_its_data(fresh):
     """-10..+10 eV past a DOS window of about -7..+7 eV: no edge line, the DOS axis
-    fits the data, the region without DOS is shaded, the bands stay one set."""
+    fits the data, the region without DOS is left blank (no gray band that reads as the total's fill,
+    bug f) and the note says where the DOS was computed, the bands stay one set."""
     drv = fresh[0]
     open_plot(drv, "gr/gra_band.BAND.DAT")
     before = drv.execute_script(FIG)
@@ -143,11 +148,9 @@ def test_widening_the_energy_range_keeps_the_dos_scaled_to_its_data(fresh):
     assert st["xmax"] < 3                                    # 132 states/eV in the edge bin before
     assert max(map(abs, st["x2"])) < 3 * st["xmax"]          # the axis fits the data, not a spike
     assert st["bands"] == 1
-    sh = {n: (y0, y1) for n, y0, y1 in st["shapes"]}
-    assert sh["nodos-below"][1] == pytest.approx(lo, abs=1e-6) and sh["nodos-below"][0] <= -10
-    assert sh["nodos-above"][0] == pytest.approx(hi, abs=1e-6) and sh["nodos-above"][1] >= 10
+    assert st["shapes"] == []
     tip = drv.find_element("css selector", "#plot-host .pv-note [data-help]").get_attribute("title")
-    assert "outside the computed DOS window" in tip
+    assert f"DOS computed from {lo:.2f} to {hi:.2f} eV" in tip, tip
     # zooming back in refits the DOS axis to the data in view
     drv.execute_script("return Plotly.relayout(document.querySelector('#plot-host .pv-plot'), {'yaxis.range': [-2, 2]})")
     time.sleep(0.5)

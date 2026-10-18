@@ -148,9 +148,12 @@ def test_job_documents_share_one_sacct(server):
             assert r["in_root"] and r["progress"]["done"] == 5
         assert len([c for c in fs.calls("scontrol") if "job" in c["argv"]]) - n_show == 5
         n_sacct = len(fs.calls("sacct"))
-        time.sleep(4.5)                                   # about 3 ticks of the 1 s test poll
+        # the 1 s test poll: at least 2 ticks (a loaded machine runs fewer per second), never one per job
+        t0 = time.time()
+        while len(fs.calls("sacct")) - n_sacct < 2 and time.time() - t0 < 15:
+            time.sleep(0.25)
         sacct = fs.calls("sacct")[n_sacct:]
-        assert 2 <= len(sacct) <= 6, len(sacct)
+        assert 2 <= len(sacct) <= 2 + int(time.time() - t0) + 1, (len(sacct), time.time() - t0)
         for c in sacct:
             j = c["argv"][c["argv"].index("-j") + 1].split(",")
             assert set(ids) <= set(j), j

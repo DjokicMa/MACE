@@ -33,6 +33,25 @@ P5_ROUTES = [
     ("POST", "setup/preflight", {"deck_name": "x.d12", "deck": "TEST\nEND\n", "wait": 0}, [], False),
     ("POST", "deck/preview", {"structure": "structures/MgO.cif", "mode": "cif2d12", "json": {}}, ["structure"], False),
     ("GET", "plot", {"path": "structures/MgO.cif", "detach": "1"}, ["path"], False),
+    # the k-path editor's Brillouin zone view (1.1.6)
+    ("GET", "bz", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # the panel context (1.1.6): the run a plot, volume or log came from
+    ("GET", "related", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # the Plot Gallery (1.1.6): its gallery/* routes
+    ("GET", "gallery/pane", {"kind": "structure", "path": "structures/MgO.cif"}, ["path"], False),
+    ("POST", "gallery/collect", {"kind": "structure", "paths": ["structures/MgO.cif"]}, [], False),
+    ("POST", "gallery/collect", {"kind": "structure", "source": {"type": "folder", "folder": "structures"}}, ["source.folder"], False),
+    ("POST", "gallery/csv", {"kind": "structure", "paths": ["structures/MgO.cif"]}, [], False),
+    ("POST", "gallery/export", {"kind": "structure", "paths": ["structures/MgO.cif"], "detach": True}, [], False),
+    # Batch Setup's STUTSC check (1.1.6): the selected files' elements
+    ("POST", "batch/stutsc", {"files": ["structures/MgO.cif"]}, [], False),
+    # the Workflows view and builder (1.1.6): its workflow/* routes
+    ("GET", "workflow/list", {}, [], False),
+    ("GET", "workflow/status", {"id": "workflow_20261015_000000_abcd", "folder": "structures"}, ["folder"], False),
+    ("POST", "workflow/control", {"folder": "", "id": "workflow_20261015_000000_abcd", "action": "pause"}, ["folder"], True),
+    # the served folder's mace-folder.toml (1.1.6)
+    ("GET", "folder-settings", {}, [], False),
+    ("POST", "folder-settings", {"set": {}, "unset": []}, [], True),
     ("GET", "text/lines", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "spectrum", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "freq", {"path": "outputs/Si_sp.out"}, ["path"], False),
@@ -53,6 +72,8 @@ P5_ROUTES = [
     ("GET", "out/problems", {"path": "outputs/Ag2Br3_opt_unfinished.out"}, ["path"], False),
     ("GET", "out/meta", {"path": "outputs/Ag2Br3_opt_unfinished.out", "wait": "0"}, ["path"], False),
     ("GET", "out/live", {"path": "outputs/Ag2Br3_opt_unfinished.out"}, ["path"], False),
+    # 1.1.6: the time-left levels for the run card
+    ("GET", "out/progress", {"path": "outputs/Ag2Br3_opt_unfinished.out"}, ["path"], False),
     ("POST", "out/track", {"path": "outputs/Ag2Br3_opt_unfinished.out",
                            "measurement": {"type": "distance", "atoms": [{"base": 0}, {"base": 1}]}}, ["path"], False),
     # File History and the protected-kind check (C19, C20)
@@ -72,11 +93,20 @@ P5_ROUTES = [
     ("POST", "profile/docprefs", {"kinds": {}}, [], False),
     ("GET", "docprefs", {"kind": "display", "path": "structures/MgO.cif"}, ["path"], False),
     ("POST", "docprefs", {"kind": "display", "path": "structures/MgO.cif", "values": {}}, ["path"], False),
+    # element color palettes (1.1.6): $XDG_CONFIG_HOME/mace/element_colors.json, never the folder
+    ("GET", "palettes", {}, [], False),
+    ("POST", "palettes", {"op": "default", "id": "vesta"}, [], False),
+    # element legends (1.1.6): reads structure files in the folder, writes nothing (paths are checked in test_themes_palettes_e2e)
+    ("POST", "legend", {"paths": ["structures/MgO.cif"]}, [], False),
     # connectivity (PLAN_connect): Open Folder and the managed-mode control routes
     ("GET", "folders", {}, [], False),
     ("POST", "open-folder", {"path": "/nonexistent-folder-zq"}, [], False),
     ("POST", "managed/", {"watcher": "w"}, [], False),
     ("POST", "shutdown", {"mode": "cancel"}, [], False),
+    # the update notice (1.1.6; only refused calls here: an accepted check would fetch from origin)
+    ("GET", "update", {}, [], False),
+    ("POST", "update/check", {}, [], False),
+    ("POST", "update/choose", {"choice": "later"}, [], False),
     # sessions (one-time links, activity, expiry)
     ("POST", "login-code", {}, [], False),
     ("GET", "session", {}, [], False),
@@ -96,6 +126,7 @@ P5_ROUTES = [
     ("GET", "props", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "joblog/link", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "transport", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("GET", "transport-zt", {"path": "outputs/Si_sp.out", "kappa_l": "1.5"}, ["path", "kappa_l"], False),
     ("GET", "convergence", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "map", {"path": "outputs/Si_sp.out"}, ["path"], False),
     # plan E5: the Volume document (a cube's grid, slices, MEP range, differences)
@@ -106,6 +137,10 @@ P5_ROUTES = [
     ("POST", "volume/mep_range", {"path": "outputs/Si_sp.out", "vertices": [0, 0, 0]}, ["path"], False),
     ("POST", "volume/combine", {"paths": ["outputs/Si_sp.out", "outputs/Si_sp.out"], "coefficients": [1, -1]}, [], False),
     ("POST", "volume/save", {"paths": ["outputs/Si_sp.out", "outputs/Si_sp.out"], "coefficients": [1, -1], "name": "x.CUBE"}, [], True),
+    # CRYSTAL23 ORBITALS: the orbital picker's index, grids and Save Cube (.molden files only)
+    ("GET", "orbitals", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("GET", "orbitals/grid", {"path": "outputs/Si_sp.out", "k": "1", "mo": "1"}, ["path"], False),
+    ("POST", "orbitals/save", {"path": "outputs/Si_sp.out", "k": 1, "mos": [1]}, ["path"], True),
 ]
 # routes that only exist with MACE_GUI_TEST_HOOKS=1
 TEST_ONLY = {"test/cli"}
@@ -205,5 +240,120 @@ def _routes():
 
 def test_every_new_route_is_in_the_table():
     listed = {r[1] for r in P5_ROUTES}
+    listed |= {r[1].split("/")[0] + "/" for r in P5_ROUTES if "/" in r[1]}     # a prefix route (gallery/) by its rows
     missing = sorted(_routes() - PHASE4 - listed - TEST_ONLY)
     assert not missing, f"Phase 5 routes missing from P5_ROUTES: {missing}"
+
+
+XE_CIF = """data_xe
+_cell_length_a 6.2
+_cell_length_b 6.2
+_cell_length_c 6.2
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P 1'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Xe1 Xe 0 0 0
+"""
+
+
+@pytest.fixture(scope="module")
+def evil(served):
+    """A folder in the served root with symbolic links out of it: a structure file and a folder of
+    structures (xenon, which no file inside the root holds), beside one real file (Si)."""
+    base, root, outside = served
+    far = outside / "far"
+    far.mkdir(exist_ok=True)
+    (far / "xenon.cif").write_text(XE_CIF)
+    d = root / "evil"
+    d.mkdir(exist_ok=True)
+    (d / "Si.cif").write_text((H.EXAMPLES / "structures" / "Si.cif").read_text())
+    if not (d / "outside_struct.cif").is_symlink():
+        os.symlink(far / "xenon.cif", d / "outside_struct.cif")
+        os.symlink(far, d / "linkdir")
+    return base, root, outside
+
+
+def test_legend_walk_stays_inside_the_folder(evil):
+    """Export Element Legend on a folder (recursive) reads only files inside the served folder: a link
+    out of it (a file or a folder) is left out, and nothing about the outside files comes back."""
+    pytest.importorskip("ase")      # the legend reads CIFs, which needs ase (without it: a 400 that says so)
+    base, root, outside = evil
+    for paths in (["evil"], ["."]):
+        st, _, r = U.post(base, "api/legend", {"paths": paths, "recursive": True})
+        assert st == 200, r
+        assert "Xe" not in r["symbols"], (paths, r["symbols"])
+        assert "xenon" not in json.dumps(r["skipped"]) and str(outside) not in json.dumps(r), r["skipped"]
+    st, _, r = U.post(base, "api/legend", {"paths": ["evil"], "recursive": True})
+    assert r["symbols"] == ["Si"] and r["files"] == 1
+
+
+def test_gallery_leaves_out_links_out_of_the_folder(evil):
+    """A folder holding a link out of the served folder still opens in the Gallery: the link is left
+    out (as the Explorer leaves it out), with no error and no absolute path in the answer."""
+    base, root, outside = evil
+    for src in ({"type": "folder", "folder": "evil"}, {"type": "folder", "folder": "."}):
+        st, _, r = U.post(base, "api/gallery/collect", {"kind": "structure", "source": src})
+        assert st == 200, r
+        names = [x["path"] for x in r["items"]]
+        assert "evil/Si.cif" in names and not any("outside_struct" in n or n.startswith(("evil/linkdir", "linkdir"))
+                                                   for n in names), names
+        assert str(outside) not in json.dumps(r) and str(root) not in json.dumps(r)
+
+
+def test_an_infinite_or_huge_wait_is_capped(served):
+    """JSON's Infinity (or 1e300) as a task route's wait: capped, never a 500 OverflowError."""
+    base = served[0]
+    for w in (b"Infinity", b"1e300", b"NaN", b"-5"):
+        st, _, r = U.req(base, "api/batch/scan", raw=b'{"folder": "structures", "filter": "cif", "wait": ' + w + b"}",
+                         headers={"Content-Type": "application/json"})
+        assert st in (200, 202), (w, st, r)
+
+
+def test_an_orbital_run_whose_out_leads_outside_is_refused_with_403(evil):
+    """A .molden inside the folder whose run output (.out) is a link out of it: 403 with a short
+    reason, as for any other outside path (it was a 500 with the task's traceback)."""
+    base, root, outside = evil
+    src = H.REPO_ROOT / "tests" / "data" / "orbitals" / "si_g"
+    far = outside / "orb"
+    far.mkdir(exist_ok=True)
+    (far / "si_g.out").write_text((src / "si_g.out").read_text())
+    d = root / "evil" / "mixed"
+    d.mkdir(exist_ok=True)
+    (d / "si_g_00001_K000_real.molden").write_text((src / "si_g_00001_K000_real.molden").read_text())
+    if not (d / "si_g.out").is_symlink():
+        os.symlink(far / "si_g.out", d / "si_g.out")
+    st, _, r = U.req(base, "api/orbitals?path=evil/mixed/si_g_00001_K000_real.molden&wait=60")
+    assert st == 403, (st, r)
+    assert "traceback" not in r and str(outside) not in json.dumps(r), r
+
+
+def test_a_rejected_post_never_leaves_its_body_as_the_next_request(served):
+    """A POST refused before its body is read (no token: 403) ends the keep-alive connection, so the
+    body is never parsed as a second request on it."""
+    import socket
+    base = served[0]
+    u = urllib.parse.urlparse(base)
+    smuggled = b"GET /evil HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+    req = (f"POST {u.path.rstrip('/')}/api/folder-settings HTTP/1.1\r\nHost: {u.hostname}:{u.port}\r\n"
+           f"Content-Type: application/json\r\nX-Requested-With: x\r\nContent-Length: {len(smuggled)}\r\n\r\n").encode() + smuggled
+    with socket.create_connection((u.hostname, u.port), timeout=10) as s:
+        s.sendall(req)
+        data = b""
+        try:
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        except socket.timeout:
+            pass
+    assert data.count(b"HTTP/1.") == 1, data[:600]
+    assert data.startswith(b"HTTP/1.0 403") or data.startswith(b"HTTP/1.1 403"), data[:200]
+    assert b"connection: close" in data.lower()

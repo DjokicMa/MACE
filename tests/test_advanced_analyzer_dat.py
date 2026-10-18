@@ -42,7 +42,7 @@ def test_doss_alone_reports_no_gap_or_classification():
 def test_band_alone_gap_from_the_band_edges():
     band = find_data("BAND/1LiFSI-1DEC-conf4" + STEM + "_band.BAND.DAT")
     r = _analyzer().analyze_material(band, None)
-    # the extractor's own BAND.DAT gap of this output (band_dat_band_gap_ev)
+    # the extractor's own BAND.DAT gap of this output (band_fundamental_gap_ev)
     assert r["gap_ev"] == pytest.approx(7.8377, abs=1e-3)
     assert r["gap_source"] == "band_structure"
     assert r["electronic_classification"] == "insulator"
@@ -51,8 +51,8 @@ def test_band_alone_gap_from_the_band_edges():
 def test_extractor_stores_no_dos_only_gap(extractor):
     out = find_data("DOSS/1LiFSI-1DEC-conf1" + STEM + "_doss.out")
     props = extractor._extract_advanced_band_dos_analysis(out, {})
-    assert props["advanced_analysis_available"] is True
-    assert "band_gap_advanced_ev" not in props and "electronic_classification_advanced" not in props
+    assert props["doss_file_analyzed"]                  # analyzed
+    assert "band_fundamental_gap_ev" not in props and "_band_dos_classification" not in props
 
 
 def test_hole_mass_without_electron_mass():

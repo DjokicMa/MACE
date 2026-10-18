@@ -264,12 +264,12 @@ def test_settings_default_applies_live_unless_overridden(fresh):
     assert scale() == own                                  # its own value stays
     drv.execute_script("window.__mace.activate(0)")
     time.sleep(0.6)
-    assert scale() == pytest.approx(0.3 * 0.7, abs=1e-6)  # agte follows the default
+    assert scale() == pytest.approx(0.3, abs=1e-6)  # agte follows the default (atomic radii: scale x 1, T9)
     drv.execute_script("window.__mace.activate(1)")
     time.sleep(0.6)
     click(drv, expand(drv, "range").find_element("css selector", "[data-reset-group=range]"))
     time.sleep(0.6)
-    assert scale() == pytest.approx(0.3 * 0.7, abs=1e-6)  # Reset: follows again
+    assert scale() == pytest.approx(0.3, abs=1e-6)  # Reset: follows again
     # Save as Default: the document's range becomes the default, in gui.json, no warning
     quick(drv, "cell10")
     click(drv, expand(drv, "range").find_element("css selector", "[data-save-group=range]"))

@@ -52,9 +52,8 @@ def test_the_help_and_changelog_give_the_working_form():
                                capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL).stdout
     assert "--fragments" in help_text
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text()
-    # The entry lives under [Unreleased] until a release dates it: read from
-    # [Unreleased] through the newest released section.
-    after = changelog.split("## [Unreleased]", 1)[1]
-    flat = " ".join("\n## [".join(after.split("\n## [", 2)[:2]).split())
+    # The entry was dated with 1.1.5; read the whole changelog, so a newer
+    # release section above it does not hide it.
+    flat = " ".join(changelog.split())
     assert "mace analyze --extract-properties <dir> --fragments" in flat
     assert "`mace analyze --fragments`" not in flat

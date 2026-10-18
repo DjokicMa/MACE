@@ -1,0 +1,8 @@
+BAND
+1_dia_opt_rev1 - Band Structure - default - X-GAMMA-L-W-GAMMA
+4 12 1000 1 36 1 0
+6 0 6  0 0 0
+0 0 0  6 6 6
+6 6 6  6 3 9
+6 3 9  0 0 0
+END

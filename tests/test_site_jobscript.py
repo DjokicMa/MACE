@@ -149,10 +149,21 @@ BASE_TEMPLATE_SHA256 = {
 # folder, a clean properties scratch, only this run's files copied back), and
 # the properties built-in --ntasks=28 -> PROPERTIES_NTASKS (8); restart files
 # carried over only from this folder's scratch directory; the CRYSTAL launch
-# line quoted and the post-run cd checked (shellcheck SC2086, SC2164).
+# line quoted and the post-run cd checked (shellcheck SC2086, SC2164); 1.1.6:
+# the SCF script copies back the SCFOUT.LOG this run wrote as $JOB.SCFOUT.LOG.
+# SOC: the one-component GUESSP staging matches the GUESSP record only, and
+# GUESSPSO / GUESSPNOSO outside 1.1.5's TWOCOMPON branch get their own branch.
+# The RESTART staging notes that a 2c OPTGEOM deck is never MACE-written (p. 166),
+# and (HPCC follow-ups) that CRYSTAL23 stops such a deck at input (fort.87);
+# GUESSPSO / GUESSPNOSO outside the TWOCOMPON block get a warning that CRYSTAL
+# stops on them (KEYWORD ... NOT ALLOWED), not that it reads them like GUESSPNOSO.
+# ORBITALS (1.1.6): the properties script gives a staged ORBITALS deck the root
+# ${JOB}_orb and copies back the ${JOB}_orb*.molden files it wrote (review
+# fix: only the exact ORBITALS names, not another job under the same prefix,
+# moved rather than copied so scratch does not keep a second set).
 TEMPLATE_SHA256 = {
-    "submitcrystal23.sh": "84f04f249cb46dec6d0f0ca76e855272ecf71410f9ef308be293b3f7d5e8e349",
-    "submit_prop.sh": "f55f9fbaac912e44f1f5457067430c3c1a14e2882a0c798a364e793b5001b7f6",
+    "submitcrystal23.sh": "7ab4f256811eed85bb8d5732a47b3b4a196096d7cb3ac54c8008beca84507586",
+    "submit_prop.sh": "e3c3121ef51380f176a6fbf6eb1700dda7f56426fe2c4b4f17531dba12bcb4de",
 }
 
 
@@ -343,3 +354,45 @@ def test_workflow_account_through_executor(tmp_path):
     assert "grp_example" in plan.read_text()
     scripts = [c["script_text"] for c in fake.calls("sbatch")]
     assert scripts and all("#SBATCH -A grp_example" in s for s in scripts)
+
+
+def test_interactive_on_a_pipe_refuses_per_type_groups(tmp_path):
+    """[resources.SP] splits the decks into two groups, each asked its own
+    prompts; a 1.1.5-era answer stream (one set) would land on the wrong
+    group. On a pipe it is refused, naming the groups in prompt order, and
+    no job script is written or submitted."""
+    from test_array_default_path_golden import OPT_D12
+    env = _env(tmp_path)
+    _toml(tmp_path, SITE_TOML + '[resources.SP]\nntasks = 24\n')
+    d = tmp_path / "decks"
+    _deck(d, "opt.d12", OPT_D12)
+    _deck(d, "sp.d12")
+    p = _mace(d, env, "submit", "-i", "--nosubmit", str(d), stdin="y\n4\n20G\n1:00:00\n\nn\n" * 2)
+    out = p.stdout + p.stderr
+    assert p.returncode == 1, out
+    assert "reading its answers from a pipe" in out
+    assert "1. other decks: opt.d12" in out and "2. SP: sp.d12" in out, out
+    assert "Customize resources" not in out
+    assert not list(d.glob("*.sh"))
+    # one group: the prompts are the ones 1.1.5 asked, so a pipe is fine
+    assert site.piped_groups_refusal([("SP", None, ["sp.d12"])]) is None
+
+    class Tty:
+        def isatty(self):
+            return True
+    assert site.piped_groups_refusal([(None, None, ["a"]), ("SP", None, ["b"])], stdin=Tty()) is None
+
+
+def test_submit_shows_the_folder_file_warnings(tmp_path):
+    """A mace-folder.toml [submit] value the job cannot get (a typo, over the
+    site's cap) is named by mace submit, as mace site names it."""
+    env = _env(tmp_path)
+    _toml(tmp_path, SITE_TOML + '[folders]\nallow = ["ntasks"]\nmax_ntasks = 8\n')
+    d = tmp_path / "decks"
+    _deck(d, "m.d12")
+    (d / "mace-folder.toml").write_text("[submit]\nntask = 12\nntasks = 12\n")
+    p = _mace(d, env, "submit", "--nosubmit", "m.d12")
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    assert "unknown keys ignored: submit.ntask" in out, out
+    assert "[submit] ntasks is ignored: the site allows at most 8" in out, out

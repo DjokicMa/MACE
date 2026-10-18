@@ -344,6 +344,10 @@ def test_every_question_on_other_inputs_is_matched(tmp_path, mode, calc, kind, s
         # opt2d3 refuses these for a molecule before asking anything; Setup shows its words
         assert r["deck"] is None and "requires a periodic structure" in S.refusal(r["log"]), r["log"][-2000:]
         return
+    if "MOLECULE" in src and calc == "ORBITALS":
+        # a molecule's ORBITALS deck has nothing to choose (no k mesh): no question, one deck
+        assert not r["questions"] and r["deck"] is not None, r["log"][-2000:]
+        return
     assert r["questions"], r["log"][-2000:]
     unmatched = [S.Question(q).last for q in r["questions"] if q.get("rule") is None and q.get("known") is None]
     assert not unmatched, f"answered with a bare Enter: {unmatched}"
@@ -402,8 +406,8 @@ def test_a_parent_functional_mace_cannot_name_is_asked_again(tmp_path):
 
 
 def test_a_cif_the_basis_set_lacks_an_element_for_is_refused_by_the_cli(tmp_path):
-    """POB-TZVP-REV2 has no La: convert asks "Continue anyway? [y/N]"; Enter is No and
-    no deck is written (Setup shows the CLI's refusal)."""
+    """POB-TZVP-REV2 has no La: convert refuses the deck without asking (CRYSTAL
+    rejects a deck with no basis for an element) and Setup shows the CLI's refusal."""
     pytest.importorskip("ase")
     pytest.importorskip("spglib")
     d = tmp_path / "src"
@@ -414,6 +418,6 @@ def test_a_cif_the_basis_set_lacks_an_element_for_is_refused_by_the_cli(tmp_path
     st = S.stage("cif2d12", "SP", tmp_path / "w", cif, cif.name, None, None)
     r = S.ask(st, tmp_path / "w", list(S.DEFAULT_RULES["cif2d12"]), "lao")
     assert r["error"] is None, r["error"]
-    asked = [q for q in r["questions"] if "Missing elements" in q["question"]]
-    assert asked and asked[0]["known"] is not None and asked[0]["answer"] == "", r["log"][-2000:]
+    assert not [q for q in r["questions"] if "Continue anyway" in q["question"]], r["log"][-2000:]
+    assert "has no basis for La (Z=57)" in r["log"], r["log"][-2000:]
     assert r["deck"] is None

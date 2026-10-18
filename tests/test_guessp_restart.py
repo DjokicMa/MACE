@@ -282,3 +282,75 @@ def test_top_level_guessp_without_twocompon_still_restarts_from_the_jobs_own_f9(
     staged, got, _ = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "onecomp")
     assert staged == "MATRIX-testmat.f9"
     assert got == deck
+
+
+# ---------------------------------------------------------------------------
+# Keywords that only START with "GUESSP" are not GUESSP
+# ---------------------------------------------------------------------------
+# Manual pp. 170-173: inside TWOCOMPON, GUESSPSO is the guess from a previous
+# 2c-SCF density matrix, GUESSP[NOSO] the guess from a previous 1c-SCF one;
+# GUESSPAT (p. 115) and GUESSPATNC (p. 171) are atomic guesses that read no
+# matrix. The manual says GUESSP reads fort.20 (pp. 114-115) but does not say
+# which file GUESSPSO or GUESSPNOSO reads.
+
+def _stage_records(tmp_path, block, records, files, tag):
+    """(fort.20 staged, job output, scratch INPUT, deck) for a deck holding
+    ``records`` (one per line) between its geometry and its final END."""
+    deck = "title\nCRYSTAL\nEND\n" + "".join(r + "\n" for r in records) + "END\n"
+    staged, scratch_input, log = _stage_deck(tmp_path, block, deck, files, tag)
+    return staged, log, scratch_input, deck
+
+
+TWOC_SO = ["TWOCOMPON", "SOC", "GUESSPSO", "END"]
+TWOC_NOSO = ["TWOCOMPON", "SOC", "GUESSPNOSO", "END"]
+
+
+def test_guesspso_is_not_treated_as_guessp_and_never_stripped(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_records(tmp_path, block, TWOC_SO, [], "so_none")
+    assert staged is None
+    assert scratch_input == deck                         # the record stays as written
+    assert "dropped" not in out and "GUESSP requested" not in out
+    assert "GUESSPSO" in out and "left in the deck" in out
+
+
+def test_guesspso_gets_a_staged_f20_or_the_jobs_own_2c_f9_as_fort20(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_records(
+        tmp_path, block, TWOC_SO, ["testmat.f20", "testmat.f9"], "so_both")
+    assert staged == "MATRIX-testmat.f20" and scratch_input == deck
+    assert out.startswith("GUESSPSO: staged testmat.f20 as fort.20")
+    staged, out, scratch_input, deck = _stage_records(tmp_path, block, TWOC_SO, ["testmat.f9"], "so_f9")
+    assert staged == "MATRIX-testmat.f9" and scratch_input == deck
+    assert out.startswith("GUESSPSO: staged this job own 2c testmat.f9 as fort.20")
+
+
+def test_guesspnoso_never_gets_the_jobs_own_2c_f9(tmp_path):
+    """GUESSPNOSO wants a 1c matrix; this 2c deck's own .f9 is a 2c one."""
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_records(tmp_path, block, TWOC_NOSO, ["testmat.f9"], "noso_f9")
+    assert staged is None and scratch_input == deck and "dropped" not in out
+    staged, out, scratch_input, deck = _stage_records(tmp_path, block, TWOC_NOSO, ["testmat.f20"], "noso_f20")
+    assert staged == "MATRIX-testmat.f20" and scratch_input == deck
+
+
+def test_the_no_matrix_echo_is_worded_per_keyword(tmp_path):
+    """Only GUESSPSO was measured to stop CRYSTAL with nothing in fort.20; a
+    GUESSPNOSO job must not be told that about GUESSPSO."""
+    block = _staging_block(tmp_path)
+    _, out, _, _ = _stage_records(tmp_path, block, TWOC_SO, [], "so_echo")
+    assert "CRYSTAL stops on GUESSPSO without fort.20 (measured)" in out
+    # GUESSPNOSO inside TWOCOMPON takes 1.1.5's one-component branch, whose
+    # warning names the one-component $JOB.f20 it needs
+    _, out, _, _ = _stage_records(tmp_path, block, TWOC_NOSO, ["testmat.f9"], "noso_echo")
+    assert out.startswith("WARNING: GUESSPNOSO in a TWOCOMPON deck needs a one-component")
+    assert "GUESSPSO" not in out
+
+
+def test_an_atomic_guess_stages_nothing(tmp_path):
+    block = _staging_block(tmp_path)
+    for i, records in enumerate((["GUESSPAT"], ["TWOCOMPON", "SOC", "GUESSPATNC", "1",
+                                                 "1 90.0 90.0 1.0", "ENDTWO"])):
+        staged, out, scratch_input, deck = _stage_records(tmp_path, block, records,
+                                                       ["testmat.f9"], f"pat{i}")
+        assert staged is None and scratch_input == deck and out == ""

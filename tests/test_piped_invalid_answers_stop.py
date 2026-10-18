@@ -94,12 +94,12 @@ def test_opt2d3_echg_stops_on_1_1_1_ordered_answers(tmp_path):
     shutil.copy(parent, tmp_path / "p.out")
     (tmp_path / "p.f9").write_bytes(b"x")
     # 1.1.1 order: ECHG, order, then straight to the plane - the coordinates
-    # land on "Define charge density map plane? [Y/n]"
+    # land on the plane's "Coordinate type (F)ractional or (C)artesian"
     r = subprocess.run([sys.executable, str(MACE_CLI), "opt2d3", "--input", "p.out",
                         "--calc-type", "CHARGE"], cwd=tmp_path,
                        input="2\n0\n50\n0 0 0\n1 0 0\n0 1 0\n" + "\n" * 20,
                        capture_output=True, text=True, timeout=300, env=_env())
     log = r.stdout + r.stderr
     assert r.returncode != 0, log[-3000:]
-    assert "not a terminal" in log, log[-3000:]
+    assert "neither FRACTION nor ANGSTROM" in log, log[-3000:]
     assert not list(tmp_path.glob("*.d3"))

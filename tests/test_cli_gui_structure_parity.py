@@ -165,6 +165,16 @@ SYNTH = {
     # ase alone would expand it in origin choice 1 (16 overlapping atoms).
     "diamond_origin2": dict(rows=[("C1", "C", .125, .125, .125)], a=3.567, b=3.567, c=3.567,
                             hm="F d -3 m", no=227),
+    # The other two-origin groups, H-M symbol only (no operators, no origin
+    # tag): FeSe P4/nmm in origin choice 2 (4 atoms; ase alone builds 12) and
+    # in origin choice 1 (the deck must declare "0 0 1"), and anatase I41/amd
+    # in origin choice 2 (12 atoms; ase alone builds 24 with 0.41 A contacts).
+    "fese_origin2": dict(rows=[("Fe1", "Fe", .75, .25, 0), ("Se1", "Se", .25, .25, .2672)],
+                         a=3.7738, b=3.7738, c=5.5248, hm="P 4/n m m", no=129),
+    "fese_origin1": dict(rows=[("Fe1", "Fe", 0, 0, 0), ("Se1", "Se", 0, .5, .2328)],
+                         a=3.7738, b=3.7738, c=5.5248, hm="P 4/n m m", no=129),
+    "anatase_origin2": dict(rows=[("Ti1", "Ti", 0, .75, .125), ("O1", "O", 0, .25, .0817)],
+                            a=3.7845, b=3.7845, c=9.5143, hm="I 41/a m d", no=141),
     # P63/mmc written to 6 decimals, which spglib at 1e-5 reads as Cmcm: the
     # deck keeps the CIF group and must then hold the CIF's 3 records, not
     # the 12 expanded atoms CRYSTAL would generate again on top of themselves.
@@ -185,6 +195,13 @@ def test_diamond_origin2_is_eight_atoms(tmp_path):
     cif = _write(tmp_path, "dia.cif", **SYNTH["diamond_origin2"])
     gui = _gui_structure(cif)
     assert len(gui["numbers"]) == 8
+
+
+@pytest.mark.parametrize("case,count", [("fese_origin2", 4), ("fese_origin1", 4),
+                                        ("anatase_origin2", 12)])
+def test_two_origin_cif_gui_atom_count(tmp_path, case, count):
+    cif = _write(tmp_path, f"{case}.cif", **SYNTH[case])
+    assert len(_gui_structure(cif)["numbers"]) == count
 
 
 def test_p63mmc_mismatch_deck_holds_the_cif_records(tmp_path):

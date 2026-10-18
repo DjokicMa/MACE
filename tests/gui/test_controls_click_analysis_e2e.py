@@ -120,14 +120,22 @@ def test_run_card_inspector_and_run_analysis(app):
     drv.execute_async_script("const d = arguments[1]; window.__mace.open(arguments[0]).then(() => d(1), () => d(0))", rel)
     H.wait(drv, "return document.querySelectorAll('#o-energy circle.pt, #o-energy path.pt').length >= 2", 60)
     # the run card row (Open as Plot is last: it leaves the card)
-    assert len(sweep(drv, ".o-energy-row", skip="#o-e-plot")) >= 4
+    assert len(sweep(drv, "#o-energy-card .o-energy-row", skip="#o-e-plot")) >= 4
+    # the SCF card's row the same way (its Open as Plot leaves the card too)
+    assert len(sweep(drv, "#o-scf-card .o-energy-row", skip="#o-s-plot")) >= 3
     def back(d):
         # a card button that opens another document (Show in Output, Run Analysis): back to the run
         if (d.execute_script("const a = window.__mace.activeDoc(); return a && a.path") or "") != rel:
             d.execute_async_script("const k = arguments[1]; window.__mace.open(arguments[0]).then(() => k(1), () => k(0))", rel)
             H.wait(d, "return document.querySelectorAll('#o-energy circle.pt, #o-energy path.pt').length >= 2", 60)
-    assert len(sweep(drv, "#inspector", settle=back)) >= 5
-    real_click(drv, drv.find_element("css selector", "#o-e-plot"))
+    # (the Inspector's own hide button, 1.1.6, would close the panel being swept: test_panels_hide_e2e has it)
+    assert len(sweep(drv, "#inspector", skip="#inspector .panel-hide", settle=back)) >= 5
+    # the inspector's SCF button (the last that opens a plot) left the bottom panel on Tasks: back to
+    # the Timeline, and Open as Plot into view (the SCF card under it may have scrolled the panel)
+    real_click(drv, drv.find_element("css selector", '.bottom-tab[data-bottom="timeline"]'))
+    ep = drv.find_element("css selector", "#o-e-plot")
+    drv.execute_script("arguments[0].scrollIntoView({block: 'center'})", ep)
+    real_click(drv, ep)
     H.wait(drv, "return window.__mace.runView && window.__mace.runView.state() && window.__mace.runView.state().drawn", 60)
     tabs = drv.execute_script("return [...document.querySelectorAll('#runplot-host .rp-tabs [role=tab]')].map((t) => t.dataset.tab)")
     assert len(tabs) >= 4, tabs

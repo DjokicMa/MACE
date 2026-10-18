@@ -14,7 +14,7 @@ def jobs():
 
 def test_gui_smoke_job():
     j = jobs()["gui-smoke"]
-    assert j["runs-on"] == "ubuntu-24.04" and 0 < j["timeout-minutes"] <= 30
+    assert j["runs-on"] == "ubuntu-24.04" and 0 < j["timeout-minutes"] <= 35
     steps = j["steps"]
     uses = [s["uses"] for s in steps if "uses" in s]
     assert uses and all(u.startswith("actions/") for u in uses), uses

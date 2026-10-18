@@ -1,5 +1,73 @@
 # MACE Installation Guide
 
+## Where to install
+
+MACE can run in two places, and they do different jobs. Install it **on the
+cluster** for full use; what your own computer needs depends on how you want
+to reach it.
+
+**1. On the cluster (required for full use).** CRYSTAL runs on the cluster,
+so everything that runs or follows a calculation needs MACE there: SLURM
+submission (`mace submit`, the GUI's Submit), workflows (`mace workflow`),
+job tracking (`mace monitor`, the GUI's Jobs panel), the completion callbacks
+that start each next step of a workflow, and recovery (`mace recover`). The
+MACE GUI running on the cluster does all of this from your browser. See
+[Cluster install](#cluster-install-required-for-full-use).
+
+**2. On your own computer: at minimum one of these**, to use the cluster's
+MACE from here:
+
+| | What you need on your computer | What you get |
+|---|---|---|
+| (a) | ssh and a browser, plus the standalone connect script (`mace-gui-connect.sh` or `.ps1`); **no Python** | the GUI from the cluster, in your browser ([docs/gui.md](docs/gui.md#only-mace-on-the-cluster)) |
+| (b) | VS Code with Remote-SSH | the GUI in VS Code's built-in browser or yours, and a terminal on the cluster ([docs/gui.md](docs/gui.md#vs-code-remote-ssh)) |
+| (c) | ssh and a browser; you open the tunnel by hand | the GUI from the cluster ([docs/gui.md](docs/gui.md#plain-ssh-tunnel-any-os)) |
+| (d) | a local copy of MACE (Python 3 and ssh) | `mace gui connect`: saved profiles, `--check` of your ssh setup, `mace update --remote` ([docs/gui.md](docs/gui.md#mace-gui-connect-linux-macos-wsl-windows)) |
+
+Or skip the GUI: `ssh` to the cluster and use the `mace` command there.
+[docs/gui.md, "Choose your setup"](docs/gui.md#choose-your-setup) has the
+steps for each OS (Windows, macOS, Linux) and terminal (PowerShell,
+MobaXterm, VS Code, any terminal).
+
+**3. A local install alone (no cluster).** A full install on your computer
+([Local install](#local-install-optional)) runs `mace gui` and the CLI there.
+It is for getting things ready and looking at results:
+
+- **What it is for:** building and editing structures, writing decks and
+  settings (Calculation Setup, `mace convert`, `opt2d12`, `opt2d3`), plotting
+  and browsing outputs you copied from the cluster (Run Analysis, band, DOS,
+  IR, Raman, FREQ, cube files), and the database (`materials.db`).
+- **What it cannot do:** submit jobs, or run and track workflows, since your
+  computer has no SLURM. It runs CRYSTAL only if CRYSTAL (`Pcrystal`,
+  `Pproperties`) and `mpirun` are installed on your computer: then `mace run`
+  runs small decks there, finding CRYSTAL through `[crystal] bin_dir` in
+  `site.toml` or `$EBROOTCRYSTAL` ([Using MACE on another
+  cluster](#using-mace-on-another-cluster)).
+- **You copy the inputs to the cluster yourself** (scp, rsync, MobaXterm's
+  file browser, VS Code's Explorer) and submit them there.
+
+### Cluster install (required for full use)
+
+On the cluster, log in to a development node (not the login gateway, which
+may not serve software modules), then follow [Quick Start](#quick-start)
+below, with the packages installed into the Python your job scripts load
+([HPC / SLURM clusters](#hpc--slurm-clusters-important-install-into-the-module-python)),
+and run `mace site` once. Check that `mace --help` works in a fresh login.
+Note the line that makes `mace` work there (for example `module load
+Python`) and where MACE is (for example `~/MACE`): the GUI's connect methods
+ask for both.
+
+### Local install (optional)
+
+- **For `mace gui connect` only:** clone MACE (`git clone
+  https://github.com/DjokicMa/MACE.git`) and run it with Python 3:
+  `python <MACE>/mace_cli gui connect ...` (Windows: `python
+  <MACE>\mace_cli gui connect ...`). It needs only Python 3 and ssh, none of
+  the packages in `requirements.txt`.
+- **For everything else on your computer** (`mace gui`, decks, plots, the
+  database): follow [Quick Start](#quick-start) below. MACE is developed and
+  tested on Linux; on Windows, use WSL for this full install.
+
 ## Quick Start
 
 1. **Clone or download the MACE repository**
@@ -48,7 +116,7 @@ install.
 
 | Needed for | What | How MACE finds it |
 |---|---|---|
-| Everything | Python 3.11 or newer with `requirements.txt` (numpy, matplotlib, ase, spglib, **seekpath 2.1+**, rich, PyYAML, pandas, plotly, scipy, kaleido 0.2.1) | the Python that runs `mace` |
+| Everything | Python 3.11 or newer with `requirements.txt` (numpy, matplotlib, ase, spglib, **seekpath 2.1+**, rich, PyYAML, pandas, plotly 5.0 to 6.1, scipy, kaleido 0.2.1) | the Python that runs `mace` |
 | Calculations | CRYSTAL17/23 (`Pcrystal`, `Pproperties`) and an MPI runtime | site settings (`MACE_CRYSTAL_MODULE`, `[modules] crystal`, `[crystal] bin_dir`), else the built-in module when it loads, else the newest CRYSTAL 23.x module that has both programs |
 | Submitting jobs | SLURM (`sbatch`, `squeue`, `sacct`) | PATH; `mace site` sets account, partition and the rest. `mace run` needs no SLURM |
 | Job completion steps | the same `requirements.txt` in the Python the job scripts load | `[modules] python`, else the Python that ran `mace` |
@@ -58,6 +126,7 @@ install.
 | `mace preflight` | the serial `crystal` binary | `--crystal-bin`, `MACE_CRYSTAL_BIN`, `[crystal] bin_dir`, `$EBROOTCRYSTAL/bin`, PATH, then the job scripts' CRYSTAL module |
 | `mace phonopy` | `pip install 'phonopy<5'` | the Python that runs `mace` |
 | `mace plotting --cube` isosurfaces | `pip install scikit-image` | the Python that runs `mace` |
+| Excel export (`mace database --action export --format excel`, the GUI's Database export) | `pip install 'openpyxl<4'` (in `requirements-optional.txt`); CSV, JSON, LaTeX and HTML need nothing extra | the Python that runs `mace` |
 | GFN-FF in `mace preopt` and Clean | the xtb program, 6.7 or newer (LGPL, not shipped) | `MACE_XTB`, else `xtb` on PATH, else the newest `xtb` module 6.7 or newer (`MACE_XTB_MODULE` pins one, `none` turns the search off) |
 | ML potentials in `mace preopt` and Clean | a separate Python environment with mace-torch or chgnet, and the model weights | `mace mlip setup --python PATH` (or `MACE_MLIP_PYTHON`); weights from `mace mlip fetch` in `$XDG_DATA_HOME/mace-tool/mlip/` (`MACE_MLIP_DIR`) |
 | `mace cluster` | SLURM's `sinfo`, `squeue`, `sacct`, `scontrol`, `sshare`, `sstat`; a quota command if your site has one | PATH; `[quota]` in site.toml names a site's own tool |
@@ -129,7 +198,7 @@ New environment variables, all optional:
 
 ```bash
 # Core dependencies (required; or: pip install -r requirements.txt)
-pip install numpy matplotlib ase spglib seekpath pyyaml pandas plotly
+pip install numpy matplotlib ase spglib seekpath pyyaml pandas "plotly>=5.0.0,<6.2"
 
 # Recommended: themed terminal UI (MACE falls back to plain text without it)
 pip install rich
@@ -319,8 +388,8 @@ crystal_minimum = "23"              # the fallback window (default: the major ve
 crystal_maximum = "23"
 python = ["Python/3.11"]            # the completion step's Python module(s); [] loads none
 [queue]
-max_jobs = 450                      # jobs MACE keeps queued
-reserve  = 50                       # queue slots it leaves free for you
+budget   = 400                      # the most jobs MACE keeps queued (default: your submit limit - reserve)
+reserve  = 100                      # queue slots it leaves free for you (default 100)
 [local_run]
 gateway_message = "This is a login node ({reason}): log in to a compute node and rerun mace run."
 module_message  = "the {module} module cannot be loaded on {host}"
@@ -336,7 +405,8 @@ The environment overrides the file for one shell:
 | `MACE_SITE_CONFIG` | another `site.toml` (`none` ignores it and every group file) |
 | `MACE_SITE_GROUP_CONFIG` | the group files to read instead of `/etc/mace/site.toml` and `$XDG_CONFIG_DIRS/mace/site.toml` (`none`: no group file) |
 | `MACE_SLURM_QOS`, `MACE_SLURM_CONSTRAINT`, `MACE_SLURM_EXTRA` | `[slurm] qos`, `constraint`, `extra` |
-| `MACE_SLURM_NTASKS`, `MACE_SLURM_NODES`, `MACE_SLURM_CPUS_PER_TASK`, `MACE_SLURM_MEM`, `MACE_SLURM_MEM_PER_CPU` | `[resources]`, for both job kinds |
+| `MACE_SLURM_NTASKS`, `MACE_SLURM_NODES`, `MACE_SLURM_CPUS_PER_TASK`, `MACE_SLURM_MEM`, `MACE_SLURM_MEM_PER_CPU` | `[resources]`, for both job kinds and every calculation type |
+| `MACE_SLURM_WALLTIME` | `[resources] walltime`, for every job |
 | `MACE_MPI_LAUNCHER` | `[mpi] launcher` |
 | `MACE_CRYSTAL_BIN_DIR` | `[crystal] bin_dir` |
 | `MACE_SCRATCH_BASE` | `[paths] scratch` |
@@ -357,7 +427,8 @@ templates; each is optional and changes only its own lines:
 
 | What | Built-in | Key (environment) |
 |---|---|---|
-| Job size | `--ntasks=32`, `-N 1`, `--cpus-per-task=1`, `--mem-per-cpu=5G` (properties: 8 tasks, `--mem=80G`) | `[resources] ntasks, nodes, cpus_per_task, mem_per_cpu` or `mem`; `[resources.properties]` for Pproperties jobs (`MACE_SLURM_NTASKS`, ...) |
+| Job size | `--ntasks=32`, `-N 1`, `--cpus-per-task=1`, `--mem-per-cpu=5G` (properties: 8 tasks, `--mem=80G`) | `[resources] ntasks, nodes, cpus_per_task, mem_per_cpu` or `mem`; `[resources.properties]` for Pproperties jobs; `[resources.OPT]`, `[resources.FREQ]`, ... for one calculation type (`MACE_SLURM_NTASKS`, ...) |
+| Default walltime | 7 days (properties: 2 hours) | `[resources] walltime`, also per job kind and type (`MACE_SLURM_WALLTIME`) |
 | Starting CRYSTAL | `I_MPI_HYDRA_BOOTSTRAP=ssh mpirun -n "$SLURM_NTASKS"` | `[mpi] launcher = "srun"`, `srun_mpi`, `env` (`MACE_MPI_LAUNCHER`) |
 | CRYSTAL itself | the CRYSTAL module's `Pcrystal`/`Pproperties` | `[crystal] bin_dir`, `scf`, `properties` (`MACE_CRYSTAL_BIN_DIR`) |
 | `module purge` | yes | `[modules] purge = false` (`MACE_MODULE_PURGE=0`) |
@@ -467,22 +538,32 @@ python -c "from mace.workflow.planner import WorkflowPlanner; print('✓ Workflo
 
 ## Updating MACE
 
-To update your installation:
+From 1.1.6 on, `mace update` updates a git checkout for you: it fetches the
+newest release, moves your checkout to it without touching your own changes,
+and offers to install new requirements when they changed. With `--remote`
+it updates your cluster's MACE too. See [docs/update.md](docs/update.md).
 
-1. **Pull latest changes** (if using git)
+```bash
+mace update --check     # what is available; nothing changes
+mace update             # the newest release (asks first)
+```
+
+A MACE older than 1.1.6 has no `mace update`; update it once by hand:
+
+1. **Pull the latest changes**
    ```bash
    cd $MACE_HOME
    git pull
    ```
 
-2. **Re-run setup** (if configuration changed)
+2. **Re-run setup** (if the configuration changed)
    ```bash
    python setup_mace.py --force
    ```
 
-3. **Update dependencies**
+3. **Update the dependencies**
    ```bash
-   pip install --upgrade numpy matplotlib ase spglib pyyaml pandas
+   pip install -r requirements.txt
    ```
 
 ## Usage After Installation

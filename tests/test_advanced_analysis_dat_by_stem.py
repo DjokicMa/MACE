@@ -51,7 +51,9 @@ def test_another_materials_dat_files_are_not_used(tmp_path, seen):
     """Before: mat.out analyzed with other_band.BAND.DAT / other_doss.DOSS.DAT."""
     props = _extract(tmp_path, "mat.out", ["other_band.BAND.DAT", "other_doss.DOSS.DAT"])
     assert seen == []
-    assert props["advanced_analysis_available"] is False
+    # nothing analyzed: no band-analysis keys (1.1.6 stores no constant
+    # advanced_analysis_available = False)
+    assert not [k for k in props if k.startswith(("advanced_analysis", "band_file", "doss_file"))]
 
 
 def test_the_outputs_own_files_are_used_whatever_sorts_first(tmp_path, seen):

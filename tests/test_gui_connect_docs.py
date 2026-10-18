@@ -28,10 +28,19 @@ def test_headings():
 
 
 def test_which_method_table():
-    for row in ("| MACE on your Linux or macOS computer (or WSL) | `mace gui connect` |",
-                "| Linux or macOS without MACE | `mace-gui-connect.sh` |", "| Windows | `mace-gui-connect.ps1`",
-                "| MobaXterm |", "| VS Code Remote-SSH |", "| Nothing but ssh |"):
-        assert row in DOC, row
+    """The "Choose your setup" table: one row per way of running it, each linking to its section."""
+    table = DOC[DOC.index("\n## Choose your setup\n"):DOC.index("\n## Run it locally\n")]
+    for row in ("| Cluster | Linux, macOS, WSL | `mace gui connect` |",
+                "| Cluster | Windows (PowerShell) | `mace gui connect` with Python |",
+                "| Cluster | Linux, macOS, Git Bash on Windows | standalone `mace-gui-connect.sh` |",
+                "| Cluster | Windows (PowerShell) | standalone `mace-gui-connect.ps1` |",
+                "| Cluster | Windows with MobaXterm |", "| Cluster | any | VS Code Remote-SSH |",
+                "| Cluster | any | a plain `ssh -L` tunnel", "| Your computer | Linux, macOS, WSL | none: `mace gui` |"):
+        assert row in table, row
+    for anchor in ("#mace-gui-connect-linux-macos-wsl-windows", "#linux-macos-and-git-bash-mace-gui-connectsh",
+                   "#windows-powershell", "#mobaxterm", "#vs-code-remote-ssh", "#plain-ssh-tunnel-any-os",
+                   "#run-it-locally"):
+        assert f"]({anchor})" in table, anchor
 
 
 def test_placeholders_only():
@@ -69,9 +78,15 @@ def test_every_connect_line_in_the_docs_parses(tmp_path):
             argv = argv[1:]                                     # a profile name: none saved here
             if "--gateway" not in argv:
                 argv += ["--gateway", "g"]
+        check = "--check" in argv or "--fix-config" in argv
+        if check and "--no-net" not in argv:
+            argv.append("--no-net")                             # --check: no ssh logins from the tests
         r = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "--no-banner", "gui", "connect", *argv],
                            env=env, cwd=str(cwd), capture_output=True, text=True, timeout=60,
                            stdin=subprocess.DEVNULL)
+        if check:                                               # a FAIL line (exit 1) depends on this computer
+            assert r.returncode in (0, 1) and ("Verdict" in r.stdout or "# A suggested" in r.stdout), (line, r)
+            continue
         assert r.returncode == 0, (line, r.stderr)
 
 

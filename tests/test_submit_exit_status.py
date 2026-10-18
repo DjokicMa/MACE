@@ -58,7 +58,12 @@ def test_all_submitted_exits_0(tmp_path):
 
 
 def test_mixed_folder_failure_in_the_d12_part_still_submits_the_d3_and_exits_1(tmp_path):
-    env, fake = _setup(tmp_path, {"fail_sbatch_call": 1}, ["a.d12", "a_band.d3"])
+    # (not a submit-limit refusal: that stops submitting for the run and
+    # holds the rest, tests/test_queue_budget.py)
+    env, fake = _setup(tmp_path, {"fail_sbatch_call": 1,
+                                  "fail_sbatch_text": "Batch job submission failed: Invalid account or "
+                                                      "account/partition combination specified"},
+                       ["a.d12", "a_band.d3"])
     p = _mace(tmp_path, env, "submit", "decks", stdin="3\n")
     out = p.stdout + p.stderr
     assert p.returncode == 1, out

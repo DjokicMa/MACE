@@ -59,7 +59,7 @@ def engine(tmp_path):
     scripts.mkdir()
     (scripts / "submit_prop_band.sh").write_text(_TEMPLATE)
     (scripts / "submit_prop_doss.sh").write_text(_TEMPLATE)
-    eng._submit_calculation_to_slurm = lambda script, work_dir: "424242"
+    eng._submit_calculation_to_slurm = lambda script, work_dir, calc_id=None: "424242"
     return eng
 
 

@@ -1,4 +1,8 @@
-"""`mace recover --action recover` prepares; it never submits.
+"""`mace recover --prepare-only` prepares; it never submits.
+
+(1.1.6: plain `mace recover` now applies the fixes and resubmits, after a
+confirmation - tests/test_recover_resubmits.py. --prepare-only keeps the
+1.1.5 behavior tested here.)
 
 It writes the fixed deck or the bumped job script and a 'pending' recovery
 row, but only the queue manager resubmits. 1.1.5's menu, docs and help said
@@ -69,7 +73,7 @@ def _env(work):
 
 def _recover(work):
     return subprocess.run([sys.executable, str(MACE_CLI), "recover", "--action", "recover",
-                           "--db", str(work / "materials.db")],
+                           "--prepare-only", "--db", str(work / "materials.db")],
                           cwd=work, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300,
                           env=_env(work))
 
@@ -131,16 +135,12 @@ def test_recover_prepares_prints_the_command_and_submits_nothing(tmp_path):
     assert _retry_count(work, cid) == 1
 
 
-def test_menu_help_and_docs_do_not_promise_a_resubmission():
-    for text in (MACE_CLI.read_text(), (REPO_ROOT / "docs" / "cli.md").read_text(),
-                 (REPO_ROOT / "DOCUMENTATION.md").read_text()):
-        assert "and resubmit them" not in text
+def test_help_names_prepare_only():
     env = {k: v for k, v in os.environ.items() if k not in ("COLORTERM", "TERM", "NO_COLOR", "PYTHONPATH")}
     h = subprocess.run([sys.executable, str(MACE_CLI), "recover", "--help"], capture_output=True, text=True,
                        timeout=120, env=env, stdin=subprocess.DEVNULL)
     text = " ".join((h.stdout + h.stderr).split())
-    assert "Prepares fixed inputs and job scripts" in text
-    assert "submit them with mace submit, or let the queue manager resubmit tracked runs" in text
+    assert "--prepare-only Only write the fixed inputs and job scripts and print the commands that submit them" in text
 
 
 def test_next_command_shapes(tmp_path):

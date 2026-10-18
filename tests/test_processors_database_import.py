@@ -1,24 +1,14 @@
-"""The DAT-file and population-analysis processors reach the materials database.
+"""The population-analysis processor reaches the materials database.
 
-process_calculation_dat_files and process_material_population_analysis
-imported MaterialDatabase from ``material_database``, a module that no longer
-exists (it is mace/database/materials.py), so both stopped with
-ModuleNotFoundError before doing anything.
+process_material_population_analysis imported MaterialDatabase from
+``material_database``, a module that no longer exists (it is
+mace/database/materials.py), so it stopped with ModuleNotFoundError before
+doing anything. (dat_file_processor.process_calculation_dat_files, which had
+the same import, had no caller and is removed in 1.1.6.)
 """
 import json
 
 from mace.database.materials import MaterialDatabase
-
-TINY_BAND_DAT = """\
-# NKPT 3 NBND 2 NSPIN 1
-# NPANEL 1
-#   0   G
-#   2   X
- 0.000  -0.200  0.100
- 0.500  -0.150  0.150
- 1.000  -0.100  0.200
-"""
-
 
 def _db(tmp_path, monkeypatch):
     # MaterialDatabase also opens structures.db in the working directory.
@@ -28,25 +18,6 @@ def _db(tmp_path, monkeypatch):
     db.create_material("m1", "C2")
     calc_id = db.create_calculation("m1", "BAND")
     return db, db_path, calc_id
-
-
-def test_dat_files_are_processed_and_saved(tmp_path, monkeypatch):
-    from mace.utils.dat_file_processor import process_calculation_dat_files
-
-    db, db_path, calc_id = _db(tmp_path, monkeypatch)
-    work = tmp_path / "work"
-    work.mkdir()
-    (work / "m1.BAND.DAT").write_text(TINY_BAND_DAT)
-
-    results = process_calculation_dat_files(calc_id, str(work), db_path)
-
-    assert list(results) == ["band_structure_m1.BAND"]
-    assert "error" not in results["band_structure_m1.BAND"]
-    with db._get_connection() as conn:
-        rows = conn.execute(
-            "SELECT property_name FROM properties WHERE calc_id = ?", (calc_id,)
-        ).fetchall()
-    assert [r[0] for r in rows] == ["dat_file_band_structure_m1.BAND"]
 
 
 def test_population_analysis_is_read_from_the_database(tmp_path, monkeypatch):

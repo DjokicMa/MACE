@@ -53,6 +53,10 @@ def test_connect_dry_run_and_help_with_the_standard_library_only(blocked_env):
     assert "ssh -J g -o ExitOnForwardFailure=yes" in r.stdout and "--no-banner gui --managed --port 40000" in r.stdout
     r = _run(blocked_env, "gui", "connect", "--help")
     assert r.returncode == 0 and "usage: mace gui connect" in r.stdout and "--hop" in r.stdout
+    # --check (connect_check.py) too: a FAIL line depends on this computer, a traceback would not
+    r = _run(blocked_env, "gui", "connect", "--check", "--no-net", "--fix-config", "--gateway", "g", "--node", "n")
+    assert r.returncode in (0, 1) and "Verdict" in r.stdout and "Host n" in r.stdout, r.stderr
+    assert "Traceback" not in r.stderr
 
 
 def test_importing_the_gui_cli_module_stays_light(blocked_env):

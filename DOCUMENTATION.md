@@ -266,9 +266,10 @@ mace workflow --execute workflow_plan_<id>.json --array
   array with `scontrol update JobId=<array id> ArrayTaskThrottle=N`. Recovery
   resubmissions (timeout, memory, FINALRUN loop) are normal jobs and are not
   limited.
-- **Limits.** Every task counts against SLURM's MaxSubmitJobs. When the
-  cluster reports the limit, a submission whose tasks do not fit in the free
-  slots is refused before anything is submitted. Arrays larger than the
+- **Limits.** Every task counts against SLURM's MaxSubmitJobs and takes one
+  slot of MACE's queue budget (`mace queue` in docs/cli.md). The tasks that
+  fit are submitted as the array; the rest are held (with `--track`) or
+  listed as not submitted. Arrays larger than the
   cluster's `max_array_tasks` are split. The arrays of one submission are
   submitted held and released once their rows are recorded; if SLURM refuses
   any of them, the ones already submitted are removed, so nothing is left half
@@ -463,9 +464,10 @@ python mace/enhanced_queue_manager.py --d12-dir /path/to/materials --max-jobs 20
 
 ### Material Tracking System
 ```bash
-# Prepare fixed inputs and job scripts for failed tracked runs (nothing is
-# submitted; it prints the mace submit / sbatch command for each one)
-mace recover --action recover --max-recoveries 10
+# Fix failed tracked runs and resubmit them (asks first; --dry-run shows the
+# changes and the sbatch commands, --prepare-only only writes the fixed files)
+mace recover --dry-run
+mace recover --max-recoveries 10
 
 # View recovery statistics
 mace recover --action stats
@@ -535,7 +537,7 @@ pip install numpy matplotlib ase spglib seekpath pyyaml pandas
 pip install rich
 
 # Interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
-pip install plotly scipy kaleido==0.2.1 scikit-image
+pip install "plotly>=5.0.0,<6.2" scipy kaleido==0.2.1 scikit-image
 
 # Finite-displacement phonons (mace phonopy)
 pip install 'phonopy<5'
@@ -865,7 +867,7 @@ no longer reach) writes its decks without GUESSP and says so.
 #### **Tool Integration**
 - **NewCifToD12.py**: CIF → D12 conversion with full configuration
 - **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
-- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT|CHARGE|POTENTIAL|CHARGE+POTENTIAL`)
+- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT|CHARGE|POTENTIAL|CHARGE+POTENTIAL|ORBITALS`)
 - **Enhanced Queue Manager**: Job submission and monitoring
 - **Material Database**: Calculation tracking and provenance
 
@@ -1041,9 +1043,14 @@ All SLURM job scripts now include an enhanced callback mechanism that automatica
 #   2. mace/queue/manager.py relative to the job dir (walking up parents)
 #   3. legacy enhanced_queue_manager.py / crystal_queue_manager.py fallbacks
 if [ ! -z "$QUEUE_MANAGER" ]; then
-    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion \
+        --max-recovery-attempts 3 --db-path "$MACE_DB_PATH"
 fi
 ```
+
+The 950 and 50 are the old completion-step line; since 1.1.6 the queue
+budget (`[queue]` in site.toml, see `mace queue` in docs/cli.md) caps it, so
+a completion step keeps at most the smaller of 900 and your budget queued.
 
 **Benefits:**
 - Works with various directory structures and workflow execution contexts
@@ -1103,7 +1110,7 @@ mace database --action query --material-id diamond
 mace database --action properties --material-id diamond
 
 # Export results (CSV / Excel)
-mace database --action export --format excel --output results.xlsx
+mace database --action export --format excel --output results.xlsx   # needs openpyxl
 ```
 
 #### **Automatic Integration**

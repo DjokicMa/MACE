@@ -61,6 +61,7 @@ def _by_folder(db):
 
 
 def test_different_structures_with_one_name_are_two_materials(tmp_path):
+    pytest.importorskip("ase", reason="the build tells structures apart with the structure reader, which needs ase")
     root = _tree(tmp_path, {"A": DIA, "B": TIO, "C": DIA})
     db = tmp_path / "materials.db"
     p = _build(root, db)

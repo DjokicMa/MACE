@@ -1,0 +1,7 @@
+BAND
+graphene_slab - Band Structure - SeeKPath (w.I) - GAMMA-M-K-GAMMA
+3 12 1000 1 30 1 0
+0 0 0  6 0 0
+6 0 0  4 4 0
+4 4 0  0 0 0
+END

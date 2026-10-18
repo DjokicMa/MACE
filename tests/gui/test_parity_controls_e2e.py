@@ -96,16 +96,18 @@ def test_broadened_spectrum_controls(fresh):
     open_path(drv, "bare_freq.out")
     H.wait(drv, "const s = window.__mace.freqView && window.__mace.freqView.state(); return s && s.mode", 60)
     click(drv, visible(drv, "#freq-host .fv-ir")[0])
-    H.wait(drv, "const s = window.__mace.plotView.state(); return s && s.kind === 'ir' && s.source === 'modes' && s.drawn", 60)
+    # the plot view is made when the first plot opens: null until then
+    H.wait(drv, "const v = window.__mace.plotView, s = v && v.state(); return s && s.kind === 'ir' && s.source === 'modes' && s.drawn", 60)
     sel = drv.find_element(By.ID, "po-shape")
     click(drv, sel)
     sel.find_element(By.CSS_SELECTOR, "option[value='gaussian']").click()
     H.wait(drv, "const s = window.__mace.plotView.state(); return s.opts.shape === 'gaussian' && s.drawn", 30)
-    assert "Gaussian" in drv.execute_script("return document.querySelector('.pv-note').textContent")
+    # the curve is read again with the new shape: the note follows when that read lands
+    H.wait(drv, "return document.querySelector('.pv-note').textContent.includes('Gaussian')", 30)
     open_path(drv, "bare_freq.out")
     H.wait(drv, "const d = window.__mace.doc(); return d && d.kind === 'freq'", 30)
     click(drv, visible(drv, "#freq-host .fv-raman")[0])
-    H.wait(drv, "const s = window.__mace.plotView.state(); return s && s.kind === 'raman' && s.source === 'modes' && s.drawn", 60)
+    H.wait(drv, "const v = window.__mace.plotView, s = v && v.state(); return s && s.kind === 'raman' && s.source === 'modes' && s.drawn", 60)
     click(drv, drv.find_element(By.ID, "po-eta"))
     for _ in range(5):
         # the options are drawn again after each step: the slider keeps the focus, so the keys go on reaching it
@@ -113,7 +115,7 @@ def test_broadened_spectrum_controls(fresh):
         time.sleep(0.4)
     assert drv.execute_script("return document.activeElement && document.activeElement.id") == "po-eta"
     H.wait(drv, "const s = window.__mace.plotView.state(); return s.opts.eta <= 0.55 && s.opts.shape === 'pseudo-voigt' && s.drawn", 30)
-    assert "pseudo-Voigt" in drv.execute_script("return document.querySelector('.pv-note').textContent")
+    H.wait(drv, "return document.querySelector('.pv-note').textContent.includes('pseudo-Voigt')", 30)
     no_errors(drv)
 
 

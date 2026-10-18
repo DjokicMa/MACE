@@ -55,3 +55,19 @@ def test_one_point_opt_is_unchanged(extractor):
     assert p["total_energy_corrected_au"] == pytest.approx(-1.776438618139E+03, abs=1e-8)
     assert p["total_energy_corrected_au"] == pytest.approx(
         p["total_energy_au"] + p["d3_dispersion_energy_au"] + p["gcp_energy_au"], abs=1e-12)
+
+
+def test_unfinished_multi_point_opt_counts_corrections_once(extractor, tmp_path):
+    """An OPT stopped before OPT END (wall time, killed): its last
+    TOTAL ENERGY(DFT) line, from point 2 on, is already the corrected
+    total. Without OPT END the D3 and gCP were added to it once more."""
+    src = find_data("OPT/4LG_2x2_AA_opt_HSESOL3C_optimized.out")
+    lines = src.read_text(errors="replace").splitlines(keepends=True)
+    cut = next(i for i, l in enumerate(lines) if "OPTIMIZATION - POINT   15" in l)
+    out = tmp_path / "4LG_2x2_AA_opt_HSESOL3C_optimized.out"
+    out.write_text("".join(lines[:cut + 40]))   # killed early in point 15
+    p = energy_props(extractor, out)
+    last_dft = -3.6446775688091E+03              # point 14
+    # the corrections printed are point 1's (none after the last point)
+    d3, gcp = -2.0782222197440E-01, 1.1345515173710E-01
+    _check(p, end=last_dft, d3=d3, gcp=gcp)

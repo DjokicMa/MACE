@@ -341,6 +341,13 @@ def test_status_reads_the_database_in_the_current_directory(tmp_path):
     assert "SLURM state TIMEOUT" not in out           # errors only in --detailed
 
 
+def test_status_in_an_empty_folder_creates_no_database(tmp_path):
+    out = _mace(tmp_path, "status")
+    assert "No MACE database in" in out
+    assert not (tmp_path / "materials.db").exists()
+    assert "Adding input_settings_json" not in out
+
+
 def test_status_detailed_and_summary(tmp_path):
     _seed(tmp_path / "materials.db")
     detailed = _mace(tmp_path, "status", "--detailed")

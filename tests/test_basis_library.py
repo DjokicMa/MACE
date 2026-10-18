@@ -127,6 +127,11 @@ def test_only_the_exact_bundled_paths_are_served(tmp_path, monkeypatch):
     assert BL.bundled_family_for(tz + ".lib") is None
     assert BL.bundled_family_for(str(tmp_path / "full.basis.triplezeta")) is None
     monkeypatch.chdir(tmp_path)
+    # a bare library name is the bundled library (E-M6: saved settings store
+    # it by name, so they work on another machine) - unless a directory of
+    # that name is in the way
+    assert BL.bundled_family_for("full.basis.triplezeta") == "full.basis.triplezeta"
+    (tmp_path / "full.basis.triplezeta").mkdir()
     assert BL.bundled_family_for("full.basis.triplezeta") is None
     assert BL.bundled_family_for("./basis_sets/full.basis.triplezeta/") is None
 
@@ -142,10 +147,9 @@ def test_a_users_own_directory_is_read_from_disk(tmp_path):
     assert read_basis_file(str(mine) + "/", 82) == "282 0\nHAYWSC\n"
     assert check_basis_set_compatibility(str(mine), [6, 82, 8], "EXTERNAL") == (False, [8])
     assert BL.record_exists(str(mine), 6) and not BL.record_exists(str(mine), 8)
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        assert read_basis_file(str(mine), 8) == ""
-    assert "not found" in buf.getvalue()
+    from basis_file_check import BasisFileError
+    with pytest.raises(BasisFileError, match=r"has no basis for O \(Z=8\)"):
+        read_basis_file(str(mine), 8)
 
 
 def test_a_copied_loader_still_serves_the_checkouts_paths(tmp_path, monkeypatch):

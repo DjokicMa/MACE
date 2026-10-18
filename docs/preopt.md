@@ -319,7 +319,7 @@ GFN-FF runs xtb once per force call, so a run would mostly wait for Lmod. Then
   silently; its cells are often several percent off, and it fails on dense
   ionic oxides and halides.
 - ML is refused above 300 atoms on the CPU in the GUI.
-- Not in 1.1.5: UFF/UFF4MOF, GULP's GFN-FF, tblite GFN1/GFN2, ASL and Meta
+- Not supported yet: UFF/UFF4MOF, GULP's GFN-FF, tblite GFN1/GFN2, ASL and Meta
   models, a GUI install or download, a .d12 with only the geometry replaced
   (`mace preopt` writes a CIF), and pre-optimization as a workflow step.
 

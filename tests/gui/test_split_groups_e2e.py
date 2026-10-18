@@ -25,6 +25,7 @@ pytestmark = pytest.mark.gui
 pytest.importorskip("selenium.webdriver")
 pytest.importorskip("ase")
 pytest.importorskip("plotly")
+from selenium.common.exceptions import NoSuchWindowException  # noqa: E402
 from selenium.webdriver.common.action_chains import ActionChains  # noqa: E402
 from selenium.webdriver.common.by import By  # noqa: E402
 from selenium.webdriver.common.keys import Keys  # noqa: E402
@@ -106,6 +107,9 @@ def menu(drv, top, *path):
     k = drv.execute_script("const m = [...document.querySelectorAll('.menu')].pop(); "
                            "return [...m.querySelectorAll('.menu-item')].findIndex((b) => b.dataset.cmdId === arguments[0])", path[-1])
     assert k >= 0
+    # the arrows count from the focused item: wait until the submenu's first item has the focus (it lands
+    # late under load, right after a reload, and the keys then picked another command)
+    H.wait(drv, "const m = [...document.querySelectorAll('.menu')].pop(); return m && document.activeElement === m.querySelector('.menu-item')", 5)
     ac = ActionChains(drv)
     for _ in range(k):
         ac.send_keys(Keys.ARROW_DOWN)
@@ -159,7 +163,14 @@ def no_errors(drv):
 
 def test_ir_spectrum_beside_its_structure_and_a_peak_opens_the_mode_there(fresh):
     drv, root = fresh
-    click_file(drv, "parity/water_freq_IRSPEC.DAT")
+    # a real click on the file; under load the click can land while the Explorer draws its list again: once more
+    for _ in range(3):
+        click_file(drv, "parity/water_freq_IRSPEC.DAT")
+        try:
+            H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.path === 'parity/water_freq_IRSPEC.DAT'", 20)
+            break
+        except AssertionError:
+            continue
     H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.drawn && s.peaks > 0", 90)
     click_file(drv, "parity/water_opt.out")
     H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.path === 'parity/water_opt.out'", 60)
@@ -185,7 +196,11 @@ def test_ir_spectrum_beside_its_structure_and_a_peak_opens_the_mode_there(fresh)
     body = drv.find_element(By.TAG_NAME, "body")
     ActionChains(drv).move_to_element_with_offset(body, 0, 0).perform()
     ActionChains(drv).move_by_offset(int(xy[0]) - drv.execute_script("return innerWidth / 2 | 0"),
-                                     int(xy[1]) - drv.execute_script("return innerHeight / 2 | 0")).click().perform()
+                                     int(xy[1]) - drv.execute_script("return innerHeight / 2 | 0")).perform()
+    # plotly sends plotly_click only with a hover point, and its hover runs at most once per 50 ms: a click at
+    # the instant the pointer arrives could come before any hover (nothing opened); a person rests first
+    time.sleep(0.2)
+    ActionChains(drv).click().perform()
     wait_side(drv, "const a = p.active(); return a && a.kind === 'freq' && a.path === 'parity/water_freq.out'")
     wait_side(drv, "const v = M.freqView, s = v && v.state(); return s && s.mode === " + str(int(want)))
     side(drv, "M.freqView.play(false)")
@@ -293,12 +308,19 @@ def test_layout_comes_back_and_the_keyboard_moves_and_focuses(fresh):
     drv.switch_to.frame(drv.find_element(By.CSS_SELECTOR, ".group-frame"))
     try:
         U.keys(drv, Keys.CONTROL, Keys.SHIFT, "\\")
+    except NoSuchWindowException:
+        pass                                     # the group closed under the key's release (its last document left)
     finally:
         drv.switch_to.default_content()
     H.wait(drv, "return window.__macePane.docs().some((d) => d.path === 'outputs/Si_sp.out')", 30)
-    assert side_docs(drv) == []
-    H.wait(drv, "return window.__maceGroups.state().focused === 'main'", 10)        # it came back with the document
+    # it was the right group's last document: that group closed, the focus came back with the document
+    H.wait(drv, "return !window.__maceGroups.isOpen() && !document.querySelector('.group-frame')", 10)
+    assert drv.execute_script("return window.__maceGroups.state().focused") == "main"
     # Mod+Alt+\ moves the focus to the other group, and (pressed there) back
+    drv.execute_script("window.__maceGroups.openToSide('structures/LiF.cif')")
+    wait_side(drv, "return p.docs().some((d) => d.path === 'structures/LiF.cif')")
+    click(drv, drv.find_element(By.CSS_SELECTOR, "#doc-tabs .doc-tab"))
+    H.wait(drv, "return window.__maceGroups.state().focused === 'main'", 10)
     U.keys(drv, Keys.CONTROL, Keys.ALT, "\\")
     H.wait(drv, "return window.__maceGroups.state().focused === 'side'", 10)
     drv.switch_to.frame(drv.find_element(By.CSS_SELECTOR, ".group-frame"))
@@ -307,9 +329,7 @@ def test_layout_comes_back_and_the_keyboard_moves_and_focuses(fresh):
     finally:
         drv.switch_to.default_content()
     H.wait(drv, "return window.__maceGroups.state().focused === 'main'", 10)
-    # move NaCl right again, widen the left group, reload: the same split comes back
-    drv.execute_script("window.__maceGroups.openToSide('structures/LiF.cif')")
-    wait_side(drv, "return p.docs().some((d) => d.path === 'structures/LiF.cif')")
+    # widen the left group, reload: the same split comes back
     sp = drv.find_element(By.ID, "split-groups")
     ActionChains(drv).click_and_hold(sp).move_by_offset(-120, 0).release().perform()
     ratio = drv.execute_script("return window.__maceGroups.state().ratio")
@@ -379,14 +399,15 @@ def test_inspector_and_bottom_panel_follow_the_focused_group(fresh):
     # the right group has the focus: its Inspector (Mode) over the window's, which is inert; its own bottom panel (Modes)
     assert g["inert"] and g["frameBottom"] == g["bottomBottom"], g
     assert g["paneBottom"] and g["paneTab"] == "modes" and g["bottomRight"] <= g["sideLeft"], g
-    assert side(drv, "return [...W.document.querySelectorAll('#inspector .insp-section')].map((x) => x.dataset.key)") == ["mode"]
+    # the SCF card (1.1.6) under a FREQ output's Mode (then, read-only, the run's Structure and Cell: the panel context)
+    assert side(drv, "return [...W.document.querySelectorAll('#inspector .insp-section')].map((x) => x.dataset.key)")[:2] == ["mode", "scf"]
     # the mode table, on screen under the right group
     assert int(wait_side(drv, "const t = W.document.querySelector('.bottom-pane.modes #freq-table .fm-grid');"
                               " return t && t.getBoundingClientRect().height > 40 && t.getAttribute('aria-rowcount')")) > 3
     # a real click on the left group's tab: the window's Inspector (plot options) is back, the right group keeps its bottom panel
     click(drv, drv.find_element(By.CSS_SELECTOR, "#doc-tabs .doc-tab"))
     g = H.wait(drv, GEOMETRY.replace("return {", "const g = {") + " return g.frameRight === g.sideRight && !g.paneInsp && g;", 20)
-    assert not g["inert"] and g["winInsp"] == ["plotopts"] and g["paneBottom"], g
+    assert not g["inert"] and g["winInsp"][:1] == ["plotopts"] and g["paneBottom"], g
     # a volume on the right: a real click on its own Inspector's "Show + lobe" changes that document only
     drv.execute_script("window.__maceGroups.openToSide('parity/mgo_dens/DENS_CUBE.DAT')")
     wait_side(drv, "const s = M.volumeView && M.volumeView.state(); return s && s.path === 'parity/mgo_dens/DENS_CUBE.DAT' && s.surfaces >= 0")

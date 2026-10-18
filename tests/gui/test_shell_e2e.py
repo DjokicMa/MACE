@@ -1117,8 +1117,9 @@ def test_settings_drive_the_viewport(fresh):
     a = drv.execute_script(st)
     assert a["color"].lower() == COLORS["schemes"]["vesta"]["Mg"].lower(), a
     px_vesta = mg1_pixel(drv)
-    assert abs(a["scale"] - 0.28) < 1e-9                     # 0.40 x 0.7: the demo's look
-    assert drv.execute_script("return window.__mace.viewState().sphereScale") == 0.28
+    # atomic radii x atom scale 0.40: VESTA's ball and stick, 40 % of the radius (T9)
+    assert abs(a["scale"] - 0.4) < 1e-9
+    assert drv.execute_script("return window.__mace.viewState().sphereScale") == 0.4
     drv.execute_script("window.__mace.settings.set('colorScheme', 'jmol')")
     H.wait(drv, "return window.__mace.atomStyle(0).color.toLowerCase() === arguments[0]", 5,
            COLORS["schemes"]["jmol"]["Mg"].lower())
@@ -1129,7 +1130,7 @@ def test_settings_drive_the_viewport(fresh):
     if PIXELS_STABLE:
         assert max(abs(x - y) for x, y in zip(px_vesta["center"][:3], px_jmol["center"][:3])) > 20, (px_vesta, px_jmol)
     drv.execute_script("window.__mace.settings.set('atomScale', 0.6)")
-    H.wait(drv, "return Math.abs(window.__mace.atomStyle(0).scale - 0.42) < 1e-9", 5)
+    H.wait(drv, "return Math.abs(window.__mace.atomStyle(0).scale - 0.6) < 1e-9", 5)
     H.wait(drv, "const a = window.__mace.atomStyle(0); return Math.abs(a.radius / arguments[0] - 1.5) < 0.01", 5, a["radius"])
     b = drv.execute_script(st)
     assert a["radius"] and b["radius"] and abs(b["radius"] / a["radius"] - 1.5) < 0.01, (a, b)
@@ -1254,7 +1255,7 @@ def test_settings_live_and_persistent(fresh):
     r0 = drv.execute_script("return window.__mace.atomStyle(0).radius")
     drv.execute_script("const r = document.querySelector('#set-atomScale'); r.value = '0.6';"
                        "r.dispatchEvent(new Event('input', {bubbles: true})); r.dispatchEvent(new Event('change', {bubbles: true}))")
-    H.wait(drv, "return window.__mace.viewState().sphereScale === 0.42", 5)
+    H.wait(drv, "return window.__mace.viewState().sphereScale === 0.6", 5)
     # the redraw lands on the next frame: wait for the drawn sphere itself
     H.wait(drv, "const a = window.__mace.atomStyle(0); return Math.abs(a.radius / arguments[0] - 1.5) < 0.01", 5, r0)
     shot(drv, "settings_viewport_dark")
@@ -1269,7 +1270,7 @@ def test_settings_live_and_persistent(fresh):
     time.sleep(0.5)
     assert drv.execute_script("return document.documentElement.dataset.theme") == "dark"
     assert drv.execute_script("return window.__mace.atomStyle(0).color.toLowerCase()") == COLORS["schemes"][D1_DEFAULT_SCHEME]["Mg"].lower()
-    assert drv.execute_script("return window.__mace.viewState().sphereScale") == 0.42
+    assert drv.execute_script("return window.__mace.viewState().sphereScale") == 0.6
     # the Reset links
     open_settings(drv, "appearance")
     drv.find_element("css selector", '#settings [data-reset="theme"]').click()
@@ -1352,7 +1353,12 @@ def test_dialogs_load_on_first_open(app):
     drv.refresh()
     H.wait(drv, "return document.documentElement.dataset.appReady === '1'")
     lazy = "return performance.getEntriesByType('resource').filter((r) => r.name.includes('/js/lazy/') || r.name.includes('dialogs.css')).map((r) => r.name.split('/').pop())"
-    assert drv.execute_script(lazy) == []
+    # nothing of either dialog at startup (the Tasks pane's module and its lazy_util.js load at
+    # startup when the server already has tasks, e.g. from an earlier test on this server)
+    base0 = drv.execute_script(lazy)
+    dialogs = {"settings_dialog.js", "settings_schema.js", "dialogs.css", "cheatsheet.js"}
+    assert not dialogs & set(base0), base0
+    assert set(base0) <= {"lazy_util.js"}, base0
     open_settings(drv)
     first = drv.execute_script(lazy)
     assert {"settings_dialog.js", "settings_schema.js", "dialogs.css"} <= set(first), first
@@ -1774,11 +1780,14 @@ def test_rebind_view_along_a_everywhere(fresh):
 ATOM_MENU = ["Select Equivalents", "Select Element (Mg)", "Select Neighbors", "-", "Replace Element…", "Set Coordinates…",
              "Delete", "-", "Vacancy Here", "Substitute…", "Antisite…", "-", "Measure from Here", "Center View Here", "-", "Copy Coordinates (Fractional)",
              "Copy Coordinates (Cartesian)", "-", "Properties"]
-EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…"]
-EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Compare With Active", "Plot", "Compare Convergence", "-",
-                 "Copy Path", "Reveal in Folder", "Show File History…", "-", "Set Up Calculation", "Submit…", "Run on This Node…",
+# Export Element Legend… (1.1.6) in both
+EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…",
+              "Export Element Legend…"]
+EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Compare With Active", "Plot", "Compare Convergence", "Plot Gallery",
+                 "Export Element Legend…", "-",
+                 "Copy Path", "Reveal in Folder", "Show File History…", "-", "Set Up Calculation", "Submit…", "Run on This Node…", "New Workflow…",
                  "Create or Update Database from This Folder…"]
-TAB_MENU = ["Close", "Close Others", "Close to the Right", "-", "Move to Other Group", "-", "Copy Path", "Reveal in Explorer"]
+TAB_MENU = ["Close", "Close Others", "Close to the Right", "-", "Move to Other Group", "Move Left", "Move Right", "-", "Copy Path", "Reveal in Explorer"]
 
 
 def menu_rows(drv, label):
@@ -1947,7 +1956,7 @@ def test_tab_context_menu(fresh):
     assert titles() == ["NaCl.cif"]
     ActionChains(drv).context_click(tab(0)).perform()
     rows = menu_rows(drv, "Tab menu")
-    assert {r[0] for r in rows if r[2] == "true"} == {"Close Others", "Close to the Right"}
+    assert {r[0] for r in rows if r[2] == "true"} == {"Close Others", "Close to the Right", "Move Left", "Move Right"}
     click_item(drv, "Close")
     assert titles() == []
     assert not H.errors(drv), H.errors(drv)

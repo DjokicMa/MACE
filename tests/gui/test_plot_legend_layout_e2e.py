@@ -31,7 +31,7 @@ pytest.importorskip("plotly")
 sys.path.insert(0, str(H.REPO_ROOT / "tests"))
 from test_dos_spin_window import write_doss_spin  # noqa: E402
 from test_gui_results import write_band, write_band_crystal  # noqa: E402
-from test_plot_legend_outside import MANY, write_doss_many  # noqa: E402
+from test_plot_legend_outside import MANY_NAMES, write_doss_many  # noqa: E402
 
 @pytest.fixture(scope="module", params=["firefox", "chromium"])
 def app(request, tmp_path_factory):
@@ -131,10 +131,12 @@ def _problems(st):
 
 
 CASES = {
-    # path, band legend texts, DOS legend texts (projections + spin key)
-    "identical": ("gr/gra_band.BAND.DAT", ["α = β (non-magnetic)"], ["C (s)", "C (p)", "Total"], True),
-    "magnetic": ("mag/fe_band.BAND.DAT", ["spin up (α)", "spin down (β)"], ["C (s)", "C (p)", "Total"], True),
-    "closed": ("cl/mgo_band.BAND.DAT", [], MANY + ["Total"], False),
+    # path, the Spin group's keys, the DOS's Projections swatches (1.1.6: one legend of two titled
+    # groups right of a band + DOS figure; the 2-4 projections carrying the DOS, the rest hidden)
+    # alpha = beta bands with a mirrored DOS: the spin pair's keys; a closed-shell run: one key
+    "identical": ("gr/gra_band.BAND.DAT", ["spin up (α)", "spin down (β)"], ["C s", "C p", "Total"], True),
+    "magnetic": ("mag/fe_band.BAND.DAT", ["spin up (α)", "spin down (β)"], ["C s", "C p", "Total"], True),
+    "closed": ("cl/mgo_band.BAND.DAT", ["α = β (closed shell)"], ["Total"], False),
 }
 
 
@@ -159,19 +161,16 @@ def test_legends_stay_out_of_the_data_at_every_size(fresh, case):
             st = drv.execute_script(BOXES)
             texts = [t for lg in st["legends"] for t in lg["texts"]]
             # each projection once; the spin direction is one shared key, only for a spin-polarized DOS
-            for n in band_names + dos_names:
+            for n in band_names + dos_names + ["Spin", "Projections"]:
                 if texts.count(n) != 1:
                     failures.append(f"{scale}% {width}px: {n!r} shown {texts.count(n)} times in {texts}")
+            if len(texts) != len(set(texts)) or not 4 <= len(texts) - len(band_names) <= 7:
+                failures.append(f"{scale}% {width}px: the legend's entries {texts}")
             if any(t.endswith((" ↑", " ↓")) for t in texts):
                 failures.append(f"{scale}% {width}px: a projection per spin in {texts}")
-            keys = [t for t in texts if t.startswith(("↑", "↓"))]
-            if spin and len(keys) != 2 or not spin and keys:
-                failures.append(f"{scale}% {width}px: spin key {keys}")
-            # the band legend and the DOS legend are separate legends, never one across both panels
-            if band_names and dos_names:
-                owner = {t: lg["id"] for lg in st["legends"] for t in lg["texts"]}
-                if owner.get(band_names[0]) == owner.get(dos_names[0]):
-                    failures.append(f"{scale}% {width}px: band and DOS entries share one legend")
+            # one legend for both panels, in two titled groups
+            if len(st["legends"]) != 1:
+                failures.append(f"{scale}% {width}px: {len(st['legends'])} legends")
             failures += [f"{scale}% {width}px: {p}" for p in _problems(st)]
             if width == 1366 and st["noteLines"] != 1:
                 failures.append(f"{scale}% {width}px: the subtitle takes {st['noteLines']} lines: {st['noteText']!r}")
@@ -193,14 +192,14 @@ def test_subtitle_is_one_short_line_with_the_rest_in_its_help(fresh):
     # the longer guidance moved into the help icon's tooltip
     assert "↓ mirrored to the left" in st["noteHelp"] and "double-click to reset" in st["noteHelp"], st["noteHelp"]
     open_plot(drv, "mag/fe_band.BAND.DAT")
-    assert "α solid, β dotted" in drv.execute_script(BOXES)["noteText"]
+    assert "α solid, β dashed" in drv.execute_script(BOXES)["noteText"]
     U.no_errors(drv)
 
 
 def test_png_and_svg_exports_keep_the_legends_outside(fresh):
     """Plotly's image export draws the same layout: its legends sit outside its plot areas."""
     drv = fresh[0]
-    open_plot(drv, "gr/gra_band.BAND.DAT")
+    open_plot(drv, "mag/fe_band.BAND.DAT")         # the band + DOS legend, right of the plot
     st = drv.execute_async_script(PLOTS_JS + """const done = arguments[arguments.length - 1];
       const p = document.querySelector('#plot-host .pv-plot');
       Plotly.toImage(p, {format: 'svg', width: p.clientWidth, height: p.clientHeight}).then((url) => {
@@ -215,7 +214,7 @@ def test_png_and_svg_exports_keep_the_legends_outside(fresh):
         host.remove();
         done({legends, plots});
       });""")
-    assert len(st["legends"]) == 2 and st["plots"], st
+    assert len(st["legends"]) == 1 and st["plots"], st
     bad = [(lg["texts"], pl) for lg in st["legends"] for pl in st["plots"] if _hit(lg["box"], pl, 1.5)]
     assert not bad, bad
 
