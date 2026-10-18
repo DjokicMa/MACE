@@ -382,7 +382,7 @@ and `vX.Y.Z` when it is final; set `TAG` to one that exists on the
 
 <!-- RELEASE-TAG: the TAG= and $Tag = lines below name the release; set both at release time -->
 ```
-TAG=v1.1.6        # or v1.1.6-preview while only the preview is tagged
+TAG=v1.1.6-preview   # v1.1.6 once the final is tagged
 curl -fsSLO https://raw.githubusercontent.com/DjokicMa/MACE/$TAG/scripts/mace-gui-connect.sh
 curl -fsSLO https://raw.githubusercontent.com/DjokicMa/MACE/$TAG/scripts/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS     # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
@@ -393,7 +393,7 @@ chmod +x mace-gui-connect.sh
 Windows (PowerShell; `curl.exe` comes with Windows 10 and 11):
 
 ```
-$Tag = "v1.1.6"   # or v1.1.6-preview while only the preview is tagged
+$Tag = "v1.1.6-preview"   # v1.1.6 once the final is tagged
 curl.exe -fsSLO "https://raw.githubusercontent.com/DjokicMa/MACE/$Tag/scripts/mace-gui-connect.ps1"
 curl.exe -fsSLO "https://raw.githubusercontent.com/DjokicMa/MACE/$Tag/scripts/SHA256SUMS"
 (Get-FileHash .\mace-gui-connect.ps1).Hash.ToLower()   # must equal its line in SHA256SUMS

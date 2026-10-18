@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-10-17
+
+This is the 1.1.6 preview, tagged `v1.1.6-preview`. The final 1.1.6 will be
+this preview plus the fixes found in it. Everything since 1.1.5 is listed
+below; coming from 1.1.5, read Upgrading first.
+
 ### Upgrading from 1.1.5
 
 **Getting 1.1.6**

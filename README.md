@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.1.5</strong>
+  <strong>Version 1.1.6</strong> (preview)
 </p>
 
 <p align="center">
