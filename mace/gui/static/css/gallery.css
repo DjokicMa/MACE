@@ -1,0 +1,46 @@
+/* The Plot Gallery (js/docs/gallery.js): tokens only. */
+.views > #tab-gallery.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: var(--s-3) var(--s-4); }
+.gallery-host { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.gal { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: var(--s-2); outline: none; }
+.gal-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.gal-f { display: inline-flex; align-items: center; gap: var(--s-1); font-size: var(--fs-sm); color: var(--text-2); }
+.gal-f[hidden] { display: none; }
+.gal-f select, .gal-f input { height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text); padding: 0 var(--s-2); min-width: 0; }
+.gal-cols { width: 4.2em; }
+.gal-emin, .gal-emax { width: 5em; }
+.gal-set { max-width: 22em; }
+.gal-seg, .gal-acts { display: inline-flex; gap: var(--s-1); }
+.gal-acts { margin-left: auto; }
+.gal-seg [aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.gal-note { color: var(--text-2); min-height: 1.2em; }
+.gal-note.warn { color: var(--warning, var(--text)); }
+.gal-note.error { color: var(--danger); }
+.gal-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--s-3); }
+.gal-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: var(--s-2); }
+.gal-grid[hidden], .gal-cycle[hidden] { display: none; }
+.gal-pane { margin: 0; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--plot-bg, var(--surface));
+  display: flex; flex-direction: column; overflow: hidden; }
+.gal-pane.flash { outline: 2px solid var(--focus); outline-offset: 1px; }
+.gal-pane figcaption { font-size: var(--fs-xs); padding: 2px var(--s-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border); color: var(--text); }
+.gal-n { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.gal-plot { aspect-ratio: 4 / 3; min-height: 0; position: relative; }
+.gal-plot[data-state="loading"]::after, .gal-plot[data-state="idle"]::after { content: ""; position: absolute; inset: 30%;
+  border-radius: var(--r-sm); background: var(--surface-2); opacity: .5; }
+.gal-atoms { width: 100%; height: 100%; display: block; }
+.gal-err { margin: var(--s-3); font-size: var(--fs-xs); color: var(--danger); }
+.gal-empty { margin: var(--s-4); }
+.gal-cycle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; align-items: center;
+  gap: var(--s-2); min-height: 360px; flex: 1 0 auto; }
+.gal-big { grid-column: 2; }
+.gal-big .gal-plot { aspect-ratio: auto; height: min(62vh, 640px); }
+.gal-count { grid-column: 1 / -1; text-align: center; color: var(--text-2); }
+.gal-caps { flex: 0 0 auto; }
+.gal-table { width: 100%; font-size: var(--fs-sm); border-collapse: collapse; }
+.gal-table th { text-align: left; color: var(--text-2); font-weight: 600; }
+.gal-table th, .gal-table td { padding: 2px var(--s-2); border-bottom: 1px solid var(--border); }
+.gal-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.gal-table tr[data-i] { cursor: pointer; }
+.gal-table tr[data-i]:hover, .gal-table tr[aria-current="true"] { background: var(--sel-soft, var(--accent-soft)); }
+.gal-file { max-width: 28em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

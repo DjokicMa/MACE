@@ -56,6 +56,13 @@ RP_RANGE = (20000, 60999)
 READY_POLL_S = 20.0
 PING_S = 60.0
 SLOW_NOTE_S = 15.0
+# ssh's ConnectTimeout (seconds) unless --ssh-option or your ssh config sets
+# one: an unreachable host fails in this time with "cannot reach host", not
+# after the system's TCP timeout of a minute or more
+CONNECT_TIMEOUT_S = 20
+# where the remote login shell looks for MACE when the mace command is not on
+# its PATH (the default "mace", or a path that does not exist there)
+MACE_FALLBACKS = ('${MACE_HOME:+"$MACE_HOME"/mace_cli}', '"$HOME"/mace/mace_cli', '"$HOME"/MACE/mace_cli')
 # --slurm: run the server as a batch job (slurmsession.py on the node or gateway)
 SLURM_KEYS = ("slurm_time", "slurm_cpus", "slurm_mem", "slurm_partition", "slurm_account", "slurm_qos",
               "slurm_constraint", "slurm_gpus", "slurm_args")
@@ -443,18 +450,43 @@ def remote_command(profile: Dict[str, Any], rp: int) -> str:
     cmd = ["exec"]
     if not profile.get("node") and not profile.get("slurm"):
         cmd += ["env", "MACE_GUI_MAX_WORKERS=2"]          # a shared login node: two workers at most
+    find = mace_fallback(mace)
     # --no-banner: the credits banner would only show as "remote:" lines
-    cmd += [_home_path(w) for w in mace] + ["--no-banner", "gui"]
+    cmd += (['"$M"'] if find else [_home_path(w) for w in mace]) + ["--no-banner", "gui"]
     if profile.get("slurm"):
         cmd += ["--slurm"] + slurm_args(profile)
     cmd += ["--managed", "--port", str(int(rp)), "--dir", "."]
     for r in profile.get("roots") or []:
         cmd += ["--root", _home_path(str(r))]
-    parts.append(f"cd -- {_home_path(d)} && " + " ".join(cmd))
+    if find:
+        parts.append(f"cd -- {_home_path(d)} && {{ {find}; " + " ".join(cmd) + "; }")
+    else:
+        parts.append(f"cd -- {_home_path(d)} && " + " ".join(cmd))
     script = "; ".join(parts)
     if (profile.get("remote_shell") or "bash") == "sh":
         return "exec sh -c " + shlex.quote(script)
     return "exec bash -lc " + shlex.quote(script)
+
+
+def mace_fallback(mace: Sequence[str]) -> str:
+    """Shell code that sets M to the mace command, or, when that is not
+    there, to the first mace_cli found in MACE_FALLBACKS (printing
+    ``MACE_GUI_USING <path>``, so connect can say which one it used). Only for
+    the default ``mace`` and a one-word path not ending in mace_cli (then its
+    folder's mace_cli is tried first); "" otherwise (the command runs as given)."""
+    if len(mace) != 1:
+        return ""
+    w = mace[0]
+    if w == "mace":
+        test, cands = 'command -v "$M" >/dev/null 2>&1', list(MACE_FALLBACKS)
+    elif "/" in w and not w.endswith("/mace_cli") and not w.endswith("/"):
+        test = '[ -x "$M" ]'
+        own = _home_path(w.rsplit("/", 1)[0] + "/mace_cli")
+        cands = [own] + [c for c in MACE_FALLBACKS if c != own]
+    else:
+        return ""
+    return (f"M={_home_path(w)}; {test} || for c in {' '.join(cands)}; do if [ -x \"$c\" ]; then M=$c; "
+            'echo "MACE_GUI_USING $c"; break; fi; done')
 
 
 def slurm_args(profile: Dict[str, Any]) -> List[str]:
@@ -471,8 +503,43 @@ def slurm_args(profile: Dict[str, Any]) -> List[str]:
     return out
 
 
-def _base_opts() -> List[str]:
-    return ["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"]
+def _base_opts(extra: Sequence[str] = (), configured: Optional[str] = None) -> List[str]:
+    out = ["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"]
+    return out + _timeout_opts(extra, configured)
+
+
+def _timeout_opts(extra: Sequence[str] = (), configured: Optional[str] = None) -> List[str]:
+    """-o ConnectTimeout=CONNECT_TIMEOUT_S, unless the extra ssh options or
+    your ssh config (``configured``: config_connect_timeout) set one: a
+    command-line -o would beat the config's own value (a slow VPN's)."""
+    if configured or any("connecttimeout" in str(x).lower() for x in extra):
+        return []
+    return ["-o", f"ConnectTimeout={CONNECT_TIMEOUT_S}"]
+
+
+def opt_connect_timeout(extra: Sequence[str]) -> Optional[str]:
+    """The ConnectTimeout (seconds) the extra ssh options set, else None."""
+    m = re.search(r"(?i)connecttimeout\s*=?\s*(\d+)", " ".join(str(x) for x in extra))
+    return m.group(1) if m else None
+
+
+def config_connect_timeout(host: str, runner: Callable = subprocess.run) -> Optional[str]:
+    """The ConnectTimeout (seconds) your ssh config sets for ``host`` (``ssh
+    -G``), else None: none set, or ssh -G failed (the default then applies)."""
+    if not host:
+        return None
+    v = (ssh_g(host, runner).get("connecttimeout") or [""])[0]
+    return v if v.isdigit() and int(v) > 0 else None
+
+
+def ssh_destination(profile: Dict[str, Any], hop: str, user_for_node: Optional[str] = None) -> str:
+    """The host the connection's command-line options apply to: the node for
+    the jump hop, else the gateway (or the node without one)."""
+    gateway = str(profile.get("gateway") or "")
+    node = profile.get("node")
+    if node and (not gateway or hop != "nested"):
+        return node_target(profile, user_for_node)
+    return gateway
 
 
 def node_target(profile: Dict[str, Any], user_for_node: Optional[str]) -> str:
@@ -484,34 +551,40 @@ def node_target(profile: Dict[str, Any], user_for_node: Optional[str]) -> str:
 
 def build_ssh_argv(profile: Dict[str, Any], lp: int, rp: int, gp: int, hop: str,
                    user_for_node: Optional[str] = None, ssh: str = "ssh",
-                   node_keys: Sequence[str] = ()) -> List[str]:
+                   node_keys: Sequence[str] = (), timeout: Optional[str] = None) -> List[str]:
     """The one ssh command for a hop ("jump" or "nested"); no -n, no -t, so
     stdin and its EOF pass through every hop to the server. node_keys: the
-    gateway's key options for the node hop of "jump" (node_key_options)."""
+    gateway's key options for the node hop of "jump" (node_key_options).
+    timeout: the ConnectTimeout your ssh config sets for ssh_destination
+    (config_connect_timeout): then no default is added, and the nested hop's
+    inner ssh gets it (or --ssh-option's) too."""
     gateway = str(profile.get("gateway") or "")
     jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
     extra = [str(x) for x in (profile.get("ssh_options") or [])]
     rcmd = remote_command(profile, rp)
     node = profile.get("node")
     argv = [ssh]
+    base = _base_opts(extra, timeout)
     if not node:                                 # the server runs on the gateway itself
         if jumps:
             argv += ["-J", ",".join(jumps)]
-        return argv + _base_opts() + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}", gateway, rcmd]
+        return argv + base + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}", gateway, rcmd]
     if not gateway:                              # a node with its own Host block: no hop
         if jumps:
             argv += ["-J", ",".join(jumps)]
-        return argv + _base_opts() + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
-                                              node_target(profile, user_for_node), rcmd]
+        return argv + base + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
+                                      node_target(profile, user_for_node), rcmd]
     if hop == "nested":
-        inner = shlex.join(["ssh", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+        inner_t = opt_connect_timeout(extra) or timeout or str(CONNECT_TIMEOUT_S)
+        inner = shlex.join(["ssh", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={inner_t}",
+                            "-o", "ExitOnForwardFailure=yes",
                             "-L", f"127.0.0.1:{gp}:127.0.0.1:{rp}", str(node), rcmd])
         if jumps:
             argv += ["-J", ",".join(jumps)]
-        return argv + _base_opts() + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{gp}", gateway, inner]
+        return argv + base + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{gp}", gateway, inner]
     argv += ["-J", ",".join(jumps + [gateway])]
-    return argv + _base_opts() + list(node_keys) + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
-                                          node_target(profile, user_for_node), rcmd]
+    return argv + base + list(node_keys) + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
+                                                    node_target(profile, user_for_node), rcmd]
 
 
 def _host_of(target: str) -> str:
@@ -633,6 +706,9 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
     if "is not a directory" in both or re.search(r"cd: .*(No such file|not a directory)", both) or code == 2:
         return ("dir", f"The folder does not exist on {where}, or the arguments were refused: check --dir "
                        "(and --setup / --mace).")
+    gone = unreachable(stderr_lines, node)
+    if gone:
+        return ("unreachable", unreachable_message(*gone))
     if node_auth_refused(stderr_lines, node, gateway):
         return ("node-auth", f"The node {node} did not accept a login through the gateway: with ssh -J the node "
                              f"checks your key from this computer, and refused it ({DOCS_NODE_PASSWORD}).")
@@ -642,6 +718,50 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
         return ("ssh", f"ssh could not connect: check the gateway name and that `ssh {gateway or where}` works "
                        "in this terminal.")
     return ("ended", f"The connection ended before MACE GUI was ready (exit code {code}).")
+
+
+_UNREACHABLE = (
+    (re.compile(r"Could not resolve hostname ([^:\s]+)"), "DNS: the name does not resolve"),
+    (re.compile(r"connect to host (\S+) port \d+: (?:Connection|Operation) timed out"), "timeout"),
+    (re.compile(r"Connection timed out during banner exchange|Connection to (\S+) port \d+ timed out"), "timeout"),
+    (re.compile(r"connect to host (\S+) port \d+: Connection refused"), "connection refused"),
+    (re.compile(r"connect to host (\S+) port \d+: (?:No route to host|Network is unreachable)"), "no route"),
+)
+_CHANNEL_FAILED = re.compile(r"open failed: (?:connect failed|administratively prohibited): (.+)")
+
+
+def unreachable(stderr_lines: Sequence[str], node: str = "") -> Optional[Tuple[str, str]]:
+    """(host, why) when ssh's messages say a host could not be reached: a name
+    that does not resolve, a timeout, a refused connection, no route. Through
+    a jump host ("channel 0: open failed: connect failed: ..."), the host is
+    the node, as the gateway saw it."""
+    for ln in stderr_lines:
+        for rx, why in _UNREACHABLE:
+            m = rx.search(ln)
+            if m:
+                host = next((g for g in m.groups() if g), "") or _banner_host(stderr_lines)
+                return host, why
+        m = _CHANNEL_FAILED.search(ln)
+        if m and node:
+            text = m.group(1).lower()
+            why = ("DNS on the gateway: the name does not resolve" if "not known" in text or "servname" in text
+                   or "resolve" in text else "timeout" if "timed out" in text else
+                   "connection refused" if "refused" in text else "no route" if "route" in text or "unreachable"
+                   in text else text.strip())
+            return _host_of(node), why
+    return None
+
+
+def _banner_host(stderr_lines: Sequence[str]) -> str:
+    for ln in stderr_lines:
+        m = re.search(r"Connection to (\S+) port", ln)
+        if m:
+            return m.group(1)
+    return "the host"
+
+
+def unreachable_message(host: str, why: str) -> str:
+    return f"cannot reach host {host} ({why}): check the name, and your network or VPN."
 
 
 def node_auth_refused(stderr_lines: Sequence[str], node: str, gateway: str) -> bool:
@@ -717,6 +837,52 @@ def email_gateway_warning(gateway: str, path: Path, name: Optional[str]) -> str:
             "cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting "
             f"anyway; to fix the profile in {path}, run: mace gui connect {name + ' ' if name else ''}"
             "--gateway <user@login-host> --save")
+
+
+def gateway_unresolvable(gateway: str, jump: str = "", runner: Callable = subprocess.run,
+                         resolver: Callable = socket.getaddrinfo,
+                         hosts: Optional[Sequence[str]] = None) -> Optional[str]:
+    """The gateway's host name when no ~/.ssh/config Host pattern matches it and
+    it does not resolve (DNS) here; None otherwise, or when a jump host,
+    ProxyJump or ProxyCommand reaches it (the name then resolves over there)."""
+    if not gateway or jump:
+        return None
+    host = gateway.rsplit("@", 1)[-1]
+    pats = ssh_config_hosts() if hosts is None else hosts
+    if any(fnmatch.fnmatchcase(host.lower(), p.lower()) for p in pats):
+        return None
+    g = ssh_g(gateway, runner)
+    if any((g.get(k) or ["none"])[0].lower() != "none" for k in ("proxyjump", "proxycommand")):
+        return None
+    name = (g.get("hostname") or [host])[0]
+    try:
+        resolver(name, 22)
+    except socket.gaierror:
+        return name
+    except (OSError, UnicodeError):
+        return None
+    return None
+
+
+def unresolvable_warning(host: str) -> str:
+    return (f"Warning: {host} matches no Host in ~/.ssh/config and does not resolve (DNS): check the gateway's "
+            "name (your cluster's login host, e.g. login.example.edu). Connecting anyway.")
+
+
+def version_tuple(v: str) -> Tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", str(v).split("+")[0])[:3])
+
+
+def version_note(lv: str, rv: str, where: str, home: str = "") -> Optional[str]:
+    """A warning when MACE here and on the cluster differ (None when they match)."""
+    if not lv or not rv or lv == rv:
+        return None
+    if version_tuple(rv) < version_tuple(lv):
+        how = f"git -C {shlex.quote(home)} pull" if home else "git pull in its MACE_HOME folder"
+        return (f"Warning: MACE on {where} is {rv}, older than {lv} here. The page comes from {where}, so its "
+                f"features are {rv}'s; update the cluster install ({how}), then connect again.")
+    return (f"Note: MACE here is {lv}, on {where} {rv}. That is fine: the page comes from {where} (update this "
+            "computer's MACE for the newest connect fixes).")
 
 
 def windows_ssh_too_old(version_text: str) -> bool:
@@ -1080,12 +1246,16 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
                     "--hop nested.")
         except (OSError, subprocess.SubprocessError):
             pass
+    bad = gateway_unresolvable(gateway, str(profile.get("jump") or "")) if gateway else None
+    if bad:
+        say(unresolvable_warning(bad))
     tries = 0
     hop_i = 0
     while True:
         cur = hops[hop_i] if node and gateway else "jump"
         rp, gp = random_port(), random_port()
-        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node, node_keys=keys)
+        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node, node_keys=keys,
+                              timeout=config_connect_timeout(ssh_destination(profile, cur, user_for_node)))
         via = f" through {gateway}" if node and gateway else ""
         say(f"Connecting to {where}{via}...")
         sess = Session(argv, say)
@@ -1120,6 +1290,10 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
                 f"{where}: check that it exists there. Quote the ~ ('~/...') so that your shell passes it as is.")
         if kind == "node-auth":
             say("If your cluster's nodes accept logins only from the login node, use --hop nested.")
+        if kind == "mace-not-found" and mace_fallback(shlex.split(str(profile.get("mace") or "mace")) or ["mace"]):
+            say("It also looked for mace_cli in $MACE_HOME, ~/mace and ~/MACE there.")
+        if kind in ("unreachable", "ssh"):
+            say("mace gui connect --check (with this profile or these flags) tests each step of the connection.")
         if os.name == "nt" and kind in ("ssh", "ended") and not any(
                 "password" in ln.lower() or "verification" in ln.lower() for ln in sess.stderr_lines):
             say("Windows ssh cannot always show a password or 2FA prompt here. Set up an ssh key or agent "
@@ -1177,6 +1351,9 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_nod
             return 2 if data.get("kind") in ("args", "dir") else 130 if data.get("kind") == "canceled" else 1
         elif tag == "MACE_GUI_READY" and isinstance(data, dict):
             ready = data
+        elif tag == "MACE_GUI_USING" and data:
+            say(f"mace is not on {where}'s PATH there; using {data}. To skip the search, save it: mace gui connect "
+                f"--mace {shlex.quote(str(data))} --save")
         elif tag == "EOF":
             code = sess.proc.wait()
             sess.finish_readers()        # every stderr line in, before it is classified
@@ -1237,9 +1414,9 @@ def _serve_session(sess: Session, profile, args, lp: int, where: str, say, ask, 
     if ready.get("reattached"):
         n = int(ready.get("tasks") or 0)
         say(f"Reattached to the server still running on {where} ({n} task{'s' if n != 1 else ''} running).")
-    lv, rv = local_version(), str(ready.get("version") or "")
-    if lv and rv and lv != rv:
-        say(f"Note: MACE here is {lv}, on {where} {rv}. That is fine: the page comes from {where}.")
+    note = version_note(local_version(), str(ready.get("version") or ""), where, str(ready.get("home") or ""))
+    if note:
+        say(note)
     if ready.get("job"):
         say(f"MACE GUI runs as job {ready['job']} on {ready.get('node')}"
             + (f" until {ready['ends']}" if ready.get("ends") else "") + ".")
@@ -1410,6 +1587,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--list", action="store_true", help="list the saved profiles")
     p.add_argument("--forget", metavar="NAME", help="delete a saved profile")
     p.add_argument("--dry-run", action="store_true", help="print the ssh command(s) and exit")
+    c = p.add_argument_group("check the ssh setup (read-only)")
+    c.add_argument("--check", action="store_true",
+                   help="check ssh, its config, keys, agent and permissions for this profile, try each hop with "
+                        "only `true`, and print OK/WARN/FAIL lines, each problem with one fix line, and the "
+                        "connect line that works")
+    c.add_argument("--no-net", action="store_true", help="with --check: no ssh logins or DNS lookups")
+    c.add_argument("--fix-config", action="store_true",
+                   help="print a suggested ~/.ssh/config block for this profile, from ssh -G (never written)")
     p.add_argument("--export-script", choices=("bash", "powershell"),
                    help="print a standalone connect script with this profile filled in (for a computer "
                         "without MACE)")
@@ -1474,7 +1659,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     prof.update(_flags_profile(args))
     new_name = None
     if not prof.get("gateway") and not prof.get("node"):
-        if args.export_script or args.dry_run or not (sys.stdin and sys.stdin.isatty()):
+        tty = bool(sys.stdin and sys.stdin.isatty())
+        if args.export_script or args.dry_run or args.check or args.fix_config or not tty:
             print("mace gui connect: no profile yet. Pass --gateway <login host> (and usually --node <dev node> "
                   "and --dir <folder>), or run it in a terminal to answer a few questions.", file=sys.stderr)
             return 2
@@ -1517,8 +1703,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             sys.stdout.write(text)
         return 0
-    if prof.get("gateway") and gateway_looks_like_email(str(prof["gateway"])):
+    checking = args.check or args.fix_config
+    if prof.get("gateway") and not checking and gateway_looks_like_email(str(prof["gateway"])):
         print(email_gateway_warning(str(prof["gateway"]), path, args.save or name), file=sys.stderr)
+    if args.check or args.fix_config:
+        from .connect_check import main as check_main
+        return check_main(prof, args.save or name, check=args.check, no_net=args.no_net,
+                          fix_config=args.fix_config)
     if args.dry_run:
         node, gateway = prof.get("node"), prof.get("gateway")
         hop = str(prof.get("hop") or "auto")
@@ -1527,7 +1718,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         keys = node_key_options(str(gateway), node_target(prof, unode)) if (node and gateway and hop != "nested") \
             else []
         for h in (["jump", "nested"] if hop == "auto" else [hop]) if (node and gateway) else ["jump"]:
-            argv = build_ssh_argv(prof, lp, 40000, 40001, h, unode, node_keys=keys)
+            argv = build_ssh_argv(prof, lp, 40000, 40001, h, unode, node_keys=keys,
+                                  timeout=config_connect_timeout(ssh_destination(prof, h, unode)))
             label = f"hop {h}" if node and gateway else "no hop"
             print(f"# {label} (the remote port is random on a real run)")
             if on_windows():

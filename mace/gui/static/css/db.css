@@ -40,7 +40,9 @@
   background: var(--surface); overflow: hidden; }
 .dbv-table:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .dbv-head { display: grid; flex: none; height: 30px; border-bottom: 1px solid var(--border); background: var(--surface-2); will-change: transform; }
-.dbv-headwrap { flex: none; overflow: hidden; }
+/* the header is outside the scroller: both keep a scrollbar gutter, so the header's
+ * columns line up with the rows' whether or not the rows scroll (classic scrollbars) */
+.dbv-headwrap { flex: none; overflow: hidden; scrollbar-gutter: stable; }
 .dbv-th { position: relative; display: flex; align-items: center; min-width: 0; }
 .dbv-th button { flex: 1; display: flex; align-items: center; gap: 2px; height: 100%; padding: 0 var(--s-2); border: 0; background: none; min-width: 0;
   color: var(--text-2); font: 600 var(--fs-sm)/1 var(--font-sans); cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -50,7 +52,7 @@
 .dbv-th .so { width: 12px; height: 12px; flex: none; }
 .dbv-grip { position: absolute; right: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 1; }
 .dbv-grip:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-.dbv-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; contain: strict; }
+.dbv-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; contain: strict; scrollbar-gutter: stable; }
 .dbv-space { width: 1px; }
 .dbv-rows { position: absolute; top: 0; left: 0; min-width: 100%; }
 .dbv-tr { position: absolute; left: 0; right: 0; display: grid; align-items: center; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);

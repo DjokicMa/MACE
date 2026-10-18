@@ -13,8 +13,6 @@ property name), and the text search is a LIKE with its wildcards escaped.
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
 import os
 import sqlite3
@@ -22,8 +20,10 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
+
+from mace.utils import property_keys
 
 PAGE_MAX = 200
 # sort keys: the column, its NULL stand-in (keyset needs no NULLs), and whether it is computed
@@ -255,6 +255,25 @@ class Filters:
     def key(self) -> Tuple:
         return (self.q, self.dims, self.calc_type, self.calc_status, self.sg_min, self.sg_max, self.prop)
 
+    def describe(self) -> List[str]:
+        """The filters in words, for an export's metadata (empty: none)."""
+        out = []
+        if self.q:
+            out.append(f"search: {self.q}")
+        if self.dims:
+            out.append("dimensionality: " + ", ".join(self.dims))
+        if self.calc_type:
+            out.append(f"calc_type: {self.calc_type}")
+        if self.calc_status:
+            out.append(f"calc_status: {self.calc_status}")
+        if self.sg_min is not None:
+            out.append(f"space_group >= {self.sg_min}")
+        if self.sg_max is not None:
+            out.append(f"space_group <= {self.sg_max}")
+        if self.prop:
+            out.append(f"property: {self.prop}")
+        return out
+
     def where(self) -> Tuple[str, List[Any]]:
         parts, args = [], []
         if self.q:
@@ -277,8 +296,11 @@ class Filters:
             parts.append("m.space_group <= ?")
             args.append(self.sg_max)
         if self.prop:
-            parts.append("EXISTS (SELECT 1 FROM properties p WHERE p.material_id = m.material_id AND p.property_name = ?)")
-            args.append(self.prop)
+            # a name renamed in 1.1.6 finds the rows of its old names too
+            names = property_keys.query_names(self.prop, warn=False)
+            parts.append("EXISTS (SELECT 1 FROM properties p WHERE p.material_id = m.material_id "
+                         f"AND p.property_name IN ({','.join('?' * len(names))}))")
+            args += names
         return (" AND ".join(parts) if parts else "1"), args
 
 
@@ -418,7 +440,11 @@ def property_names(path: Path) -> List[str]:
     def q(conn):
         if "properties" not in _tables(conn):
             return []
-        return [r[0] for r in conn.execute("SELECT DISTINCT property_name FROM properties ORDER BY property_name")]
+        names = {r[0] for r in conn.execute("SELECT DISTINCT property_name FROM properties")}
+        if "property_blobs" in _tables(conn):
+            names |= {r[0] for r in conn.execute("SELECT DISTINCT property_name FROM property_blobs")}
+        # an old database's renamed names under their current ones
+        return sorted({property_keys.ALIASES.get(n, n) for n in names})
     return _cached(("props", _stamp(path)), lambda: read(path, q))
 
 
@@ -468,12 +494,22 @@ def _material(conn, material_id: str) -> Dict[str, Any]:
         except json.JSONDecodeError:
             c["settings"] = None
     props = []
-    if "properties" in _tables(conn):
+    tables = _tables(conn)
+    if "properties" in tables:
+        # the large JSON values (1.1.6: the property_blobs table) with the
+        # rest, as one list; the page shows them cut, with Copy JSON
+        blobs = ("""
+               UNION ALL
+               SELECT property_category, property_name, NULL, property_value_text, property_unit, calc_id
+               FROM property_blobs WHERE material_id = ?""" if "property_blobs" in tables else "")
         props = [dict(r) for r in conn.execute(
-            """SELECT property_category, property_name, property_value,
+            f"""SELECT property_category, property_name, property_value,
                       property_value_text, property_unit, calc_id
-               FROM properties WHERE material_id = ?
-               ORDER BY property_category, property_name""", (material_id,))]
+               FROM properties WHERE material_id = ?{blobs}
+               ORDER BY property_category, property_name""",
+            (material_id, material_id) if blobs else (material_id,))]
+        # names renamed in 1.1.6 shown under their current names
+        props = property_keys.normalize_rows(props, scope=('calc_id',))
     out = dict(m)
     _add_reduced(out)
     try:
@@ -483,20 +519,25 @@ def _material(conn, material_id: str) -> Dict[str, Any]:
     return {"material": out, "calculations": calcs, "properties": props}
 
 
-# ---------------------------------------------------------------- export (plan B6, spike S8)
-def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "asc",
-           filters: Optional[Filters] = None) -> Iterator[bytes]:
-    """The filtered, sorted materials as ``mace database --action export`` writes
-    them: each row is the materials row (metadata_json read into "metadata") plus
-    one column per property (its value), CSV columns sorted by name. Streamed in
-    blocks; nothing is written on the server.
+# ---------------------------------------------------------------- export (plan B6; CLI/GUI parity 1.1.6)
+EXPORT_TYPES = {"csv": "text/csv; charset=utf-8", "json": "application/json",
+                "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "latex": "application/x-latex; charset=utf-8", "html": "text/html; charset=utf-8"}
 
-    Spike S8: ExportFormatter itself would need every row in memory and an output
-    file, and export_materials() needs a MaterialDatabase, which opens the file
-    read-write; so this writes the same columns with the csv / json modules, and a
-    test compares every cell with the CLI's (the values come from db_export_values)."""
-    if fmt not in ("csv", "json"):
-        raise ValueError("format is csv or json")
+
+def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "asc",
+           filters: Optional[Filters] = None) -> bytes:
+    """The filtered, sorted materials as ``mace database --action export``
+    writes them, in any of its formats (csv, json, excel, latex, html): the
+    rows are read here (read-only: export_materials() needs a MaterialDatabase,
+    which opens the file read-write), each the materials row with
+    "metadata" read from metadata_json and the property values
+    (db_export_values.add_property_values, as the CLI), and the CLI's own
+    ExportFormatter writes them. Nothing is written on the server."""
+    from mace.utils.db_export_formats import ExportFormatter
+    from mace.utils.db_export_values import add_property_values
+    if fmt not in EXPORT_TYPES:
+        raise ValueError("format is " + ", ".join(EXPORT_TYPES))
     if sort not in SORTS:
         raise ValueError("unknown sort")
     filters = filters or Filters()
@@ -506,16 +547,6 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
     conn = connect(path)
     try:
         _require(conn)
-        has_props = "properties" in _tables(conn)
-        mat_cols = [r[1] for r in conn.execute("PRAGMA table_info(materials)")]
-        prop_names = [r[0] for r in conn.execute(
-            f"SELECT DISTINCT p.property_name FROM properties p JOIN materials m ON m.material_id = p.material_id "
-            f"WHERE {where}", args)] if has_props else []
-        has_meta = conn.execute(f"SELECT 1 FROM materials m WHERE ({where}) AND m.metadata_json IS NOT NULL "
-                                f"AND m.metadata_json != '' LIMIT 1", args).fetchone() is not None
-        from mace.utils.db_export_values import STRUCTURE_FIELDS, property_values
-        fields = sorted((set(mat_cols) | set(prop_names) | ({"metadata"} if has_meta else set()))
-                        - set(STRUCTURE_FIELDS))
         if computed:
             sql = (f"SELECT m.* FROM materials m LEFT JOIN (SELECT material_id, COUNT(*) AS n_calcs, "
                    f"SUM(status = 'completed') AS n_completed FROM calculations GROUP BY material_id) c "
@@ -523,56 +554,21 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
         else:
             expr = col if null is None else f"ifnull({col}, {null})"
             sql = f"SELECT m.* FROM materials m WHERE {where} ORDER BY {expr} {order}, m.material_id {order}"
-        cur = conn.execute(sql, args)
-        pconn = connect(path) if has_props else None
-
-        def rows():
-            while True:
-                batch = cur.fetchmany(500)
-                if not batch:
-                    return
-                recs = [dict(r) for r in batch]
-                # the CLI's values (db_export_values): text values too
-                props = property_values(pconn, [r["material_id"] for r in recs]) if pconn is not None else {}
-                for r in recs:
-                    if r.get("metadata_json"):
-                        try:
-                            r["metadata"] = json.loads(r["metadata_json"])
-                        except json.JSONDecodeError:
-                            pass
-                    r.update(props.get(r["material_id"], {}))
-                    for k in STRUCTURE_FIELDS:
-                        r.pop(k, None)
-                    yield r
-
-        try:
-            if fmt == "csv":
-                buf = io.StringIO()
-                w = csv.DictWriter(buf, fieldnames=fields)
-                w.writeheader()
-                for k, r in enumerate(rows()):
-                    w.writerow(r)
-                    if k % 500 == 499:
-                        yield buf.getvalue().encode()
-                        buf.seek(0)
-                        buf.truncate()
-                yield buf.getvalue().encode()
-            else:
-                from datetime import datetime
-                from mace import __version__
-                head = {"export_date": datetime.now().isoformat(), "mace_version": __version__,
-                        "export_type": "filtered_materials" if filters.key() != Filters().key() else "all_materials",
-                        "source": "mace gui (read-only)"}
-                yield b'{\n  "metadata": ' + json.dumps(head).encode() + b',\n  "data": ['
-                first = True
-                n = 0
-                for r in rows():
-                    yield (b"" if first else b",") + b"\n    " + json.dumps(r, default=str).encode()
-                    first = False
-                    n += 1
-                yield b"\n  ],\n  \"record_count\": " + str(n).encode() + b"\n}\n"
-        finally:
-            if pconn is not None:
-                pconn.close()
+        data = [dict(r) for r in conn.execute(sql, args)]
+        for r in data:
+            if r.get("metadata_json"):
+                try:
+                    r["metadata"] = json.loads(r["metadata_json"])
+                except json.JSONDecodeError:
+                    pass
+        if data and "properties" in _tables(conn):
+            add_property_values(conn, data)
     finally:
         conn.close()
+    described = filters.describe()
+    meta = ({"export_type": "filtered_materials", "filters": described} if described
+            else {"export_type": "all_materials"})
+    out = ExportFormatter().render(data, fmt, metadata=meta)
+    if out is None:
+        raise ValueError("no materials to export" + (" (the filters match none)" if described else ""))
+    return out

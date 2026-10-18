@@ -1,11 +1,14 @@
 """The Submit, Jobs and Batch Setup routes (PLAN_submit section 2).
 
 GET  submit/capabilities          SLURM tools here, the site settings, the GUI's own job
+GET  submit/suggest?path=..&type=  the size-aware job size of each deck (mace site suggest)
 GET  jobs?scope=folder|all&refresh=1
 GET  jobs/recent                  own jobs that ended in the last two days (sacct)
 POST submit/preview               {root_gen, targets, where, options, mixed_choice} -> task
 POST submit/run                   {root_gen, preview_id, confirm_*} -> task
 POST jobs/cancel                  {root_gen, ids}
+POST jobs/recover/preview         {root_gen, ids | all} -> task (mace recover --dry-run, recover.py)
+POST jobs/recover/run             {root_gen, preview_id, include_stale} -> task (mace recover --yes)
 POST batch/scan | batch/plan | batch/write, GET batch/deck | batch/diff (batch.py)
 
 Every writing POST carries the page's root_gen (body or X-Mace-Root-Gen);
@@ -66,6 +69,16 @@ def get(handler, route: str, query):
         caps["site"] = site_describe()
         caps["poll_seconds"] = st.jobs.interval()
         return handler._json(caps)
+    if route == "submit/suggest":
+        # `mace site suggest --json` through the same function (site.suggest_decks)
+        paths = query.get("path") or []
+        if not paths or len(paths) > 500:
+            raise sub.SubmitError("path names 1 to 500 decks")
+        decks = [st.resolve(str(x)) for x in paths]
+        for d in decks:
+            if not d.is_file() or d.suffix not in sub.DECK_SUFFIXES:
+                raise sub.SubmitError(f"{st.rel(d)} is not a deck (.d12 or .d3)")
+        return handler._json({"suggestions": sub.suggestions(st.root, decks, calc_type=q("type"))})
     if route == "jobs":
         scope = q("scope", "folder")
         if scope not in ("folder", "all"):
@@ -74,7 +87,7 @@ def get(handler, route: str, query):
         return handler._json(snap)
     if route == "jobs/recent":
         from . import jobs
-        return handler._json({"jobs": jobs.recent_finished(st.root)})
+        return handler._json({"jobs": jobs.recent_with_tracking(st.root)})
     if route in ("batch/deck", "batch/diff"):
         from . import batch
         return batch.get_route(handler, route, query)
@@ -204,9 +217,12 @@ def post(handler, route: str, body: Dict[str, Any]):
         if res["canceled"]:
             st.jobs.own.get(fresh="force")
         return handler._json(res)
+    if route.startswith("jobs/recover/"):
+        from . import recover
+        return recover.post(handler, route, body, _gen, _network(st))
     if route.startswith("batch/"):
         from . import batch
-        if route != "batch/scan":
+        if route not in ("batch/scan", "batch/stutsc"):          # read-only: no folder generation needed
             _gen(handler, body)
         return batch.post_route(handler, route, body)
     return None
@@ -224,8 +240,12 @@ def drop_check_folder(kept) -> bool:
     return not p.exists()
 
 
-GET_ROUTES = {"submit/capabilities", "jobs", "jobs/recent", "batch/deck", "batch/diff"}
-POST_ROUTES = {"submit/preview", "submit/run", "submit/site-check", "jobs/cancel", "batch/scan", "batch/plan", "batch/write"}
+GET_ROUTES = {"submit/capabilities", "submit/suggest", "jobs", "jobs/recent", "batch/deck", "batch/diff"}
+POST_ROUTES = {"submit/preview", "submit/run", "submit/site-check", "jobs/cancel", "jobs/recover/preview",
+               "jobs/recover/run", "batch/scan", "batch/plan", "batch/write", "batch/stutsc"}
+# Settings › Advanced: cluster defaults (site_routes.py: mace site, set/unset, --init)
+GET_ROUTES |= {"site/settings"}
+POST_ROUTES |= {"site/edit"}
 
 
 def handle(handler, method: str, route: str, payload):
@@ -233,6 +253,9 @@ def handle(handler, method: str, route: str, payload):
     SubmitConflict 409 (with what is missing)."""
     try:
         fn = get if method == "GET" else post
+        if route.startswith("site/"):
+            from . import site_routes
+            fn = site_routes.get if method == "GET" else site_routes.post
         return fn(handler, route, payload)
     except sub.SubmitConflict as exc:
         return handler._json({"error": str(exc), "conflict": True, **exc.details}, 409)

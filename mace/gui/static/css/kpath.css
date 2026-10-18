@@ -1,0 +1,79 @@
+/* The k-path editor (js/kpath_editor.js): a strip of chips that reads like the plot's k axis,
+ * Γ → M → K → Γ | L → M, in the band plot's options and in Calculation Setup. */
+.kp { display: grid; gap: var(--s-2); margin: 0 0 var(--s-3); font-size: var(--fs-sm); }
+.kp-head { display: flex; align-items: baseline; gap: var(--s-2); }
+.kp-title { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.kp-state { font-size: var(--fs-xs); color: var(--text-3); }
+.kp-state.edited { color: var(--accent); }
+.kp-help { margin: 0; color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+.kp-strip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) 0; padding: var(--s-2); min-height: 40px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.kp-pt { display: inline-flex; align-items: center; gap: 1px; height: 24px; padding: 0 2px 0 var(--s-2); border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border-strong); color: var(--text); font-weight: 600; white-space: nowrap; }
+.kp-pt.custom { border-style: dashed; }
+.kp-pt sub, .kp-gap sub { font-size: 70%; }
+.kp-seg { display: inline-flex; align-items: center; height: 24px; margin: 0 1px; padding: 0 1px; border-radius: var(--r-sm);
+  border: 1px solid transparent; cursor: grab; outline: none; }
+.kp-seg:hover { background: var(--surface-3); }
+.kp-seg:focus-visible, .kp-seg.sel, .kp-gap:focus-visible, .kp-gap.sel { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.kp-seg.kp-off { opacity: .45; }
+.kp-seg.kp-off .kp-rev { text-decoration: line-through; }
+.kp-seg.drop-before, .kp-gap.drop-before { box-shadow: -3px 0 0 var(--accent); }
+.kp-seg.dragging, .kp-gap.dragging { opacity: .35; }
+.kp-btn { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 2px; border: 0; border-radius: var(--r-xs);
+  background: transparent; color: var(--text-2); cursor: pointer; font: inherit; line-height: 1; }
+.kp-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.kp-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.kp-btn svg { width: 13px; height: 13px; }
+.kp-rev { font-size: 15px; color: var(--text); min-width: 22px; }
+.kp-pt .kp-btn { min-width: 16px; height: 16px; border-radius: 8px; }
+.kp-pt .kp-btn svg { width: 11px; height: 11px; }
+.kp-gap { display: inline-flex; align-items: center; height: 26px; margin: 0 var(--s-2); padding: 0 1px 0 var(--s-2); border-radius: var(--r-sm);
+  border: 1px dashed var(--border-strong); background: var(--surface); color: var(--text-2); cursor: grab; outline: none; white-space: nowrap; }
+.kp-gap b { font-weight: 700; color: var(--warning); margin-right: 2px; }
+.kp-msg { margin: 0; display: flex; gap: var(--s-1); align-items: flex-start; font-size: var(--fs-xs); line-height: 1.4; }
+.kp-msg svg { flex: none; width: 13px; height: 13px; margin-top: 1px; }
+.kp-msg.err { color: var(--danger); }
+.kp-msg.warn { color: var(--warning); }
+.kp-acts, .kp-presets, .kp-add { display: flex; flex-wrap: wrap; gap: var(--s-1); align-items: center; }
+.kp-acts button, .kp-presets button, .kp-add button { height: 24px; padding: 0 var(--s-2); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.kp-acts button:hover:not(:disabled), .kp-presets button:hover:not(:disabled), .kp-add button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.kp-acts button:disabled, .kp-presets button:disabled, .kp-add button:disabled { opacity: .5; cursor: default; }
+.kp-acts button.primary { border-color: var(--accent); color: var(--accent); }
+.kp-presets select, .kp-presets input, .kp-add input { height: 24px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text); font: inherit; font-size: var(--fs-xs); padding: 0 var(--s-1); min-width: 0; }
+.kp-add input.lab { width: 64px; }
+.kp-add input.k { width: 56px; font-family: var(--font-mono); }
+.kp-add input[aria-invalid=true] { border-color: var(--danger); }
+.kp-sub { font-size: var(--fs-xs); color: var(--text-2); margin: 0; }
+.kp-pts { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto 1fr; gap: 0 var(--s-3); font-size: var(--fs-xs); }
+.kp-pts li { display: contents; }
+.kp-pts span:last-child { font-family: var(--font-mono); color: var(--text-2); }
+/* a segment shows its arrow; its eye and × float in a small bar under it (pointer or selection),
+   so the strip never reflows under the pointer; a hidden segment keeps a crossed-out eye inline */
+.kp-seg { position: relative; }
+.kp-tools { position: absolute; left: 50%; top: calc(100% - 2px); transform: translateX(-50%); display: none; gap: 1px; padding: 1px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); box-shadow: var(--e1);
+  z-index: var(--z-overlay); }
+.kp-seg:hover .kp-tools, .kp-seg:focus-within .kp-tools, .kp-seg.sel .kp-tools, .kp-seg:focus .kp-tools { display: inline-flex; }
+.kp-offmark { display: inline-grid; place-items: center; color: var(--text-3); }
+.kp-offmark svg { width: 12px; height: 12px; }
+/* a point's × stays in the tab order (the keyboard's way to remove a point), faint until pointed at */
+.kp-pt .kp-xpt { opacity: .4; }
+.kp-pt:hover .kp-xpt, .kp-pt .kp-xpt:focus-visible { opacity: 1; }
+/* linked highlights (the plot and the Brillouin zone view mark the same segments) */
+.kp-seg.kp-hl { background: var(--accent-soft); }
+.kp-seg.kp-prev { background: var(--accent-soft); border-color: var(--accent); }
+.kp-seg.kp-prev .kp-rev { color: var(--accent); }
+.kp-seg.kp-dim { opacity: .3; }
+/* the Brillouin zone view (js/bz_view.js) */
+.kp-bz { display: grid; gap: var(--s-1); }
+.kp-bz-h { display: grid; gap: 0; }
+.kp-bz-note { font-size: var(--fs-xs); line-height: 1.35; }
+.kp-bz-gl { position: relative; width: 100%; height: 260px; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--surface-2); }
+.kp-bz-pts { display: flex; flex-wrap: wrap; gap: var(--s-1); align-items: center; }
+.kp-bz-pts button { height: 22px; min-width: 26px; padding: 0 var(--s-1); border: 1px solid var(--border-strong); border-radius: 11px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.kp-bz-pts button:hover { border-color: var(--accent); color: var(--accent); }
+.kp-bz-pts sub { font-size: 70%; }

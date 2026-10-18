@@ -53,10 +53,16 @@ def _material(stem: str, tag: str) -> str:
     return stem[: -len(tag)] if stem.endswith(tag) else stem
 
 
-def _potc(directory: Path, material: str) -> Tuple[str, str, bool]:
+def _potc(directory: Path, material: str, reference: str = "auto") -> Tuple[str, str, bool]:
+    """The run's POTC files and whether the energies go on the vacuum scale: ``reference``
+    auto (when both files are there), fermi (never) or vacuum (both files needed: mace
+    plotting --energy-reference)."""
     dat = directory / f"{material}_POTC.POTC.DAT"
     out = directory / f"{material}_POTC.out"
-    return str(dat), str(out), dat.is_file() and out.is_file()
+    have = dat.is_file() and out.is_file()
+    if reference == "vacuum" and not have:
+        raise ValueError(f"--energy-reference vacuum needs the run's POTC files beside the data ({dat.name} and {out.name})")
+    return str(dat), str(out), have and reference != "fermi"
 
 
 def _plotly_label(label: str) -> str:
@@ -77,22 +83,38 @@ def _with_breaks(x: np.ndarray, ys: np.ndarray, after: List[int]):
     return clean(xs), [clean(col) for col in yy.T] if yy.ndim == 2 else clean(yy)
 
 
-def _window(bands: np.ndarray, fermi: float) -> Tuple[np.ndarray, bool]:
-    keep = [j for j in range(bands.shape[1])
-            if bands[:, j].max() > fermi - WINDOW_EV and bands[:, j].min() < fermi + WINDOW_EV]
-    truncated = len(keep) > MAX_BANDS
-    if truncated:   # the bands nearest the Fermi level
-        keep = sorted(keep, key=lambda j: abs(bands[:, j].mean() - fermi))[:MAX_BANDS]
-        keep.sort()
+def _near_count(bands: np.ndarray, fermi: float) -> int:
+    """The bands that come within WINDOW_EV of E_F (what _window keeps for the GUI before its cap)."""
+    mx, mn = bands.max(axis=0), bands.min(axis=0)
+    return int(np.count_nonzero((mx > fermi - WINDOW_EV) & (mn < fermi + WINDOW_EV)))
+
+
+def _window(bands: np.ndarray, fermi: float, window: Optional[Tuple[float, float]] = None) -> Tuple[np.ndarray, bool]:
+    """The bands to send. The GUI (``window`` None): those that come within WINDOW_EV of E_F, at most
+    MAX_BANDS (a browser's cost), the ones that come nearest E_F first. mace plotting (``window``: the
+    requested energies, eV around ``fermi`` and the Fermi shift): every band that enters it or the GUI's
+    +/-WINDOW_EV, no cap (a file has no browser cost; the 400 cap once dropped bands inside a wide
+    window, 1.1.6 review F4-4)."""
+    lo, hi = fermi - WINDOW_EV, fermi + WINDOW_EV
+    if window is not None:      # the requested window, and the GUI's +/-25 eV (an HTML figure zooms out)
+        lo, hi = min(lo, fermi + window[0]), max(hi, fermi + window[1])
+    mx, mn = bands.max(axis=0), bands.min(axis=0)
+    keep = [j for j in range(bands.shape[1]) if mx[j] > lo and mn[j] < hi]
+    truncated = window is None and len(keep) > MAX_BANDS
+    if truncated:   # the bands that come nearest the Fermi level (0 for one that crosses it)
+        near = np.where((mn <= fermi) & (mx >= fermi), 0.0, np.minimum(abs(mn - fermi), abs(mx - fermi)))
+        keep = sorted(sorted(keep, key=lambda j: near[j])[:MAX_BANDS])
     return bands[:, keep], truncated
 
 
-def band_data(path: Path) -> Dict[str, Any]:
+def band_data(path: Path, reference: str = "auto", window: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+    """The band plot's data. ``window`` (eV around E_F, Fermi shift included): mace plotting's
+    requested energies, every band in it (see _window); None: the GUI's."""
     path = Path(path)
     ipb, _ = _plotters()
     stem = _stem(path.name, BAND_SUFFIXES)
     material = _material(stem, "_band")
-    dat, out, has_potc = _potc(path.parent, material)
+    dat, out, has_potc = _potc(path.parent, material, reference)
     E, B, Eb, Bb, ticks, maxV, _kidx, _np = ipb.read_band_data(
         str(path), dat if has_potc else None, out if has_potc else None)
     n = len(E)
@@ -114,7 +136,10 @@ def band_data(path: Path) -> Dict[str, Any]:
     state, spin_diff = ipb.spin_state(B, Bb)
     spin = state == "polarized"
     fermi = float(maxV)
-    up, trunc_up = _window(B, fermi)
+    up, trunc_up = _window(B, fermi, window)
+    # the GUI's bands that never come within WINDOW_EV of E_F (not loaded; a
+    # view of a wider window notes them, mace plotting draws them)
+    beyond = 0 if window is not None else int(B.shape[1] - _near_count(B, fermi))
     x, up_cols = _with_breaks(E[:n], up[:n], breaks)
     result = {
         "kind": "band", "name": path.name, "x": x, "up": up_cols,
@@ -124,9 +149,10 @@ def band_data(path: Path) -> Dict[str, Any]:
         "reference": "vacuum" if has_potc else "fermi",
         "ticks": ticks, "labels": labels, "truncated": trunc_up,
         "n_kpoints": n, "n_bands": int(B.shape[1]),
+        "window_ev": WINDOW_EV, "n_beyond": beyond,
     }
     if spin:
-        down, trunc_down = _window(Bb, fermi)
+        down, trunc_down = _window(Bb, fermi, window)
         _, result["down"] = _with_breaks(Eb[:n], down[:n], breaks)
         result["truncated"] = trunc_up or trunc_down
     return result
@@ -137,22 +163,31 @@ def _doss_header(path: Path) -> Tuple[Optional[int], int]:
     return ipd.read_doss_header(str(path))
 
 
-def dos_data(path: Path) -> Dict[str, Any]:
+def dos_data(path: Path, reference: str = "auto") -> Dict[str, Any]:
     path = Path(path)
     _, ipd = _plotters()
     stem = _stem(path.name, DOS_SUFFIXES)
     material = _material(stem, "_doss")
-    dat, out, has_potc = _potc(path.parent, material)
+    dat, out, has_potc = _potc(path.parent, material, reference)
     nproj, nspin = _doss_header(path)
     labels: Optional[List[str]] = None
-    for cand in (path.parent / f"{stem}.d3", path.parent / f"{material}_doss.d3"):
+    # the run's DOSS deck: the same candidates as the Related view's projections (related.py), so a
+    # DOSS.DAT under a generic name (fort.25-style folders) still names its projections ("Mg s", "O p")
+    from . import related
+    cands = [path.parent / f"{stem}.d3", path.parent / f"{material}_doss.d3"]
+    for st in related.stems(path):
+        cands += [path.parent / f"{st}.d3", path.parent / f"{related.material_of(st)}_doss.d3"]
+    for cand in dict.fromkeys(cands):
         if cand.is_file():
             labels = [ipd.doss_label(r).strip() for r in ipd.read_doss_projection_labels(str(cand))]
             # a projection on every orbital of an element reads "C" in the
             # .d3: in a legend beside "C (s)", "C (p)" that looks like a typo
             labels = [f"{lab} (all)" if re.fullmatch(r"[A-Z][a-z]?", lab) else lab
-                      for lab in labels]
-            break
+                      for lab in labels] or None
+            # a deck of another kind (no DOSS block) or of another run (another count): the next one
+            if labels and (nproj is None or len(labels) == nproj):
+                break
+            labels = None
     if labels is None or (nproj is not None and len(labels) != nproj):
         if nproj is None:
             raise ValueError(f"{path.name}: no NPROJ in the header and no .d3 beside it")
@@ -167,11 +202,20 @@ def dos_data(path: Path) -> Dict[str, Any]:
     energy = cols[0][:half]
     up = [c[:half] for c in cols[1:]]
     down = [c[half:] for c in cols[1:]] if half < n_all else None
-    spin = down is not None and not all(np.array_equal(d, -u) for u, d in zip(up, down))
+    # one rule with mace plotting (presets.dos_spin_polarized, B2): spin-polarized unless spin down is spin
+    # up's mirror image (a closed-shell run, which CRYSTAL writes as two blocks too)
+    from mace.plotting.presets import dos_spin_polarized
+    spin = dos_spin_polarized(up, down)
+    # an unrestricted run with alpha = beta (MACE's SPIN default makes most runs unrestricted): each
+    # block holds one spin, so the one-sided curve is their sum, alpha + |beta| (the total DOS); a
+    # mirrored view draws half of it on each side (bandfig.js upOf/downOf)
+    summed = down is not None and not spin
+    if summed:
+        up = [u - d for u, d in zip(up, down)]
     return {
         "kind": "dos", "name": path.name, "energy": energy.tolist(),
         "fermi": float(maxV), "reference": "vacuum" if has_potc else "fermi",
-        "spin_polarized": spin,
+        "spin_polarized": spin, "spin_summed": summed,
         # the computed DOS window: no data beyond it (the plot shades that region)
         "window": [float(energy[0]), float(energy[-1])] if len(energy) else None,
         "edge_pileup": int(pileup),
@@ -179,6 +223,50 @@ def dos_data(path: Path) -> Dict[str, Any]:
                          "down": (d.tolist() if spin else None)}
                         for lab, u, d in zip(labels, up, down or up)],
     }
+
+
+def _d3_tools():
+    d3 = Path(__file__).resolve().parents[2] / "Crystal_d3"
+    if str(d3) not in sys.path:
+        sys.path.insert(0, str(d3))
+    import d3_band_path
+    import d3_bz
+    return d3_band_path, d3_bz
+
+
+def band_path_errors(band_path: Any):
+    """(errors, warnings) of an edited k-path (d3_band_path.validate)."""
+    kp, _ = _d3_tools()
+    return kp.validate(band_path)
+
+
+def bz_data(path: Path, inside=None) -> Dict[str, Any]:
+    """The Brillouin zone view's data (Crystal_d3/d3_bz.py): the zone of the run's
+    cell, its high-symmetry points and the computed path. ``path`` is a BAND.DAT
+    (the cell from the run's .out beside it, the path from its .d3) or a CRYSTAL
+    output (the cell; the path comes from the deck the editor has). ``inside``:
+    whether a file beside it may be read (the GUI: inside the served folder)."""
+    path = Path(path)
+    ok = inside or (lambda f: True)
+    kp, bz = _d3_tools()
+    out = bz.output_for(str(path))
+    if out is not None and out != path and not ok(out):
+        out = None
+    if out is None:
+        raise FileNotFoundError(f"no CRYSTAL output beside {path.name} to read the cell from")
+    segments: List[Dict[str, Any]] = []
+    if path.suffix != ".out":
+        stem = _stem(path.name, BAND_SUFFIXES)
+        material = _material(stem, "_band")
+        for cand in (path.parent / f"{stem}.d3", path.parent / f"{material}_band.d3", path.parent / f"{material}.d3"):
+            if cand.is_file() and ok(cand):
+                parsed = kp.parse_band_deck(cand.read_text(errors="replace"))
+                if parsed:
+                    segments = parsed["segments"]
+                break
+    data = bz.bz_view(str(out), segments)
+    data["output"] = out.name
+    return data
 
 
 def partner(path: Path, kind: str) -> Optional[Path]:
@@ -223,37 +311,26 @@ def transport_data(path: Path) -> Dict[str, Any]:
     label, unit, factor = TRANSPORT_QUANTITIES[q]
     if q == "TDF":
         return _tdf_data(path, m.group("stem"), label, unit)
-    file_unit, rows = CrystalPropertyExtractor._parse_transport_dat(path)
-    if not rows:
+    # rows with the tensor diagonal: an open-shell file's alpha and beta blocks
+    # summed (CRYSTAL23 manual p. 315), as the extractor and the ZT tab read it
+    file_unit, trows, axes = CrystalPropertyExtractor._parse_transport_dat_tensor(path, with_axes=True)
+    if not trows:
         raise ValueError(f"{path.name}: no data rows")
-    # the tensor components, from the same data lines (column layout as the extractor reads it)
-    comps: Dict[float, Dict[str, List[float]]] = {}
     header = None
     for line in path.read_text(errors="ignore").splitlines():
         s = line.strip()
         if s.startswith("#") and "Mu(eV)" in s:
             header = s.lstrip("#").split()
-            continue
-        if not s or s.startswith("#"):
-            continue
-        parts = s.split()
-        try:
-            vals = [float(x) for x in parts]
-        except ValueError:
-            continue
-        if len(vals) < 4 or not all(np.isfinite(vals)):
-            continue
-        t = vals[3:]
-        diag = (t[0], t[4], t[8]) if len(t) == 9 else (t[0], t[3], t[5]) if len(t) == 6 else (t[0], t[1], t[2]) if len(t) >= 3 else (t[0],) * 3
-        c = comps.setdefault(vals[1], {"xx": [], "yy": [], "zz": []})
-        for k, v in zip(("xx", "yy", "zz"), diag):
-            c[k].append(v * factor)
+            break
     temps: Dict[float, Dict[str, List[float]]] = {}
-    for T, mu, n, avg in rows:
-        d = temps.setdefault(T, {"mu": [], "avg": [], "carriers": []})
+    for T, mu, n, diag in trows:
+        d = temps.setdefault(T, {"mu": [], "avg": [], "carriers": [], "xx": [], "yy": [], "zz": []})
         d["mu"].append(mu)
-        d["avg"].append(avg * factor)
+        d["avg"].append(sum(diag) / len(diag) * factor)
         d["carriers"].append(n)
+        for k, v in zip(axes, diag):  # a slab's file: xx and yy only
+            d[k].append(v * factor)
+    comps = temps
     blocks = []
     for T in sorted(temps):
         b = temps[T]
@@ -272,6 +349,86 @@ def _transport_siblings(path: Path, stem: str) -> Dict[str, str]:
                 siblings[qq] = cand.name
                 break
     return siblings
+
+
+def _transport_out(path: Path, stem: str, inside=None) -> Optional[Path]:
+    """The BOLTZTRA .out of a run's .dat files: ``<stem>.out``, else the one transport .out beside them."""
+    from mace.utils.calc_detection import is_transport_output
+    ok = inside or (lambda f: True)
+    exact = path.with_name(f"{stem}.out")
+    if exact.is_file():
+        return exact if ok(exact) else None
+    cands = []
+    for c in sorted(path.parent.glob("*.out")):
+        if not ok(c):
+            continue
+        try:
+            with c.open(errors="ignore") as fh:
+                if is_transport_output(fh.read(2_000_000)):
+                    cands.append(c)
+        except OSError:
+            continue
+    return cands[0] if len(cands) == 1 else None
+
+
+def transport_zt(path: Path, kappa_l=None, tau_fs=None, inside=None) -> Dict[str, Any]:
+    """The figure of merit of a BOLTZTRA run against μ, per temperature: the
+    electronic ZTₑ = S²σT/κₑ and, with a lattice κ_L (W/(m·K): a value, or a
+    T,kappa_L CSV; see mace.utils.transport_zt), the total S²σT/(κₑ + κ_L) at
+    the run's relaxation time or ``tau_fs``. The same computation as
+    ``mace analyze --extract-properties --kappa-lattice`` (transport_zt.zt_points
+    on the extractor's own rows), so the peak is the CLI's
+    ``transport_zt_total_max_avg`` to the last digit. A kappa_L or tau MACE refuses
+    raises KappaLatticeError; a total it cannot give (a temperature outside the
+    κ_L table, no RELAXTIM in the .out) is None with the reason in ``refused``.
+    ``inside(path) -> bool``: the files beside ``path`` it may read (the GUI's folder)."""
+    from mace.utils import transport_zt as Z
+    from mace.utils.property_extractor import CrystalPropertyExtractor
+    m = _TRANSPORT_RE.match(path.name)
+    if not m:
+        raise ValueError(f"{path.name} is not a BOLTZTRA .dat file")
+    stem = m.group("stem")
+    sib = {q: n for q, n in _transport_siblings(path, stem).items() if inside is None or inside(path.with_name(n))}
+    need = [q for q in ("SEEBECK", "SIGMA", "KAPPA") if q not in sib]
+    if need:
+        raise ValueError(f"ZT needs the run's SEEBECK, SIGMA and KAPPA .dat files; {', '.join(need)} is missing")
+    kl = kappa_l if isinstance(kappa_l, Z.KappaLattice) or kappa_l is None else Z.parse_kappa_lattice(kappa_l)
+    tau_fs = Z.check_tau_fs(tau_fs)
+    out = _transport_out(path, stem, inside)
+    out_text = out.read_text(errors="ignore") if out else None
+    # the tensors averaged over the axes the run is periodic along (a slab: in
+    # plane), as the database's *_avg values
+    axes = CrystalPropertyExtractor.periodic_axes(out_text)
+    rows = {q: CrystalPropertyExtractor._parse_transport_dat(path.with_name(sib[q]), axes)[1]
+            for q in ("SEEBECK", "SIGMA", "KAPPA")}
+    if not rows["SEEBECK"]:
+        raise ValueError(f"{sib['SEEBECK']}: no data rows")
+    tau_run = Z.read_relaxation_time_fs(out_text) if out else None
+    refused = None
+    tau = scale = tau_source = None
+    if kl is not None:
+        try:
+            tau, scale, tau_source = Z.resolve_tau(tau_run, tau_fs, out.name if out else f"no {stem}.out beside the data:")
+        except Z.KappaLatticeError as e:
+            refused = str(e) if out else (f"no {stem}.out beside the data, so no relaxation time: SIGMA.dat and KAPPA.dat "
+                                          f"are at the run's RELAXTIM and the total ZT depends on it (κ_L carries no τ)")
+    r = Z.zt_points(rows["SEEBECK"], rows["SIGMA"], rows["KAPPA"], kl if refused is None else None, scale or 1.0)
+    if kl is not None and refused is None:
+        missing = Z.uncovered(kl, r["temperatures"])
+        if missing:
+            refused = (f"the κ_L table {Path(kl.path).name} covers {kl.range_text()}, and the run has "
+                       f"{', '.join(f'{t:g} K' for t in missing)}: no run-wide peak (MACE does not extrapolate)")
+    blocks = []
+    for T in r["temperatures"]:
+        b = r["blocks"][T]
+        blocks.append({"T": T, "mu": b["mu"], "zt_e": b["zt_e"], "zt_total": b["zt_total"], "kappa_l": b["kappa_l"],
+                       "refused": b["refused"] or (refused if kl is not None and b["zt_total"] is None else None)})
+    return {"name": path.name, "stem": stem, "out": out.name if out else None,
+            "kappa_l_source": kl.source() if kl is not None else None,
+            "kappa_l_label": kl.label() if kl is not None else None,
+            "tau_fs": tau, "tau_run_fs": tau_run, "tau_source": tau_source, "refused": refused,
+            "blocks": blocks, "zt_e_max": r["zt_e_max"],
+            "zt_total_max": r["zt_total_max"] if kl is not None and refused is None else None}
 
 
 def _tdf_data(path: Path, stem: str, label: str, unit: str) -> Dict[str, Any]:

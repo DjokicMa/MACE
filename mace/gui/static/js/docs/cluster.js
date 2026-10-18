@@ -408,6 +408,10 @@ export function createJobView(host, H) {
       else prog += `<p class="small">${eta.low_s !== null && eta.low_s !== undefined ? "ETA: " : "ETA unknown: "}${esc(eta.basis || "")}</p>`;
       if (risk.note && !(risk.level && risk.level !== "ok")) prog += `<p class="small jbv-note">${esc(risk.note)}</p>`;
     } else if (j.progress_note) prog = `<h3>Progress</h3><p class="muted">${esc(j.progress_note)}</p>`;
+    // 1.1.6: queue wait (SLURM's start estimate), the rest of the array, the rest of the workflow
+    const totals = (j.totals || []).length
+      ? `<h3>Beyond this job</h3><ul class="jbv-totals small">${j.totals.map((t) => `<li data-total="${esc(t.id)}"><span>${esc(t.text)}</span>${t.basis ? `<div class="muted">${esc(t.basis)}</div>` : ""}</li>`).join("")}</ul>`
+      : "";
     const eff = (j.state === "RUNNING" && d._liveEff) || j.efficiency || {};
     const banner = risk.level && risk.level !== "ok" ? `<div class="jbv-risk ${risk.level === "tight" ? "warning" : "critical"}" role="alert">${icon("triangle-alert")}<div><b>${esc(risk.headline || (risk.level === "tight" ? "Walltime is tight" : "Likely to exceed the walltime"))}</b><div>${esc(risk.sentence || "")}</div></div></div>` : "";
     const files = (j.file_entries || []).map((f) => {
@@ -424,7 +428,7 @@ export function createJobView(host, H) {
       ${j.state_note ? `<p class="small">${esc(j.state_note)}</p>` : ""}
       ${j.reason && j.reason !== "None" ? `<p class="small">Reason: ${esc(j.reason)}${j.state === "PENDING" && j.start && j.start !== "N/A" ? ` · expected start ${esc(localTime(j.start))}` : ""}</p>` : ""}
       <div class="jbv-time"><span class="small">Elapsed ${fmtDur(j.elapsed_s)} of ${fmtDur(j.limit_s)}</span><span class="clv-bar ${risk.level === "likely to exceed" ? "critical" : risk.level === "tight" ? "warning" : ""}" role="meter" aria-label="Elapsed of the walltime" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span></div>
-      ${banner}${prog}
+      ${banner}${prog}${totals}
       <h3>Resources</h3><p class="small">${esc(j.ncpus || "?")} cores on ${esc(j.nnodes || "?")} node(s), partition ${esc(j.partition || "?")}, account ${esc(j.account || "?")}</p>
       <div class="jbv-eff small">${effHtml(eff)}</div>
       <p class="small">${j.state === "RUNNING" ? `<button type="button" class="tb-btn-text" data-act="live">${d._liveEff ? "Update Live Use" : "Show Live Use"}</button>` : ""}<span class="jbv-live small muted">${esc(d._liveNote || "")}</span></p>

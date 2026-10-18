@@ -25,6 +25,7 @@ classic panel's Save CIF button), with the same rules:
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -283,6 +284,36 @@ def keep_backup(target: Path) -> Dict[str, Any]:
             pass
     st = bak.stat()
     return {"path": bak, "created": created, "t": st.st_mtime}
+
+
+def soc_restart_matrix(json_text: str, parent: Path) -> Optional[Path]:
+    """The parent's ``.f9`` an opt2d12 settings file copies as ``<deck>.f20``
+    (a SOC restart: "soc": true with "soc_guess"), or None. The CLI checks the
+    restart itself (soc_restart_plan); this only names the file Write decks
+    now must find room for and must not let overwrite a different ``.f20``."""
+    try:
+        obj = json.loads(json_text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(obj, dict) or obj.get("soc") is not True or not obj.get("soc_guess"):
+        return None
+    if Path(parent).suffix.lower() != ".out":
+        return None
+    f9 = Path(parent).with_suffix(".f9")
+    return f9 if f9.is_file() else None
+
+
+def f20_refusal(target: Path, f9: Optional[Path]) -> Optional[str]:
+    """Why the restart copy ``target`` (``<deck>.f20``) may not replace the
+    file already there: one that is not the parent's ``.f9``, in the CLI's
+    own words (CRYSTALOptToD12.soc_restart_plan). None when it may."""
+    import filecmp
+    target = Path(target)
+    if not target.exists() or target.suffix.lower() != ".f20":
+        return None
+    if f9 is not None and Path(f9).is_file() and filecmp.cmp(target, f9, shallow=False):
+        return None
+    return f"{target.name} already exists and is not {Path(f9).name if f9 else 'the parent .f9'}; not overwriting it"
 
 
 def save(state, sess, rel: str, fmt: str = "cif", cif_mode: str = "p1", overwrite: bool = False,

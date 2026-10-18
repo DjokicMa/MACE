@@ -42,6 +42,14 @@ TOKEN_RULE = ("at least 16 characters, each a letter, a digit or one of . _ ~ - 
               "(python -c \"import secrets; print(secrets.token_urlsafe(24))\" makes one)")
 DOCS = "docs/gui.md"
 TOOLS = ("connect", "login-url", "diagnostics")
+
+
+def mace_home() -> str:
+    """The MACE install folder (where mace_cli is): what `mace gui connect`
+    names when it suggests updating the cluster's MACE."""
+    return str(Path(__file__).resolve().parents[2])
+
+
 STOP_LINES = {
     "browser": "mace gui: stopped from the browser (Sign Out and Stop Server).",
     "idle": "mace gui: stopped after {hours} without use and with no task running (Settings > Server).",
@@ -385,11 +393,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if found is not None:
             from mace import __version__
             return managed.attach_proxy(found, args.port, {"host": node_name()[0], "fqdn": socket.getfqdn(),
-                                                           "version": __version__})
-    token = choose_token(args.token)
+                                                           "version": __version__, "home": mace_home()})
+    from . import update_gui
+    restarted = os.environ.pop("MACE_GUI_RESTARTED", "") == "1"    # Update Now and Restart (update_gui.py)
+    handoff = update_gui.take_handoff()
+    token = handoff["token"] if handoff else choose_token(args.token)
     try:
         httpd, state = make_server(root, args.host, args.port, token,
                                    args.allow_host, args.verbose, roots=args.root)
+        state.restarted = restarted
+        update_gui.resume(state, handoff)
     except OSError as exc:
         if args.managed:
             print("MACE_GUI_ERROR port-busy", flush=True)
@@ -447,8 +460,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 pass
         if getattr(state, "managed", None) is not None:
             state.managed.remove_state_file()
-        if args.ready_file:
+        if args.ready_file and getattr(state, "stop_reason", None) != "update-restart":
             _ready_file_stopped(Path(args.ready_file), getattr(state, "stop_reason", None) or "stopped")
+        # last: exec the updated server in place, or the update deferred to the sign-out
+        update_gui.after_stop(state, argv, httpd.server_address[1], stops)
 
 
 def install_request_stop(httpd, state) -> None:
@@ -472,6 +487,14 @@ def install_request_stop(httpd, state) -> None:
 def _report_stop(args, state) -> None:
     reason = getattr(state, "stop_reason", None)
     if not reason:
+        return
+    if reason == "update-restart":
+        # not MACE_GUI_STOPPED: the connect clients keep the session; the same process serves again
+        try:
+            print("mace gui: MACE was updated; restarting.", file=sys.stderr if args.managed else sys.stdout,
+                  flush=True)
+        except OSError:
+            pass
         return
     extra = getattr(state, "stop_detail", {}) or {}
     line = STOP_LINES.get(reason, f"mace gui: stopped ({reason}).")
@@ -649,10 +672,15 @@ def _serve_managed(args, httpd, state, base, url) -> int:
     ctl.on_login = lambda: state.mint_login_url(base)
     ready = {"url": base, "port": port, "prefix": state.prefix, "token": state.token, "login": login,
              "host": node_name()[0], "fqdn": socket.getfqdn(), "root": str(state.root), "version": __version__,
+             "home": mace_home(),
              "reattached": False, "tasks": 0}
     if args.http_control:
-        # a batch job: no stdin; the READY data (token included) only in a 0600 file
         ctl.http_control = True
+    # after Update Now and Restart: the same watchers, and a first connection
+    # that was gone stays gone (its stdin is a dead pipe)
+    ctl.restore(getattr(state, "_managed_handoff", None))
+    if args.http_control:
+        # a batch job: no stdin; the READY data (token included) only in a 0600 file
         if args.ready_file:
             try:
                 managed.write_private_json(Path(args.ready_file), {**ready, "pid": os.getpid()})
@@ -660,13 +688,15 @@ def _serve_managed(args, httpd, state, base, url) -> int:
                 print(f"mace gui: cannot write {args.ready_file}: {exc}", file=sys.stderr)
                 return 2
             print(f"mace gui: ready on {node_name()[0]} port {port} (details in the ready file)", flush=True)
-        else:
+        elif not getattr(state, "restarted", False):
             managed.emit("MACE_GUI_READY", ready)
         ctl.run(stdin=False)
     else:
-        if not managed.emit("MACE_GUI_READY", ready):
+        # after Update Now and Restart the client has its READY line already (a
+        # second one would open another browser tab from the connect scripts)
+        if not getattr(state, "restarted", False) and not managed.emit("MACE_GUI_READY", ready):
             return 0
-        ctl.run()
+        ctl.run(stdin=None if ctl.connected else False)
     httpd.serve_forever(poll_interval=0.5)
     return 0
 

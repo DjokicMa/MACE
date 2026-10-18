@@ -17,6 +17,9 @@ text, or the prompt itself, gives the answer:
 * ``{"match": "...", "answer": "y"}``: type that;
 * ``{"match": "...", "choose": "PBE0"}``: the number of the menu line
   ``<n>: PBE0 ...`` (or ``<n>. PBE0``) printed with the question;
+* ``{"match": "...", "answer": "POTC", "or_choose": true}``: the number of
+  the menu line naming the answer where the question shows one, else the
+  answer as it is;
 * ``"once": true``: the rule is used for one question only.
 
 A question no rule matches gets Enter, the CLI's own default, only when
@@ -136,6 +139,9 @@ def main(argv):
                 reply = m
             else:
                 reply = str(r.get("answer", ""))
+                # an option's name for a numbered menu ("POTC" for "2: POTC - ..."); not a menu, typed as is
+                if r.get("or_choose"):
+                    reply = pick(text, reply) or reply
             if r.get("once"):
                 r["done"] = True
             break

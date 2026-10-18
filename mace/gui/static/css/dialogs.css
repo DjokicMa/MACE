@@ -31,6 +31,25 @@ dialog.settings-dlg[open] { display: flex; }
 .set-ctl textarea.field { width: 100%; height: auto; padding: var(--s-2) var(--s-3); font: var(--fs-sm)/1.4 var(--font-mono); resize: vertical; }
 .set-ctl .segment { flex-wrap: wrap; max-width: 100%; }
 .set-ctl .segment button { min-height: 28px; }
+/* Settings › Appearance › Theme: a card per theme (the swatch colors are in tokens.css) */
+.set-ctl .theme-groups { display: flex; flex-direction: column; flex-wrap: nowrap; gap: var(--s-4); border: 0; border-radius: 0; overflow: visible; width: 100%; }
+.theme-group { display: flex; flex: none; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.theme-group-h { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+.set-ctl .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s-2);
+  border: 0; overflow: visible; width: 100%; }
+.set-ctl .theme-grid .theme-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-1); padding: var(--s-1);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text); text-align: left; cursor: pointer;
+  white-space: normal; min-width: 0; }
+.set-ctl .theme-grid .theme-card + .theme-card { border-left: 1px solid var(--border); }
+.set-ctl .theme-grid .theme-card:hover { border-color: var(--border-strong); }
+.set-ctl .theme-grid .theme-card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.theme-swatch { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; height: 34px; border-radius: var(--r-sm);
+  overflow: hidden; background: var(--sw-bg); border: 1px solid var(--border); }
+.theme-swatch i:nth-child(1) { grid-row: 1 / 3; margin: 6px; border-radius: 3px; background: var(--sw-surface);
+  box-shadow: inset 0 -6px 0 -3px var(--sw-text); }
+.theme-swatch i:nth-child(2) { margin: 6px 6px 2px 0; border-radius: 3px; background: var(--sw-accent); }
+.theme-swatch i:nth-child(3) { margin: 2px 6px 6px 0; border-radius: 3px; background: var(--sw-text); }
+.theme-name { font-size: var(--fs-sm); font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
 .set-check { width: 16px; height: 16px; margin: 6px 0; accent-color: var(--accent); }
 .set-range { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--h-control); }
 .set-range input { width: 220px; accent-color: var(--accent); }
@@ -50,6 +69,22 @@ dialog.settings-dlg[open] { display: flex; }
 .set-reset { justify-self: end; margin-top: 4px; border: 0; background: none; color: var(--accent); font: inherit;
   font-size: var(--fs-sm); cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm); }
 .set-empty { color: var(--text-2); padding: var(--s-6) 0; text-align: center; }
+/* the layer a value comes from (mace-folder.toml, 1.1.6) and its save/reset actions */
+.set-layer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-xs); }
+.set-src { padding: 0 6px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); color: var(--text-2); line-height: 18px; }
+.set-src[data-src="folder"] { border-color: var(--accent); color: var(--accent); }
+.set-src[data-src="session"] { border-color: var(--warning); color: var(--text); background: var(--surface-2); }
+.set-layer-btn { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 1px 2px; border-radius: var(--r-sm); }
+.set-layer-btn:disabled { opacity: .55; cursor: default; }
+/* "Save to this folder" on a value no folder sets: shown while the row is pointed at or focused */
+.set-row:not(:hover):not(:focus-within) .set-layer-btn.quiet { visibility: hidden; }
+.set-sub { font-size: var(--fs-sm); font-weight: 600; margin: var(--s-5) 0 var(--s-2); color: var(--text); }
+.set-folder-file { margin: 0 0 var(--s-3); color: var(--text-2); font-size: var(--fs-sm); }
+.set-folder-file code, .set-folder-cli code { overflow-wrap: anywhere; }
+.set-folder-warn { margin: 0 0 var(--s-3); padding-left: var(--s-5); color: var(--text); font-size: var(--fs-sm); }
+.set-folder-val { font: var(--fs-sm) var(--font-mono); padding-top: 5px; }
+.set-folder-cli { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-1) var(--s-4); margin: 0; font-size: var(--fs-sm); }
+.set-folder-cli dd { margin: 0; }
 .set-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-5); }
 .set-confirm { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-3); padding: var(--s-3) var(--s-4);
   border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); }
@@ -243,3 +278,46 @@ dialog.dbb-dlg { width: min(860px, 96vw); max-height: min(820px, calc(100dvh - 3
 .dbb-run { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-3); }
 .dbb-run[hidden] { display: none; }
 .dbb-bar { flex: 1; }
+/* View › Element Colors (js/lazy/palette_editor.js): the periodic table at 26 px, the element's
+ * color, saving and sharing */
+dialog.dlg-panel.pe-panel { width: 560px; }
+.pe-top, .pe-save, .pe-io, .pe-el { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-3); margin-bottom: var(--s-3); }
+.pe-el { align-items: center; }
+.pe-grid { grid-template-columns: repeat(18, 26px); grid-template-rows: repeat(7, 26px) 8px 26px 26px; margin-bottom: var(--s-3); }
+.pe-grid .pe-cell { width: 26px; height: 26px; font-size: var(--fs-xs); position: relative; }
+.pe-cell.mod::after { content: ""; position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; }
+.pe-cell.sel { outline: 2px solid var(--focus); outline-offset: 1px; z-index: 1; }
+.pe-sym { min-width: 28px; font-weight: 600; font-size: var(--fs-lg); }
+.pe-el input[type="color"] { width: 40px; height: var(--h-control); padding: 0 2px; border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); background: var(--surface); }
+.pe-hex { width: 86px; font-family: var(--font-mono); }
+.pe-save label.f { flex: 1; min-width: 160px; }
+.pe-confirm { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text); }
+.pe-msg { min-height: 1.3em; margin: 0; }
+.pe-where { margin: var(--s-2) 0 0; }
+/* Export Element Legend (js/lazy/legend_dialog.js): the preview on what the legend will sit on */
+dialog.dlg-panel.lg-panel { width: 520px; }
+.lg-preview { display: flex; align-items: center; justify-content: center; min-height: 80px; max-height: 260px; overflow: auto;
+  padding: var(--s-3); margin-bottom: var(--s-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--viewport-white); }
+.lg-preview[data-bg="dark"], .lg-preview[data-bg="black"] { background: var(--viewport-black); }
+.lg-preview img { max-width: 100%; height: auto; }
+.lg-msg { min-height: 1.3em; margin: 0 0 var(--s-2); color: var(--text-2); }
+.lg-msg.err { color: var(--danger); }
+.lg-scope { margin: 0 0 var(--s-2); }
+.lg-panel .chk { margin: var(--s-2) 0; }
+
+/* Settings › Advanced: cluster defaults (cluster_defaults.js: mace site) */
+.cd-text, .cd-out { margin: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2);
+  color: var(--text); font: var(--fs-xs)/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.cd-text:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.cd-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: var(--s-3); align-items: end; }
+.cd-form label.f { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.cd-form .field { width: 100%; min-width: 0; }
+.cd-acts { display: flex; gap: var(--s-2); }
+.cd-result { margin-top: var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
+.cd-result p { margin: 0; font-size: var(--fs-sm); }
+.cd-ok { color: var(--success); }
+.cd-bad { color: var(--danger); }
+@media (max-width: 720px) { .cd-form { grid-template-columns: minmax(0, 1fr); } }

@@ -23,12 +23,15 @@
  * | (new) Clean method                         | memory.cleanMethod                                           |
  * | (new) the split into two editor groups     | ui.split.<dirHash> (groups.js): open, ratio, linked, documents |
  * | (new) Submit dialog's last options          | memory.submitLast (Settings › submit.rememberLast)          |
+ * | (new) 1.1.6's "Setup now uses Functional …" | memory["notice.setupDefaults116"] (shell.js), shown once     |
  * | mace.gui.display.<dirHash>.<path>          | /api/docprefs kind display (docprefs.js); localStorage cache |
  * | mace.gui.plot.<dirHash>.<path>             | this browser (plot options and undo history; see LOCAL_ONLY)  |
  * | (new) mace.gui.runplot.<dirHash>.<path>    | this browser: Run Analysis plot options, as the plot options  |
  * | (new) mace.gui.runcard.<dirHash>.<path>    | this browser: the energy card's unit and reference, likewise  |
  * | (new) mace.gui.followRun                   | this browser: Follow the run while a live output is watched   |
  * | (new) mace.gui.cmp.dispMode                | this browser: the OPT compare view's displacement (Δr) choice, as the plot options |
+ * | (new) mace.gui.scfcard.<dirHash>.<path>    | this browser: the SCF card's scale, unit and step, as the run plot options |
+ * | (new) mace.gui.kpath.presets               | this browser: saved k-path edits, offered for plots with the same segments |
  * | mace.gui.draft.*, mace.gui.setup.<…>       | this browser only: unsaved drafts                            |
  * | mace.gui.builder.<id>.result               | this browser only: a builder's transient result              |
  * | mace.gui.saveConfirmed.<…>                 | this browser only: "already asked before overwriting"        |
@@ -45,6 +48,8 @@ export const LOCAL_ONLY = [
   "mace.gui.runplot.", "mace.gui.runcard.",                    // Run Analysis and energy card options, as the plot options
   "mace.gui.followRun",                                        // Follow the run, for the live output watched here
   "mace.gui.cmp.dispMode",                                     // the OPT compare view's Δr choice, as the plot options
+  "mace.gui.scfcard.",                                         // the SCF card's options (1.1.6), as the run plot options
+  "mace.gui.kpath.presets",                                    // saved k-path edits (1.1.6), kept with the plot options
   "mace.gui.draft.", "mace.gui.setup.",                        // unsaved drafts (Setup's per-document draft too)
   "mace.gui.builder.",                                         // a builder's transient result
   "mace.gui.saveConfirmed.",                                   // the overwrite question, asked once per browser

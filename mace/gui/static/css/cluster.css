@@ -62,6 +62,8 @@
 .jbv-risk.critical b { color: var(--danger); }
 .jbv-risk.warning b { color: var(--warning); }
 .jbv-summary { font-weight: 600; }
+.jbv-totals { margin: 0 0 8px; padding-left: 18px; }
+.jbv-totals li { margin: 2px 0; }
 .jbv-levels { list-style: none; margin: var(--s-2) 0; padding: 0; }
 .jbv-levels .jbv-level { margin: 2px 0; }
 .jbv-levels .jbv-level.d0 .jbv-lt { font-weight: 600; }

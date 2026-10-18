@@ -103,6 +103,7 @@ export function init(S) {
     });
     document.addEventListener("mace-camera", () => scene && scene.invalidate());
     document.addEventListener("mace-theme", () => { if (scene && scene.doc) scene.draw(scene.doc, { keepView: true }); });
+    document.addEventListener("mace-colors", () => { if (scene && scene.doc) scene.draw(scene.doc, { keepView: true }); });
   }
   /* The default view (carry-over a): the cell's standard orientation (c up,
    * a toward the lower left, b right; Settings › Viewport › Default view),

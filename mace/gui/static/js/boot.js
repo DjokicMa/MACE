@@ -12,8 +12,14 @@
   // this browser's values apply as before.
   var server = root.getAttribute("data-prefs") === "server";
   var mine = function (k) { return !server || pending.indexOf(k) >= 0; };
+  // the themes of js/themes.js other than System (a classic script cannot import it)
+  var THEMES = ["light", "dark", "hc-light", "hc-dark", "cvd", "sepia", "black",
+    "catppuccin-mocha", "catppuccin-latte", "dracula", "gruvbox-dark", "nord", "one-dark", "solarized-dark", "solarized-light", "tokyo-night", "tokyo-night-storm"];
+  // the Publication theme of the 1.1.6 preview is Light with Plot style Publication (settings.js
+  // migrate() keeps that in storage; here it only paints the first frame)
+  if (s.theme === "publication") s.theme = "light";
   if (mine("theme")) {
-    if (s.theme === "light" || s.theme === "dark") root.setAttribute("data-theme", s.theme);
+    if (THEMES.indexOf(s.theme) >= 0) root.setAttribute("data-theme", s.theme);
     else if (server) root.removeAttribute("data-theme");
   }
   if (mine("density")) {

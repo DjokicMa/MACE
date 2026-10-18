@@ -37,8 +37,17 @@ PACKAGES = ("numpy", "ase", "spglib", "seekpath", "plotly", "pandas", "pyarrow",
             "mace-torch", "chgnet", "matplotlib", "rich", "selenium")
 # the settings whose text values are fixed choices (anything else shows as <text>)
 ENUMS = {
-    "theme": {"system", "light", "dark"}, "density": {"compact", "comfortable"},
-    "reduceMotion": {"system", "on", "off"}, "colorScheme": {"jmol", "vesta", "cpk", "custom"},
+    "theme": {"system", "light", "dark", "hc-light", "hc-dark", "cvd", "sepia", "black",
+              "catppuccin-mocha", "catppuccin-latte", "dracula", "gruvbox-dark", "nord", "one-dark",
+              "solarized-dark", "solarized-light", "tokyo-night", "tokyo-night-storm"},
+    "density": {"compact", "comfortable"}, "plots.surface": {"theme", "light", "dark"},
+    "plots.style": {"default", "publication", "vesta", "presentation", "grayscale", "colorblind"},
+    **{f"plots.style.{f}": {"same", "default", "publication", "vesta", "presentation", "grayscale", "colorblind"}
+       for f in ("band", "spectra", "maps", "scf")},
+    "plots.dosColors": {"auto", "total", "element", "orbital", "element-orbital"},
+    "plots.spinDownDash": {"dash", "dot", "dashdot", "solid"}, "plots.spinDos": {"auto", "mirrored", "overlaid"},
+    "plots.spinColors": {"auto", "mace", "blue-red", "black-vermilion", "custom"},
+    "reduceMotion": {"system", "on", "off"}, "colorScheme": {"jmol", "vesta", "cvd", "legacy"},
     "radiusSet": {"atomic", "covalent", "ionic", "vdw"}, "bondColoring": {"split", "uniform"},
     "background": {"theme", "white", "black", "custom"}, "labels": {"off", "element", "index", "both", "wyckoff"},
     "projection": {"orthographic", "perspective"}, "viewport.defaultView": {"standard", "a", "c"},

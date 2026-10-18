@@ -43,7 +43,7 @@ import tempfile
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from . import clirun
 
@@ -54,10 +54,11 @@ for _d in ("Crystal_d12", "Crystal_d3"):
         _sys.path.insert(0, str(REPO / _d))
 MODES = ("cif2d12", "opt2d12", "opt2d3")
 CALC_TYPES = {"cif2d12": ("OPT", "SP", "FREQ"), "opt2d12": ("SP", "OPT", "FREQ"),
-              "opt2d3": ("BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL")}
+              "opt2d3": ("BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL", "ORBITALS")}
 DEFAULT_CALC = {"cif2d12": "OPT", "opt2d12": "SP", "opt2d3": "BAND"}
 D12_GLOB_MAX = 20 * 1024 * 1024      # the .d12 files staged for opt2d3 (small text files)
 OUT_SUFFIXES = (".out", ".log", ".o")
+DECK_SUFFIXES = (".d12",)             # a deck as its own parent: opt2d12 --d12-file (no .out)
 
 
 class SetupError(ValueError):
@@ -71,7 +72,22 @@ def mode_for(path: str, calc_type: Optional[str] = None) -> str:
         return "cif2d12"
     if low.endswith(OUT_SUFFIXES):
         return "opt2d3" if (calc_type or "").upper() in CALC_TYPES["opt2d3"] else "opt2d12"
-    raise SetupError("A deck needs a CIF (a new calculation) or a CRYSTAL .out (a follow-up)")
+    if low.endswith(DECK_SUFFIXES):
+        if (calc_type or "").upper() in CALC_TYPES["opt2d3"]:
+            raise SetupError(deck_properties_refusal(path, calc_type))
+        return "opt2d12"
+    raise SetupError("A deck needs a CIF (a new calculation), a CRYSTAL .out (a follow-up) or a .d12 deck")
+
+
+def is_deck(path) -> bool:
+    """A .d12 set up as its own parent (opt2d12 --d12-file), not an .out."""
+    return str(path or "").lower().endswith(DECK_SUFFIXES)
+
+
+def deck_properties_refusal(path: str, calc_type: Optional[str]) -> str:
+    name = Path(str(path)).name
+    return (f"{str(calc_type).upper()} reads the wavefunction (.f9) of a finished SCF run, which a deck does not have: "
+            f"set it up from the run's output ({Path(name).stem}.out)")
 
 
 def check_calc(mode: str, calc_type: Optional[str]) -> str:
@@ -226,6 +242,7 @@ class Staged:
         self.input_rel, self.json_rel, self.out_rel = input_rel, json_rel, out_rel
         self.f9 = f9
         self.notes = notes or []
+        self.env: Dict[str, str] = {}          # added to the CLI's environment (setup_env)
 
 
 def stage(mode: str, calc: str, work: Path, source_path: Optional[Path], rel: Optional[str],
@@ -264,8 +281,14 @@ def stage(mode: str, calc: str, work: Path, source_path: Optional[Path], rel: Op
     jrel = (f"{rel_dir}/" if rel_dir else "") + json_name(mode, calc, stem)
     if mode == "opt2d12":
         d12 = source_path.with_suffix(".d12")
-        if d12.is_file():
+        if d12.is_file() and not is_deck(source_path):        # an .out's parent deck (a deck is copied above)
             shutil.copyfile(d12, dst / d12.name)
+        f9 = source_path.with_suffix(".f9")
+        if not is_deck(source_path) and f9.is_file():
+            # a SOC restart ("soc_guess") checks that <parent>.f9 is there and not empty, then
+            # copies it as <deck>.f20: a one-byte stand-in (an empty one for an empty .f9), never the
+            # real bytes; "Write decks" runs the command on the real files
+            (dst / f9.name).write_bytes(b"\0" if f9.stat().st_size else b"")
         return Staged(mode, calc, tree, rel, jrel, rel_dir or ".")
     # opt2d3: name mirroring
     total = 0
@@ -291,8 +314,13 @@ def batch_args(st: Staged) -> List[str]:
         return ["convert", "--batch", "--options_file", st.json_rel, "--cif_dir", st.out_rel,
                 "--output_dir", st.out_rel]
     if st.mode == "opt2d12":
-        return ["opt2d12", "--out-file", st.input_rel, "--config-file", st.json_rel, "--yes"]
+        return ["opt2d12", source_flag(st.input_rel), st.input_rel, "--config-file", st.json_rel, "--yes"]
     return ["opt2d3", "-i", st.input_rel, "-t", st.calc, "--config-file", st.json_rel]
+
+
+def source_flag(input_rel: str) -> str:
+    """opt2d12's switch for its parent: --out-file for a run, --d12-file for a deck on its own."""
+    return "--d12-file" if is_deck(input_rel) else "--out-file"
 
 
 def command_line(args: List[str]) -> str:
@@ -306,7 +334,7 @@ def ask_args(st: Staged, json_out: Path, out_dir: Path) -> List[str]:
         return ["convert", "--cif_dir", st.out_rel, "--output_dir", str(out_dir), "--save_options",
                 "--options_file", str(json_out)]
     if st.mode == "opt2d12":
-        return ["opt2d12", "--out-file", st.input_rel, "--calc-type", st.calc, "--save-options",
+        return ["opt2d12", source_flag(st.input_rel), st.input_rel, "--calc-type", st.calc, "--save-options",
                 "--options-file", str(json_out), "--output-dir", str(out_dir)]
     return ["opt2d3", "-i", st.input_rel, "-t", st.calc, "--save-config", "--options-file", str(json_out),
             "--output-dir", str(out_dir)]
@@ -386,9 +414,7 @@ KNOWN_QUESTIONS = {
                               r"Use the 'reduced' structure anyway\?",
                               # "Use original CIF space group" answered 1 (try other tolerances): Enter
                               # takes a tolerance that matches, else keeps the CIF's group
-                              r"Match found with tolerance.*Use tolerance \S+\?", r"Final choice \(default",
-                              # the basis set lacks an element: Enter is No, and the CLI's refusal is shown
-                              r"Missing elements:.*Continue anyway\?"],
+                              r"Match found with tolerance.*Use tolerance \S+\?", r"Final choice \(default"],
     # the parent's basis set not kept: the basis questions cif2d12 asks
     "opt2d12": _D12_COMMON + [r"Select basis set type", r"Select (internal|external) basis set",
                               # a parent functional MACE cannot identify (e.g. B2PLYP), the method
@@ -412,7 +438,7 @@ KNOWN_QUESTIONS = {
         r"Scale factor for non-periodic directions", r"Bipolar expansion tolerance",
         # behind a non-default answer: TRANSPORT smearing, a 2D charge map (ECHG), potential at points (POTC)
         r"Smearing width \(eV\)", r"Smearing type:.*Select type \(0-2\)", r"Derivative order:.*Select order \(0-1\)",
-        r"Define charge density map plane\?", r"Coordinate type \(F\)ractional or \(C\)artesian",
+        r"Coordinate type \(F\)ractional or \(C\)artesian",
         r"Number of points along the B-A segment", r"Calculation mode:.*Select mode \(0, 2 or 3\)",
         r"Define points:.*Select option \(1-3\)", r"Calculate at all atoms\?", r"Z (minimum|maximum) \(bohr\)",
         r"Number of planes \[", r"Half thickness of the volume",
@@ -420,6 +446,8 @@ KNOWN_QUESTIONS = {
         r"(^|\n)Number of points( in file)?: ",
         # no wavefunction next to the output: Enter is No, and the CLI's refusal is shown
         r"will fail without the wavefunction file.*Continue anyway\?",
+        # BAND: Setup has the k-path editor for it (Enter is No, the CLI's default)
+        r"Edit the band k-path \(reorder, reverse, remove or add points\)\?",
     ],
 }
 # Not on the list: questions with no default to keep (opt2d3's "Path:", "Number of path segments:",
@@ -509,6 +537,11 @@ FIELDS: List[Field] = [
     Field("doss_range", "Energy range", "DOSS", "menu", r"Energy/band range", ["energy_range"], [], ("opt2d3",), ("DOSS",)),
     Field("doss_points", "Energy points", "DOSS", "value", r"Number of energy points", ["n_points"], [], ("opt2d3",), ("DOSS",)),
     Field("npol", "NPOL", "DOSS", "value", r"NPOL value", ["npol"], [], ("opt2d3",), ("DOSS",)),
+    Field("orbitals_kmesh", "k points", "ORBITALS", "menu", r"Select k points \(1-4\)", ["kmesh"], [], ("opt2d3",),
+          ("ORBITALS",), hint="every orbital is written at each k point of the NEWK mesh; complex k points "
+                              "(IS 3 and up) are usable in 1D only"),
+    Field("orbitals_is", "Shrinking factor IS", "ORBITALS", "value", r"Shrinking factor IS \[", ["is"], [], ("opt2d3",),
+          ("ORBITALS",)),
 ]
 FIELD = {f.id: f for f in FIELDS}
 # How each field is set (spike S6): "cli" = by answering the CLI's question (a CLI run);
@@ -518,7 +551,20 @@ PATCH_FIELDS = {
     # opt2d12: one k-point mesh for the follow-up (the CLI's documented hand-written key)
     "k_points_for_all_files": {"modes": ("opt2d12",), "label": "k-point mesh", "section": "k-points and SCF",
                                "hint": "written as k_points_for_all_files, the one key opt2d12 reads for a mesh"},
+    # opt2d3 BAND: the edited k-path (Crystal_d3/d3_band_path.py), drawn by the k-path editor, not a form row
+    "band_path": {"modes": ("opt2d3",), "label": "k-path", "section": "BAND", "kind": "kpath",
+                  "hint": "written as band_path, the edited path opt2d3 computes (its own prompt writes the same key)"},
 }
+# Spin-orbit coupling (1.1.6): keys of the CLI's own settings file, as a user writes them
+# (docs/cli.md, "Spin-orbit coupling (SOC) decks"; no CLI question sets them). The Setup
+# panel shows them in its own section (kind "soc"), not as form rows.
+SOC_KEYS = ("soc", "soc_ecp", "soc_basis", "soc_guess", "smear")
+SOC_MODES = ("cif2d12", "opt2d12")
+SOC_CALCS = ("SP",)
+for _k, _label in zip(SOC_KEYS, ("Spin-orbit coupling", "Spin-orbit ECP", "Official SOC basis",
+                                 "Starting guess", "SMEAR")):
+    PATCH_FIELDS[_k] = {"modes": SOC_MODES, "label": _label, "section": "Spin-orbit coupling", "kind": "soc",
+                        "hint": f'written as "{_k}" in the settings file, the key the CLI reads'}
 DERIVED_BY_CLI.update({k: "patch" for k in PATCH_FIELDS})
 DERIVED_BY_CLI["k_points_cif2d12"] = "readonly"
 
@@ -550,7 +596,8 @@ def schema() -> Dict[str, Any]:
                         "calcs": list(f.calcs) if f.calcs else None, "unit": f.unit, "hint": f.hint,
                         "how": DERIVED_BY_CLI[f.id]} for f in FIELDS],
             "patch_fields": {k: {**v, "modes": list(v["modes"])} for k, v in PATCH_FIELDS.items()},
-            "derived_by_cli": DERIVED_BY_CLI, "cli_hash": clirun.cli_hash()}
+            "derived_by_cli": DERIVED_BY_CLI, "soc": soc_schema(), "cli_hash": clirun.cli_hash(),
+            "charge_flags": charge_schema(), "charge_modes": list(CHARGE_MODES)}
 
 
 def known_questions(mode: str) -> List[str]:
@@ -564,18 +611,50 @@ def known_questions(mode: str) -> List[str]:
     return out + KNOWN_QUESTIONS[mode]
 
 
+# an "Other questions" row of a question asked more than once (CHARGE+POTENTIAL's charge and
+# potential blocks): "q:<text>#<n>", the n-th time it is asked
+_NTH_RE = re.compile(r"^q:(.+)#(\d+)$", re.S)
+
+
+def _q_answer(value: Any) -> Dict[str, Any]:
+    """An "Other questions" row's answer: a menu row sends its option's name ("POTC"), which the CLI
+    reads as a number ("Select type (1-2)"), so a name is typed as its menu line's number where the
+    question shows one (or_choose); a number or a value question's answer is typed as it is."""
+    text = str(value)
+    if text.strip() and not re.fullmatch(r"\s*[-+]?[\d.eE+-]*\s*", text):
+        return {"answer": text, "or_choose": True}
+    return {"answer": text}
+
+
 def answer_rules(mode: str, answers: Dict[str, Any]) -> List[Dict[str, Any]]:
     """The answer script for these answers: the gates the fields need, then each field's answers."""
     gates, rules = [], []
+    # the n-th ask of a repeated question: one rule per ask up to the last one answered, each used
+    # once; an ask not answered here keeps its default (Enter)
+    nth: Dict[str, Dict[int, Any]] = OrderedDict()
     for fid, value in answers.items():
+        m = _NTH_RE.match(fid)
+        if m:
+            nth.setdefault(m.group(1), {})[int(m.group(2))] = value
+    for q, by_n in nth.items():
+        if mode in ("cif2d12", "opt2d12") and N not in gates:
+            gates.append(N)
+        for n in range(1, max(by_n) + 1):
+            v = by_n.get(n, "")
+            v = v if isinstance(v, dict) else _q_answer(v)
+            rules.append({"match": re.escape(q), **{k: v[k] for k in ("answer", "choose", "or_choose") if k in v},
+                          "once": True})
+    for fid, value in answers.items():
+        if _NTH_RE.match(fid):
+            continue
         if fid.startswith("q:"):                         # a question no field names ("Other questions")
             q = str(fid[2:])
             gates_needed = [N] if mode in ("cif2d12", "opt2d12") else []
             for g in gates_needed:
                 if g not in gates:
                     gates.append(g)
-            v = value if isinstance(value, dict) else {"answer": str(value)}
-            rules.append({"match": re.escape(q), **{k: v[k] for k in ("answer", "choose") if k in v}})
+            v = value if isinstance(value, dict) else _q_answer(value)
+            rules.append({"match": re.escape(q), **{k: v[k] for k in ("answer", "choose", "or_choose") if k in v}})
             continue
         f = FIELD.get(fid)
         if f is None or mode not in f.modes:
@@ -803,22 +882,57 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
                                               else (answers[f.id] in (True, "y", "yes", "Yes")) != (dlabel == "Yes"))
         rows.append(row)
     for key, spec in PATCH_FIELDS.items():
-        if mode not in spec["modes"]:
+        if mode not in spec["modes"] or spec.get("kind") in ("kpath", "soc"):
             continue
         cur = json_value(obj, key) if obj is not None else None
         rows.append({"id": key, "label": spec["label"], "section": spec["section"], "kind": "value", "how": "patch",
                      "hint": spec["hint"], "value": None if cur is None else (" ".join(map(str, cur)) if isinstance(cur, list) else str(cur)),
                      "default": None, "changed": key in patches, "answered": key in patches, "unit": ""})
-    # the questions no field names: "Other questions" (answerable by their own prompt)
-    if current:
+    # the questions no field names: "Other questions" (answerable by their own prompt). A run no field
+    # covers (opt2d3 TRANSPORT, CHARGE, POTENTIAL, CHARGE+POTENTIAL) lists them before any answer.
+    named = any(mode in f.modes and (not f.calcs or calc in f.calcs) for f in FIELDS)
+    if current or not named:
+        # a question asked more than once in a run (CHARGE+POTENTIAL's two blocks) is a row per ask,
+        # "q:<text>#<n>", named after the block that asks it
+        repeated = {t for run in (survey_qs, qs) for t in {x.last[-120:] for x in run}
+                    if sum(1 for x in run if x.last[-120:] == t) > 1}
+        seen: Dict[str, int] = {}
+        block = None
         for q in qs:
-            if id(q) in used or not q.last or any(_matches(f, q) for f in FIELDS) or _is_gate(mode, q):
+            h = _BLOCK_RE.findall(q.text)
+            if h:
+                block = h[-1].strip().lower()
+            if id(q) in used or not q.last or any(_matches(f, q) for f in FIELDS) or _is_gate(mode, q) \
+                    or _EDITOR_QUESTION.search(q.last):
                 continue
-            fid = "q:" + q.last[-120:]
+            text = q.last[-120:]
+            fid, label = "q:" + text, text.rstrip(": ")
             kind = "menu" if q.options else "yesno" if re.search(r"\[[yY]/[nN]\]", q.last) else "value"
-            row = {"id": fid, "label": q.last[-120:].rstrip(": "), "section": "Other questions", "kind": kind,
-                   "how": "cli", "question": q.last[-160:], "default": q.default, "answered": fid in answers,
-                   "value": answers.get(fid, q.answer if q.answer else q.default), "changed": fid in answers, "unit": ""}
+            default, value = q.default, answers.get(fid, q.answer if q.answer else q.default)
+            if not named:
+                # these rows are the whole form: a menu is named by its heading ("Charge density
+                # type:", not "Select type (1-2) [1]:") and shows its options' names, a yes/no
+                # Yes or No, as the named fields do
+                label = _menu_heading(q) or label
+                if kind == "menu":
+                    heads = {o["num"]: o["head"] for o in q.options}
+                    default = heads.get(str(default), default)
+                    value = value if fid in answers else heads.get(str(value), value)
+                elif kind == "yesno":
+                    yn = {"y": "Yes", "n": "No"}
+                    default = yn.get(str(default).lower(), default)
+                    value = value if fid in answers else yn.get(str(value).lower(), value)
+            if text in repeated:
+                seen[text] = seen.get(text, 0) + 1
+                fid += f"#{seen[text]}"
+                value = answers.get(fid, value)
+                if not block:
+                    label += f" (asked {seen[text]})"
+                elif block.split()[-1] not in label.lower():
+                    label += f" ({block})"
+            row = {"id": fid, "label": label, "section": "Other questions", "kind": kind,
+                   "how": "cli", "question": q.last[-160:], "default": default, "answered": fid in answers,
+                   "value": value, "changed": fid in answers, "unit": ""}
             if kind == "menu":
                 row["options"] = [{"head": o["head"], "text": o["text"]} for o in q.options]
             elif kind == "yesno":
@@ -827,17 +941,49 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
     return rows
 
 
+def _menu_heading(q: Question) -> Optional[str]:
+    """A menu question's heading: the line before its first option ("Charge density type:")."""
+    if not q.options:
+        return None
+    lines = [x.strip() for x in q.text.splitlines() if x.strip()]
+    first = next((i for i, x in enumerate(lines) if x.startswith(f"{q.options[0]['num']}:")), None)
+    if not first or lines[first - 1].startswith("==="):
+        return None
+    head = lines[first - 1].rstrip(":").strip()
+    return head[:1].upper() + head[1:] if head else None
+
+
+# opt2d3's block headers ("=== CHARGE DENSITY CONFIGURATION ==="): what a repeated question belongs to
+_BLOCK_RE = re.compile(r"===\s*([A-Za-z][A-Za-z ]*?)\s+CONFIGURATION\s*===")
+# opt2d3's "Edit the band k-path?" prompt: Setup has the k-path editor for it (answered No, its default)
+_EDITOR_QUESTION = re.compile(r"Edit the band k-path", re.I)
+
+
 def _is_gate(mode: str, q: Question) -> bool:
     return any(re.search(g["match"], q.text, re.I | re.S) for g in GATES[mode].values()) or \
         bool(re.search(r"Save these options|save.*configuration", q.last, re.I))
 
 
 # ---------------------------------------------------------------- one Setup run
-def _decks_in(folder: Path, before: set) -> List[Path]:
+def _deck_stamp(p: Path):
+    st = p.stat()
+    return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+
+def _decks_in(folder: Path, before) -> List[Path]:
+    """The decks in folder that this run wrote: new names, or names whose file changed since
+    before (a {name: stamp} snapshot; a plain set of names compares by name only). A rerun in
+    the same staged tree rewrites a deck under the name an earlier run used."""
     if not folder.is_dir():
         return []
-    return sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in (".d12", ".d3")
-                  and p.name not in before)
+    out = []
+    for p in folder.iterdir():
+        if not (p.is_file() and p.suffix.lower() in (".d12", ".d3")):
+            continue
+        if p.name in before and (not isinstance(before, dict) or before[p.name] == _deck_stamp(p)):
+            continue
+        out.append(p)
+    return sorted(out)
 
 
 def _shrink_of(deck: str) -> Optional[str]:
@@ -863,7 +1009,8 @@ def ask(st: Staged, work: Path, rules: List[Dict[str, Any]], tag: str, ctx=None,
     out.mkdir(exist_ok=True)
     rules_p.write_text(json.dumps({"rules": rules, "known": known_questions(st.mode), "max_prompts": 400}))
     args = ask_args(st, json_p, out) + list(extra_args)
-    res = clirun.run(clirun.driver_argv(rules_p, tr_p, "--no-banner", *args), st.tree, ctx, timeout=180)
+    res = clirun.run(clirun.driver_argv(rules_p, tr_p, "--no-banner", *args), st.tree, ctx, timeout=180,
+                     env={**clirun.cli_env(), **st.env} if st.env else None)
     try:
         tr = json.loads(tr_p.read_text())
     except (OSError, json.JSONDecodeError):
@@ -881,7 +1028,7 @@ def run_printed(st: Staged, json_text: str, ctx=None, extra_args=()) -> Dict[str
     jp.parent.mkdir(parents=True, exist_ok=True)
     jp.write_text(json_text)
     out = st.tree / st.out_rel
-    before = {p.name for p in out.iterdir()} if out.is_dir() else set()
+    before = {p.name: _deck_stamp(p) for p in out.iterdir() if p.is_file()} if out.is_dir() else {}
     args = batch_args(st) + list(extra_args)
     res = clirun.run(clirun.mace_argv("--no-banner", *args), st.tree, ctx, timeout=180)
     decks = _decks_in(out, before)
@@ -927,14 +1074,14 @@ def _plain_warning(line: str) -> str:
     return _WARN_HEAD.sub("", line).strip()
 
 
-def problems_from(log: str, source: str = "Setup") -> List[Dict[str, Any]]:
+def problems_from(log: str, source: str = "Setup", limit: int = 400) -> List[Dict[str, Any]]:
     out = []
     for line in log.splitlines():
         s = line.strip()
         if s.startswith("[WARN]") or s.startswith("WARNING") or s.startswith("Warning:"):
             msg = _plain_warning(s)
             if msg:
-                out.append({"severity": "warning", "source": source, "message": msg[:400]})
+                out.append({"severity": "warning", "source": source, "message": msg[:limit]})
     seen, uniq = set(), []
     for p in out:
         if p["message"] not in seen:
@@ -943,14 +1090,319 @@ def problems_from(log: str, source: str = "Setup") -> List[Dict[str, Any]]:
     return uniq[:20]
 
 
+def parent_refusals(path: Optional[Path]) -> Dict[str, str]:
+    """{calc type: why} for the follow-ups this parent cannot have, which
+    Setup grays out: ORBITALS from a two-component (SOC) run, on which
+    CRYSTAL23 crashes (mace.orbitals.kchoice.SOC_REFUSAL)."""
+    if path is None or is_deck(path):
+        return {}
+    from mace.utils.calc_detection import is_two_component_run
+    if not is_two_component_run(path):
+        return {}
+    from mace.orbitals.kchoice import SOC_REFUSAL
+    return {"ORBITALS": SOC_REFUSAL}
+
+
+def parent_info(mode: str, input_rel: str, problems: List[Dict[str, Any]],
+                path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Where a follow-up's values come from: {kind: "out" | "d12", name, warning, refused}.
+    ``warning``: what the CLI said about the parent itself, e.g. an unfinished
+    optimization (opt2d12 prints "<name>: unfinished optimization ..., so the
+    deck has its starting geometry"; the deck is the CLI's either way).
+    ``refused``: parent_refusals of ``path`` (the staged parent), when given."""
+    if mode == "cif2d12":
+        return None
+    name = Path(input_rel).name
+    warning = next((p["message"][len(name) + 2:] for p in problems
+                    if p.get("severity") == "warning" and p["message"].startswith(name + ": ")), None)
+    return {"kind": "d12" if is_deck(name) else "out", "name": name, "warning": warning,
+            "refused": parent_refusals(path)}
+
+
 def refusal(log: str) -> str:
     """The CLI's own words when it wrote no deck: its error lines, else the log's end."""
     lines = [x.strip() for x in log.splitlines() if x.strip()]
-    errs = [x for x in lines if re.match(r"^(\[ERR\]|\[ERROR\]|ERROR|Error|\[X\])", x) or "Aborting" in x or "requires" in x.lower()]
+    errs, follows = [], False
+    for x in lines:
+        if re.match(r"^(\[ERR\]|\[ERROR\]|ERROR|Error|\[X\])", x) or "Aborting" in x or "requires" in x.lower():
+            errs.append(x)
+            follows = True
+        elif follows and x.startswith("- "):
+            errs.append(x)          # a refusal's listed changes ("a SOC deck needs N changes:")
+        else:
+            follows = False
     # opt2d3's closing "No D3 file was generated." says less than the reason before it
     told = [x for x in errs if not re.search(r"No D3 file was generated\.?$", x)]
     errs = told or errs
     return "\n".join(errs[-6:]) if errs else "\n".join(lines[-12:])
+
+
+# ---------------------------------------------------------------- charged systems: the CLI's switches
+# convert (cif2d12) and opt2d12 take the same charged-system switches (their
+# "charged systems" argument group); opt2d3 takes none. Setup passes them as
+# switches only, on the command it runs and on the one it prints, and leaves
+# every check of what they mean to the CLI (its refusal is shown as it is).
+# (key, switch, kind, choices, label, hint); the order is the order on the command line.
+CHARGE_FLAGS = (
+    ("ion_charges", "--ion-charges", "choice", ("auto",), "Find ions",
+     "Find known ions (Li+, FSI-, ...) by connectivity and give them their formal charges"),
+    ("net_charge", "--net-charge", "number", None, "Net charge",
+     "Net charge of the system (default: the sum of the ions found)"),
+    ("site_states", "--site-states", "json", None, "Site states",
+     'Per-atom shell charges as JSON, e.g. [{"atom": 1, "shell_charges": [2, 0, 0, 0, 0]}]; needs a net charge'),
+    ("chemod", "--chemod", "choice", ("auto", "yes", "no"), "CHEMOD",
+     "Write CHEMOD (the CLI's default: auto)"),
+    ("fragment_bond_scale", "--fragment-bond-scale", "number", None, "Fragment bond scale",
+     "With Find ions: two atoms bond when closer than scale x the sum of their covalent radii (default 1.15)"),
+    ("spinlock", "--spinlock", "int", None, "SPINLOCK",
+     "nalpha-nbeta for an odd electron count"),
+    ("spinlock_cycles", "--spinlock-cycles", "int", None, "SPINLOCK cycles",
+     "SCF cycles the SPINLOCK holds"),
+)
+CHARGE_MODES = ("cif2d12", "opt2d12")
+# atom numbers belong to one structure: a batch of many takes every other switch
+BATCH_CHARGE_FLAGS = tuple(f[0] for f in CHARGE_FLAGS if f[0] != "site_states")
+SITE_STATES_MAX = 20000
+
+
+def charge_flags(raw: Any, allowed: Optional[Tuple[str, ...]] = None) -> Dict[str, Any]:
+    """The charged-system switches of a request, by key ({} for none). Only
+    their shape is checked here (a number is a number, a choice is one of the
+    CLI's, site states are the JSON itself, never a file name); what they mean
+    is the CLI's to check."""
+    if raw in (None, ""):
+        return {}
+    keys = allowed or tuple(f[0] for f in CHARGE_FLAGS)
+    if not isinstance(raw, dict) or set(raw) - set(f[0] for f in CHARGE_FLAGS):
+        raise SetupError("flags are the CLI's charged-system switches: "
+                         + ", ".join(f[1] for f in CHARGE_FLAGS if f[0] in keys))
+    out: Dict[str, Any] = {}
+    for key, switch, kind, choices, _, _ in CHARGE_FLAGS:
+        v = raw.get(key)
+        if key not in keys and v not in (None, "", False):
+            raise SetupError(f"{switch} names atoms of one structure: set it in Calculation Setup on that file")
+        if v is None or v == "" or v is False:
+            continue
+        if kind == "choice":
+            if v not in choices:
+                raise SetupError(f"{switch} is one of {', '.join(choices)}")
+        elif kind in ("number", "int"):
+            if isinstance(v, bool):
+                raise SetupError(f"{switch} is a number")
+            try:
+                num = float(v)
+            except (TypeError, ValueError):
+                raise SetupError(f"{switch} is a {'whole ' if kind == 'int' else ''}number")
+            if num != num or num in (float("inf"), float("-inf")):
+                raise SetupError(f"{switch} is a number")
+            if kind == "int" and not num.is_integer():
+                raise SetupError(f"{switch} is a whole number")
+            v = int(num) if num.is_integer() else num
+        else:                                   # site states: the JSON text itself
+            if not isinstance(v, str) or len(v) > SITE_STATES_MAX:
+                raise SetupError(f"{switch} is JSON text of at most {SITE_STATES_MAX} characters")
+            v = v.strip()
+            if not v.startswith("["):
+                raise SetupError(f'{switch} is the JSON list itself ([{{"atom": 1, "shell_charges": [...]}}]); '
+                                 "Setup does not read it from a file")
+        out[key] = v
+    return out
+
+
+def flag_args(flags: Dict[str, Any], mode: str) -> List[str]:
+    """The switches as the command line takes them (none for opt2d3)."""
+    if mode not in CHARGE_MODES or not flags:
+        return []
+    out: List[str] = []
+    for key, switch, _, _, _, _ in CHARGE_FLAGS:
+        if key in flags:
+            out += [switch, str(flags[key])]
+    return out
+
+
+def charge_schema() -> List[Dict[str, Any]]:
+    return [{"id": k, "switch": s, "kind": kind, "choices": list(c) if c else None, "label": label, "hint": hint,
+             "batch": k in BATCH_CHARGE_FLAGS} for k, s, kind, c, label, hint in CHARGE_FLAGS]
+
+
+# ---------------------------------------------------------------- spin-orbit coupling (SOC)
+def _soc():
+    import soc_ecp
+    return soc_ecp
+
+
+_ELEMENTS_CACHE: "OrderedDict[Tuple[str, int, int], Tuple[int, ...]]" = OrderedDict()
+
+
+def _atomic_numbers(p: Path):
+    """The elements of a structure file (CRYSTAL's ECP numbering 2xx read as xx), cached by file stamp;
+    a string (why) when the file cannot be read, so a caller never takes "unread" for "no elements"."""
+    try:
+        s = p.stat()
+    except OSError as e:
+        return f"cannot read {p.name}: {e.strerror or e}"
+    key = (str(p), s.st_mtime_ns, s.st_size)
+    hit = _ELEMENTS_CACHE.get(key)
+    if hit is None:
+        from . import structures
+        try:
+            hit = tuple(sorted({int(z) % 100 or int(z) for z in structures.read_structure(p)["numbers"]}))
+        except ModuleNotFoundError as e:
+            hit = (f"cannot read the elements of {p.name}: install {e.name or 'ase'} (pip install "
+                   f"{e.name or 'ase'}); MACE needs it to read this file")
+        except Exception as e:      # noqa: BLE001 - reported to the caller, never read as "no elements"
+            hit = f"cannot read the elements of {p.name}: {e}"
+        _ELEMENTS_CACHE[key] = hit
+        while len(_ELEMENTS_CACHE) > 4096:
+            _ELEMENTS_CACHE.popitem(last=False)
+    return hit
+
+
+def stutsc_refusals(paths: Iterable[Path], name=None) -> Dict[str, Any]:
+    """Which of ``paths`` hold an element whose STUTSC the CLI refuses (soc_ecp.py's table and words):
+    ``{"files": n, "refused": [{"z", "symbol", "why", "files": [names]}], "all": every file has one,
+    "unread": [{"file", "why"}]}``. A file whose elements cannot be read (no ase for a CIF) is listed in
+    ``unread``, never taken as refusing nothing: STUTSC cannot be checked for it.
+    Batch Setup and the workflow builder gray STUTSC out with it, as Setup does for its structure."""
+    E = _soc()
+    from mace.utils.element_palettes import SYMBOLS
+    paths = list(paths)
+    name = name or (lambda p: p.name)
+    by_z: Dict[int, List[str]] = {}
+    hit_files = set()
+    unread: List[Dict[str, str]] = []
+    for p in paths:
+        zs = _atomic_numbers(p)
+        if isinstance(zs, str):
+            unread.append({"file": name(p), "why": zs})
+            continue
+        for z in zs:
+            if z in E.STUTSC_NOT_THE_PUBLISHED_ECP:
+                by_z.setdefault(z, []).append(name(p))
+                hit_files.add(str(p))
+    refused = [{"z": z, "symbol": SYMBOLS[z - 1] if 0 < z <= len(SYMBOLS) else f"Z={z}",
+                "why": E.STUTSC_NOT_THE_PUBLISHED_ECP[z], "files": names} for z, names in sorted(by_z.items())]
+    return {"files": len(paths), "refused": refused, "all": bool(paths) and len(hit_files) == len(paths),
+            "unread": unread}
+
+
+def soc_schema() -> Dict[str, Any]:
+    """The SOC section's tables, all the CLI's own (Crystal_d12/soc_ecp.py,
+    CRYSTALOptToD3): the keys, the ECP routes, the elements whose STUTSC is
+    refused and why, the SMEAR width the HPCC Au runs converged with, and the
+    words the CLI refuses a SOC deck with for the calculations it is not for."""
+    E = _soc()
+    not_for = {"OPT": E.unsupported_message("OPTGEOM"), "FREQ": E.unsupported_message("FREQCALC")}
+    try:
+        import CRYSTALOptToD3 as D3
+        two = [c for c in CALC_TYPES["opt2d3"] if c in D3.TWO_COMPONENT_D3_TYPES]
+    except Exception:
+        two = ["BAND", "DOSS", "CHARGE"]
+    prop = ("A properties deck has no SOC setting of its own: it reads the wavefunction of its parent run. "
+            f"From a two-component (SOC) run opt2d3 writes {', '.join(two)} and refuses the others "
+            "(CRYSTAL23 manual sec. 6.4, p. 183).")
+    for c in CALC_TYPES["opt2d3"]:
+        not_for[c] = prop
+    return {"keys": list(SOC_KEYS), "calcs": list(SOC_CALCS), "modes": list(SOC_MODES),
+            "ecp_forms": list(E.ECP_FORMS), "soc_basis_families": list(E.SOC_BASIS_FAMILIES),
+            "guesses": list(E.SOC_GUESSES),
+            "stutsc_refused": {str(z): why for z, why in E.STUTSC_NOT_THE_PUBLISHED_ECP.items()},
+            "metal_smear": E.SOC_METAL_SMEAR_EXAMPLE, "fmixing": E.SOC_FMIXING,
+            "restart_fmixing": E.SOC_RESTART_FMIXING, "not_for": not_for,
+            "properties_from_2c": two}
+
+
+def check_soc_value(key: str, value: Any) -> None:
+    """A SOC patch value, checked by the CLI's own checks (None removes the key)."""
+    if value is None:
+        return
+    E = _soc()
+    try:
+        if key == "soc":
+            if not isinstance(value, bool):
+                raise SetupError("soc is true or false")
+        elif key == "soc_ecp":
+            E._checked_ecp_form(value)
+        elif key == "soc_basis":
+            E._checked_soc_basis(value)
+        elif key == "soc_guess":
+            E._checked_guess(value)
+        elif key == "smear":
+            if isinstance(value, bool):
+                raise E.SocError(f"smear must be a width in hartree above 0, not {value!r}")
+            E.checked_smear(value)
+    except E.SocError as exc:
+        raise SetupError(str(exc))
+
+
+_NOT_WRITING = re.compile(r"Not writing \S+?\.d12: (.+)$")
+
+
+def soc_refusal(log: str) -> Optional[str]:
+    """The reason the CLI gave for not writing a deck ("Not writing <deck>: <reason>"), as it said it."""
+    lines = log.splitlines()
+    for k, line in enumerate(lines):
+        m = _NOT_WRITING.search(line.strip())
+        if m:
+            said = [m.group(1).strip()]
+            # a refusal that lists several changes goes on in "  - ..." lines
+            for more in lines[k + 1:]:
+                if not more.strip().startswith("- "):
+                    break
+                said.append(more.strip())
+            return "\n".join(said)
+    return None
+
+
+def _soc_warning(message: str) -> bool:
+    return bool(re.search(r"\bSOC\b|SMEAR|GUESSP|two-component", message))
+
+
+def soc_guesses(mode: str, source_path: Optional[Path]) -> List[Dict[str, Any]]:
+    """The starting guesses this parent allows: from scratch always; GUESSPNOSO
+    (a spin-polarized 1c parent without symmetry) and GUESSPSO (a 2c parent),
+    each checked by opt2d12's own soc_restart_plan, read-only, with its words
+    when the parent does not allow it."""
+    E = _soc()
+    out: List[Dict[str, Any]] = [{"value": None, "ok": True, "reason": None}]
+    if mode != "opt2d12" or source_path is None:
+        return out + [{"value": g, "ok": False, "reason": E.NO_PARENT_FOR_GUESS} for g in E.SOC_GUESSES]
+    import contextlib
+    import io
+    import CRYSTALOptToD12 as O
+    from mace.utils.calc_detection import is_two_component_deck, is_two_component_output
+    deck_parent = is_deck(source_path.name)
+    d12 = source_path if deck_parent else source_path.with_suffix(".d12")
+    two_c = False
+    try:
+        two_c = (is_two_component_deck(d12.read_text(errors="replace")) if d12.is_file() else False) or (
+            not deck_parent and is_two_component_output(source_path.read_text(errors="replace")))
+    except OSError:
+        pass
+    # where the deck would go: a name nobody has (soc_restart_plan only stats it)
+    child = Path(tempfile.gettempdir()) / f"mace-soc-check-{os.getpid()}" / "child.d12"
+    for g in E.SOC_GUESSES:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            problem = O.soc_restart_plan({"soc": True, "soc_guess": g, "two_component": two_c},
+                                         None if deck_parent else str(source_path),
+                                         str(d12) if d12.is_file() else None, str(child))[0]
+        out.append({"value": g, "ok": problem is None, "reason": problem})
+    return out
+
+
+def soc_state(mode: str, calc: str, obj: Any, defaults_obj: Any, log: str, guesses: List[Dict[str, Any]],
+              metal: Optional[str]) -> Dict[str, Any]:
+    """The SOC section of one Setup run: whether it applies (a single point),
+    the keys the settings file has and the parent's (or the defaults') file
+    had, the starting guesses the parent allows, and from the printed
+    command's run its "SOC deck:" lines and its refusal, in its words."""
+    values = {k: obj[k] for k in SOC_KEYS if isinstance(obj, dict) and k in obj}
+    base = {k: defaults_obj[k] for k in SOC_KEYS if isinstance(defaults_obj, dict) and k in defaults_obj}
+    on = values.get("soc") is True
+    return {"applies": mode in SOC_MODES and calc in SOC_CALCS, "values": values, "base": base,
+            "guesses": guesses, "metal": metal,
+            "changes": [ln.strip() for ln in log.splitlines() if ln.strip().startswith("SOC deck:")] if on else [],
+            "refusal": soc_refusal(log) if on else None}
 
 
 # ---------------------------------------------------------------- the whole run
@@ -976,22 +1428,23 @@ class Request:
         for k in self.patches:
             if k not in PATCH_FIELDS:
                 raise SetupError(f"{k} is not a setting written into the JSON by hand")
+            if k in SOC_KEYS:
+                check_soc_value(k, self.patches[k])
         hj = body.get("json_text")
         if hj is not None and (not isinstance(hj, str) or len(hj) > 1_000_000):
             raise SetupError("json_text must be the settings file's text")
         self.json_text = hj
         self.preview = body.get("preview", True) is not False
-        # the CLI's own switches a Setup answer maps to (the defect builder's charge hint: --net-charge)
-        flags = body.get("flags") or {}
-        if not isinstance(flags, dict) or set(flags) - {"net_charge"}:
-            raise SetupError("flags is {net_charge}")
-        self.flags = {}
-        if flags.get("net_charge") not in (None, ""):
-            try:
-                self.flags["net_charge"] = int(flags["net_charge"])
-            except (TypeError, ValueError):
-                raise SetupError("the net charge is a whole number")
+        # the CLI's own charged-system switches (--net-charge, --chemod, ...; charge_flags above)
+        self.flags = charge_flags(body.get("flags"))
         self.form = body.get("form", True) is not False
+        # the GUI's Functional / Basis set settings (session > folder > user), the CLI's
+        # defaults for a deck without a parent: {"functional": "", "basis_set": ""}
+        sd = body.get("defaults") or {}
+        if not isinstance(sd, dict) or set(sd) - {"functional", "basis_set"} or any(
+                not isinstance(v, str) or len(v) > 60 for v in sd.values()):
+            raise SetupError("defaults is {functional, basis_set}: short names")
+        self.defaults = {k: sd[k].strip() for k in ("functional", "basis_set") if k in sd}
 
 
 def source_key(mode: str, path: Path) -> Tuple:
@@ -1004,6 +1457,9 @@ def source_key(mode: str, path: Path) -> Tuple:
         d12 = path.with_suffix(".d12")
         if d12.is_file():
             parts.append(stamp(d12))
+        f9 = path.with_suffix(".f9")
+        if f9.is_file() and not is_deck(path):
+            parts.append(stamp(f9))
     elif mode == "opt2d3":
         parts += [stamp(p) for p in _d12_globs(path)]
         parts += [("sibling", n) for n in _anatase_siblings(path)]
@@ -1014,6 +1470,20 @@ def source_key(mode: str, path: Path) -> Tuple:
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def setup_env(defaults: Dict[str, str]) -> Dict[str, str]:
+    """The CLI's environment for these GUI defaults: MACE_SETUP_FUNCTIONAL and
+    MACE_SETUP_BASIS_SET (blank = the CLI's own default), and no folder file of
+    its own (the GUI's value already is the folder's, the user's or this
+    session's). Empty when the page sent none (a page from before 1.1.6)."""
+    if not defaults:
+        return {}
+    from mace.utils import folder_settings
+    env = {folder_settings.ENV: "none"}
+    for key, var in folder_settings.SETUP_ENV.items():
+        env[var] = defaults.get(key.split(".", 1)[1], "")
+    return env
 
 
 def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optional[Path], rel: Optional[str],
@@ -1031,7 +1501,8 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
 
     progress(0.05, "Staging the input")
     st = stage(mode, calc, work, source_path, rel, cif_bytes, cif_name)
-    base_key = (src_key, mode, calc, clirun.cli_hash())
+    st.env = setup_env(req.defaults)
+    base_key = (src_key, mode, calc, clirun.cli_hash(), sorted(st.env.items()))
     cmd_name = {"cif2d12": "mace convert", "opt2d12": "mace opt2d12", "opt2d3": "mace opt2d3"}[mode]
 
     def cached_ask(tag, rules, frac, msg, extra=()):
@@ -1060,12 +1531,12 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     problems: List[Dict[str, Any]] = []
     current = None
     asked = None
+    charge = flag_args(req.flags, mode)          # the charged-system switches, on every command
     if req.json_text is not None:
         final = req.json_text
         source_of_json = "hand"
     elif req.answers or req.flags:
-        extra = ["--net-charge", str(req.flags["net_charge"])] if "net_charge" in req.flags and mode != "opt2d3" else []
-        asked = cached_ask("answers", answer_rules(mode, req.answers), 0.35, f"Answering {cmd_name}'s questions", extra)
+        asked = cached_ask("answers", answer_rules(mode, req.answers), 0.35, f"Answering {cmd_name}'s questions", charge)
         final = asked.get("json_text")
         current = asked.get("questions")
         source_of_json = "answers"
@@ -1075,7 +1546,7 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     base_run = asked if asked is not None else defaults
     if final is None:
         why = refusal(base_run.get("log") or "")
-        out = _refused(mode, calc, st, why, base_run, defaults, survey, schema_info, req)
+        out = _refused(mode, calc, st, why, base_run, defaults, survey, schema_info, req, charge)
         out["elapsed"] = round(time.monotonic() - t0, 3)
         return out
     final, changed = apply_patch(final, req.patches)
@@ -1092,7 +1563,7 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
         defaults_obj = None
     form = build_form(mode, calc, survey.get("questions") or [], current, obj, defaults_obj, req.answers, req.patches,
                       schema_info) if req.form else []
-    args = batch_args(st)
+    args = batch_args(st) + charge
     result: Dict[str, Any] = {
         "mode": mode, "calc_type": calc, "json_text": final, "json_sha256": _sha(final),
         "defaults_sha256": _sha(defaults["json_text"]) if defaults.get("json_text") else None,
@@ -1103,6 +1574,7 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
         "transcript": [{"q": Question(q).last[-160:], "a": q.get("answer")} for q in (current or [])][-60:],
     }
     problems += problems_from(base_run.get("log") or "")
+    result["parent"] = parent_info(mode, st.input_rel, problems, st.tree / st.input_rel)
     if mode == "opt2d3" and st.f9:
         problems.append({"severity": "info", "source": "Setup", "field": None,
                          "message": f"Preview used an empty stand-in for {st.f9['name']} ({_mb(st.f9['bytes'])}); the deck does not "
@@ -1120,11 +1592,11 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
             problems[:] = [p for p in problems if not p["message"].lower().startswith("space group mismatch")]
             problems.append({"severity": "info", "source": "Setup", "message": note, "action_id": "save_symmetrized"})
     if req.preview:
-        key = ("setup-preview", base_key, _sha(final))
+        key = ("setup-preview", base_key, _sha(final), charge)
         p = cache_get(key)
         if p is None:
             progress(0.6, f"Running {command_line(args)}")
-            p = run_printed(st, final, ctx)
+            p = run_printed(st, final, ctx, charge)
             cache_put(key, p, len(json.dumps(p)))
         progress(0.9, "Reading the deck")
         if p["code"] != 0 or not p["decks"]:
@@ -1145,15 +1617,105 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
                     problems.append({"severity": "warning", "source": "Setup",
                                      "message": f"{cmd_name} writes a different deck when it asks than from its saved "
                                                 "settings (a CLI finding: the saved-settings deck is shown)"})
+    if mode in SOC_MODES:
+        _soc_section(result, mode, calc, obj, defaults_obj, p if req.preview else None, source_path, st,
+                     base_key, cache_get, cache_put, problems)
+    if mode == "opt2d3" and calc == "BAND" and req.preview:
+        kp_info = _kpath_info(st, final, req, result, base_key, cache_get, cache_put, ctx, source_path, charge)
+        if kp_info is not None:
+            result["kpath"] = kp_info
+            for e in kp_info["errors"]:
+                problems.insert(0, {"severity": "error", "source": "Setup", "field": "band_path", "message": f"k-path: {e}"})
+            for w in kp_info["warnings"]:
+                problems.append({"severity": "warning", "source": "Setup", "field": "band_path", "message": f"k-path: {w}"})
     result["elapsed"] = round(time.monotonic() - t0, 3)
     return result
+
+
+def _soc_section(result, mode, calc, obj, defaults_obj, p, source_path, st, base_key, cache_get, cache_put,
+                 problems) -> None:
+    """result["soc"] (soc_state), and the CLI's SOC warnings and refusal as
+    Problems on the SOC section (field "soc"): the preview run's own lines."""
+    key = ("setup-soc", base_key)
+    hit = cache_get(key)
+    if hit is None:
+        metal = None
+        if mode == "opt2d12" and source_path is not None and not is_deck(source_path.name):
+            import CRYSTALOptToD12 as O
+            metal = O.soc_parent_metal(str(source_path))
+        hit = {"guesses": soc_guesses(mode, source_path), "metal": metal}
+        cache_put(key, hit, len(json.dumps(hit)))
+    log = (p or {}).get("log") or ""
+    soc = soc_state(mode, calc, obj, defaults_obj, log, hit["guesses"], hit["metal"])
+    result["soc"] = soc
+    if soc["values"].get("soc") is not True:
+        return
+    if soc["refusal"]:
+        problems[:] = [x for x in problems if not (x["severity"] == "error" and x["message"].startswith("The CLI wrote no deck"))]
+        problems.insert(0, {"severity": "error", "source": "Setup", "field": "soc",
+                            "message": f"The CLI wrote no deck: {soc['refusal']}"})
+    seen = {x["message"] for x in problems}
+    # the CLI's SOC warnings whole: the measured numbers are at their end
+    for w in problems_from(log, limit=4000):
+        if _soc_warning(w["message"]) and w["message"] not in seen:
+            problems.append({**w, "field": "soc"})
+            seen.add(w["message"])
+
+
+def _band_path_module():
+    try:
+        import d3_band_path
+    except ImportError:
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Crystal_d3"))
+        import d3_band_path
+    return d3_band_path
+
+
+def _kpath_info(st, final: str, req: "Request", result: Dict[str, Any], base_key, cache_get, cache_put, ctx,
+                source_path=None, charge=()):
+    """The k-path editor's data: the segments the unedited settings compute (from that deck), the
+    edit (band_path) and what is wrong with it. The unedited deck is the preview without band_path
+    (cached like any preview: usually the one shown before the first edit)."""
+    kp = _band_path_module()
+    edit = req.patches.get("band_path")
+    deck = result.get("deck")
+    if edit is not None:
+        plain_json, _ = apply_patch(final, {"band_path": None})
+        # the main preview's key (charge included): usually the preview shown before the first edit
+        key = ("setup-preview", base_key, _sha(plain_json), charge)
+        p = cache_get(key)
+        if p is None:
+            p = run_printed(st, plain_json, ctx, charge)
+            cache_put(key, p, len(json.dumps(p)))
+        deck = p["decks"][0]["text"] if p.get("code") == 0 and p.get("decks") else None
+    parsed = kp.parse_band_deck(deck) if deck else None
+    if not parsed or not parsed["segments"]:
+        return None
+    # a slab or a polymer: added points keep their non-periodic k components 0 (manual p. 309, note 3)
+    dim = _kpath_dimensionality(source_path)
+    errors, warnings = (kp.validate(edit, parsed["segments"], need_k=not parsed["labels_mode"], dimensionality=dim)
+                        if edit is not None else ([], []))
+    return {"computed": parsed["segments"], "edited": edit, "errors": errors, "warnings": warnings,
+            "labels_mode": parsed["labels_mode"], "dimensionality": dim}
+
+
+def _kpath_dimensionality(source_path) -> int:
+    """3, 2 (slab), 1 (polymer) or 0 of the parent .out, as opt2d3 reads it (3 when unknown)."""
+    if source_path is None:
+        return 3
+    try:
+        import d3_kpoints
+    except ImportError:
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Crystal_d3"))
+        import d3_kpoints
+    return d3_kpoints.output_dimensionality(str(source_path))
 
 
 def _mb(n: int) -> str:
     return f"{n / 2**20:.0f} MB" if n >= 2**20 else f"{n / 1024:.0f} KB" if n >= 1024 else f"{n} B"
 
 
-def _refused(mode, calc, st, why, base_run, defaults, survey, schema_info, req) -> Dict[str, Any]:
+def _refused(mode, calc, st, why, base_run, defaults, survey, schema_info, req, charge=()) -> Dict[str, Any]:
     """The CLI wrote no settings: its refusal is the answer (no f9, no seekpath, ...)."""
     msg = why.splitlines()[-1] if why else "the CLI stopped"
     if mode == "opt2d3" and st.f9 is None and re.search(r"wavefunction|fort\.9", base_run.get("log") or "", re.I):
@@ -1161,9 +1723,9 @@ def _refused(mode, calc, st, why, base_run, defaults, survey, schema_info, req) 
         stem = Path(st.input_rel).stem
         msg = (f"opt2d3 writes no {calc} deck without {d3_base(stem)}_sp.f9 (or fort.9) beside {name} "
                f"(the wavefunction of the SCF run)")
-    args = batch_args(st)
+    args = batch_args(st) + list(charge)
     return {"mode": mode, "calc_type": calc, "json_text": None, "json_sha256": None, "form": [], "refused": why,
             "deck": None, "deck_name": None, "decks": [], "log": (base_run.get("log") or "")[-6000:],
             "command": command_line(args), "argv": args, "json_rel": st.json_rel, "input_rel": st.input_rel,
-            "f9": st.f9, "notes": st.notes, "save_blocked": msg,
+            "f9": st.f9, "notes": st.notes, "save_blocked": msg, "parent": parent_info(mode, st.input_rel, [], st.tree / st.input_rel),
             "problems": [{"severity": "error", "source": "Setup", "message": msg}]}

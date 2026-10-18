@@ -7,6 +7,10 @@
 import * as M from "./model.js";
 import { loadCss } from "../lazy/lazy_util.js";
 import * as profile from "../profile.js";
+import * as KE from "../kpath_editor.js";
+import * as K from "../kpath.js";
+import { createBZ } from "../bz_view.js";
+import * as CF from "./charge.js";
 
 const css = loadCss(import.meta.url, "../../css/setup.css");
 let S = null, U = null;               // the shell API and its UI helpers (esc, icon, toast, dialog)
@@ -29,6 +33,9 @@ const esc = (s) => U.esc(s);
 const icon = (n, c) => U.icon(n, c);
 const draftKey = (d) => `mace.gui.setup.${S.dirHash()}.${d.path && !d.untitled ? d.path : "doc" + d.id}`;
 const follow = (st) => st && (st.mode === "opt2d12" || st.mode === "opt2d3");
+/** convert and opt2d12 take the charged-system switches; opt2d3 takes none */
+const chargeable = (st) => !!st && (schema.charge_modes || []).includes(st.mode);
+const chargeFlags = (st) => (chargeable(st) && st.flags && Object.keys(st.flags).length ? { ...st.flags } : null);
 
 /* ---------------------------------------------------------------- the subject document */
 /** The document Setup is about: the active one, or the one a Deck document was previewed from. */
@@ -50,7 +57,8 @@ function stateFor(d) {
   if (!mo.mode) return null;
   try { st = M.fromDraft(JSON.parse(localStorage.getItem(draftKey(d)) || "null")); } catch (e) { st = null; }
   const ct = schema.calc_types || {};
-  if (!st || (mo.mode === "cif2d12" && st.mode !== "cif2d12") || (mo.mode === "follow" && st.mode === "cif2d12")) {
+  if (!st || (mo.mode === "cif2d12" && st.mode !== "cif2d12") || (mo.mode === "follow" && st.mode === "cif2d12")
+      || (mo.deck && st.mode === "opt2d3")) {
     const mode = mo.mode === "follow" ? "opt2d12" : "cif2d12";
     st = M.newState(mode, (schema.default_calc || {})[mode] || (ct[mode] || ["OPT"])[0]);
   }
@@ -103,8 +111,11 @@ async function run(d, preview) {
   const { source, name } = await sourceFor(d, st);
   const body = M.request(st, source, d.id, preview);
   if (name) body.name = name;
-  const charge = st.flags && st.flags.net_charge;
-  if (charge !== undefined && charge !== null) body.flags = { net_charge: charge };
+  // Settings' Functional and Basis set (this session > the folder's mace-folder.toml > yours): the
+  // CLI's defaults for a deck without a parent (a follow-up keeps its parent's)
+  if (st.mode !== "opt2d3") body.defaults = { functional: S.setting("functional") || "", basis_set: S.setting("basisSet") || "" };
+  // the charged-system switches (Charged system, or the defect builder's charge hint), as the CLI takes them
+  if (chargeFlags(st)) body.flags = chargeFlags(st);
   const mine = { docId: d.id, t: performance.now(), preview };
   running = mine;
   st.busy = { progress: 0.02, message: "Starting" };
@@ -187,7 +198,11 @@ function render() {
   const st = stateFor(d);
   const focus = rememberFocus();
   root.innerHTML = "";
-  root.appendChild(el(`<header class="su-head"><h2 class="su-title">Calculation Setup</h2>${st ? `<span class="su-chip" title="The CLI command that makes this deck">${esc(st.mode)} · ${esc(M.MODES[st.mode])}</span>` : ""}</header>`));
+  // Expand all / Collapse all once the form has its sections (View › Inspector Sections has the keys)
+  const allBtn = (act, cmd, ic, label) => `<button type="button" class="icon-btn sm" data-act="${act}" data-tip="${label}" data-tip-cmd="${cmd}" aria-label="${label}">${icon(ic)}</button>`;
+  const acts = st && st.result ? `<span class="su-head-acts" role="group" aria-label="Setup sections">${allBtn("expandAll", "view.expandSections", "chevrons-up-down", "Expand All Sections")}` +
+    `${allBtn("collapseAll", "view.collapseSections", "chevrons-down-up", "Collapse All Sections")}</span>` : "";
+  root.appendChild(el(`<header class="su-head"><h2 class="su-title">Calculation Setup</h2>${st ? `<span class="su-chip" title="The CLI command that makes this deck">${esc(st.mode)} · ${esc(M.MODES[st.mode])}</span>` : ""}${acts}</header>`));
   const body = el(`<div class="su-body"></div>`);
   root.appendChild(body);
   body.appendChild(step1(d, st));
@@ -202,7 +217,7 @@ function render() {
 
 /* A re-render keeps the focused control focused (by id, or by what it is: a calc
  * button, an action, a section head), so keys like Mod+Z keep reaching the panel. */
-const FOCUS_KEYS = ["data-calc", "data-act", "data-reset", "data-hist"];
+const FOCUS_KEYS = ["data-calc", "data-act", "data-reset", "data-hist", "data-soc-reset", "data-soc-use"];
 function rememberFocus() {
   const a = document.activeElement;
   const scroll = root.querySelector(".su-body") ? root.querySelector(".su-body").scrollTop : 0;
@@ -224,13 +239,13 @@ function restoreFocus(f) {
 function step1(d, st) {
   const s = el(`<section class="su-step" aria-label="Structure"><h3 id="su-s1"><span class="num">1</span>Structure</h3></section>`);
   if (!d) {
-    s.appendChild(el(`<div class="su-empty"><p>Open a CIF or a CRYSTAL output to set up a calculation.</p>
+    s.appendChild(el(`<div class="su-empty"><p>Open a CIF, a CRYSTAL output (.out) or a .d12 deck to set up a calculation.</p>
       <button class="tb-btn-text" data-cmd="file.open">${icon("folder-open")}<span>Open…</span><kbd>${esc(S.shortcut("file.open"))}</kbd></button></div>`));
     return s;
   }
   const mo = M.modeOf(d, info(d));
   if (!mo.mode) {
-    s.appendChild(el(`<div class="su-empty"><p>A deck needs a CIF (a new calculation) or a CRYSTAL .out (a follow-up). Save this structure as CIF?</p>
+    s.appendChild(el(`<div class="su-empty"><p>A deck needs a CIF (a new calculation), a CRYSTAL .out or a .d12 deck in the folder (a follow-up). Save this structure as CIF?</p>
       <button class="tb-btn-text" data-act="saveAsCif">${icon("save")}<span>Save As CIF…</span></button></div>`));
     return s;
   }
@@ -239,10 +254,17 @@ function step1(d, st) {
   const src = el(`<div class="su-src"><span class="kb ${esc(kind)}">${esc(kind === "out" ? "out" : kind.toUpperCase())}</span>
     <span class="su-name" title="${esc(d.path || d.title)}">${esc(name)}</span><span class="muted">${esc(dir)}</span></div>`);
   s.appendChild(src);
+  if (follow(st)) s.appendChild(parentLine(d, st, name));
   const meta = (d.meta || (S.structureOf(d) || {}).doc_meta || {});
   const prov = meta.provenance && meta.provenance.label;
   if (prov) s.appendChild(el(`<p class="su-prov">${esc(prov)}</p>`));
   if (mo.source === "session") s.appendChild(el(`<p class="su-note">${icon("info")}<span>Not saved in the folder: the preview uses this structure as a CIF; Save asks to save it first.</span></p>`));
+  // the folder's preset for this command (what `mace opt2d12` / `mace opt2d3` there use without --config-file):
+  // Setup starts from the CLI's own defaults, and its command names its own file, so the preset is not used here
+  const presetKey = `setup.${st.mode}_config`, preset = S.folderCli ? S.folderCli()[presetKey] : null;
+  if (preset) {
+    s.appendChild(el(`<p class="su-note su-preset">${icon("info")}<span>This folder's mace-folder.toml gives <code>mace ${esc(st.mode)}</code> the settings file ${esc(String(preset))} (<code>${esc(presetKey)}</code>). Calculation Setup does not start from it: it starts from the CLI's defaults, and the command it shows names its own file.</span></p>`));
+  }
   const g = guardFor(d, st);
   if (g) {
     const box = el(`<div class="su-guard" role="alert">${icon("triangle-alert")}<div><p>${esc(g.text)}</p>
@@ -262,18 +284,44 @@ function step1(d, st) {
   return s;
 }
 
+/** Where a follow-up's values come from: its parent (.out or .d12), and what the CLI said about it. */
+function parentLine(d, st, name) {
+  const deck = M.parentKind(d) === "d12";
+  const b = `<b class="mono">${esc(name)}</b>`;
+  const what = deck ? `Geometry and settings from the parent deck ${b}`
+    : st.mode === "opt2d3" ? `Geometry and wavefunction from the parent run ${b}`
+      : `Geometry from the parent run ${b}, settings from its .d12`;
+  const how = deck ? "mace opt2d12 --d12-file" : st.mode === "opt2d3" ? "mace opt2d3 -i" : "mace opt2d12 --out-file";
+  const p = st.result && st.result.parent;
+  const warn = p && p.warning ? `<p class="su-warnline su-parent-warn" role="note">${icon("triangle-alert")}<span>${esc(p.name)}: ${esc(p.warning)}. The deck is the CLI's (${esc(how)}).</span></p>` : "";
+  return el(`<div class="su-parentbox"><p class="su-note su-parent">${icon("info")}<span>${what} (${esc(how)}); fields marked “from parent .${deck ? "d12" : "out"}” keep its values.</span></p>${warn}</div>`);
+}
+
 function calcSegment(d, st) {
-  const btn = (t, prop) => `<button role="radio" aria-checked="${t === st.calc}" data-calc="${esc(t)}" class="${prop ? "prop" : ""}"` +
-    `${t === "CHARGE+POTENTIAL" ? ' title="CHARGE+POTENTIAL"' : ""}>${esc(t === "CHARGE+POTENTIAL" ? "CHG+POT" : t)}</button>`;
+  // follow-ups this parent cannot have (the server's parent_refusals: ORBITALS from a two-component run),
+  // grayed out with the reason as their tooltip; kept across calculation changes (a change clears the result)
+  if (st.result && st.result.parent && st.result.parent.refused) st.refused = st.result.parent.refused;
+  const refused = st.refused || {};
+  // the reason a screen reader reads: visually hidden text after the group, named by aria-describedby
+  const whyId = (t) => `su-why-${t.replace(/[^A-Za-z0-9]/g, "_")}`;
+  const why = Object.entries(refused).map(([t, r]) => `<span class="sr-only" id="${whyId(t)}">${esc(r)}</span>`).join("");
+  const btn = (t, prop) => `<button role="radio" aria-checked="${t === st.calc}" data-calc="${esc(t)}" class="${prop ? "prop" : ""}${refused[t] ? " refused" : ""}"` +
+    (refused[t] ? ` aria-disabled="true" title="${esc(refused[t])}" aria-describedby="${whyId(t)}"`
+      : `${t === "CHARGE+POTENTIAL" ? ' title="CHARGE+POTENTIAL"' : ""}`) +
+    `>${esc(t === "CHARGE+POTENTIAL" ? "CHG+POT" : t)}</button>`;
   if (st.mode === "cif2d12") {
-    return `<div class="su-calc" role="radiogroup" aria-label="Calculation type">${(schema.calc_types.cif2d12 || []).map((t) => btn(t, false)).join("")}</div>`;
+    return `<div class="su-calc" role="radiogroup" aria-label="Calculation type">${(schema.calc_types.cif2d12 || []).map((t) => btn(t, false)).join("")}</div>${why}`;
   }
   // a follow-up: rows of three equal segments, the SCF runs (opt2d12) above the properties of its wavefunction (opt2d3)
   const row = (types, prop, label) => `<div class="su-calc-row" title="${esc(label)}">${types.map((t) => btn(t, prop)).join("")}</div>`;
+  if (M.modeOf(d, info(d)).deck) {
+    return `<div class="su-calc grouped" role="radiogroup" aria-label="Calculation type">` +
+      row(schema.calc_types.opt2d12 || [], false, "A new SCF run from this deck (mace opt2d12 --d12-file); properties need a run's wavefunction") + "</div>" + why;
+  }
   const props = schema.calc_types.opt2d3 || [], rows = [];
   for (let k = 0; k < props.length; k += 3) rows.push(row(props.slice(k, k + 3), true, "Properties from this output's wavefunction (mace opt2d3)"));
   return `<div class="su-calc grouped" role="radiogroup" aria-label="Calculation type">` +
-    row(schema.calc_types.opt2d12 || [], false, "A new SCF run from this output (mace opt2d12)") + rows.join("") + "</div>";
+    row(schema.calc_types.opt2d12 || [], false, "A new SCF run from this output (mace opt2d12)") + rows.join("") + "</div>" + why;
 }
 
 function step2(d, st) {
@@ -304,15 +352,229 @@ function step2(d, st) {
     for (const f of rows) host.appendChild(row(d, st, f, fol));
     s.appendChild(sec);
   }
+  if (st.mode === "opt2d3" && st.calc === "BAND" && r.kpath) s.appendChild(kpathSection(d, st, r.kpath, collapsed));
+  if (chargeable(st)) s.appendChild(chargeSection(st, collapsed));
+  const socSec = socSection(d, st, r, collapsed);
+  if (socSec) s.appendChild(socSec);
   s.appendChild(advanced(d, st));
   return s;
+}
+
+/** The k-path to compute (opt2d3 BAND): the editor of the band plot, on the path the deck computes.
+ * An edit is the band_path key of the settings file (what opt2d3's own prompt writes). */
+function kpathSection(d, st, kp, collapsed) {
+  const open = !collapsed.has("k-path");
+  const edited = "band_path" in st.patches;
+  const sec = el(`<div class="su-sec${open ? "" : " collapsed"}" data-sec="k-path">
+    <button class="su-sec-h" aria-expanded="${open}">${icon("chevron-down")}<span>k-path</span>
+    <span class="su-count">${edited ? "edited" : ""}</span></button><div class="su-rows su-kpath"></div></div>`);
+  if (!st.bz || st.bzFor !== d.path) {
+    if (st.bz) st.bz.destroy();
+    st.bzFor = d.path;
+    st.bz = createBZ({ api: S.api, path: d.path, pickable: true, onHover: (i) => KE.hoverFromBZ("setup", i),
+      onSelect: (i) => KE.selectFromBZ("setup", i), onPick: (lab, p) => KE.pickFromBZ("setup", lab, p) });
+  }
+  KE.render(sec.querySelector(".su-kpath"), { id: "setup", mode: "calc", heading: false, computed: kp.computed, dimensionality: kp.dimensionality || 3, bz: open ? st.bz : null, segs: edited ? st.patches.band_path : null,
+    icon, serverErrors: edited ? kp.errors : [], serverWarnings: edited ? kp.warnings : [],
+    onChange: (segs, label) => {
+      const before = M.snapshot(st, "");
+      // points of the computed path by label, as opt2d3's prompt saves them (the file then fits any
+      // material an automatic path fits); points you added keep their coordinates
+      const known = K.points(kp.computed);
+      const strip = (g) => Object.fromEntries(Object.entries(g).filter(([k, v]) => !(k.startsWith("k_") && known[K.canonical(g[k.slice(2)])]
+        && known[K.canonical(g[k.slice(2)])].every((x, n) => Math.abs(x - v[n]) < 1e-6))));
+      if (segs) st.patches.band_path = segs.map(strip); else delete st.patches.band_path;
+      M.record(st, label);
+      persist(d, st);
+      schedule(d);
+      return before;
+    } });
+  return sec;
+}
+
+/** Charged system (1.1.6): the CLI's charged-system switches (charge.js). Shut until one is given. */
+function chargeSection(st, collapsed) {
+  const name = CF.SECTION, n = Object.keys(st.flags || {}).length;
+  const open = collapsed.has("__charge_open") || (n > 0 && !collapsed.has(name));
+  const sec = el(`<div class="su-sec${open ? "" : " collapsed"}" data-sec="${esc(name)}">
+    <button class="su-sec-h" aria-expanded="${open}">${icon("chevron-down")}<span>${esc(name)}</span>
+    <span class="su-count">${n ? `${n} switch${n === 1 ? "" : "es"}` : ""}</span></button><div class="su-rows su-charge"></div></div>`);
+  const host = sec.querySelector(".su-rows");
+  host.insertAdjacentHTML("beforeend", `<p class="su-h su-charge-note">The ${esc(st.mode === "cif2d12" ? "mace convert" : "mace opt2d12")} switches for ions, charged cells and odd electron counts; the command below carries them. The CLI checks them and says why when it refuses.</p>`);
+  host.insertAdjacentHTML("beforeend", CF.rowsHtml(schema.charge_flags, st.flags, { esc, prefix: "su-cf" }));
+  return sec;
+}
+
+/* ---------------------------------------------------------------- spin-orbit coupling (1.1.6)
+ * The SOC section: keys of the CLI's own settings file (schema.soc.keys), sent as patches, never
+ * a CLI question. Enabled for single points (cif2d12, opt2d12); for OPT, FREQ and properties it
+ * shows the CLI's own reason. Warnings and the refusal are the CLI's words (problems, field "soc"). */
+const SOC_SEC = "Spin-orbit coupling";
+
+function socSection(d, st, r, collapsed) {
+  const sc = schema.soc;
+  if (!sc) return null;
+  const soc = r.soc || { values: {}, base: {}, guesses: [], metal: null, changes: [], refusal: null };
+  const base = soc.base || {};
+  const applies = (sc.calcs || []).includes(st.calc) && (sc.modes || []).includes(st.mode);
+  const on = M.socValue(st, base, "soc") === true;
+  const fol = st.mode === "opt2d12", pk = M.parentKind(d);   // as the form rows: opt2d3 starts from its own defaults
+  const why = applies ? "" : ((sc.not_for || {})[st.calc] || (sc.not_for || {}).OPT || "");
+  const open = !collapsed.has(SOC_SEC);
+  const n = M.socChanged(st);
+  const sec = el(`<div class="su-sec su-soc${open ? "" : " collapsed"}" data-sec="${SOC_SEC}">
+    <button class="su-sec-h" aria-expanded="${open}">${icon("chevron-down")}<span>${SOC_SEC}</span>
+    <span class="su-count">${n ? `${n} changed` : on ? "on" : ""}</span></button><div class="su-rows"></div></div>`);
+  const host = sec.querySelector(".su-rows");
+  const meta = (key, changed, was, label, hintId, hint) => {
+    const b = M.badge({ changed, default: was }, fol, pk);
+    return `<div class="su-meta"><span class="su-badge ${b.kind}">${esc(b.text)}</span>${changed
+      ? `<button type="button" class="su-reset" data-soc-reset="${key}" aria-label="Reset ${esc(label)}">Reset</button>` : ""}
+      <span class="su-h" id="${hintId}">${esc(hint || "")}</span></div>`;
+  };
+  // the switch: off for OPT, FREQ and properties (the CLI's reason), unless the parent's settings have it on
+  const canSwitch = applies || on;
+  const swHint = applies ? "A two-component SCF (TWOCOMPON), written as \"soc\" in the settings file" : why;
+  host.appendChild(el(`<div class="su-row su-soc-row${"soc" in st.patches ? " changed" : ""}" data-soc-row="soc">
+    <label for="su-soc-on" id="su-soc-on-l" class="su-l">Spin-orbit coupling</label>
+    <div class="su-ctl"><span class="su-switch"><input type="checkbox" role="switch" id="su-soc-on" data-soc="soc" aria-checked="${on}"
+      aria-labelledby="su-soc-on-l" aria-describedby="su-soc-on-h"${on ? " checked" : ""}${canSwitch ? "" : ' disabled aria-disabled="true"'}><span aria-hidden="true">${on ? "On" : "Off"}</span></span></div>
+    ${meta("soc", "soc" in st.patches, base.soc === true ? "on" : "off", "Spin-orbit coupling", "su-soc-on-h", swHint)}</div>`));
+  if (on && applies) {
+    host.appendChild(socRoute(d, st, sc, base, meta));
+    host.appendChild(socGuess(st, soc, base, meta));
+    // the CLI's evidence that the parent is a metal (opt2d12 reads the .out): SMEAR is suggested more strongly
+    if (soc.metal) host.appendChild(el(`<p class="su-warnline su-soc-metal" id="su-soc-metal">${icon("triangle-alert")}<span>The parent looks metallic: ${esc(soc.metal)}</span></p>`));
+    host.appendChild(socSmear(st, sc, soc, base, meta));
+  }
+  const notes = socNotes(st, r, soc);
+  if (notes) host.appendChild(notes);
+  return sec;
+}
+
+/** One radio option; a disabled one says why (aria-describedby to its reason, shown under it). */
+function socOpt(name, key, value, checked, label, sub, whyId) {
+  const id = `su-soc-${name}-${value || "none"}`;
+  return `<label class="su-opt${whyId ? " is-off" : ""}" for="${id}"><input type="radio" name="su-soc-${name}" id="${id}" value="${esc(value)}" data-soc="${key}"${checked ? " checked" : ""}${
+    whyId ? ` disabled aria-disabled="true" aria-describedby="${whyId}"` : ""}><span><span class="su-opt-name">${esc(label)}</span>${sub ? ` <span class="su-opt-sub">${esc(sub)}</span>` : ""}${whyId ? ' <span class="su-opt-sub">(not available)</span>' : ""}</span></label>`;
+}
+
+function socRoute(d, st, sc, base, meta) {
+  const route = M.socRoute(st, base);
+  // STUTSC is refused for some elements (the CLI's table and words): grayed when the structure has one
+  const s = S.structureOf(d);
+  const zs = s ? new Set(s.numbers.map((z) => z % 100 || z)) : new Set();
+  const refused = Object.entries(sc.stutsc_refused || {}).filter(([z]) => zs.has(Number(z)));
+  const sym = (z) => (s && s.symbols[s.numbers.findIndex((n) => (n % 100 || n) === Number(z))]) || `Z=${z}`;
+  const fam = (sc.soc_basis_families || [])[0] || "";
+  const whyStutsc = refused.length ? `<p class="su-why" id="su-soc-why-stutsc">${refused.map(([z, w]) => `${esc(sym(z))}: ${esc(w)}`).join("<br>")}</p>` : "";
+  const changed = "soc_ecp" in st.patches || "soc_basis" in st.patches;
+  const was = M.socRouteLabel(base.soc_basis ? "basis" : base.soc_ecp === "stutsc" ? "stutsc" : "inpsoc");
+  return el(`<div class="su-row su-soc-row${changed ? " changed" : ""}" data-soc-row="route">
+    <span class="su-l" id="su-soc-route-l">Spin-orbit ECP</span>
+    <div class="su-ctl su-soc-opts" role="radiogroup" aria-labelledby="su-soc-route-l" aria-describedby="su-soc-route-h">
+      ${socOpt("route", "route", "inpsoc", route === "inpsoc", "INPSOC", "the CLI's default: the ECP's SOC terms written into the deck", null)}
+      ${socOpt("route", "route", "stutsc", route === "stutsc", "STUTSC", "CRYSTAL's internal Stuttgart SOC ECPs", refused.length ? "su-soc-why-stutsc" : null)}${whyStutsc}
+      ${socOpt("route", "route", "basis", route === "basis", "Official SOC basis", fam, null)}
+    </div>${meta("route", changed, was, "Spin-orbit ECP", "su-soc-route-h", 'written as "soc_ecp" or "soc_basis"')}</div>`);
+}
+
+function socGuess(st, soc, base, meta) {
+  const cur = M.socValue(st, base, "soc_guess") || "";
+  const gs = soc.guesses && soc.guesses.length ? soc.guesses : [{ value: null, ok: true }];
+  const SUB = { guesspnoso: "from the parent's spin-polarized run without symmetry", guesspso: "from the parent's two-component run" };
+  // one reason shown once for the options it disables (a CIF has no parent for either)
+  const reasons = [];
+  for (const g of gs) if (!g.ok && g.reason && !reasons.includes(g.reason)) reasons.push(g.reason);
+  const rid = (g) => (g.ok ? null : `su-soc-why-guess-${reasons.indexOf(g.reason)}`);
+  let html = "";
+  gs.forEach((g, i) => {
+    html += socOpt("guess", "soc_guess", g.value || "", (g.value || "") === cur, M.socGuessLabel(g.value).replace(/^from scratch$/, "From scratch"), g.value ? SUB[g.value] : "no restart", rid(g));
+    const k = reasons.indexOf(g.reason);
+    if (!g.ok && g.reason && !gs.slice(i + 1).some((x) => !x.ok && x.reason === g.reason)) html += `<p class="su-why" id="su-soc-why-guess-${k}">${esc(g.reason)}</p>`;
+  });
+  const changed = "soc_guess" in st.patches;
+  return el(`<div class="su-row su-soc-row${changed ? " changed" : ""}" data-soc-row="soc_guess">
+    <span class="su-l" id="su-soc-guess-l">Starting guess</span>
+    <div class="su-ctl su-soc-opts" role="radiogroup" aria-labelledby="su-soc-guess-l" aria-describedby="su-soc-guess-h">${html}</div>
+    ${meta("soc_guess", changed, M.socGuessLabel(base.soc_guess), "Starting guess", "su-soc-guess-h", 'written as "soc_guess"; the CLI checks the parent')}</div>`);
+}
+
+function socSmear(st, sc, soc, base, meta) {
+  const v = M.socValue(st, base, "smear");
+  const sug = sc.metal_smear;
+  const changed = "smear" in st.patches;
+  const use = sug !== undefined && String(v) !== String(sug)
+    ? `<button type="button" class="tb-btn-text sm${soc.metal ? " primary" : ""}" data-soc-use="smear" aria-describedby="su-soc-smear-h">Use ${esc(sug)}</button>` : "";
+  return el(`<div class="su-row su-soc-row${changed ? " changed" : ""}" data-soc-row="smear">
+    <label for="su-soc-smear" id="su-soc-smear-l" class="su-l">SMEAR for metals</label>
+    <div class="su-ctl"><input id="su-soc-smear" class="mono" data-soc="smear" inputmode="decimal" placeholder="none" spellcheck="false" autocomplete="off"
+      value="${esc(v ?? "")}" aria-describedby="${soc.metal ? "su-soc-metal " : ""}su-soc-smear-h"><span class="su-unit">Ha</span>${use}</div>
+    ${meta("smear", changed, base.smear ?? "none", "SMEAR", "su-soc-smear-h",
+    `empty: no SMEAR (the CLI never adds it by itself); ${sug} Ha converged fcc Au at SHRINK 10 10`)}</div>`);
+}
+
+/** The CLI's SOC warnings and refusal (problems on field "soc"), and its "SOC deck:" lines, verbatim. */
+function socNotes(st, r, soc) {
+  const probs = (r.problems || []).filter((p) => p.field === "soc");
+  const changes = soc.changes || [];
+  if (!probs.length && !changes.length) return null;
+  const box = el(`<div class="su-soc-notes" id="su-soc-notes"></div>`);
+  for (const p of probs) {
+    box.appendChild(p.severity === "error"
+      ? el(`<div class="su-refused su-soc-refusal">${icon("circle-alert")}<p>${esc(p.message)}</p></div>`)
+      : el(`<p class="su-warnline su-soc-warn">${icon("triangle-alert")}<span>${esc(p.message)}</span></p>`));
+  }
+  if (changes.length) {
+    box.appendChild(el(`<div class="su-soc-changes"><h4 id="su-soc-changes-h">What the CLI changed</h4>
+      <ul class="mono" aria-labelledby="su-soc-changes-h">${changes.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>`));
+  }
+  return box;
+}
+
+function socChange(d, st, t) {
+  const r = st.result;
+  if (!r) return;
+  const base = (r.soc || {}).base || {};
+  const k = t.dataset.soc;
+  let label;
+  if (k === "soc") {
+    t.setAttribute("aria-checked", String(t.checked));
+    M.socSwitch(st, base, t.checked);
+    label = `Spin-orbit coupling ${t.checked ? "off → on" : "on → off"}`;
+  } else if (k === "route") {
+    const was = M.socRoute(st, base);
+    M.socSetRoute(st, base, t.value, (schema.soc.soc_basis_families || [])[0]);
+    label = `Spin-orbit ECP ${M.socRouteLabel(was)} → ${M.socRouteLabel(t.value)}`;
+  } else if (k === "soc_guess") {
+    const was = M.socValue(st, base, "soc_guess");
+    M.socSet(st, base, "soc_guess", t.value || undefined);
+    label = `Starting guess ${M.socGuessLabel(was)} → ${M.socGuessLabel(t.value)}`;
+  } else if (k === "smear") {
+    const raw = t.value.trim(), num = Number(raw);
+    // a number goes as a number; anything else as typed, for the CLI's own check to answer
+    const v = raw === "" ? undefined : Number.isFinite(num) ? num : raw;
+    const was = M.socValue(st, base, "smear");
+    if (String(was ?? "") === String(v ?? "")) return;
+    M.socSet(st, base, "smear", v);
+    label = `SMEAR ${was ?? "none"} → ${v ?? "none"}`;
+  } else return;
+  M.record(st, label);
+  persist(d, st);
+  schedule(d);
 }
 
 const fid = (f) => "su-f-" + f.id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60);
 
 function row(d, st, f, fol) {
   const id = fid(f);
-  const b = M.badge(f, fol);
+  let b = M.badge(f, fol, M.parentKind(d));
+  // a default that comes from Settings (the folder's file, yours, or this session) says so
+  const sk = { functional: "functional", basis_set: "basisSet" }[f.id];
+  if (sk && !fol && !f.changed && S.settingSource && S.setting(sk)) {
+    const where = { folder: "this folder", user: "your settings", session: "this session" }[S.settingSource(sk)];
+    if (where) b = { kind: "default", text: `default (${where})` };
+  }
   const pending = f.id in st.answers && String(st.answers[f.id]) !== String(f.value) && f.kind !== "yesno";
   let ctl;
   if (f.kind === "menu") {
@@ -439,6 +701,10 @@ function footer(d, st) {
       <label class="su-live" title="Preview the deck while editing (Settings › Calculation)"><input type="checkbox" id="su-auto"${S.setting("setupAutoPreview") !== false ? " checked" : ""}><span>Live</span></label>
       <button class="tb-btn-text" data-act="saveOpen">${icon("save")}<span>Save…</span></button>
       <button class="tb-btn-text primary" data-act="preview" data-cmd-hint="calc.preview">${icon("file-text")}<span>Preview</span><kbd>${esc(S.shortcut("calc.preview"))}</kbd></button>
+    </div>
+    <div class="su-foot-next" role="group" aria-label="Then">
+      <button class="tb-btn-text" data-act="submitNow" title="Write this deck (Save with Write decks now), then open Submit on it: you confirm there before anything is submitted">${icon("play")}<span>Submit…</span></button>
+      <button class="tb-btn-text" data-act="batchNow" title="Batch Setup on this folder: these settings for every file like this one, written, then Submit">${icon("list-checks")}<span>Batch Prepare + Submit…</span></button>
     </div></footer>`);
   setTimeout(paintFooter, 0);
   return f;
@@ -453,6 +719,9 @@ function paintFooter() {
   const pv = root.querySelector('[data-act="preview"]'), sv = root.querySelector('[data-act="saveOpen"]');
   if (pv) { pv.disabled = !!g; pv.title = g ? "Choose which geometry the deck uses" : ""; }
   if (sv) { sv.disabled = !!g || !st.result || !!(st.result && st.result.save_blocked); sv.title = g ? "Choose which geometry the deck uses" : (st.result && st.result.save_blocked) || ""; }
+  const sn = root.querySelector('[data-act="submitNow"]'), bn = root.querySelector('[data-act="batchNow"]');
+  if (sn) sn.disabled = !!g || !st.result || !st.result.json_text || !!st.result.save_blocked || !!st.busy;
+  if (bn) bn.disabled = !!g || !st.result || !!st.busy;
   let html;
   if (g) html = `<span class="warn">${icon("triangle-alert")}Choose which geometry the deck uses</span>`;
   else if (st.busy) {
@@ -469,17 +738,26 @@ function paintFooter() {
 }
 
 /* ---------------------------------------------------------------- events */
+/* A section's open or shut state, as remembered in the profile (ui.setupCollapsed):
+ * "Other questions" starts shut, so it is remembered when open (__other_open). */
+function rememberSection(c, name, open) {
+  if (name === CF.SECTION) { if (open) { c.add("__charge_open"); c.delete(name); } else { c.delete("__charge_open"); c.add(name); } return; }
+  if (name === "Other questions") { if (open) { c.add("__other_open"); c.delete(name); } else c.delete("__other_open"); }
+  else if (open) c.delete(name); else c.add(name);
+}
+
 function onClick(e) {
   const d = subject, st = stateFor(d);
   const t = e.target;
   const sec = t.closest(".su-sec-h");
   if (sec) {
     const box = sec.parentElement, name = box.dataset.sec;
+    const nowOpen = box.classList.contains("collapsed");
+    // Alt- or Shift-click opens or shuts every section the way this one goes
+    if (e.altKey || e.shiftKey) { api.setAllSections(nowOpen); return; }
     if (name === "Advanced") { st.advancedOpen = !st.advancedOpen; render(); return; }
     const c = new Set(profile.ui("setupCollapsed", []) || []);
-    const nowOpen = box.classList.contains("collapsed");
-    if (name === "Other questions") { if (nowOpen) { c.add("__other_open"); c.delete(name); } else c.delete("__other_open"); }
-    else if (nowOpen) c.delete(name); else c.add(name);
+    rememberSection(c, name, nowOpen);
     profile.setUi("setupCollapsed", [...c]);
     box.classList.toggle("collapsed", !nowOpen);
     sec.setAttribute("aria-expanded", String(nowOpen));
@@ -488,7 +766,7 @@ function onClick(e) {
   const calc = t.closest("[data-calc]");
   if (calc && st) {
     const c = calc.dataset.calc;
-    if (c === st.calc) return;
+    if (c === st.calc || calc.getAttribute("aria-disabled") === "true") return;
     const was = st.calc;
     st.calc = c;
     if (st.mode !== "cif2d12") st.mode = M.followMode(c, schema.calc_types);
@@ -496,6 +774,28 @@ function onClick(e) {
     M.record(st, `Calculation ${was} → ${c}`);
     persist(d, st);
     schedule(d, null, 0);
+    return;
+  }
+  const socReset = t.closest("[data-soc-reset]");
+  if (socReset && st && st.result) {
+    const k = socReset.dataset.socReset;
+    const LABEL = { soc: "Spin-orbit coupling", route: "Spin-orbit ECP", soc_guess: "Starting guess", smear: "SMEAR" };
+    if (k === "soc") M.socReset(st);
+    else for (const x of k === "route" ? ["soc_ecp", "soc_basis"] : [k]) delete st.patches[x];
+    st.hand = null;
+    M.record(st, `Reset ${LABEL[k] || k}`);
+    persist(d, st);
+    schedule(d);
+    return;
+  }
+  const socUse = t.closest("[data-soc-use]");
+  if (socUse && st && st.result) {
+    const base = (st.result.soc || {}).base || {};
+    const was = M.socValue(st, base, "smear");
+    M.socSet(st, base, "smear", schema.soc.metal_smear);
+    M.record(st, `SMEAR ${was ?? "none"} → ${schema.soc.metal_smear}`);
+    persist(d, st);
+    schedule(d);
     return;
   }
   const reset = t.closest("[data-reset]");
@@ -510,13 +810,16 @@ function onClick(e) {
   const act = t.closest("[data-act]");
   if (!act) return;
   const a = act.dataset.act;
-  if (a === "preview") api.preview(true);
+  if (a === "expandAll" || a === "collapseAll") api.setAllSections(a === "expandAll");
+  else if (a === "preview") api.preview(true);
   else if (a === "cancel" && st.busy && st.busy.id) S.cancelTask(st.busy.id);
   else if (a === "saveOpen") { st.saveOpen = true; render(); const n = root.querySelector("#su-name"); if (n) n.focus(); }
   else if (a === "save") api.save();
   else if (a === "copyCmd") api.copyCli();
   else if (a === "reveal" && st.saved) S.reveal(st.saved.json);
   else if (a === "submitDecks" && st.saved) S.run("calc.submit", { paths: (st.saved.written || []).filter((x) => /\.(d12|d3)$/.test(x)) });
+  else if (a === "submitNow") api.submitDeck();
+  else if (a === "batchNow") api.batchFrom();
   else if (a === "guardParent") { st.guard = "parent"; st.guardFor = guardSig(d); S.showParentGeometry(d); persist(d, st); render(); schedule(d, null, 0); }
   else if (a === "guardCif" || a === "saveAsCif") S.saveAsCifForSetup(d);
   else if (a === "applyJson") {
@@ -526,7 +829,8 @@ function onClick(e) {
   } else if (a === "chargeOn" || a === "chargeOff") {
     const meta = d.meta || (S.structureOf(d) || {}).doc_meta || {};
     bulk(d, a === "chargeOn" ? `Net charge ${meta.hints.charge}` : "Net charge from the defect builder removed",
-      (s) => { s.flags = a === "chargeOn" ? { net_charge: meta.hints.charge } : {}; }, a === "chargeOn" ? `Applied the net charge ${meta.hints.charge}` : null);
+      (s) => { s.flags = CF.withValue(s.flags, "net_charge", a === "chargeOn" ? meta.hints.charge : undefined); },
+      a === "chargeOn" ? `Applied the net charge ${meta.hints.charge}` : null);
   } else if (act.dataset.cmd) S.run(act.dataset.cmd);
 }
 
@@ -538,24 +842,37 @@ function onChange(e) {
   if (t.id === "su-name") { st.saveName = t.value.trim(); return; }
   if (t.id === "su-over") { st.overwrite = t.checked; return; }
   if (t.id === "su-write") { st.writeDecks = t.checked; render(); return; }
+  if (t.dataset && t.dataset.charge && st) {
+    // a charged-system switch: given, changed or removed (one history entry, one CLI run)
+    const def = (schema.charge_flags || []).find((x) => x.id === t.dataset.charge);
+    if (!def) return;
+    const v = CF.valueOf(def, t);
+    if (String(v ?? "") === String((st.flags || {})[def.id] ?? "")) return;
+    bulk(d, v === undefined ? `${def.switch} removed` : `${def.switch} ${v}`, (s) => { s.flags = CF.withValue(s.flags, def.id, v); });
+    return;
+  }
+  if (t.dataset && t.dataset.soc && st) { socChange(d, st, t); return; }
   const r = t.closest(".su-row");
   if (!r || !st || !st.result) return;
   const f = st.result.form.find((x) => x.id === r.dataset.field);
   if (!f) return;
   if (f.kind === "yesno") { t.setAttribute("aria-checked", String(t.checked)); edit(d, f, t.checked); }
   else if (f.kind === "menu") edit(d, f, t.value);
-  else edit(d, f, t.value.trim(), `field:${f.id}`);
+  // typing already applied this value (onInput) and scheduled its run: Chromium fires a change when
+  // the form is drawn again under the focused field, which must not start a second CLI run
+  else if (t.dataset.applied === undefined || t.dataset.applied !== t.value.trim()) edit(d, f, t.value.trim(), `field:${f.id}`);
 }
 
 function onInput(e) {
   const t = e.target;
   const r = t.closest && t.closest(".su-row");
-  if (!r || t.tagName !== "INPUT" || t.type === "checkbox") return;
+  if (!r || t.tagName !== "INPUT" || t.type === "checkbox" || t.type === "radio" || t.dataset.soc) return;
   const d = subject, st = stateFor(d);
   const f = st && st.result && st.result.form.find((x) => x.id === r.dataset.field);
   if (!f) return;
   // typing: one history entry per field within 1 s, one CLI run 600 ms after the last key
   const label = M.applyEdit(st, f, t.value.trim() === "" ? null : t.value.trim());
+  t.dataset.applied = t.value.trim();
   M.record(st, label, `field:${f.id}`);
   persist(d, st);
   r.classList.add("pending");
@@ -571,6 +888,7 @@ function onKey(e) {
   const inText = ["INPUT", "TEXTAREA"].includes(e.target.tagName) && !["checkbox", "radio"].includes(e.target.type);
   if (mod && !e.altKey && e.key.toLowerCase() === "z" && !inText) {
     e.preventDefault(); e.stopPropagation();
+    if (e.target.closest && e.target.closest(".su-kpath")) KE.keepFocus("setup");
     if (e.shiftKey) api.redo(); else api.undo();
   } else if (e.key === "Escape" && !e.defaultPrevented) {
     S.focusRegion("viewport");
@@ -583,6 +901,16 @@ function onKey(e) {
 }
 
 function focusField(id) {
+  if (id === "soc" || (schema.soc && (schema.soc.keys || []).includes(id))) {
+    // the SOC section: opened, and its first control that can be used (else its heading)
+    const sec = root && root.querySelector(`.su-sec[data-sec="${SOC_SEC}"]`);
+    if (!sec) return;
+    if (sec.classList.contains("collapsed")) sec.querySelector(".su-sec-h").click();
+    sec.scrollIntoView({ block: "nearest" });
+    const c = sec.querySelector("input:not([disabled])") || sec.querySelector(".su-sec-h");
+    if (c) c.focus();
+    return;
+  }
   const r = root && root.querySelector(`.su-row[data-field="${CSS.escape(id)}"]`);
   if (!r) return;
   const sec = r.closest(".su-sec");
@@ -594,6 +922,20 @@ function focusField(id) {
 
 /* ---------------------------------------------------------------- the API the shell uses */
 const api = {
+  /** Expand or collapse every section of the form (Advanced only collapses: it holds the hand-edited file). */
+  setAllSections(open) {
+    if (!root || !root.isConnected) return;
+    const c = new Set(profile.ui("setupCollapsed", []) || []);
+    for (const box of root.querySelectorAll(".su-sec")) {
+      if (box.dataset.sec === "Advanced") continue;
+      rememberSection(c, box.dataset.sec, open);
+      box.classList.toggle("collapsed", !open);
+      box.querySelector(".su-sec-h").setAttribute("aria-expanded", String(open));
+    }
+    profile.setUi("setupCollapsed", [...c]);
+    const st = stateFor(subject);
+    if (!open && st && st.advancedOpen) { st.advancedOpen = false; render(); }
+  },
   mount(host) {
     if (!root) {
       root = document.createElement("div");
@@ -638,7 +980,8 @@ const api = {
     if (st.stale) { const r = await api.preview(false); if (!r) return null; }
     const name = (root.querySelector("#su-name") || {}).value || st.saveName;
     const body = { source: { path: d.path }, calc_type: st.calc, json_text: st.result.json_text, name: (name || "").trim() || undefined,
-      layout: st.mode === "cif2d12" ? (st.layout || "own") : undefined, overwrite: !!st.overwrite, write_decks: !!st.writeDecks };
+      layout: st.mode === "cif2d12" ? (st.layout || "own") : undefined, overwrite: !!st.overwrite, write_decks: !!st.writeDecks,
+      flags: chargeFlags(st) || undefined };
     try {
       const r = await S.apiTask("setup/save", body);
       st.saved = { ...r, sha: st.result.json_sha256, stale: false };
@@ -655,6 +998,73 @@ const api = {
     if (!st.saved) { st.saveOpen = true; render(); S.toast("Save the settings first: the command names the saved file", "info"); return; }
     window.__maceLastCopy = st.saved.command;
     await S.copyText(st.saved.command, "Command copied");
+  },
+  /** The sidebar's Submit…: the deck these settings make, written (Save with Write decks now, under
+   * Save's own rules: overwrite, a live run's wavefunction, ...) unless it already is, then the Submit
+   * dialog on it. The dialog is the one Calculation › Submit opens: its preview, its single-use
+   * preview id and its own Submit click; nothing here submits. Refused up front while the GUI is open
+   * to the network (the dialog refuses it too), before anything is written. */
+  async submitDeck() {
+    const d = subject, st = stateFor(d);
+    if (!st || !st.result || !st.result.json_text) { S.toast("Preview a deck first", "info"); return null; }
+    if (st.result.save_blocked) { S.toast(st.result.save_blocked, "error"); return null; }
+    if (M.modeOf(d, info(d)).source === "session") {
+      st.saveOpen = true; render();
+      S.toast("Save the structure as a CIF first: the command reads a file in the folder", "info");
+      return null;
+    }
+    let caps = {};
+    try { caps = await S.api("submit/capabilities"); } catch (e) { caps = {}; }
+    if (caps.network) { S.toast("Submitting is turned off while MACE GUI is open to the network", "error"); return null; }
+    const decksOf = (sv) => (sv && sv.written ? sv.written : []).filter((x) => /\.(d12|d3)$/i.test(x));
+    let decks = st.saved && !st.stale && st.saved.sha === st.result.json_sha256 ? decksOf(st.saved) : [];
+    if (!decks.length && st.mode === "opt2d3" && st.result.f9 && st.result.f9.live) {
+      S.toast("The run is still going; its wavefunction (.f9) is copied when the run ends. Submit after it ends.", "info");
+      return null;
+    }
+    if (!decks.length) {
+      st.saveOpen = true; st.writeDecks = true;
+      render();
+      const r = await api.save();
+      if (!r) return null;
+      decks = decksOf(r);
+      if (!decks.length) { S.toast(r.warning || "No deck was written; see Save for the CLI", "error"); return null; }
+    }
+    S.run("calc.submit", { paths: decks });
+    return decks;
+  },
+  /** The sidebar's Batch Prepare + Submit…: Batch Setup on this file's folder, for the files like
+   * this one (CIFs, runs needing this follow-up, or decks), this calculation, this file as the
+   * representative and the form's changed fields as the settings for all files. Batch writes the
+   * folder of decks and its step 4 opens Submit on them. */
+  batchFrom() {
+    const d = subject, st = stateFor(d);
+    if (!st || !d) return null;
+    const mo = M.modeOf(d, info(d));
+    if (mo.source === "session" || !d.path) {
+      S.toast("Save the structure as a CIF in the folder first: Batch Setup reads files in a folder", "info");
+      return null;
+    }
+    const dir = d.path.includes("/") ? d.path.slice(0, d.path.lastIndexOf("/")) : "";
+    const filter = st.mode === "cif2d12" ? "cif" : mo.deck ? "d12" : "followup";
+    const socKeys = (schema.soc && schema.soc.keys) || [];
+    // the SOC keys go with it (Batch Setup writes them into each file's settings, as Setup does)
+    const patches = Object.fromEntries(Object.entries(st.patches || {}).filter(([k]) => socKeys.includes(k)));
+    const preset = { filter, calc: st.calc, rep: d.path, answers: { ...st.answers }, patches,
+      flags: CF.forBatch(schema.charge_flags, chargeFlags(st) || {}) };
+    // what Batch Setup does not take (it takes the form's answers): named, so nothing is lost unseen
+    const PATCH_NAMES = { band_path: "the edited k-path", k_points_for_all_files: "the k-point mesh" };
+    const form = (st.result && st.result.form) || [];
+    const left = Object.keys(st.patches || {}).filter((k) => !socKeys.includes(k)).map((k) => PATCH_NAMES[k] || (form.find((f) => f.id === k) || {}).label || k);
+    if (st.hand !== null) left.push("the hand-edited settings file");
+    if (chargeFlags(st) && "site_states" in st.flags) left.push("the site states (they name atoms of this structure)");
+    if (left.length) {
+      const list = left.length === 1 ? left[0] : `${left.slice(0, -1).join(", ")} and ${left[left.length - 1]}`;
+      S.toast(`Batch Setup takes the form's fields; ${list} ${left.length === 1 ? "stays" : "stay"} here`, "info");
+    }
+    S.run("calc.batch", { dir, preset });
+    S.run("calc.setup");                  // Batch is a document of its own: its tables get the room
+    return preset;
   },
   undo() { const d = subject, st = stateFor(d); const l = M.undo(st); if (l !== null) { persist(d, st); S.toast(`Undo: ${l}`, "info"); schedule(d, null, 0); } return l; },
   redo() { const d = subject, st = stateFor(d); const l = M.redo(st); if (l !== null) { persist(d, st); S.toast(`Redo: ${l}`, "info"); schedule(d, null, 0); } return l; },
@@ -713,5 +1123,5 @@ const api = {
   historyRows: (d) => { const st = stateFor(d || subject); return st ? st.history.map((h, k) => ({ label: h.label, t: h.t, cur: k === st.pos })) : []; },
   jump: (k) => { const d = subject, st = stateFor(d); M.jump(st, k); persist(d, st); schedule(d, null, 0); },
   bytes: () => [...states.values()].reduce((t, s) => t + M.historyBytes(s), 0),
-  forget: (d) => { states.delete(d.id); },
+  forget: (d) => { const st = states.get(d.id); if (st && st.bz) st.bz.destroy(); states.delete(d.id); },
 };

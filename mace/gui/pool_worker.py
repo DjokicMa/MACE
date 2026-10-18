@@ -198,6 +198,14 @@ def _volume(name: str) -> Callable:
     return call
 
 
+def _orbitals(name: str) -> Callable:
+    """The orbital picker's jobs (orbitals.py): index, grid, save."""
+    def call(ctx: Ctx, **kw):
+        from . import orbitals
+        return getattr(orbitals, f"{name}_job")(ctx=ctx, **kw)
+    return call
+
+
 def _freq(ctx: Ctx, **kw):
     """The FREQ section of an output, parsed by mace plotting's parser (freq.py)."""
     from . import freq
@@ -255,6 +263,8 @@ def run(kind: str, payload: Dict[str, Any], slot: int):
             fn = _builders(kind.split(".", 1)[1])
         elif kind.startswith("volume."):
             fn = _volume(kind.split(".", 1)[1])
+        elif kind.startswith("orbitals.") and kind.split(".", 1)[1] in ("index", "grid", "save"):
+            fn = _orbitals(kind.split(".", 1)[1])
         else:
             raise ValueError(f"unknown pool job {kind!r}")
     _LAST.pop(slot, None)

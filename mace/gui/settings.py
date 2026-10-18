@@ -55,7 +55,10 @@ _RANGES = {"depthCue": (0.0, 1.0), "ambient": (0.0, 1.0), "shininess": (0.0, 1.0
            "lightStrength": (0.3, 1.6), "outlineWidth": (0.02, 0.3), "atomScale": (0.05, 1.5), "bondRadius": (0.01, 1.0),
            "files.liveMinutes": (1, 1440), "files.historyKeep": (1, 1000), "files.historyDays": (1, 3650),
            "files.historyMaxMB": (10, 100000), "files.historyOutputsMaxMB": (10, 100000),
-           "analysis.imagNoiseCm": (0, 200), "plots.lineWidth": (0.5, 6), "plots.exportScale": (1, 8)}
+           "analysis.imagNoiseCm": (0, 200), "plots.lineWidth": (0.5, 6), "plots.dosSmooth": (0, 1), "plots.exportScale": (1, 8)}
+# the plot presets and families (mace/plotting/presets.py; plotpresets.js)
+PLOT_PRESETS = ("default", "publication", "vesta", "presentation", "grayscale", "colorblind")
+PLOT_FAMILIES = ("band", "spectra", "maps", "scf")
 # one of a fixed set of values
 _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": ("off", "neighbors", "molecules"),
             "renderPreset": ("default", "flat", "publication", "presentation", "custom"),
@@ -63,6 +66,16 @@ _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": (
             "plots.relTo": ("first", "final", "minimum", "absolute"),
             "plots.per": ("cell", "atom", "fu"),
             "plots.segments": ("continuous", "separate"),
+            "plots.surface": ("theme", "light", "dark"),
+            # Plot style (1.1.6): a preset for every plot family ("Same for all"), and per family
+            # "same" (follow it) or a preset of its own (mace/plotting/presets.py ORDER)
+            "plots.style": PLOT_PRESETS,
+            **{f"plots.style.{f}": ("same",) + PLOT_PRESETS for f in PLOT_FAMILIES},
+            "plots.dosColors": ("auto", "total", "element", "orbital", "element-orbital"),
+            "plots.spinDownDash": ("dash", "dot", "dashdot", "solid"),
+            "plots.spinDos": ("auto", "mirrored", "overlaid"),
+            # the spin colors (presets.py SPIN_SCHEMES; auto: the plot style's scheme)
+            "plots.spinColors": ("auto", "mace", "blue-red", "black-vermilion", "custom"),
             "energyUnit": ("eV", "meV", "Ha", "kJ/mol", "kcal/mol")}
 _RANGE_KEYS = ("displayLo", "displayHi")
 RANGE_LIMITS = (-5.0, 10.0)
@@ -139,7 +152,9 @@ def check(key: Any, value: Any) -> Optional[str]:
         return None
     if key in _CHOICES:
         return None if not isinstance(value, bool) and value in _CHOICES[key] else "must be one of " + ", ".join(map(str, _CHOICES[key]))
-    if key == "outlineColor":
+    if key == "plots.dosTotal":
+        return None if isinstance(value, bool) else "must be true or false"
+    if key in ("outlineColor", "plots.spinUp", "plots.spinDown", "plots.bandColor"):
         return None if isinstance(value, str) and (value == "" or re.fullmatch(r"#[0-9a-fA-F]{6}", value)) else \
             'must be "" or a color like #1a2b3c'
     if key in _RANGES:
@@ -161,12 +176,35 @@ def check(key: Any, value: Any) -> Optional[str]:
         return None if value in ("auto", "on", "off") else 'must be "auto", "on" or "off"'
     if key == "cluster.notify":
         return None if isinstance(value, bool) else "must be true or false"
+    # 1.1.6: the update notice (update_gui.py)
+    if key == "update.check":
+        return None if isinstance(value, bool) else "must be true or false"
+    if key == "update.channel":
+        return None if value in ("release", "preview", "latest") else 'must be "release", "preview" or "latest"'
+    if key == "update.intervalHours":
+        return _int_in(value, 1, 168, " hours")
     if key in ENUMS:
         return None if value in ENUMS[key] else "must be one of " + ", ".join(map(str, ENUMS[key]))
     if key == "export.dpi":
         return _int_in(value, 30, 2400, " DPI")
     if key == "notifications.infoSeconds":
         return _int_in(value, 2, 60, " s")
+    # 1.1.6: band/DOS defaults and the Database view's columns (mace-folder.toml can set them too)
+    if key == "plots.energyWindow":
+        if (not isinstance(value, list) or len(value) != 2
+                or any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
+                       or not -100 <= x <= 100 for x in value) or value[1] - value[0] < 0.1):
+            return "must be [low, high] in eV from -100 to 100, high above low"
+        return None
+    if key == "plots.fermiShift":
+        return None if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) \
+            and -50 <= value <= 50 else "must be a number from -50 to 50 eV"
+    if key == "database.columns":
+        from mace.utils.folder_settings import DB_COLUMNS
+        if (not isinstance(value, list) or not value or len(set(map(str, value))) != len(value)
+                or not all(c in DB_COLUMNS for c in value)):
+            return "must be a list of columns from " + ", ".join(DB_COLUMNS)
+        return None
     if key == "structure.vacuumGap":
         return None if isinstance(value, (int, float)) and not isinstance(value, bool) and 2 <= value <= 100 \
             else "must be a number from 2 to 100 Å"
@@ -186,9 +224,24 @@ def check(key: Any, value: Any) -> Optional[str]:
     return _scalar_problem(value)
 
 
+def migrate_theme(values: Dict[str, Any]) -> Dict[str, Any]:
+    """The 1.1.6 preview's Publication theme is now Light with Plot style Publication
+    (Settings › Appearance): a stored theme "publication" reads as that, silently; a
+    Plot style stored beside it is kept. The same mapping runs in the browser
+    (settings.js migrate(), boot.js), so gui.json, localStorage and first paint agree."""
+    if not isinstance(values, dict) or values.get("theme") != "publication":
+        return values
+    out = dict(values)
+    out["theme"] = "light"
+    if out.get("plots.style") not in _CHOICES["plots.style"]:
+        out["plots.style"] = "publication"
+    return out
+
+
 def _clean(values: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, str]]:
     """(the storable values, {key: why not}, {key: note}) for a settings object."""
     good, rejected, notes = {}, {}, {}
+    values = migrate_theme(values)
     for k, v in values.items():
         why = check(k, v)
         if why:
@@ -439,6 +492,7 @@ def patch(body: Any) -> Tuple[Dict[str, Any], Dict[str, str]]:
     def change(cur):
         _keep_v1_copy(p, cur)
         new = _new_version(cur)
+        new["settings"] = migrate_theme(new["settings"])
         for sec, st in sets.items():
             d = dict(new[sec])
             for k in unsets[sec]:

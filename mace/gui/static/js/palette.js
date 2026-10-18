@@ -5,7 +5,14 @@
  * Ranking is pure (rank.js, haystacks prepared once per keymap or document
  * change); the list is virtualized (fixed 32px rows, only the visible window
  * plus overscan in the DOM). Enter runs, Mod+Enter runs and stays open, Esc
- * closes and focus goes back where it came from. */
+ * closes and focus goes back where it came from.
+ *
+ * Previews (1.1.6): a row whose command has preview() and unpreview() (the
+ * themes) shows itself while the arrow keys or the pointer are on it, and
+ * goes back when they move off or the search closes without running it.
+ * openPick() turns the search into a one-off list (Color Theme…) that
+ * previews whichever row is active, typing included; an item's group
+ * (the theme's group) heads its section until a query ranks the list. */
 import { registry, shortcutOf, disabledReason, isMac } from "./commands.js";
 import * as commands from "./commands.js";
 import { prepare, rank, qualityOf, fracToCart, cartToFrac, parseTriple } from "./rank.js";
@@ -16,6 +23,7 @@ const ROW = 32, OVERSCAN = 8;
 const PLACEHOLDER = "Type a command · # files · @ atoms · % open documents · : step · = calculator";
 let dlg, input, list, spacer, hint, opener = null, rows = [], flat = [], active = 0, hooks = null;
 let prepared = { key: "", items: [] }, frame = 0, benchSet = null;
+let pick = null, previewing = null;
 
 export function initPalette(h) {
   // {ctx(), run(id), files(), atoms(), docs(), openFile(path), openDoc(id), selectAtom(i),
@@ -43,12 +51,25 @@ export function initPalette(h) {
     const li = e.target.closest(".pal-row");
     if (li) { active = Number(li.dataset.k); runActive(false); }
   });
-  dlg.addEventListener("close", () => { if (opener && opener.isConnected && opener.focus) opener.focus(); });
+  // a previewable row (a theme) shows itself under the pointer too
+  list.addEventListener("pointerover", (e) => {
+    const li = e.target.closest(".pal-row");
+    if (!li || Number(li.dataset.k) === active || !previewOf(rows[Number(li.dataset.k)])) return;
+    active = Number(li.dataset.k);
+    paint();
+    syncPreview(true);
+  });
+  dlg.addEventListener("close", () => {
+    endPreview();
+    if (pick) { pick = null; input.placeholder = PLACEHOLDER; }
+    if (opener && opener.isConnected && opener.focus) opener.focus();
+  });
   dlg.addEventListener("pointerdown", (e) => { if (e.target === dlg) dlg.close(); });
 }
 
 export function openPalette(prefix = "") {
   performance.mark("ui:palette:start");
+  if (pick) { endPreview(); pick = null; input.placeholder = PLACEHOLDER; }
   opener = document.activeElement;
   if (!dlg.open) { overlayOpening(); dlg.showModal(); }
   input.value = prefix;
@@ -56,6 +77,21 @@ export function openPalette(prefix = "") {
   input.focus();
   requestAnimationFrame(() => { performance.mark("ui:palette:end"); performance.measure("ui:palette", "ui:palette:start", "ui:palette:end"); });
 }
+/** A one-off pick list in the search: {title, placeholder, items: [{label, desc, icon,
+ * current, aliases, group, preview(), unpreview(), run()}]}. The active row previews
+ * itself; Enter runs it; Esc puts back what was there. */
+export function openPick(spec) {
+  if (dlg.open) dlg.close();
+  pick = spec;
+  opener = document.activeElement;
+  overlayOpening();
+  dlg.showModal();
+  input.value = "";
+  input.placeholder = spec.placeholder || spec.title;
+  update();
+  input.focus();
+}
+export const pickOpen = () => !!(pick && dlg && dlg.open);
 export const isPaletteOpen = () => dlg && dlg.open;
 export const closePalette = () => dlg && dlg.open && dlg.close();
 
@@ -86,6 +122,12 @@ export const MODES = { ">": "commands", "@": "atoms", "#": "files", "%": "docs",
 /** The rows for a query: [{id?, group, label, keys, icon, why, run}] (exported for tests).
  * Every match is returned; the list only draws the visible window. */
 export function results(text, ctx) {
+  if (pick) {
+    // the list in its own sections (a theme's group) until a query ranks it as one list
+    const items = pick.items.map((it) => ({ ...it, title: it.label, group: it.group || pick.title }));
+    const q = text.trim();
+    return q ? rank(q, prepare(items)).map(({ it }) => ({ ...it, group: pick.title })) : items;
+  }
   const mode = MODES[text[0]] || "commands";
   const query = MODES[text[0]] ? text.slice(1).trim() : text.trim();
   if (benchSet) return rank(query, benchSet).map(({ it }) => ({ ...it, group: "Results" }));
@@ -169,13 +211,41 @@ function update() {
   });
   // the first row, whatever its state: Enter on a disabled one explains, it never runs a weaker match
   active = 0;
+  // a pick list starts on the current choice
+  if (pick && !input.value.trim()) active = Math.max(0, rows.findIndex((r) => r.current));
   list.style.height = `${flat.length * ROW}px`;
   spacer.scrollTop = 0;
   const mode = MODES[input.value[0]];
   hint.textContent = mode ? ({ commands: "Commands", atoms: "Atoms: Enter centers the view on it",
     files: "Files in this folder", docs: "Open documents", step: "Trajectory step", calc: "Calculator: Enter copies the result" })[mode] : "";
   hint.hidden = !mode;
+  if (pick) { hint.textContent = `${pick.title}: the arrow keys preview, Enter keeps, Esc goes back`; hint.hidden = false; }
+  if (active > 0) {   // a pick list's current choice may be below the fold
+    const j = flat.findIndex((f) => f.k === active);
+    spacer.scrollTop = Math.max(0, (j - 1) * ROW);
+  }
   paint();
+  syncPreview(false);
+}
+
+/* ---------------------------------------------------------------- previews */
+function previewOf(r) {
+  if (!r || r.why) return null;
+  if (r.preview) return r;
+  const c = r.id ? registry.get(r.id) : null;
+  return c && c.preview && c.unpreview ? c : null;
+}
+/** Show the active row if it previews (always in a pick list; in the
+ * commands only once the arrows or the pointer reach it), else put back. */
+function syncPreview(moved) {
+  const p = previewOf(rows[active]);
+  if (p && (pick || moved)) { p.preview(); previewing = p.unpreview || null; return; }
+  endPreview();
+}
+function endPreview() {
+  const f = previewing;
+  previewing = null;
+  if (f) f();
 }
 
 function paint() {
@@ -202,7 +272,7 @@ function paint() {
       continue;
     }
     const r = rows[f.k];
-    html += `<li class="pal-row${r.why ? " disabled" : ""}" role="option" id="pal-${f.k}" data-k="${f.k}"${r.id ? ` data-id="${esc(r.id)}"` : ""}` +
+    html += `<li class="pal-row${r.why ? " disabled" : ""}${r.current ? " current" : ""}" role="option" id="pal-${f.k}" data-k="${f.k}"${r.id ? ` data-id="${esc(r.id)}"` : ""}` +
       ` style="top:${j * ROW}px" aria-selected="${f.k === active}"${r.why ? ' aria-disabled="true"' : ""}>${icon(r.icon)}` +
       `<span class="pal-text"><span class="t">${esc(r.label)}</span>${r.why ? `<span class="why">${esc(r.why)}</span>` : r.desc ? `<span class="why">${esc(r.desc)}</span>` : ""}</span>` +
       `${ids && r.id ? `<span class="pal-id">${esc(r.id)}</span>` : ""}${r.keys ? `<kbd>${esc(r.keys)}</kbd>` : "<span></span>"}</li>`;
@@ -220,6 +290,7 @@ function move(d) {
   if (j * ROW < top + ROW) spacer.scrollTop = Math.max(0, (j - 1) * ROW);
   else if ((j + 1) * ROW > top + h) spacer.scrollTop = (j + 1) * ROW - h;
   paint();
+  syncPreview(true);
 }
 
 function runActive(keepOpen) {
@@ -231,6 +302,8 @@ function runActive(keepOpen) {
     return;
   }
   if (!r || r.why || (!r.id && !r.run)) return;
+  previewing = null;   // kept: running it makes the preview the choice
+  if (pick) keepOpen = false;
   if (!keepOpen) dlg.close();
   if (r.id) { remember(r.id); hooks.run(r.id); } else r.run();
   if (keepOpen && dlg.open) { update(); input.focus(); }

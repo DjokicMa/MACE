@@ -5,6 +5,10 @@
  * args)`): context menus pass the atom, file or tab they were opened on;
  * without them a command acts on the active document. */
 import { register, registerPseudo } from "./commands.js";
+import { THEMES, THEME_GROUPS } from "./themes.js";
+/** View › Theme: each group's name, then its themes (js/themes.js). */
+const themeMenu = () => THEME_GROUPS.flatMap((g, n) => [...(n ? ["-"] : []), { head: g.label },
+  ...THEMES.filter((t) => t.group === g.id).map((t) => `view.theme.${t.id}`)]);
 
 export function registerAll(S) {
   // owner: what the command arrives with, e.g. "arrives with the Calculation Setup panel"
@@ -15,17 +19,19 @@ export function registerAll(S) {
   const structureDoc = "docKind == structure|trajectory";
   const FREQ_NO = "Not in the mode view: open its structure (Structure, top right)";
   const needsStructure = { when: structureDoc, reason: (c) => (c.docKind === "freq" ? FREQ_NO : "Needs a structure") };
-  // the display options the mode view (a FREQ document) draws with too; a volume has its own (Inspector)
-  const view3D = "docKind == structure|trajectory|freq";
-  const VOL_NO = "The volume view has its own display options: Inspector › Atoms and Cell";
-  const needsView = { when: view3D, reason: (c) => (c.docKind === "volume" ? VOL_NO : "Needs a structure") };
+  // the display options the mode view (a FREQ document) and the volume views (cube, orbitals) draw with too
+  const view3D = "docKind == structure|trajectory|freq|volume";
+  // a volume of a molecule has no cell: nothing to replicate, no cell axes to look along
+  const VOL_MOLECULE = "This volume is of a molecule: it has no cell to replicate or to look along";
+  const needsView = { when: view3D, reason: "Needs a structure" };
+  const needsAlong = { when: `${view3D} && !volNonPeriodic`, reason: (c) => (c.volNonPeriodic ? VOL_MOLECULE : "Needs a structure") };
   // the comparison of a run's steps draws the run's own cell, unlabeled
   const CMP_NO = "The comparison draws the run's own cell: Edit This Step opens a step with every display option";
   // the mode view replicates a mode at Γ; away from Γ its images move with phases the output does not give
   const OFF_GAMMA = "One cell only: this mode is not at Γ, so its periodic images would need phases the output does not give";
-  const notHere = (c) => (c.docKind === "trajectory" ? CMP_NO : c.docKind === "volume" ? VOL_NO : c.freqOffGamma ? OFF_GAMMA : "Needs a structure");
-  const needsRange = { when: "docKind == structure|freq && !freqOffGamma", reason: notHere };
-  const needsLabels = { when: "docKind == structure|freq", reason: notHere };
+  const notHere = (c) => (c.docKind === "trajectory" ? CMP_NO : c.docKind === "volume" ? VOL_MOLECULE : c.freqOffGamma ? OFF_GAMMA : "Needs a structure");
+  const needsRange = { when: "docKind == structure|freq && !freqOffGamma || docKind == volume && !volNonPeriodic", reason: notHere };
+  const needsLabels = { when: "docKind == structure|freq|volume", reason: notHere };
   // Phase 3: the work is in js/editor (loaded with the first structure); S.ed runs it
   const ed = (id) => (c, a) => S.ed(id, a);
   const editable = (extra = "") => ({ when: `docEditable${extra}`, reason: (c) => S.editReason(c) });
@@ -57,6 +63,15 @@ export function registerAll(S) {
   register({ id: "file.revert", title: "Revert File", category: "File", when: "docKind == structure && docDirty && docHasPath",
     reason: (c) => (c.docKind !== "structure" ? "Needs a structure" : !c.docHasPath ? "Not saved yet: nothing to revert to" : "No unsaved changes"),
     run: () => S.revert() });
+  register({ id: "file.exportLegend", title: "Export Element Legend…", category: "File", icon: "list",
+    aliases: ["legend", "element legend", "color key", "palette legend"], when: structureDoc, reason: "Needs a structure",
+    desc: "The structure's elements in the palette's colors: SVG, PNG or a table, for figures", run: () => S.legendActive() });
+  register({ id: "file.exportLegendOpen", title: "Export Element Legend of All Open Documents…", category: "File", icon: "list",
+    aliases: ["legend", "element legend"], enabled: () => S.openStructureCount() > 0, reason: "No structure is open",
+    desc: "The union of the elements of every open structure", run: () => S.legendOpenDocs() });
+  register({ id: "explorer.legend", title: "Export Element Legend…", category: "Explorer", icon: "list",
+    enabled: (c) => !!(c.args && (c.args.dir !== undefined || S.pathOf(c.args))), reason: "Right-click structure files or a folder in the Explorer",
+    desc: "The elements of the selected files (or the folder's structures)", run: (c, a) => S.legendExplorer(a) });
   register({ id: "file.exportImage", title: "Export Image…", category: "File", keys: ["Mod+Shift+X"], icon: "image",
     when: "docKind == structure", reason: "Needs a structure", desc: "A PNG of the view: up to 4× or a custom size, transparent if you like",
     run: () => S.exportImage() });
@@ -144,9 +159,9 @@ export function registerAll(S) {
     aliases: ["commands", "search"], run: () => S.palette("") });
   const along = [["a", "1", "view-a"], ["b", "2", "view-b"], ["c", "3", "view-c"]];
   along.forEach(([ax, key, ic], k) => register({ id: `view.along${ax.toUpperCase()}`, title: `View Along ${ax}`,
-    menuTitle: ax, category: "View", keys: [key], icon: ic, ...needsView, run: () => S.viewAlong(k) }));
+    menuTitle: ax, category: "View", keys: [key], icon: ic, ...needsAlong, run: () => S.viewAlong(k) }));
   along.forEach(([ax], k) => register({ id: `view.along${ax.toUpperCase()}Star`, title: `View Along ${ax}*`, menuTitle: `${ax}*`,
-    category: "View", keys: [`Shift+${k + 1}`], ...needsView, desc: `Look down the reciprocal axis ${ax}* (perpendicular to the other two)`,
+    category: "View", keys: [`Shift+${k + 1}`], ...needsAlong, desc: `Look down the reciprocal axis ${ax}* (perpendicular to the other two)`,
     run: () => S.viewAlong(`${ax}*`) }));
   register({ id: "view.alongUVW", title: "View Along [uvw]…", menuTitle: "[uvw]…", category: "View", keys: ["Alt+U"],
     when: "docKind == structure", reason: "Needs a structure", run: () => S.lazyDialog("cell_dialog", "openAlongUVW") });
@@ -229,6 +244,30 @@ export function registerAll(S) {
     checked: () => S.panelShown("inspector"), run: () => S.togglePanel("inspector") });
   register({ id: "view.inspectorDrawer", title: "Inspector Drawer", category: "View", keys: ["Mod+Alt+I"], icon: "panel-right",
     desc: "Below 1100px the inspector opens over the viewport", run: () => S.togglePanel("inspector") });
+  // the Inspector's (or Calculation Setup's) sections at once; Shift-click (or Alt-click) on a section head does the same.
+  // With one section there is nothing to do: disabled, with the reason
+  const manySections = { enabled: () => S.manySections(), reason: "The Inspector has one section here" };
+  register({ id: "view.expandSections", title: "Expand All Sections", menuTitle: "Expand All", category: "View", keys: ["Mod+Alt+]"],
+    ...manySections, icon: "chevrons-up-down", aliases: ["expand all", "open all sections", "unfold"],
+    desc: "Every section of the Inspector, or of Calculation Setup while it is open", run: () => S.setAllSections(true) });
+  register({ id: "view.collapseSections", title: "Collapse All Sections", menuTitle: "Collapse All", category: "View", keys: ["Mod+Alt+["],
+    ...manySections, icon: "chevrons-down-up", aliases: ["collapse all", "close all sections", "fold"],
+    desc: "Every section of the Inspector, or of Calculation Setup while it is open", run: () => S.setAllSections(false) });
+  // the Explorer's sections (sidebar.js): move one (from its header's menu), show or hide each, reset the layout
+  const secArgs = (d) => ({ palette: false, reason: "Right-click a section heading in the Explorer",
+    enabled: (c) => !!(c.args && c.args.section) && !!S.sidebar() && S.sidebar().canMove(c.args.section, d) });
+  register({ id: "view.sidebar.moveUp", title: "Move Section Up", menuTitle: "Move Up", category: "View", ...secArgs(-1),
+    run: (c, a) => S.sidebar().move(a.section, -1) });
+  register({ id: "view.sidebar.moveDown", title: "Move Section Down", menuTitle: "Move Down", category: "View", ...secArgs(1),
+    run: (c, a) => S.sidebar().move(a.section, 1) });
+  for (const [k, t] of [["editors", "Open Editors"], ["files", "Files"], ["db", "Materials.db"], ["recent", "Recent"]]) {
+    register({ id: `view.sidebar.show.${k}`, title: `Explorer: ${t} Section`, menuTitle: t, category: "View",
+      aliases: [`show ${t.toLowerCase()}`, `hide ${t.toLowerCase()}`, "sidebar section"],
+      checked: () => !!S.sidebar() && S.sidebar().shown(k), run: () => S.sidebar().setShown(k, !S.sidebar().shown(k)) });
+  }
+  register({ id: "view.resetSidebar", title: "Reset Sidebar Layout", category: "View", icon: "rotate-ccw",
+    aliases: ["reset explorer", "explorer sections", "sidebar sections", "restore sidebar"],
+    desc: "The Explorer's sections back in their order, all shown, at their default heights", run: () => S.sidebar().reset() });
   register({ id: "view.bottom", title: "Bottom Panel", category: "View", keys: ["Mod+J"], icon: "panel-bottom",
     checked: () => S.panelShown("bottom"), run: () => S.togglePanel("bottom") });
   // two editor groups side by side (plan E11, groups.js)
@@ -240,20 +279,39 @@ export function registerAll(S) {
     run: () => S.groups().moveToOther() });
   register({ id: "view.focusOtherGroup", title: "Focus Other Group", category: "View", keys: ["Mod+Alt+\\"],
     enabled: (c) => !!c.splitOpen, reason: "There is only one editor group", run: () => S.groups().focusOther() });
+  // Ctrl+1 and Ctrl+2 (VS Code's keys) are the browser's own tabs: these have no default key
+  register({ id: "view.focusLeftGroup", title: "Focus Left Group", category: "View", aliases: ["first group", "group 1"],
+    enabled: (c) => !!c.splitOpen, reason: "There is only one editor group", run: () => S.groups().focusLeft() });
+  register({ id: "view.focusRightGroup", title: "Focus Right Group", category: "View", aliases: ["second group", "group 2"],
+    enabled: (c) => !!c.splitOpen, reason: "There is only one editor group", run: () => S.groups().focusRight() });
   register({ id: "view.closeGroup", title: "Close Group", category: "View", icon: "x",
     enabled: (c) => !!c.splitOpen, reason: "There is only one editor group", run: () => S.groups().closeGroup() });
   register({ id: "view.linkCameras", title: "Link Cameras", category: "View", icon: "link-2",
     enabled: (c) => !!c.splitOpen, reason: "Needs two editor groups (Split Editor Right)",
     checked: () => !!(S.groups() && S.groups().linked && S.groups().linked()),
     desc: "Two 3D views turn together; each keeps its own zoom", run: () => S.groups().toggleLink() });
+  // the three panels at once; the same command brings back exactly the ones that were open
+  register({ id: "view.hideAllPanels", title: "Hide All Panels", category: "View", keys: ["Mod+Shift+F"], icon: "maximize",
+    aliases: ["focus mode", "show panels", "hide panels", "maximize editor"], tipTitle: () => (S.allPanelsHidden() ? "Show Panels" : "Hide All Panels"),
+    checked: () => S.allPanelsHidden(), desc: "Hides the Explorer, the Inspector and the bottom panel; again brings back the ones that were open",
+    run: () => S.toggleAllPanels() });
   register({ id: "view.zen", title: "Zen Mode", category: "View", keys: ["Mod+Alt+Z"], icon: "maximize-2",
     checked: () => S.panelShown("zen"), run: () => S.togglePanel("zen") });
   // the Zen chip, the viewport menu in Zen, and Esc when nothing else had anything to do
   register({ id: "view.exitZen", title: "Exit Zen Mode", category: "View", icon: "minimize-2", when: "zenMode",
     reason: "Not in Zen Mode", run: () => { if (S.panelShown("zen")) S.togglePanel("zen"); } });
-  [["system", "System"], ["light", "Light"], ["dark", "Dark"]].forEach(([v, t]) => register({ id: `view.theme.${v}`,
-    title: `Theme: ${t}`, menuTitle: t, category: "View", radio: true, icon: v === "light" ? "sun" : v === "dark" ? "moon" : "monitor",
-    checked: () => S.setting("theme") === v, run: () => S.set("theme", v) }));
+  // every theme (js/themes.js); moving onto one in the command search shows it until Enter or Esc
+  THEMES.forEach(({ id: v, label: t, icon, desc, aliases = [] }) => register({ id: `view.theme.${v}`,
+    title: `Theme: ${t}`, menuTitle: t, category: "View", radio: true, icon, desc, aliases: ["color theme", "appearance", ...aliases],
+    checked: () => S.setting("theme") === v, run: () => S.set("theme", v),
+    preview: () => S.previewTheme(v), unpreview: () => S.previewTheme(null) }));
+  register({ id: "view.themePicker", title: "Color Theme…", category: "View", icon: "sun-moon",
+    aliases: ["theme", "appearance", "high contrast", "colorblind", "sepia", "paper", "black", "oled", "editor theme",
+      "dracula", "nord", "solarized", "gruvbox", "catppuccin", "tokyo night", "one dark"],
+    desc: "Pick a theme; the arrow keys preview each one", run: () => S.pickTheme() });
+  register({ id: "view.elementColors", title: "Element Colors…", category: "View", icon: "atom",
+    aliases: ["palette", "color scheme", "atom colors", "cpk", "jmol", "vesta", "colorblind"],
+    desc: "Edit, save and share the colors atoms are drawn in", run: () => S.elementColors() });
   register({ id: "view.themeCycle", title: "Cycle Theme", category: "View", keys: ["Mod+Alt+T"], icon: "sun-moon",
     tipTitle: () => `Theme: ${S.setting("theme")}`, run: () => S.cycleTheme() });
   register({ id: "view.zoomIn", title: "Zoom UI In", menuTitle: "In", category: "View", keys: ["Mod+="], icon: "zoom-in", run: () => S.zoomUi(10) });
@@ -269,6 +327,9 @@ export function registerAll(S) {
   register({ id: "view.tasks", title: "Tasks", category: "View", keys: ["Mod+Shift+Y"], icon: "list-checks", run: () => S.showBottom("tasks") });
   register({ id: "view.cluster", title: "Cluster", category: "View", icon: "activity",
     aliases: ["slurm", "nodes", "quota", "queue", "partitions", "limits", "hpc"], run: () => S.openCluster() });
+  register({ id: "view.workflows", title: "Workflows", category: "View", icon: "layers",
+    aliases: ["workflow", "progression", "pipeline", "chain", "steps", "mace workflow --status"],
+    desc: "Workflows under this folder: every step's state, its job and the time left", run: () => S.openWorkflows() });
   register({ id: "cluster.jobDetails", title: "Show Job Details…", category: "View", icon: "activity",
     aliases: ["job", "slurm job", "progress", "eta"], run: () => S.jobDetailsPrompt() });
   register({ id: "view.jobs", title: "Jobs", category: "View", icon: "clock", aliases: ["squeue", "slurm", "queue", "my jobs"],
@@ -416,6 +477,10 @@ export function registerAll(S) {
     run: (c, a) => S.submit(a) });
   register({ id: "calc.runHere", title: "Run on This Node…", category: "Calculation", icon: "terminal", ...deckArgs,
     aliases: ["mace run", "dev node", "local run"], desc: "mace run on this node (a dev node), previewed first", run: (c, a) => S.runHere(a) });
+  register({ id: "calc.newWorkflow", title: "New Workflow…", category: "Calculation", icon: "boxes",
+    aliases: ["workflow", "chain", "pipeline", "progression", "mace workflow --spec", "opt sp band doss"],
+    desc: "A chain of calculations for many structures (OPT → SP → BAND → DOSS …), previewed exactly; you confirm before anything is submitted",
+    run: (c, a) => S.newWorkflow(a) });
   register({ id: "calc.batch", title: "Batch Setup…", category: "Calculation", icon: "list-checks",
     aliases: ["batch", "many decks", "follow-ups", "commands.sh"], desc: "Decks for many CIFs or follow-ups at once, through the CLI's batch routes",
     run: (c, a) => S.batch(a) });
@@ -479,6 +544,11 @@ export function registerAll(S) {
     aliases: ["cn", "coordination number", "econ"], palette: false, run: () => S.showCoordination() });
   register({ id: "analysis.resetPlot", title: "Reset Plot Options", category: "Analysis", icon: "rotate-ccw",
     when: "docKind == plot", reason: "Open a plot first", aliases: ["reset plot"], run: () => S.resetPlot() });
+  // Plot Gallery (1.1.6): many outputs' plots of one kind in panes, as `mace plotting --gallery`
+  register({ id: "analysis.gallery", title: "Plot Gallery…", category: "Analysis", icon: "grid-3x3",
+    aliases: ["gallery", "many plots", "grid of plots", "band structures", "compare plots"],
+    desc: "Many outputs' band, DOS, spectra, optimization, SCF or structure plots in one grid, with a caption table",
+    run: () => S.openGallery() });
   register({ id: "analysis.db", title: "Open Materials Database", category: "Analysis", icon: "database",
     when: "hasDb", reason: "No materials.db in this folder", run: () => S.openDb() });
   // Create or Update Database from a Folder (PLAN_analysis C10): the CLI's --extract-properties, with a preview and a backup
@@ -491,6 +561,11 @@ export function registerAll(S) {
     when: "activeTable", reason: "No table is shown", aliases: ["export table", "csv"], run: () => S.exportTable("csv") });
   register({ id: "analysis.exportJson", title: "Export Table as JSON", menuTitle: "JSON", category: "Analysis: Export Table", icon: "download",
     when: "activeTable", reason: "No table is shown", aliases: ["export table", "json"], run: () => S.exportTable("json") });
+  // a database table also in the CLI's other formats (mace database --action export --format excel|latex|html)
+  for (const [fmt, label] of [["excel", "Excel"], ["latex", "LaTeX"], ["html", "HTML"]]) {
+    register({ id: `analysis.export${label}`, title: `Export Table as ${label}`, menuTitle: label, category: "Analysis: Export Table", icon: "download",
+      when: "activeDbTable", reason: "Only a database table exports as " + label, aliases: ["export table", fmt], run: () => S.exportTable(fmt) });
+  }
 
   /* ---------------- Help */
   register({ id: "help.shortcuts", title: "Keyboard Shortcuts", category: "Help", keys: ["?", "Mod+/"], icon: "keyboard",
@@ -507,6 +582,8 @@ export function registerAll(S) {
     run: () => S.copyDiagnostics() });
   register({ id: "help.report", title: "Report a Problem…", category: "Help", icon: "info",
     aliases: ["bug", "issue", "feedback", "diagnostics"], run: () => S.reportProblem() });
+  register({ id: "help.checkUpdates", title: "Check for Updates…", category: "Help", icon: "download",
+    run: () => S.checkForUpdates() });
   register({ id: "help.about", title: "About MACE", category: "Help", icon: "info", run: () => S.aboutDialog() });
   // GTK's key for the menu bar: with Edit's and Build's Alt+letter given to
   // selection commands (spec §4.2), F10 then the arrows reach every menu
@@ -518,6 +595,11 @@ export function registerAll(S) {
   register({ id: "tab.close", title: "Close", category: "Tab", icon: "x", ...tabArgs, run: (c, a) => S.closeDoc(S.tabOf(a)) });
   register({ id: "tab.moveToOtherGroup", title: "Move to Other Group", category: "Tab", icon: "move", ...tabArgs,
     run: (c, a) => S.groups().moveToOther(S.tabOf(a)) });
+  // Shift+Left and Shift+Right on a focused tab do the same
+  register({ id: "tab.moveLeft", title: "Move Tab Left", menuTitle: "Move Left", category: "Tab", enabled: (c) => S.canMoveTab(S.tabOf(c.args), -1),
+    reason: "It is the first tab", run: (c, a) => S.moveTab(S.tabOf(a), -1) });
+  register({ id: "tab.moveRight", title: "Move Tab Right", menuTitle: "Move Right", category: "Tab", enabled: (c) => S.canMoveTab(S.tabOf(c.args), 1),
+    reason: "It is the last tab", run: (c, a) => S.moveTab(S.tabOf(a), 1) });
   register({ id: "tab.closeOthers", title: "Close Others", category: "Tab", enabled: (c) => !!S.tabOf(c.args) && c.docCount >= 2,
     reason: "No other documents are open", run: (c, a) => S.closeOthers(S.tabOf(a)) });
   register({ id: "tab.closeRight", title: "Close to the Right", category: "Tab", enabled: (c) => S.hasRight(S.tabOf(c.args)),
@@ -544,6 +626,16 @@ export function registerAll(S) {
   register({ id: "explorer.compareConvergence", title: "Compare Convergence", category: "Explorer", icon: "chart-spline",
     enabled: (c) => S.convergencePaths(S.pathOf(c.args)).length >= 2, reason: "Ctrl-click two or more CRYSTAL outputs in the Explorer",
     aliases: ["compare runs", "convergence", "energy per atom"], run: (c, a) => S.compareConvergence(S.convergencePaths(S.pathOf(a))) });
+  register({ id: "explorer.gallery", title: "Plot Gallery", category: "Explorer", icon: "grid-3x3",
+    enabled: (c) => !!(c.args && (c.args.dir !== undefined || S.pathOf(c.args))), reason: "Right-click a folder or files in the Explorer",
+    run: (c, a) => {
+      if (a.dir !== undefined) return S.openGallery({ source: { type: "folder", folder: a.dir || "" }, label: a.dir || "This folder" });
+      const p = S.pathOf(a), picked = [...new Set([...(window.MACE.state.selected || []), p])];
+      if (picked.length >= 2) return S.openGallery({ source: { type: "paths", paths: picked }, label: `Explorer selection (${picked.length})` });
+      // one file: its folder's plots of that kind
+      const dir = p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+      return S.openGallery({ source: { type: "folder", folder: dir }, label: dir || "This folder" });
+    } });
   register({ id: "explorer.copyPath", title: "Copy Path", category: "Explorer", icon: "copy", ...fileArgs,
     run: (c, a) => S.copyText(S.pathOf(a), "Path copied") });
   register({ id: "explorer.reveal", title: "Reveal in Folder", category: "Explorer", icon: "folder-open", ...fileArgs,
@@ -562,9 +654,13 @@ export function registerAll(S) {
     run: (c, a) => S.runHere({ paths: [S.pathOf(a)] }) });
   const dirArgs = { enabled: (c) => !!(c.args && c.args.dir !== undefined), reason: "Right-click a folder in the Explorer" };
   register({ id: "explorer.batch", title: "Batch Setup…", category: "Explorer", icon: "list-checks", ...dirArgs, run: (c, a) => S.batch(a) });
+  register({ id: "explorer.workflow", title: "New Workflow…", category: "Explorer", icon: "boxes",
+    enabled: (c) => !!(c.args && (c.args.dir !== undefined || /\.(cif|d12)$/i.test(S.pathOf(c.args) || ""))),
+    reason: "Right-click a CIF, a .d12 deck or a folder of them",
+    run: (c, a) => S.newWorkflow(a.dir !== undefined ? { dir: a.dir } : { paths: [S.pathOf(a)] }) });
   register({ id: "explorer.submitFolder", title: "Submit Folder…", category: "Explorer", icon: "play", ...dirArgs, run: (c, a) => S.submit(a) });
   register({ id: "explorer.setup", title: "Set Up Calculation", category: "Explorer", icon: "flask-conical",
-    enabled: (c) => ["cif", "out"].includes(S.kindOf(S.pathOf(c.args))), reason: "Needs a CIF or an .out",
+    enabled: (c) => ["cif", "out", "d12"].includes(S.kindOf(S.pathOf(c.args))), reason: "Needs a CIF, an .out or a .d12",
     run: (c, a) => S.setupFor(S.pathOf(a)) });
 
   const atomArgs = { enabled: (c) => !!S.atomOf(c.args), reason: "Right-click an atom" };
@@ -613,13 +709,13 @@ export const CONTEXT = {
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
     "view.reset", "view.pivotCell", "view.pivotSelection",
     { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom"] }, "-",
-    "file.exportImage"],
+    "file.exportImage", "file.exportLegend"],
   explorer: ["explorer.open", "explorer.openToSide", "explorer.openAsText", "explorer.compareWithActive", "explorer.plot",
-    "explorer.compareConvergence", "-",
-    "explorer.copyPath", "explorer.reveal", "explorer.history", "-", "explorer.setup", "explorer.submit", "explorer.runHere", "explorer.dbBuild"],
+    "explorer.compareConvergence", "explorer.gallery", "explorer.legend", "-",
+    "explorer.copyPath", "explorer.reveal", "explorer.history", "-", "explorer.setup", "explorer.submit", "explorer.runHere", "explorer.workflow", "explorer.dbBuild"],
   // a folder's menu (Areas B, C and D agree on the order): Batch Setup, Submit Folder, Create or Update Database
-  folder: ["explorer.batch", "explorer.submitFolder", "explorer.dbBuild"],
-  tab: ["tab.close", "tab.closeOthers", "tab.closeRight", "-", "tab.moveToOtherGroup", "-", "tab.copyPath", "tab.reveal"],
+  folder: ["explorer.batch", "explorer.submitFolder", "explorer.workflow", "explorer.dbBuild", "-", "explorer.gallery", "explorer.legend"],
+  tab: ["tab.close", "tab.closeOthers", "tab.closeRight", "-", "tab.moveToOtherGroup", "tab.moveLeft", "tab.moveRight", "-", "tab.copyPath", "tab.reveal"],
 };
 
 /* The menu bar, exactly as §1.3 lists it. `noAlt`: no Alt+letter mnemonic by
@@ -627,7 +723,7 @@ export const CONTEXT = {
  * (measured with real keys, plan T16); F10 reaches them. */
 export const MENUS = [
   { label: "File", items: ["file.new", "file.open", "file.openFolder", { label: "Open Recent", sub: "recent" }, "file.importClipboard", "-",
-    "file.save", "file.saveAs", "file.saveAll", "file.revert", "-", "file.exportImage",
+    "file.save", "file.saveAs", "file.saveAll", "file.revert", "-", "file.exportImage", "file.exportLegend", "file.exportLegendOpen",
     { label: "Export Structure", sub: ["file.export.CIF", "file.export.CIFSym", "file.export.POSCAR", "file.export.XYZ", "file.export.extXYZ", "-", "file.export.QE"] },
     "file.copyImage", "-", "file.closeTab", "file.closeAll", "-", "file.settings", "-", "file.signOut"] },
   { label: "Edit", noAlt: true, items: ["edit.undo", "edit.redo", "-", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "-",
@@ -641,9 +737,12 @@ export const MENUS = [
     "view.axes", "view.measurements", "view.polyhedra",
     { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom", "-", "view.rangeCycle"] },
     { label: "Style", sub: ["view.style.ballstick", "view.style.spacefill", "view.style.stick", "view.style.wireframe"] }, "-",
-    { label: "Editor Groups", sub: ["view.splitRight", "view.moveToOtherGroup", "view.focusOtherGroup", "view.closeGroup", "-", "view.linkCameras"] },
-    "view.explorer", "view.inspector", "view.bottom", "view.zen", "view.cluster", "-",
-    { label: "Theme", sub: ["view.theme.system", "view.theme.light", "view.theme.dark", "-", "view.themeCycle"] },
+    { label: "Editor Groups", sub: ["view.splitRight", "view.moveToOtherGroup", "view.focusOtherGroup", "view.focusLeftGroup", "view.focusRightGroup", "view.closeGroup", "-", "view.linkCameras"] },
+    "view.explorer", { label: "Explorer Sections", sub: ["view.sidebar.show.editors", "view.sidebar.show.files", "view.sidebar.show.db",
+      "view.sidebar.show.recent", "-", "view.resetSidebar"] },
+    "view.inspector", { label: "Inspector Sections", sub: ["view.expandSections", "view.collapseSections"] },
+    "view.bottom", "view.hideAllPanels", "view.zen", "view.cluster", "view.workflows", "-",
+    { label: "Theme", sub: [...themeMenu(), "-", "view.themePicker", "view.themeCycle"] }, "view.elementColors",
     { label: "Zoom UI", sub: ["view.zoomIn", "view.zoomOut", "view.zoomReset"] }] },
   { label: "Select", items: ["select.all", "select.none", "select.invert", "-", "select.byElement", "select.equivalents",
     "select.within", "select.neighbors", "select.grow", "select.shrink", "select.byIndex", "select.byFrac", "-",
@@ -655,14 +754,14 @@ export const MENUS = [
     "tool.replace", "tool.measure", "tool.bond", "-", "tool.measureSelection", "tool.clearMeasurements", "-",
     "tool.coordination", "tool.compare"] },
   { label: "Calculation", items: ["calc.setup", "calc.preview", "calc.saveJson", "calc.preflight", "calc.copyCli", "-",
-    "calc.submit", "calc.runHere", "calc.batch", "view.jobs", "-",
+    "calc.submit", "calc.runHere", "calc.batch", "calc.newWorkflow", "view.jobs", "view.workflows", "-",
     { label: "Open Example Config", sub: [] }, "calc.resetSettings", "-", "calc.autoPreview"] },
   { label: "Analysis", items: ["analysis.band", "analysis.dos", "analysis.ir", "analysis.raman", "analysis.modes", "-",
     "analysis.volumeMep", "analysis.volumeDiff", "-",
     "analysis.coordination", "-", "analysis.trajectory", "analysis.compareInput", "analysis.compareGroups", "analysis.energy", "analysis.bondTable", "analysis.displacements",
     { label: "Run", sub: ["analysis.runPlot", "analysis.convergence", "analysis.scf", "analysis.cellRun", "analysis.trackMeasurement", "-", "analysis.compareRuns"] }, "-",
-    "analysis.db", "db.build", { label: "Export Table", sub: ["analysis.exportCsv", "analysis.exportJson"] }, "analysis.resetPlot"] },
-  { label: "Help", items: ["help.shortcuts", "help.commands", "help.docs", "help.cluster", "help.tunnel", "-", "help.copyDiagnostics", "help.report", "-",
+    "analysis.gallery", "-", "analysis.db", "db.build", { label: "Export Table", sub: ["analysis.exportCsv", "analysis.exportJson", "analysis.exportExcel", "analysis.exportLaTeX", "analysis.exportHTML"] }, "analysis.resetPlot"] },
+  { label: "Help", items: ["help.shortcuts", "help.commands", "help.docs", "help.cluster", "help.tunnel", "-", "help.copyDiagnostics", "help.report", "-", "help.checkUpdates",
     "help.about", "-", "menu.focusBar"] },
 ];
 

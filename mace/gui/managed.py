@@ -3,7 +3,7 @@
 Protocol (stdout, one JSON object per line, whatever the TTY state):
 
 * ``MACE_GUI_READY {...}``   url, port, prefix, token, login, host, fqdn, root,
-  version, reattached, tasks
+  version, home (the MACE install folder), reattached, tasks
 * ``MACE_GUI_LOGIN {"url"}``  a fresh one-time sign-in link (after ``login``)
 * ``MACE_GUI_STOPPED {"reason"}`` the server stopped on purpose
 * ``MACE_GUI_ERROR <kind>``  e.g. ``port-busy`` (exit 98)
@@ -185,8 +185,15 @@ class Controller:
 
     def ping(self, wid: str) -> Dict[str, Any]:
         with self.lock:
-            if wid in self.watcher_seen:
+            known = wid in self.watcher_seen
+            if known:
                 self.watcher_seen[wid] = time.monotonic()
+        if not known and wid:
+            # a watcher this process does not know: it attached before an
+            # Update Now restart (or was dropped as stale and is alive after
+            # all); it pings, so it is attached
+            self.attach(wid)
+            return {"ok": True, "attached": True}
         return {"ok": True}
 
     def detach(self, wid: str) -> Dict[str, Any]:
@@ -205,6 +212,36 @@ class Controller:
         self._stop("managed-stop")
         return {"stopping": True}
 
+    # -- Update Now and Restart (update_gui.after_stop / cli._serve_managed) ---
+    def handoff(self) -> Dict[str, Any]:
+        """What the restarted process needs to carry the same session on: the
+        attached watchers and whether the first connection is gone."""
+        now = time.monotonic()
+        with self.lock:
+            return {"connected": self.connected, "watchers": sorted(self.watcher_seen),
+                    "lingering_for": None if self.lingering_since is None else now - self.lingering_since}
+
+    def restore(self, saved: Any) -> None:
+        """The other half of handoff(), before run(). Junk is ignored."""
+        if not isinstance(saved, dict):
+            return
+        now = time.monotonic()
+        ws = saved.get("watchers")
+        with self.lock:
+            if isinstance(ws, list):
+                for w in ws:
+                    if isinstance(w, str) and w:
+                        self.watcher_seen[w] = now
+                self.watchers = len(self.watcher_seen)
+            self.last_line = now
+            if saved.get("connected") is False:
+                self.connected = False
+            lf = saved.get("lingering_for")
+            if isinstance(lf, (int, float)) and lf >= 0:
+                self.lingering_since = now - float(lf)
+        if self.lingering_since is not None:
+            self.write_state_file()          # cli's cleanup removed it before the exec
+
     # -- lingering -------------------------------------------------------------
     def linger(self, why: str, n: int) -> None:
         with self.lock:
@@ -212,6 +249,10 @@ class Controller:
                 self.lingering_since = time.monotonic()
         log(f"connection lost; keeping the server for {n} running task(s)")
         detach_std_streams()
+        self.write_state_file()
+
+    def write_state_file(self) -> None:
+        """The 0600 file a later mace gui --managed on this node reattaches through."""
         if self.info:
             try:
                 self._file = state_file(int(self.info["port"]))

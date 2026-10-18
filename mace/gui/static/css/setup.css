@@ -5,6 +5,9 @@
 .su-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2); border-bottom: 1px solid var(--border); }
 .su-title { font-size: var(--fs-lg); font-weight: 650; margin: 0; flex: 1; letter-spacing: -0.01em; }
 .su-chip { font: 600 var(--fs-xs)/1 var(--font-mono); padding: 4px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.su-head-acts { display: flex; gap: 2px; }
+.su-head-acts .icon-btn.sm { width: 24px; height: 24px; }
+.su-head-acts .icon-btn .i { width: 14px; height: 14px; }
 .su-body { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--s-4) var(--s-5); scrollbar-gutter: stable; }
 .su-step { padding: var(--s-4) 0 var(--s-2); border-bottom: 1px solid var(--border); }
 .su-step:last-child { border-bottom: 0; }
@@ -40,6 +43,7 @@
 .su-calc-row button { min-width: 0; padding: 0 var(--s-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .su-calc button.prop { color: var(--text-3); }
 .su-calc button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); }
+.su-calc button.refused { color: var(--text-3); opacity: 0.5; cursor: not-allowed; }
 .su-calc button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .su-loading { display: flex; align-items: center; gap: var(--s-2); color: var(--text-2); padding: var(--s-3) 0; }
 .su-refused { display: flex; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--danger) 8%, var(--surface));
@@ -133,6 +137,35 @@ pre.deck .ctx { color: var(--text-2); }
 .su-live { display: inline-flex; align-items: center; gap: var(--s-1); margin-right: auto; font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
 .su-live input { accent-color: var(--accent); }
 .su-foot .tb-btn-text:disabled { opacity: .45; cursor: default; }
+/* then: Submit… and Batch Prepare + Submit… (each opens its own dialog or document; nothing submits here) */
+.su-foot-next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); justify-content: flex-end;
+  padding-top: var(--s-2); border-top: 1px dashed var(--border); }
+.su-foot-next .tb-btn-text { white-space: nowrap; }
+/* a follow-up's parent (.out or .d12) and what the CLI said about it */
+.su-parentbox .su-parent b { font-weight: 600; overflow-wrap: anywhere; }
+.su-parentbox .su-warnline { margin-top: var(--s-2); }
+/* spin-orbit coupling: the CLI's settings keys (radio options with the CLI's reason under a disabled one) */
+.su-soc-opts { flex-direction: column; align-items: stretch; gap: var(--s-1); }
+.su-opt { display: flex; align-items: flex-start; gap: var(--s-2); font-size: var(--fs-sm); color: var(--text); line-height: 1.35; cursor: pointer; }
+/* a radio, not a text box: undo .su-ctl input's field look (width, height, border, padding) */
+.su-soc-opts .su-opt input[type=radio] { flex: none; width: 14px; height: 14px; min-width: 0; margin: 2px 0 0; padding: 0; border: 0; background: none; accent-color: var(--accent); }
+.su-opt input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.su-opt-sub { color: var(--text-3); font-size: var(--fs-xs); }
+.su-opt.is-off { color: var(--text-2); cursor: not-allowed; }
+.su-opt.is-off .su-opt-name { text-decoration: line-through; text-decoration-color: var(--text-3); }
+.su-why { margin: 0 0 var(--s-1) calc(14px + var(--s-2)); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; overflow-wrap: anywhere; }
+.su-soc-row .su-ctl .tb-btn-text.sm { flex: none; }
+.su-soc-row .su-switch input:disabled { opacity: .5; cursor: not-allowed; }
+/* the SOC rows' hints are longer than a field's: under the badge when the line is short of room */
+.su-soc-row .su-meta { flex-wrap: wrap; align-items: baseline; row-gap: 2px; }
+.su-soc-row .su-meta .su-h { flex: 1 1 16em; }
+.su-soc-metal { margin: var(--s-1) 0 0; }
+.su-soc-notes { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+.su-soc-notes .su-warnline, .su-soc-notes .su-refused { margin: 0; }
+.su-soc-notes .su-warnline span, .su-soc-notes .su-refused p { overflow-wrap: anywhere; }
+.su-soc-changes h4 { margin: 0 0 var(--s-1); font-size: var(--fs-xs); font-weight: 650; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.su-soc-changes ul { margin: 0; padding: var(--s-2) var(--s-3) var(--s-2) var(--s-5); border-radius: var(--r-md); background: var(--surface-2);
+  font-size: var(--fs-xs); line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
 /* a narrow inspector (the drawer below 1100px, or a zoomed-in window): each label
  * above its control, so a drop-down keeps the width to show its whole choice */
 @container setup (max-width: 420px) {
@@ -145,3 +178,17 @@ pre.deck .ctx { color: var(--text-2); }
 .text-acts { display: inline-flex; gap: var(--s-2); }
 .text-acts .tb-btn-text.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .text-head .warn { color: var(--warning); }
+
+/* Charged system (1.1.6): the CLI's charged-system switches (setup/charge.js) */
+.su-charge-note { display: block; padding: var(--s-2) 0; }
+.cf-row .su-ctl textarea { flex: 1; min-width: 0; resize: vertical; padding: var(--s-1) var(--s-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font-size: var(--fs-sm); }
+.cf-row .su-ctl textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--focus); }
+.cf-row .su-ctl input:disabled { opacity: .55; }
+.cf-row .su-meta { flex-wrap: wrap; }
+.cf-switch { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
+.cf-row.changed .cf-switch { color: var(--accent); font-weight: 600; }
+.cf-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); grid-template-areas: "l c" ". m"; column-gap: var(--s-3);
+  row-gap: 3px; padding: var(--s-2) 0; border-radius: var(--r-sm); }
+.cf-row + .cf-row { border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent); }
+.cf-row.changed .su-l { color: var(--text); font-weight: 600; }

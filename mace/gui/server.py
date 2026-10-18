@@ -72,11 +72,14 @@ from . import pool as gui_pool
 from . import tasks as gui_tasks
 from . import settings as gui_settings
 from . import docprefs as gui_docprefs
+from . import palettes as gui_palettes
 from . import prefstore
 from . import mlip_host as gui_mlip_host
 from . import submit as gui_submit
 from . import jobs as gui_jobs
 from . import submit_routes
+from . import folderprefs as gui_folderprefs
+from mace.utils import folder_settings as _folder_settings
 
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE_PREFIX = "mace_gui_"  # + port: browsers share cookies across ports
@@ -212,8 +215,8 @@ MAX_FOLDERS = 2000
 DENY_CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; "
             "form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
 # POST routes that do not act on the served folder (a stale page may still use them)
-ROOT_FREE_POSTS = {"open-folder", "session/touch", "shutdown", "login-code", "diagnostics", "settings", "profile",
-                   "managed/attach", "managed/ping", "managed/detach", "managed/stop"}
+ROOT_FREE_POSTS = {"open-folder", "session/touch", "shutdown", "login-code", "diagnostics", "settings", "profile", "palettes",
+                   "managed/attach", "managed/ping", "managed/detach", "managed/stop", "update/check", "update/choose"}
 
 
 class GuiState:
@@ -273,6 +276,7 @@ class GuiState:
         # Submit, Jobs and Batch Setup (PLAN_submit): the previews, this session's jobs, the own-jobs poll
         self.bind_host = "127.0.0.1"
         self.submits = gui_submit.Store()
+        self.wf_previews = gui_submit.Store()          # the workflow builder's previews (workflow_build.py)
         # jobs.finished: one event per job for the life of the server, whichever of the Jobs
         # panel's refresh (jobs.py) and the Cluster view's poller (cluster_api) sees it first
         self.finished_lock = threading.Lock()
@@ -280,6 +284,11 @@ class GuiState:
         self.jobs = gui_jobs.Jobs(self.root, self._job_event, self.submits.session_jobs,
                                   lambda: gui_settings.load().get("cluster.pollSeconds", gui_jobs.POLL_DEFAULT_S))
         self.jobs.watcher.skip = lambda jid: jid in self.finished_ids
+        # the Workflows view (workflow.py): workflow.changed after a poll that changed a step
+        from . import workflow as gui_workflow
+        self.workflows = gui_workflow.WorkflowWatcher(lambda: self.root, lambda n, d: self.tasks.broadcast(n, d),
+                                                      lambda: gui_workflow.squeue_from_jobs(self.jobs))
+        self.jobs.watcher.hooks.append(self.workflows.hook)
         # the decks and outputs of this folder's queued and running jobs (File History's
         # protected kinds, C19-b; the wavefunction copy's "still running", C18.7)
         saving.JOB_STATE_PROVIDER = self.jobs.deck_reason
@@ -574,6 +583,15 @@ class GuiHandler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, body: bytes, ctype: str,
               headers: Optional[Dict[str, str]] = None):
+        # a request answered before its body was read (a 403, 409, 421 or 404 first): the unread body
+        # would be parsed as the next request on this keep-alive connection, so the connection ends here
+        try:
+            unread = int(self.headers.get("Content-Length") or 0) > 0 and not getattr(self, "_body_read", True)
+        except (TypeError, ValueError):
+            unread = True
+        if unread:
+            self.close_connection = True
+            headers = {**(headers or {}), "Connection": "close"}
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -757,6 +775,7 @@ class GuiHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method: str):
         self._t0 = time.perf_counter()
+        self._body_read = False        # a reply before the body was read closes the connection (_send)
         self.state.snapshot()          # one served folder for the whole request
         try:
             if not self._host_ok():
@@ -896,6 +915,9 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return cluster_api.get(self, route[len("cluster/"):], query)
             if route == "info":
                 return self._json(self._info())
+            if route == "update":
+                from . import update_gui
+                return update_gui.route(self, "GET", route)
             if route == "boot":
                 # everything the page needs to start, in one (gzipped) request
                 return self._json({"info": self._info(), "files": st.list_files(),
@@ -903,6 +925,8 @@ class GuiHandler(BaseHTTPRequestHandler):
                                    "settings": {"settings": gui_settings.load(),
                                                 "path": str(gui_settings.path())},
                                    "profile": _profile_view(st),
+                                   "palettes": gui_palettes.view(),
+                                   "folder": gui_folderprefs.view(st.root),
                                    "mace_defaults": mace_defaults()})
             if route == "files":
                 listing = st.list_files()
@@ -933,6 +957,11 @@ class GuiHandler(BaseHTTPRequestHandler):
                                    "path": str(gui_settings.path())})
             if route == "profile":
                 return self._json(_profile_view(st, everything=self._q(query, "all") == "1"))
+            if route == "palettes":
+                # element color palettes: $XDG_CONFIG_HOME/mace/element_colors.json (mace plotting reads it too)
+                return self._json(gui_palettes.view())
+            if route == "folder-settings":
+                return self._json(gui_folderprefs.view(st.root))
             if route == "docprefs":
                 kind = self._q(query, "kind", "")
                 if kind not in gui_docprefs.KINDS:
@@ -946,6 +975,8 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._events(query)
             if route == "structure":
                 return self._structure(query)
+            if route == "related":
+                return self._json(_related(st, st.resolve(self._q(query, "path")), self._q(query, "pick") or None))
             if route == "filekind":
                 p = st.resolve(self._q(query, "path"))
                 if not p.is_file():
@@ -960,6 +991,9 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._json(out)
             if route in ("volume", "volume/grid", "volume/slice"):
                 return _volume_get(self, route, query)
+            if route in ("orbitals", "orbitals/grid"):
+                from . import orbitals as gui_orbitals
+                return gui_orbitals.get_route(self, route, query)
             if route == "props":
                 p = st.resolve(self._q(query, "path"))
                 if not p.is_file():
@@ -1012,7 +1046,7 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._json(cmp)
             if route == "out/summary":
                 return self._out_summary(query)
-            if route in ("out/convergence", "out/problems", "out/meta"):
+            if route in ("out/convergence", "out/problems", "out/meta", "out/progress"):
                 return _run_route(self, route, query)
             if route == "out/step":
                 p = st.resolve(self._q(query, "path"))
@@ -1101,8 +1135,28 @@ class GuiHandler(BaseHTTPRequestHandler):
                 fmt = self._q(query, "format", "") or ""
                 if fmt and fmt not in plots.FORMATS:
                     raise ValueError(f"format is one of {', '.join(plots.FORMATS)}")
+                band_path = None
+                if self._q(query, "band_path"):
+                    # the band plot's edited k-path: mace plotting --band-path (checked here, as opt2d3 does)
+                    band_path = json.loads(self._q(query, "band_path"))
+                    errors, _ = results.band_path_errors(band_path)
+                    if errors:
+                        raise ValueError("; ".join(errors))
+                # band/DOS: the window on screen (emin, emax), else the served folder's; the CLI runs in the
+                # cache folder, where it cannot find the served folder's mace-folder.toml
+                ewin = plots.energy_window(lambda k: self._q(query, k), gui_folderprefs.energy_window(st.root))
+                # and the Fermi shift and energy reference on screen (--fermi-shift/--energy-reference)
+                shift, eref = plots.energy_reference(lambda k: self._q(query, k))
+                # and its look: the plot style, DOS colors and spin styling on screen (--style, ...)
+                # (every value, the defaults too, when the served folder has a mace-folder.toml: the child
+                # reads it, and its [plots] values must not replace what the screen shows)
+                env = gui_folderprefs.cli_env(st.root)
+                explicit = env.get(gui_folderprefs.F.ENV, "none") != "none"
+                look = plots.look_args(kind, lambda k: self._q(query, k), explicit)
                 t = cli_task(st, "plot", f"Plot {p.name} with mace plotting",
-                             lambda ctx: plots.render(p, kind, st.disk, ctx, fmt),
+                             lambda ctx: plots.render(p, kind, st.disk, ctx, fmt, band_path, ewin, env,
+                                                      shift, eref, look, explicit,
+                                                      inside=lambda f: filekind.rel_inside(st, f) is not None),
                              client=self.headers.get("X-Mace-Client"))
                 return gui_tasks.answer(self, st.tasks, t, 0.3 if self._q(query, "detach") == "1" else 600)
             if route == "spectrum":
@@ -1158,13 +1212,36 @@ class GuiHandler(BaseHTTPRequestHandler):
                 data["siblings"] = {k: r for k, v in data["siblings"].items()
                                     if (r := filekind.rel_inside(st, p.with_name(v))) is not None}
                 return self._json(data)
+            if route == "bz":
+                p = st.resolve(self._q(query, "path"))
+                if not p.is_file():
+                    raise FileNotFoundError(st.rel(p))
+                data = _stable_parse(p, lambda: results.bz_data(p, inside=lambda f: filekind.rel_inside(st, f) is not None))
+                return self._json({**data, "path": st.rel(p)})
+            if route == "transport-zt":
+                # ZTₑ and, with a lattice κ_L (a value in W/(m·K), or a T,kappa_L CSV inside the
+                # folder), the total ZT: the numbers of `mace analyze --kappa-lattice` (results.transport_zt)
+                p = st.resolve(self._q(query, "path"))
+                kl = self._q(query, "kappa_l", "").strip() or None
+                if kl is not None:
+                    try:
+                        float(kl)
+                    except ValueError:
+                        kl = str(_beside_then_root(st, p, kl))
+                if not p.is_file():
+                    raise FileNotFoundError(st.rel(p))
+                data = results.transport_zt(p, kl, self._q(query, "tau_fs", "").strip() or None,
+                                            inside=lambda f: filekind.rel_inside(st, f) is not None)
+                data["path"] = st.rel(p)
+                return self._json(data)
             if route in ("bands", "dos"):
                 p = st.resolve(self._q(query, "path"))
                 kind = "band" if route == "bands" else "dos"
                 data = _stable_parse(p, lambda: results.band_data(p) if kind == "band" else results.dos_data(p))
+                # the run's other half only when it is inside the served folder (a symlink out is not offered)
                 other = results.partner(p, kind)
                 data["path"] = st.rel(p)
-                data["partner"] = st.rel(other) if other else None
+                data["partner"] = filekind.rel_inside(st, other)
                 return self._json(data)
             if route == "plot-image":
                 f = plots.cached_file(st.disk.root, self._q(query, "key", ""),
@@ -1229,6 +1306,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._json(gui_setup.schema())
             if route in submit_routes.GET_ROUTES:
                 return submit_routes.handle(self, "GET", route, query)
+            if route.startswith("gallery/"):
+                from . import gallery as gui_gallery      # the Plot Gallery (mace plotting --gallery)
+                return gui_gallery.handle(self, "GET", route, query)
+            if route.startswith("workflow/"):
+                from . import workflow_routes
+                return workflow_routes.handle(self, "GET", route, query)
             if route.startswith("test/") and st.test_hooks:
                 if route == "test/gate":
                     return self._json(compute.GATE.stats())
@@ -1369,6 +1452,7 @@ class GuiHandler(BaseHTTPRequestHandler):
         fd, tmp = tempfile.mkstemp(prefix="drop_", suffix="_" + "".join(c for c in name if c.isalnum() or c in "._-")[-40:], dir=str(d))
         try:
             left, head = length, b""
+            self._body_read = True
             with os.fdopen(fd, "wb") as fh:
                 while left > 0:
                     chunk = self.rfile.read(min(1 << 20, left))
@@ -1519,7 +1603,9 @@ class GuiHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_POST:
             raise ValueError("request body missing or too large")
-        data = json.loads(self.rfile.read(length))
+        raw = self.rfile.read(length)
+        self._body_read = True
+        data = json.loads(raw)
         if not isinstance(data, dict):
             raise ValueError("request body must be a JSON object")
         return data
@@ -1551,6 +1637,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                 st.set_limit(cache_limit_bytes())
                 compute.GATE.resize(resources.effective_workers(prof["settings"].get("max_workers")))
                 return self._json({**_profile_view(st), "rejected": rejected})
+            if route == "palettes":
+                with _profile_writes:
+                    return self._json(gui_palettes.change(body))
+            if route == "legend":
+                # Export Element Legend: the same function as mace plotting --legend (mace/utils/element_legend.py)
+                return self._json(_legend(st, body))
             if route == "profile/reset":
                 # Settings > Advanced > Reset: a copy of each file first (the newest 3 are kept)
                 secs = body.get("sections") or []
@@ -1559,6 +1651,10 @@ class GuiHandler(BaseHTTPRequestHandler):
                         gui_docprefs.reset()
                     prof = gui_settings.reset_sections(secs) if secs else gui_settings.load_profile()
                 return self._json({**_profile_view(st), "reset": secs, "docprefs_reset": bool(body.get("docprefs"))})
+            if route == "folder-settings":
+                # Settings' Save to this folder / Reset to my default: the served folder's mace-folder.toml
+                with _profile_writes:
+                    return self._json(gui_folderprefs.save(st.root, body.get("set", {}), body.get("unset", [])))
             if route == "profile/docprefs":
                 # the per-document part of an imported profile file
                 with _profile_writes:
@@ -1578,6 +1674,9 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return _preflight_route(self, body)
             if route in ("volume/combine", "volume/mep_range", "volume/save", "volume/check"):
                 return _volume_post(self, route, body)
+            if route == "orbitals/save":
+                from . import orbitals as gui_orbitals
+                return gui_orbitals.post_route(self, route, body)
             if route == "text/find":
                 p = st.resolve(body.get("path"))
                 if not p.is_file():
@@ -1687,6 +1786,9 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._json({"code": st.web.mint_code()})
             if route == "shutdown":
                 return _shutdown_route(self, str(body.get("mode") or "now"))
+            if route in ("update/check", "update/choose"):
+                from . import update_gui
+                return update_gui.route(self, "POST", route, body)
             if route.startswith("managed/") and st.managed is not None:
                 wid = str(body.get("watcher") or "")
                 op = route[len("managed/"):]
@@ -1700,6 +1802,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                     return self._json(st.managed.stop_request(wid))
             if route in submit_routes.POST_ROUTES:
                 return submit_routes.handle(self, "POST", route, body)
+            if route.startswith("gallery/"):
+                from . import gallery as gui_gallery
+                return gui_gallery.handle(self, "POST", route, body)
+            if route.startswith("workflow/"):
+                from . import workflow_routes
+                return workflow_routes.handle(self, "POST", route, body)
             if route.startswith("test/") and st.test_hooks:
                 if route == "test/parse_cache/clear":
                     with st.parse_cache.lock:
@@ -2615,8 +2723,11 @@ def _setup_source(st, body: Dict[str, Any]):
         raise ValueError(f"unknown mode {mode!r}")
     if mode == "cif2d12" and not p.name.lower().endswith(".cif"):
         raise gui_setup.SetupError("cif2d12 reads a CIF")
-    if mode != "cif2d12" and not p.name.lower().endswith(gui_setup.OUT_SUFFIXES):
-        raise gui_setup.SetupError(f"{mode} reads a CRYSTAL .out")
+    if mode == "opt2d3" and gui_setup.is_deck(p.name):
+        raise gui_setup.SetupError(gui_setup.deck_properties_refusal(p.name, calc_in))
+    if mode != "cif2d12" and not (p.name.lower().endswith(gui_setup.OUT_SUFFIXES)
+                                  or (mode == "opt2d12" and gui_setup.is_deck(p.name))):
+        raise gui_setup.SetupError(f"{mode} reads a CRYSTAL .out" + (" or a .d12 deck" if mode == "opt2d12" else ""))
     calc = gui_setup.check_calc(mode, calc_in)
     return mode, calc, p, rel, gui_setup.source_key(mode, p), None, None, p.name
 
@@ -2815,8 +2926,10 @@ def _setup_save_route(handler, body: Dict[str, Any]):
     else:
         jname = name or gui_setup.json_name(mode, calc, p.stem)
         writes.append((p.parent / jname, text.encode()))
-        args = (["opt2d12", "--out-file", rel, "--config-file", st.rel_new(p.parent / jname), "--yes"] if mode == "opt2d12"
+        args = (["opt2d12", gui_setup.source_flag(rel), rel, "--config-file", st.rel_new(p.parent / jname), "--yes"] if mode == "opt2d12"
                 else ["opt2d3", "-i", rel, "-t", calc, "--config-file", st.rel_new(p.parent / jname)])
+    # the Setup run's charged-system switches go on the printed command as they are (setup.flag_args)
+    args += gui_setup.flag_args(gui_setup.charge_flags(body.get("flags")), mode)
     stamps = body.get("expected") if isinstance(body.get("expected"), dict) else {}
     for target, _ in writes:
         st.check_write(target)
@@ -2836,6 +2949,11 @@ def _setup_save_route(handler, body: Dict[str, Any]):
            "converts": (len(others) + 1) if layout == "inplace" else 1, "others": others[:20]}
     if mode == "opt2d3":
         out["f9"] = gui_setup.find_wavefunction(p)
+    if mode == "opt2d12":
+        # a SOC restart (soc_guess): the CLI copies the parent's .f9 as <deck>.f20
+        f9 = saving.soc_restart_matrix(text, p)
+        if f9 is not None:
+            out["soc_f9"] = {"name": f9.name, "path": st.rel_new(f9), "bytes": f9.stat().st_size}
     if body.get("write_decks"):
         return _write_decks(handler, out, mode, calc, p)
     return handler._json(out)
@@ -2866,6 +2984,15 @@ def _write_decks(handler, saved: Dict[str, Any], mode: str, calc: str, p: Path):
                                        f"{gui_setup._mb(free)} free (the copy needs its size plus 1 GB)")
         if _on_tmpfs(p.parent):
             warn = f"{st.rel_new(p.parent) or 'This folder'} is on a tmpfs: the {gui_setup._mb(f9['bytes'])} copy of {f9['name']} uses RAM"
+    soc_f9 = saved.get("soc_f9")
+    if soc_f9:
+        # a SOC restart: the CLI copies the parent's .f9 as <deck>.f20 (the same room as opt2d3's copy)
+        free = shutil.disk_usage(p.parent).free
+        if free < soc_f9["bytes"] + (1 << 30):
+            raise gui_setup.SetupError(f"{soc_f9['name']} is {gui_setup._mb(soc_f9['bytes'])}; {st.rel_new(p.parent) or '.'} has "
+                                       f"{gui_setup._mb(free)} free (the .f20 copy needs its size plus 1 GB)")
+        if _on_tmpfs(p.parent):
+            warn = f"{st.rel_new(p.parent) or 'This folder'} is on a tmpfs: the {gui_setup._mb(soc_f9['bytes'])} copy of {soc_f9['name']} uses RAM"
     argv = list(saved["argv"])
     out_dir = st.root / (argv[argv.index("--output_dir") + 1] if "--output_dir" in argv else
                          str(Path(argv[argv.index("--cif_dir") + 1])) if "--cif_dir" in argv else
@@ -2897,6 +3024,10 @@ def _write_decks(handler, saved: Dict[str, Any], mode: str, calc: str, p: Path):
                         raise saving.ProtectedOutput(
                             f"{target.name} holds a finished run's wavefunction; MACE never writes over it. "
                             "Write the decks into another folder, or move it first.")
+                # a SOC restart's copy of the parent's .f9: never over a different .f20 (the CLI's own rule)
+                why = saving.f20_refusal(target, st.root / soc_f9["path"]) if soc_f9 else None
+                if why:
+                    raise saving.ProtectedOutput(why)
             written, backups = [], []
             for src, target in targets:
                 deck = target.suffix.lower() in (".d12", ".d3")
@@ -2926,14 +3057,21 @@ def _write_decks(handler, saved: Dict[str, Any], mode: str, calc: str, p: Path):
 def _convergence(st, p: Path):
     from mace.utils import out_convergence as oc
     live = _out_live(p)
-    key = gui_cache.file_key(p, ("convergence", oc.VERSION, outindex.VERSION, live))
+    # a <job>.SCFOUT.LOG copied back next to the output (the later points' SCF cycles) is part of it
+    inside = lambda f: filekind.rel_inside(st, f) is not None      # noqa: E731 (never through a link out of the folder)
+    so = oc.scfout_path(p, inside)
+    try:
+        so_stamp = (so.stat().st_mtime_ns, so.stat().st_size) if so is not None else None
+    except OSError:
+        so_stamp = None
+    key = gui_cache.file_key(p, ("convergence", oc.VERSION, outindex.VERSION, live, so_stamp))
     res = st.parse_cache.get(key)
     if res is None:
         try:
             idx = _out_index(st, p)
         except Exception:
             idx = None
-        res = runinfo.convergence(p, idx)
+        res = runinfo.convergence(p, idx, inside)
         st.parse_cache.put(key, res, 4096 + 600 * len(res.get("points") or []))
         st.ledger.enforce()
     return key, res
@@ -2949,6 +3087,14 @@ def _run_route(handler, route: str, query):
         if etag in (handler.headers.get("If-None-Match") or ""):
             return handler._send(304, b"", "application/json", {"ETag": etag, "Cache-Control": "no-cache"})
         return handler._send_body(json.dumps(res, default=_json_default).encode(), etag)
+    if route == "out/progress":
+        # the nested time-left levels of mace/cluster/progress.py (the Job document's), for the run card
+        from mace.cluster import progress as progress_mod
+        pr = progress_mod.progress(p)
+        keep = ("id", "depth", "status", "text", "confidence", "basis", "flags")
+        return handler._json({"path": st.rel(p), "mode": pr.get("mode"), "ended": pr.get("ended"),
+                              "summary": pr.get("summary"), "basis": (pr.get("eta") or {}).get("basis"),
+                              "levels": [{k: lv.get(k) for k in keep} for lv in pr.get("levels") or []]})
     if route == "out/problems":
         _, conv = _convergence(st, p)
         try:
@@ -3212,23 +3358,22 @@ def _db_route(handler, route: str, query):
         out = gui_db.page(p, sort, direction, after, int(get("limit") or gui_db.PAGE_MAX), filters, with_total=True)
         out["index"] = int(get("index") or 0) if get("index") not in (None, "") else None
         return handler._json(out, timing=f"db;dur={(time.perf_counter() - t0) * 1000:.1f}")
-    # db/export: the filtered, sorted table, streamed to the browser as a download
+    # db/export: the filtered, sorted table as `mace database --action export` writes it, as a download
     fmt = get("format") or "csv"
-    gen = gui_db.export(p, fmt, sort, direction, filters)
-    first = next(gen, b"")                      # a bad format or sort is a 400 before any header goes out
+    data = gui_db.export(p, fmt, sort, direction, filters)   # a bad format or sort is a 400 before any header goes out
+    from mace.utils.db_export_formats import EXTENSIONS
     handler.send_response(200)
-    handler.send_header("Content-Type", "text/csv; charset=utf-8" if fmt == "csv" else "application/json")
+    handler.send_header("Content-Type", gui_db.EXPORT_TYPES[fmt])
+    handler.send_header("Content-Length", str(len(data)))
     # a file name is the user's, but it goes into a header: no quotes, no line breaks, no non-ASCII
     safe = re.sub(r"[^A-Za-z0-9._+-]+", "_", p.stem)[:80] or "materials"
-    handler.send_header("Content-Disposition", f'attachment; filename="{safe}_export.{fmt}"')
+    handler.send_header("Content-Disposition", f'attachment; filename="{safe}_export.{EXTENSIONS[fmt]}"')
     handler.send_header("Cache-Control", "no-store")
     handler.send_header("X-Content-Type-Options", "nosniff")
     handler.send_header("Connection", "close")
     handler.end_headers()
     handler.close_connection = True
-    handler.wfile.write(first)
-    for chunk in gen:
-        handler.wfile.write(chunk)
+    handler.wfile.write(data)
     return None
 
 
@@ -3685,6 +3830,29 @@ def _read_structure(st, path: Path, frame: int = -1) -> Dict[str, Any]:
             raise filekind.NoGeometry()
         return idx.payload(frame, {"kind": "out", "path": str(path)})
     return structures.read_structure(path, frame)
+
+
+def _related(st, path: Path, pick: Optional[str] = None) -> Dict[str, Any]:
+    """/api/related: the run (and its structure) a plot, volume, spectrum or log came
+    from, for the side panels (related.py); read-only, through the parse cache."""
+    from . import related as gui_related
+    if not path.is_file():
+        raise FileNotFoundError(st.rel(path))
+
+    def has_geometry(p: Path) -> bool:
+        try:
+            return bool(_out_index(st, p).n_steps)
+        except Exception:  # noqa: BLE001 - a job log or an unreadable output has none
+            return False
+
+    def payload(p: Path):
+        try:
+            return _cached_payload(st, p)
+        except Exception:  # noqa: BLE001 - a deck or output that does not parse is not the parent
+            return None
+
+    return gui_related.find(path, inside=lambda f: filekind.rel_inside(st, f), has_geometry=has_geometry,
+                            payload=payload, pick=pick)
 
 
 def _cached_payload(st, path: Path, frame: int = -1) -> Dict[str, Any]:
@@ -4534,13 +4702,76 @@ CSP = ("default-src 'self'; img-src 'self' data: blob:; "
 CSP_PANE = CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'")
 
 
+# the UI themes besides System (js/themes.js; each a token set in css/tokens.css)
+THEMES = ("light", "dark", "hc-light", "hc-dark", "cvd", "sepia", "black",
+          "catppuccin-mocha", "catppuccin-latte", "dracula", "gruvbox-dark", "nord", "one-dark",
+          "solarized-dark", "solarized-light", "tokyo-night", "tokyo-night-storm")
+
+
+def _beside_then_root(st, run: Path, name: str) -> Path:
+    """A file the user named for a run (the ZT view's κ_L CSV): beside the run
+    first, then from the served folder; inside the folder either way."""
+    tries = []
+    try:
+        here = st.rel(run.parent)
+    except ValueError:
+        here = "."
+    if here not in ("", "."):
+        tries.append(f"{here}/{name}")
+    tries.append(name)
+    for i, rel in enumerate(tries):
+        try:
+            f = st.resolve(rel, must_exist=False)
+        except PermissionError:
+            if i == len(tries) - 1:
+                raise
+            continue
+        if f.is_file():
+            return f
+    raise FileNotFoundError(f"{name} (looked beside {run.name} and in the served folder)")
+
+
+def _legend(st, body: Dict[str, Any]) -> Dict[str, Any]:
+    """An element legend of files and folders in the served folder (their
+    union) or of symbols, in the given format; png comes as base64."""
+    from mace.utils import element_legend as EL
+    paths = body.get("paths")
+    if paths is not None and (not isinstance(paths, list) or len(paths) > 5000 or not all(isinstance(x, str) for x in paths)):
+        raise ValueError("paths must be a list of paths in the folder")
+    symbols = body.get("symbols")
+    if symbols is not None and (not isinstance(symbols, list) or len(symbols) > 200):
+        raise ValueError("symbols must be a list of element symbols")
+    if paths is None and symbols is None:
+        raise ValueError("give paths, symbols or both")
+    colors = body.get("colors")
+    if colors is not None and not isinstance(colors, dict):
+        raise ValueError("colors must be an object of element: '#rrggbb'")
+    files = [st.resolve(x if x else ".") for x in paths] if paths is not None else None
+    res = EL.legend(files, symbols=symbols, fmt=str(body.get("format") or "svg"), palette=body.get("palette") or None,
+                    colors=colors, options=body.get("options") or {}, recursive=bool(body.get("recursive")),
+                    inside=lambda f: filekind.rel_inside(st, f) is not None)   # a folder's walk stays in the folder
+    root = st.root
+
+    def rel(f: str) -> str:
+        try:
+            return Path(f).resolve().relative_to(root).as_posix()
+        except ValueError:
+            return Path(f).name
+    content = base64.b64encode(res.content).decode() if res.format == "png" else res.content.decode()
+    return {"format": res.format, "content": content, "encoding": "base64" if res.format == "png" else "text",
+            "symbols": res.symbols, "palette": res.palette, "rows": res.rows, "width": res.width, "height": res.height,
+            "files": len(res.per_file), "skipped": [[rel(f), why] for f, why in res.skipped]}
+
+
 def _prefs_attrs() -> str:
     """The <html> attributes for first paint, from the stored settings, fixed
     whitelists only (a hand-edited gui.json is never reflected as markup)."""
     st = gui_settings.load()
     out = ['data-prefs="server"', f'data-prefs-rev="{int(gui_settings.load_profile().get("rev", 0))}"']
-    if st.get("theme") in ("light", "dark"):
+    if st.get("theme") in THEMES:
         out.append(f'data-theme="{st["theme"]}"')
+    if st.get("plots.style") in gui_settings.PLOT_PRESETS and st.get("plots.style") != "default":
+        out.append(f'data-plot-style="{st["plots.style"]}"')
     if st.get("density") == "compact":
         out.append('data-density="compact"')
     motion = {"on": "reduce", "off": "full"}.get(st.get("reduceMotion"))
@@ -4756,6 +4987,9 @@ def network_names(host: str) -> List[str]:
 def make_server(root: Path, host: str = "127.0.0.1", port: int = 8765,
                 token: Optional[str] = None, allowed_hosts: Optional[List[str]] = None,
                 verbose: bool = False, roots: Optional[List[str]] = None) -> Tuple[ThreadingHTTPServer, GuiState]:
+    # the server's folder is the one it serves (st.root), never where it was
+    # started: site.load() in this process reads no mace-folder.toml by itself
+    _folder_settings.CWD_DISCOVERY = False
     hooks = os.environ.get("MACE_GUI_TEST_HOOKS") == "1"
     if hooks and not is_loopback(host):
         # never on an address other users or machines can reach (the modules
@@ -4801,6 +5035,8 @@ def make_server(root: Path, host: str = "127.0.0.1", port: int = 8765,
         cluster_api.start(state)
     except Exception as exc:          # pragma: no cover - cluster monitoring never stops the server
         print(f"mace gui: cluster monitoring is off: {exc}", file=sys.stderr)
+    from . import update_gui          # the update notice's background check (1.1.6)
+    update_gui.install(state)
     if os.environ.get("MACE_GUI_NO_WARMUP") != "1":
         timer = threading.Timer(1.0, warm_up)
         timer.daemon = True

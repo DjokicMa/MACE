@@ -50,11 +50,16 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 /* an image drawn for one theme only (the light and dark logo files) */
 .theme-dark-only { display: none; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .theme-light-only { display: none; }
-  :root:not([data-theme="light"]) .theme-dark-only { display: revert; }
+  :root:not([data-theme]) .theme-light-only { display: none; }
+  :root:not([data-theme]) .theme-dark-only { display: revert; }
 }
-:root[data-theme="dark"] .theme-light-only { display: none; }
-:root[data-theme="dark"] .theme-dark-only { display: revert; }
+/* the dark themes (tokens.css: the ones with color-scheme: dark) */
+:root:is([data-theme="dark"], [data-theme="hc-dark"], [data-theme="black"], [data-theme="catppuccin-mocha"],
+  [data-theme="dracula"], [data-theme="gruvbox-dark"], [data-theme="nord"], [data-theme="one-dark"], [data-theme="solarized-dark"],
+  [data-theme="tokyo-night"], [data-theme="tokyo-night-storm"]) .theme-light-only { display: none; }
+:root:is([data-theme="dark"], [data-theme="hc-dark"], [data-theme="black"], [data-theme="catppuccin-mocha"],
+  [data-theme="dracula"], [data-theme="gruvbox-dark"], [data-theme="nord"], [data-theme="one-dark"], [data-theme="solarized-dark"],
+  [data-theme="tokyo-night"], [data-theme="tokyo-night-storm"]) .theme-dark-only { display: revert; }
 .about-hero { display: flex; justify-content: center; margin: var(--s-2) 0 var(--s-4); }
 .about-hero img { width: 288px; height: auto; }
 .welcome-logo { line-height: 0; }
@@ -106,6 +111,9 @@ html.pane-side #overlay-layer { zoom: 1; --ovz: 1; }
 .menu-item kbd { background: none; border: 0; box-shadow: none; padding: 0; color: var(--text-2); }
 .menu-item .sub { color: var(--text-2); }
 .menu-sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--border); }
+/* a section's name inside a menu (View › Theme's groups): not an item, the arrows skip it */
+.menu-head { padding: var(--s-2) var(--s-3) var(--s-1) calc(var(--s-3) + 18px + var(--s-3)); font-size: var(--fs-xs); font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); cursor: default; }
 
 /* ---------------------------------------------------------------- toolbar */
 /* down to 1024px everything fits (the media queries below); a narrower page (a
@@ -162,9 +170,21 @@ html.pane-side #overlay-layer { zoom: 1; --ovz: 1; }
 .explorer > #files-section > .file-list { flex: 1 1 0; min-height: 0; }
 .explorer > #files-section.collapsed { flex: 0 0 auto; min-height: 0; }
 .explorer > #files-section.collapsed ~ .side-foot { margin-top: auto; }
+/* every Explorer section hidden (View › Explorer Sections): the way back */
+.side-empty { display: grid; justify-items: start; gap: var(--s-2); padding: var(--s-4); color: var(--text-2); font-size: var(--fs-sm); }
+.side-empty[hidden] { display: none; }
+.side-empty p { margin: 0; }
 .explorer > .side-section:empty { display: none; }
 .section-toggle .chev { transition: transform var(--dur-2) var(--ease); }
 .section-toggle[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+/* 1.1.6: splitters between the sections (sidebar.js), over the section border */
+.explorer > .splitter.side-split { height: 6px; margin: -3px 0; border: 0; flex: none; z-index: 2; }
+.explorer > .splitter.side-split:hover, .explorer > .splitter.side-split.dragging, .explorer > .splitter.side-split:focus-visible { background: var(--accent); }
+/* a header dragged to another place: where it lands */
+.explorer.reordering, .explorer.reordering * { cursor: grabbing !important; }
+.explorer > .side-section.dragging-section { opacity: .55; }
+.explorer > .side-section.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.explorer > .side-section.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 .section-count { margin-left: auto; padding: 0 var(--s-1); font-weight: 500; letter-spacing: 0; color: var(--text-3); }
 .section-label { padding: var(--s-2) var(--s-2) var(--s-1); font-size: var(--fs-xs); font-weight: 600;
   letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
@@ -179,6 +199,13 @@ html.pane-side #overlay-layer { zoom: 1; --ovz: 1; }
 .splitter:hover, .splitter.dragging, .splitter:focus-visible { background: var(--accent); outline: none; }
 .inspector { overflow: auto; border-left: 0; }
 .insp-section { border-bottom: 1px solid var(--border); }
+/* the Inspector's header: Expand all / Collapse all, kept in view while it scrolls */
+.insp-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-2); height: 32px;
+  padding: 0 var(--s-2) 0 var(--s-4); background: var(--surface); border-bottom: 1px solid var(--border); }
+.insp-bar-title { flex: 1; font: 600 var(--fs-xs)/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+.insp-bar-acts { display: flex; gap: 2px; }
+.insp-bar .icon-btn.sm { width: 24px; height: 24px; }
+.insp-bar .icon-btn .i { width: 14px; height: 14px; }
 .insp-head { display: flex; align-items: center; gap: var(--s-2); width: 100%; height: 32px; padding: 0 var(--s-4);
   border: 0; background: none; color: var(--text-2); font: 600 var(--fs-xs)/1 var(--font-sans);
   letter-spacing: .06em; text-transform: uppercase; cursor: pointer; text-align: left; }
@@ -352,6 +379,9 @@ dialog.palette::backdrop { background: var(--overlay); }
 .pal-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-row .why { color: var(--text-3); font-size: var(--fs-xs); margin-left: var(--s-3); }
 .pal-row.disabled .t { color: var(--text-3); }
+/* a pick list's current choice (Color Theme…) */
+.pal-row.current .t { font-weight: 600; }
+.pal-row.current .t::after { content: " ✓"; color: var(--accent); }
 .pal-row .i { width: 15px; height: 15px; color: var(--text-2); }
 .pal-id { font: var(--fs-xs)/1 var(--font-mono); color: var(--text-3); }
 .pal-empty { padding: var(--s-5); color: var(--text-2); text-align: center; list-style: none; }
@@ -617,6 +647,9 @@ table.kv.about td:last-child { text-align: left; font-family: var(--font-sans); 
 body.tab-dragging, body.tab-dragging * { cursor: grabbing !important; }
 /* a tab is dragged by the pointer (groups.js), never as selected text: a native drag would cancel it */
 .doc-tabs { user-select: none; -webkit-user-select: none; }
+/* where a dragged tab goes in a tab strip (either group's: the window draws it) */
+.tab-drop-line { position: fixed; z-index: var(--z-drop); pointer-events: none; background: var(--accent); border-radius: 1px; }
+.tab-drop-line[hidden], .group-drop[hidden] { display: none; }
 /* the right group's own page (?pane=side): its tabs and views only */
 html.pane-side .shell { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 auto 0 minmax(0, 1fr) 0; }
 html.pane-side .shell > :is(.menubar, .toolbar, .activity, .explorer, .inspector, .statusbar, .splitter, .zen-exit) { display: none; }
@@ -628,3 +661,27 @@ html.pane-side.pane-insp .shell { grid-template-columns: 0 0 0 minmax(0, 1fr) 4p
 html.pane-side.pane-insp .shell > .inspector { display: block; position: static; width: auto; box-shadow: none; z-index: auto; }
 html.pane-side.pane-bottom #bottom { display: flex; height: var(--pane-bottom-h); min-height: 0; max-height: none; }
 html.pane-side.pane-bottom #split-bottom { display: block; pointer-events: none; cursor: default; }
+
+/* ---------------------------------------------------------------- hiding and showing the panels (shell.js renderPanelControls) */
+#center { position: relative; }
+.edge-tab { position: absolute; z-index: calc(var(--z-split) + 2); display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); cursor: pointer; opacity: 0.85; }
+.edge-tab:hover, .edge-tab:focus-visible { background: var(--accent-soft); color: var(--text); opacity: 1; }
+.edge-tab .i { width: 14px; height: 14px; }
+.edge-tab[data-panel="explorer"] { left: 0; top: 50%; width: 16px; height: 56px; transform: translateY(-50%); border-left: 0; border-radius: 0 var(--r-md) var(--r-md) 0; }
+.edge-tab[data-panel="inspector"] { right: 0; top: 50%; width: 16px; height: 56px; transform: translateY(-50%); border-right: 0; border-radius: var(--r-md) 0 0 var(--r-md); }
+.edge-tab[data-panel="bottom"] { bottom: 0; left: 50%; width: 56px; height: 16px; transform: translateX(-50%); border-bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; }
+.edge-tab[hidden], .shell.zen .edge-tab, html.pane-side .edge-tab, html.pane-side .panel-hide { display: none; }
+.panel-hide { margin-left: auto; flex: none; }
+#bottom { position: relative; }
+#bottom > .panel-hide { position: absolute; top: 2px; right: 4px; z-index: 1; margin: 0; }
+/* a gutter for the ×, outside the tabs' scroller: padding would exist only at the scroll end, so a tab ran under it */
+#bottom > .bottom-tabs { margin-right: 32px; }
+/* the Inspector's × sits at the end of its header (the bar, or Calculation Setup's), never over a section */
+#inspector .insp-bar > .panel-hide, #inspector .su-head > .panel-hide { display: grid; margin: 0 0 0 auto; }
+#inspector .insp-bar-acts + .panel-hide, #inspector .su-head-acts + .panel-hide { margin-left: 2px; }
+.st-panels { display: inline-flex; gap: 1px; }
+.st-panel .i { width: 14px; height: 14px; }
+.st-panel:not(.on) { opacity: 0.55; }
+.st-panel.on { color: var(--text); }
+.panels-exit { top: auto; right: auto; bottom: 54px; left: 50%; transform: translateX(-50%); }

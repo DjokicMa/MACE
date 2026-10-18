@@ -3,12 +3,17 @@
  * a double-click too), Open Output, Show Log and Cancel. It asks the server every cluster.pollSeconds while it is shown
  * (the server keeps one squeue per 10 s at most); finished jobs arrive as
  * jobs.finished events whether it is shown or not. Cancel runs scancel on
- * single jobs and array tasks only, after a confirmation naming the command. */
+ * single jobs and array tasks only, after a confirmation naming the command.
+ * Recover (a failed tracked job under Finished) and Recover Failed… (every
+ * failed calculation of the folder) show `mace recover --dry-run` and, once
+ * confirmed, run `mace recover --yes`: the CLI itself (recover_flow.js, as the
+ * Workflows view's Recover of one step). */
+import { recoverFlow } from "./recover_flow.js";
 
 export function createJobsPanel(host, h) {
   const { esc, icon, api, toast } = h;
   let scope = "folder", data = null, timer = 0, shown = false, selected = new Set(), recentOpen = false, recent = null;
-  let loading = false;
+  let loading = false, recovering = false, shownHtml = null;
 
   function ago(t) {
     if (!t) return "never";
@@ -62,6 +67,7 @@ export function createJobsPanel(host, h) {
   function render() {
     if (!host) return;
     if (data && data.slurm === false) {
+      shownHtml = null;
       host.innerHTML = `<p class="empty-note" id="jobs-note">No SLURM on this machine. Jobs you run here with Run on This Node appear in Tasks.</p>`;
       return;
     }
@@ -73,7 +79,7 @@ export function createJobsPanel(host, h) {
         <button type="button" class="seg-btn${scope === "folder" ? " active" : ""}" data-scope="folder" aria-pressed="${scope === "folder"}">This folder</button>
         <button type="button" class="seg-btn${scope === "all" ? " active" : ""}" data-scope="all" aria-pressed="${scope === "all"}">All my jobs</button></div>
       <button type="button" class="tb-btn-text" data-act="refresh">${icon("refresh-cw")}<span>Refresh</span></button>
-      <span class="muted" data-part="updated">Updated ${esc(ago(data && data.polled_at))}</span><span class="grow"></span>
+      <span class="muted" data-part="updated"></span><span class="grow"></span>
       <button type="button" class="tb-btn-text" data-act="cancel-selected"${selected.size ? "" : " disabled"}>Cancel Selected${selected.size ? ` (${selected.size})` : ""}</button></div>`;
     if (data && data.error) html += `<p class="sub-line bad">${esc(data.error)}</p>`;
     if (!jobs.length) {
@@ -89,11 +95,28 @@ export function createJobsPanel(host, h) {
       }
       html += "</tbody></table>";
     }
-    html += `<details class="jobs-recent"${recentOpen ? " open" : ""}><summary>Finished (last 2 days)</summary><div data-part="recent">${
+    const q = (data && data.queue) || {};
+    const heldList = q.held || [];
+    if (q.budget) {
+      const hc = q.held_counts || {}, parts = Object.keys(hc).sort().map((k) => `${hc[k]} ${k === "budget" ? "queue budget full" : k === "workflow_cap" ? "workflow max_jobs" : "SLURM refused"}`);
+      html += `<p class="sub-line muted" data-part="budget">Queue budget: ${esc(String(q.used ?? "?"))} of ${esc(String(q.budget))} in use${q.limit ? ` (limit ${esc(String(q.limit))}, reserve ${esc(String(q.reserve))})` : ""}${heldList.length ? ` · ${heldList.length} held${parts.length ? ` (${esc(parts.join(", "))})` : ""}` : ""}</p>`;
+    }
+    if (heldList.length) {
+      html += `<details class="jobs-held" open><summary>Held (${heldList.length}): MACE submits them as queue slots free up</summary>
+        <table class="jobs-table"><thead><tr><th>Calculation</th><th>Material</th><th>Reason</th><th>Held since</th><th>Folder</th></tr></thead><tbody>${heldList.map((x) =>
+        `<tr><td>${esc(x.calc_type)}</td><td class="mono">${esc(x.material_id)}</td><td>${esc(x.reason_text || x.reason)}</td><td class="mono">${esc((x.held_since || "").replace("T", " "))}</td><td class="mono">${esc(x.workdir_rel || "")}</td></tr>`).join("")}</tbody></table></details>`;
+    }
+    html += `<details class="jobs-recent"${recentOpen ? " open" : ""}><summary>Finished (last 2 days)</summary><div data-part="recent">
+      <div class="jobs-bar"><span class="grow"></span><button type="button" class="tb-btn-text" data-act="recover-all"${recovering ? " disabled" : ""}
+        title="Preview, then fix and resubmit every failed tracked calculation in this folder (mace recover)">Recover Failed…</button></div>${
       recent === null ? '<p class="empty-note">Loading…</p>' : recent.length ? `<table class="jobs-table"><tbody>${recent.map((j) =>
-        `<tr><td class="mono">${esc(j.id)}</td><td>${esc(j.name)}</td><td>${esc(j.state)}</td><td class="mono">${esc(j.elapsed)}</td><td class="mono">${esc(j.workdir_rel || "")}</td></tr>`).join("")}</tbody></table>`
+        `<tr><td class="mono">${esc(j.id)}</td><td>${esc(j.name)}</td><td>${esc(j.state)}</td><td class="mono">${esc(j.elapsed)}</td><td class="mono">${esc(j.workdir_rel || "")}</td>
+        <td>${j.recoverable ? `<button type="button" class="tb-btn-text sm" data-act="recover" data-id="${esc(j.id)}"${recovering ? " disabled" : ""}>Recover…</button>` : ""}</td></tr>`).join("")}</tbody></table>`
         : '<p class="empty-note">None.</p>'}</div></details>`;
-    host.innerHTML = html;
+    // the same jobs as shown: keep the rows (a click, double-click or focus on one is not lost to a poll)
+    if (html !== shownHtml) { host.innerHTML = html; shownHtml = html; }
+    const upd = host.querySelector('[data-part="updated"]');
+    if (upd) upd.textContent = `Updated ${ago(data && data.polled_at)}`;
   }
   function jobById(id) { return ((data && data.jobs) || []).find((j) => j.id === id); }
   async function cancel(ids) {
@@ -111,6 +134,19 @@ export function createJobsPanel(host, h) {
     } catch (e) { toast(e.message, "error"); }
     load(true);
   }
+  async function recover(body) {
+    if (recovering) return;
+    recovering = true;
+    render();
+    try {
+      await recoverFlow(h, { title: "Recover Failed Jobs?", preview: () => h.apiTask("jobs/recover/preview", body),
+        run: (b) => h.apiTask("jobs/recover/run", b) });
+    } catch (err) { toast(err.message, "error"); } finally { recovering = false; recent = null; if (recentOpen) loadRecent(); load(true); }
+  }
+  async function loadRecent() {
+    try { recent = (await api("jobs/recent")).jobs; } catch (err) { recent = []; }
+    render();
+  }
   host.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -119,6 +155,8 @@ export function createJobsPanel(host, h) {
     if (b.dataset.act === "refresh") load(true);
     else if (b.dataset.act === "cancel-selected") cancel([...selected]);
     else if (b.dataset.act === "cancel") cancel([id]);
+    else if (b.dataset.act === "recover") recover({ ids: [id] });
+    else if (b.dataset.act === "recover-all") recover({ all: true });
     else if (b.dataset.act === "output") { const j = jobById(id); if (j && j.out_rel) h.openOutput(j.out_rel, j.state === "RUNNING"); }
     else if (b.dataset.act === "log") { const j = jobById(id); if (j && j.log_rel) h.openLog(j.log_rel); }
     else if (b.dataset.act === "details") h.openJob(id);
@@ -139,10 +177,7 @@ export function createJobsPanel(host, h) {
   host.addEventListener("toggle", async (e) => {
     if (!e.target.matches || !e.target.matches("details.jobs-recent")) return;
     recentOpen = e.target.open;
-    if (recentOpen && recent === null) {
-      try { recent = (await api("jobs/recent")).jobs; } catch (err) { recent = []; }
-      render();
-    }
+    if (recentOpen && recent === null) await loadRecent();
   }, true);
   host.addEventListener("keydown", (e) => {
     const tr = e.target.closest && e.target.closest("tr[data-id]");

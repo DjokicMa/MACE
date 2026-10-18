@@ -23,7 +23,11 @@ export function modeOf(doc, info) {
     if (!doc.path) return { mode: null, why: "kind" };
     return { mode: "follow", source: "path", path: doc.path, out: true };
   }
-  if (fk === "d12" && !(info && info.dirty)) return { mode: null, why: "d12" };
+  if (fk === "d12" && !(info && info.dirty)) {
+    // a deck on disk is its own parent (mace opt2d12 --d12-file): its geometry and its settings
+    if (!doc.path || doc.untitled) return { mode: null, why: "d12" };
+    return { mode: "follow", source: "path", path: doc.path, deck: true };
+  }
   if (fk === "cif" || doc.untitled || doc.kind === "structure") {
     const unsaved = !doc.path || doc.untitled || (info && info.dirty) || fk !== "cif";
     return { mode: "cif2d12", source: unsaved ? "session" : "path", path: doc.path };
@@ -193,9 +197,64 @@ export function sections(form) {
   return [...by.entries()].filter(([, rows]) => rows.length);
 }
 
-/** The badge a row shows: default / changed from default (was X) / parent: X. */
-export function badge(field, follow) {
-  if (field.changed) return { kind: "changed", text: `changed from ${follow ? "parent" : "default"} (was ${field.default ?? "—"})` };
-  if (follow) return { kind: "parent", text: "parent" };
+/** The badge a row shows: default / changed from default (was X) / from parent .out (or .d12).
+ * ``parent``: the follow-up's parent kind ("out" or "d12"; any other value reads "parent"). */
+export function badge(field, follow, parent = null) {
+  const from = parent === "out" || parent === "d12" ? `parent .${parent}` : "parent";
+  if (field.changed) return { kind: "changed", text: `changed from ${follow ? from : "default"} (was ${field.default ?? "—"})` };
+  if (follow) return { kind: "parent", text: `from ${from}` };
   return { kind: "default", text: "default" };
 }
+
+/** The parent a follow-up's values come from: "d12" for a deck set up as its own parent, else "out". */
+export function parentKind(doc) {
+  return doc && (doc.fileKind || "") === "d12" ? "d12" : "out";
+}
+
+/* ---------------------------------------------------------------- spin-orbit coupling (1.1.6)
+ * The SOC choices are keys of the CLI's own settings file (soc, soc_ecp, soc_basis, soc_guess,
+ * smear), sent as patches. `base` is what the parent's (or the defaults') file had; a patch
+ * equal to it is dropped, so the JSON stays the CLI's own bytes; null removes a key the base had. */
+export const SOC_SUB = ["soc_ecp", "soc_basis", "soc_guess", "smear"];
+
+/** The value a SOC key has now: the patch (null: removed), else the base's. */
+export function socValue(st, base, key) {
+  if (key in st.patches) return st.patches[key] === null ? undefined : st.patches[key];
+  return (base || {})[key];
+}
+
+/** Set one SOC key: a value equal to the base drops the patch; "no key" is undefined. */
+export function socSet(st, base, key, value) {
+  const b = (base || {})[key];
+  if (value === undefined || value === null || value === "") {
+    if (b === undefined) delete st.patches[key]; else st.patches[key] = null;
+  } else if (b !== undefined && JSON.stringify(b) === JSON.stringify(value)) delete st.patches[key];
+  else st.patches[key] = value;
+  st.hand = null;
+}
+
+/** SOC on or off. Off drops the sub-keys' patches (and is "soc": false when the base had it on). */
+export function socSwitch(st, base, on) {
+  if (!on) for (const k of SOC_SUB) delete st.patches[k];
+  socSet(st, base, "soc", on ? true : ((base || {}).soc === true ? false : undefined));
+}
+
+/** The ECP route: "inpsoc" (the CLI's default: no key), "stutsc", or "basis" (the official SOC basis). */
+export function socRoute(st, base) {
+  if (socValue(st, base, "soc_basis")) return "basis";
+  return socValue(st, base, "soc_ecp") === "stutsc" ? "stutsc" : "inpsoc";
+}
+export function socSetRoute(st, base, route, family) {
+  if (route === "basis") { socSet(st, base, "soc_basis", family); socSet(st, base, "soc_ecp", undefined); return; }
+  socSet(st, base, "soc_basis", undefined);
+  // INPSOC writes no key (the CLI's default) unless the base had another value
+  const b = (base || {}).soc_ecp;
+  socSet(st, base, "soc_ecp", route === "stutsc" ? "stutsc" : b !== undefined ? "inpsoc" : undefined);
+}
+
+export const socRouteLabel = (r) => ({ inpsoc: "INPSOC", stutsc: "STUTSC", basis: "official SOC basis" })[r] || r;
+export const socGuessLabel = (g) => (g ? String(g).toUpperCase() : "from scratch");
+
+/** How many SOC keys the patches change. */
+export const socChanged = (st) => Object.keys(st.patches).filter((k) => k === "soc" || SOC_SUB.includes(k)).length;
+export function socReset(st) { for (const k of ["soc", ...SOC_SUB]) delete st.patches[k]; st.hand = null; }

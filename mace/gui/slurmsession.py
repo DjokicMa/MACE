@@ -703,7 +703,7 @@ class Session:
             version = ""
         return {"url": f"http://127.0.0.1:{self.port}{ready['prefix']}", "port": self.port,
                 "prefix": ready["prefix"], "token": ready["token"], "login": login, "host": node, "fqdn": node,
-                "root": ready.get("root"), "version": ready.get("version") or version, "reattached": reattached,
+                "root": ready.get("root"), "version": ready.get("version") or version, "home": ready.get("home"), "reattached": reattached,
                 "tasks": int(got.get("tasks") or 0), "job": job, "node": node, "ends": info.get("EndTime")}
 
     def stopped_reason(self) -> Optional[str]:

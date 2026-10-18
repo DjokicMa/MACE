@@ -21,6 +21,10 @@ function rememberOptions(H, where, options) {
 }
 const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const base = (p) => String(p || "").split("/").pop();
+// the runtime estimate (1.1.6): `mace cluster estimate DECK` for the first few decks; advisory only
+const EST_MAX = 3;
+const dur = (s) => { s = Math.round(Number(s) || 0); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h ? `${h} h${m ? ` ${m} min` : ""}` : `${Math.max(1, m)} min`; };
 
 /** {targets: [rel], where: "slurm"|"local"} -> resolves when the dialog closes. */
 export async function open(H, { targets, where = "slurm", note = "", preset = null } = {}) {
@@ -134,6 +138,21 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
     const rows = [];
     if (res.scf) rows.push(["Resources", `CRYSTAL ${H.esc(size(res.scf.value))}${src(res.scf)}`
       + (res.prop ? ` · properties ${H.esc(size(res.prop.value))}${src(res.prop)}` : "")]);
+    // the site's default walltime and [resources.<TYPE>] tables, only when set
+    const wall = s.walltime || {};
+    if ((wall.scf && wall.scf.set) || (wall.prop && wall.prop.set)) rows.push(["Walltime",
+      `CRYSTAL ${H.esc(wall.scf.value)}${src(wall.scf)} · properties ${H.esc(wall.prop.value)}${src(wall.prop)}`]);
+    const byType = s.resources_by_type || {};
+    if (Object.values(byType).some((t) => t.own)) rows.push(["By type", Object.entries(byType).map(([name, t]) =>
+      `<div data-calc-type="${H.esc(name)}">${H.esc(name)}: ${H.esc(size(t.value))}, ${H.esc(t.walltime)}`
+      + `${t.own ? ` <span class="muted">([resources.${H.esc(name)}])</span>` : ""}</div>`).join("")]);
+    // size-aware suggestions ([resources] auto), only once someone set auto
+    const auto = s.auto || null;
+    if (auto) {
+      const on = Object.keys(auto).filter((t) => auto[t]);
+      rows.push(["Suggestions", on.length ? `on for ${H.esc(on.join(", "))} <span class="muted">(job size from each deck's size, below the values you set)</span>`
+        : `off <span class="muted">([resources] auto)</span>`]);
+    }
     if (mpi.launcher) rows.push(["MPI launch", `${H.esc(mpi.launcher)}${mpi.srun_mpi ? ` --mpi=${H.esc(mpi.srun_mpi)}` : ""}`
       + `${(mpi.env || []).length ? ` · ${H.esc((mpi.env || []).join(" "))}` : ""}${src(mpi)}`]);
     if (scr.order) rows.push(["Scratch", `${H.esc(scr.value || (scr.order || []).join(", then "))}${src(scr)}`]);
@@ -190,8 +209,18 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
       r.exclude && `exclude ${r.exclude}`].filter(Boolean).join(", ");
     const lines = [];
     for (const a of p.arrays || []) lines.push(`1 array of ${plural(a.tasks, "task")}${a.throttle && a.throttle.includes("%") ? ` (at most ${a.throttle.split("%")[1]} at once)` : ""}: ${H.esc(fmt(a.request || {}))}`);
+    // the size-aware suggestion of each deck, when [resources] auto sized it (site.suggest_decks)
+    const why = {};
+    for (const g of p.suggestions || []) {
+      if (g.auto && g.suggestion) why[String(g.deck).split("/").pop().replace(/\.(d12|d3)$/, "")] = g.suggestion.reason;
+    }
     for (const r of rs.filter((x) => !x.array).sort((x, y) => String(x.deck).localeCompare(String(y.deck), undefined, { numeric: true }))) {
-      lines.push(`${H.esc(r.deck)}: ${H.esc(fmt(r))}${r.reused_script ? ' <span class="chip" data-part="reused">reused script</span>' : ""}`);
+      lines.push(`${H.esc(r.deck)}: ${H.esc(fmt(r))}${r.reused_script ? ' <span class="chip" data-part="reused">reused script</span>' : ""}`
+        + (why[r.deck] && !r.reused_script ? `<div class="muted" data-part="suggestion">Sized by [resources] auto: ${H.esc(why[r.deck])}</div>` : ""));
+    }
+    if ((p.arrays || []).length && Object.keys(why).length) {
+      lines.push(`<div class="muted" data-part="suggestion">Sized by [resources] auto: ${Object.entries(why).slice(0, 3)
+        .map(([d, w]) => `${H.esc(d)}: ${H.esc(w)}`).join("; ")}${Object.keys(why).length > 3 ? "; …" : ""}</div>`);
     }
     return `<div class="sub-row"><span class="sub-k">Resources</span><div class="sub-v" data-part="resources">${lines.map((l) => `<div>${l}</div>`).join("")}</div></div>`;
   }
@@ -282,6 +311,7 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
         if (p.refused) html += `<p class="sub-line bad" data-part="refused">${H.esc(p.refused)}</p>`;
       }
       html += conflictsRow(p);
+      html += estimateRow();
       const warns = (p.warnings || []);
       if (warns.length) html += `<div class="sub-row"><span class="sub-k">Warnings</span><div class="sub-v" data-part="warnings">${warns.map((w) => `<p class="sub-line warn">${H.esc(w)}</p>`).join("")}</div></div>`;
       if (p.code && state.where === "slurm") html += `<div class="sub-row"><span class="sub-k">The CLI said</span><div class="sub-v"><pre class="sub-log" data-part="log">${H.esc((p.cli_log || "").split("\n").slice(-25).join("\n"))}</pre></div></div>`;
@@ -296,11 +326,55 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
       ${state.where === "local" ? "Cancel it in Tasks." : "Submitting cannot be stopped halfway; cancel the jobs in Jobs afterwards."}</p>`;
     const keep = document.activeElement && body.contains(document.activeElement) ? document.activeElement : null;
     const keepSel = keep && (keep.dataset.o ? `[data-o="${keep.dataset.o}"]` : keep.name ? `[name="${keep.name}"][value="${keep.value}"]` : keep.dataset.tick ? `[data-tick="${keep.dataset.tick}"]` : null);
+    const caret = keep && typeof keep.selectionStart === "number" ? [keep.selectionStart, keep.selectionEnd] : null;
     body.innerHTML = html;
-    if (keepSel) { const el = body.querySelector(keepSel); if (el) el.focus(); }
+    if (keepSel) {
+      const el = body.querySelector(keepSel);
+      // the rebuilt field keeps the caret, so typing goes on where it was
+      if (el) { el.focus(); if (caret) try { el.setSelectionRange(...caret); } catch (e) { /* not a text field */ } }
+    }
     renderFoot();
   }
+  /** Only the estimate row: an estimate arriving later must not rebuild the fields under the pointer or the caret. */
+  function renderEstimate() {
+    const row = body.querySelector('[data-part="estimates"]');
+    if (!row) { render(); return; }
+    const t = document.createElement("template");
+    t.innerHTML = estimateRow();
+    row.closest(".sub-row").replaceWith(t.content);
+  }
 
+  /** Runtime estimate (advisory, never blocks Submit): the CLI's words for each deck, or why it cannot say. */
+  function estimateRow() {
+    const e = state.estimate;
+    if (!e) return "";
+    const rows = e.loading ? `<p class="sub-line muted">Estimating from finished runs…</p>` : e.rows.map((x) => {
+      if (x.error) return `<p class="sub-line muted" data-part="estimate-none">${H.esc(base(x.deck))}: cannot estimate (${H.esc(x.error)})</p>`;
+      const w = x.wall;
+      const head = w ? `${H.esc(base(x.deck))}: about ${H.esc(dur(w.median))} (${H.esc(dur(w.p10))} to ${H.esc(dur(w.p90))}, from ${H.esc(plural(x.n, "similar run"))})`
+        : `${H.esc(base(x.deck))}: cannot estimate. ${H.esc(String(x.text || "").split("\n")[0])}`;
+      return `<details class="sub-est" data-part="estimate"><summary>${head}</summary><pre class="sub-log">${H.esc(x.text || "")}</pre>
+        <p class="sub-line muted small">The CLI: <code class="mono">${H.esc(x.command || "")}</code></p></details>`;
+    }).join("") + (e.more ? `<p class="sub-line muted small">${H.esc(plural(e.more, "more deck"))} not estimated here.</p>` : "");
+    return `<div class="sub-row"><span class="sub-k">Runtime estimate</span><div class="sub-v" data-part="estimates">${rows}
+      <p class="sub-line muted small">Advisory only: it does not change the job or stop you submitting.</p></div></div>`;
+  }
+  async function estimate(p, mySeq) {
+    const decks = (p.decks || []).filter((x) => /\.d12$/i.test(x));
+    if (!decks.length) { state.estimate = null; return; }
+    state.estimate = { loading: true, rows: [], more: Math.max(0, decks.length - EST_MAX) };
+    const rows = [];
+    for (const deck of decks.slice(0, EST_MAX)) {
+      const stem = base(deck).replace(/\.d12$/i, "");
+      const res = (p.resources || []).find((r) => r.deck === stem || r.deck === base(deck));
+      const cores = state.where === "local" ? Number(state.opts.local.cores) || undefined : (res && Number(res.ntasks)) || undefined;
+      try { rows.push({ deck, ...(await H.api("cluster/estimate", { body: { deck_rel: deck, cores } })) }); }
+      catch (e) { rows.push({ deck, error: e.message }); }
+      if (mySeq !== state.seq) return;
+    }
+    state.estimate = { rows, more: Math.max(0, decks.length - EST_MAX) };
+    if (d.open) renderEstimate();
+  }
   async function preview() {
     clearTimeout(timer);
     const mySeq = ++state.seq;
@@ -313,6 +387,7 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
       state.preview = r; state.stale = false;
       // a tick belongs to the preview it was given for
       state.ticks = {};
+      estimate(r, mySeq);
     } catch (e) {
       if (mySeq !== state.seq) return;
       if (e.data && e.data.mixed) { state.mixed = state.mixed || ""; state.error = "This folder has D12 and D3 decks: choose which to submit"; }

@@ -29,12 +29,19 @@
 /* the Plot options inspector */
 .po-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); font-size: var(--fs-sm); }
 .po-row > span:first-child { color: var(--text-2); }
-.po-row input[type=number], .po-row select { height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+.po-row input[type=number], .po-row input[type=text], .po-row select { height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
   color: var(--text); padding: 0 var(--s-2); min-width: 0; }
 .po-row.chk { display: flex; gap: var(--s-2); }
+/* a row whose control is wider than the label column leaves it: label above, the control wraps */
+.po-row.po-stack { grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
+.po-row .po-tq { display: flex; flex-wrap: wrap; max-width: 100%; justify-self: start; }
+.po-row .po-tq button { flex: 1 0 auto; }
 .po-u { color: var(--text-3); font-size: var(--fs-xs); }
 .po-proj { margin: var(--s-3) 0; display: grid; gap: 2px; }
 .po-proj .chk { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); }
 .po-h { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin: 0 0 var(--s-1); }
 .po-acts { margin-top: var(--s-3); }
+/* a sentence under the options (the ZT peaks, a refused κ_L) */
+.po-note { font-size: var(--fs-xs); color: var(--text-2); margin: 0 0 var(--s-2); line-height: 1.4; overflow-wrap: anywhere; }
+.po-note.po-err { color: var(--danger); }
 .po-acts .tb-btn-text:disabled { opacity: .45; cursor: default; }

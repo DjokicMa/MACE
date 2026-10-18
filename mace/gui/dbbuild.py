@@ -1,7 +1,7 @@
 """Create or Update Database from a Folder (PLAN_analysis C10).
 
 The GUI runs the same command a terminal would, ``mace analyze
---extract-properties FOLDER --db-path DB [--register] [--skip-unchanged]
+--extract-properties FOLDER --db-path DB --register|--no-register [--skip-unchanged]
 [--backup --keep-backups N]``, as a cancelable task through clirun (nice 10,
 SIGTERM then SIGKILL): the preview adds ``--dry-run --json``, the build adds
 ``--progress-json`` and reads one JSON line per file for its progress. The
@@ -26,6 +26,8 @@ GUARANTEE = ("Nothing is deleted from the database. Re-extracting a calculation 
              "A backup is made first.")
 OWNER = "A database build"
 OUTSIDE = ("This database is outside the served folder. Run the command below in a terminal instead.")
+CPU_LIMIT = ("The database update reached this node's CPU-time limit after {n} file{s}; what it wrote is kept. "
+             "Run it again with 'Only new and changed files' to continue where it stopped.")
 LARGE_FOLDER = 500            # outputs: above this the dialog suggests a compute node
 OUTPUT_SCAN_CAP = 20000
 
@@ -131,8 +133,8 @@ def cli_args(folder: str, db: str, register: bool, skip_unchanged: bool, backup:
     """The arguments after ``mace``: one list for the command shown, the
     preview and the build."""
     a = ["analyze", "--extract-properties", folder, "--db-path", db]
-    if register:
-        a.append("--register")
+    # registering is the CLI's default for a folder: Register off says so
+    a.append("--register" if register else "--no-register")
     if skip_unchanged:
         a.append("--skip-unchanged")
     if backup:
@@ -192,7 +194,7 @@ def build(root: Path, folder_arg: str, db_arg: str, opts: Dict[str, Any], ctx: A
     file, so what was written stays and the summary names it."""
     args = cli_args(folder_arg, db_arg, opts["register"], opts["skip_unchanged"], opts["backup"], opts["keep"],
                     progress=True)
-    state: Dict[str, Any] = {"files": [], "done": None, "backup": None, "pruned": []}
+    state: Dict[str, Any] = {"files": [], "done": None, "backup": None, "pruned": [], "resumed": None}
 
     def on_line(line: str) -> None:
         line = line.strip()
@@ -204,6 +206,12 @@ def build(root: Path, folder_arg: str, db_arg: str, opts: Dict[str, Any], ctx: A
             return
         if rec.get("done"):
             state["done"] = rec
+            return
+        if isinstance(rec.get("resumed"), dict):
+            # an earlier build of this database stopped before its end: this one continues it
+            from mace.utils import db_build
+            state["resumed"] = rec["resumed"]
+            progress(0.0, db_build.resumed_message(rec["resumed"].get("already", 0), rec["resumed"].get("total", 0)))
             return
         if "backup" in rec and "i" not in rec:
             state["backup"] = rel_or_abs(root, Path(rec["backup"]))
@@ -221,6 +229,11 @@ def build(root: Path, folder_arg: str, db_arg: str, opts: Dict[str, Any], ctx: A
     except clirun.CliCanceled:
         written = [x["rel"] for x in state["files"] if x.get("status") == "extracted"]
         raise BuildCanceled(written, state["backup"])
+    if getattr(r, "cpu_limit", False) and state["done"] is None:
+        # the kernel stopped the CLI at the per-process CPU-time limit (cpulimit.py): every file it
+        # finished is committed, and the next build with --skip-unchanged continues from there
+        n = sum(1 for x in state["files"] if x.get("status") == "extracted")
+        raise RuntimeError(CPU_LIMIT.format(n=n, s="" if n == 1 else "s"))
     if r.returncode != 0 and state["done"] is None:
         tail = (r.stderr.strip().splitlines() or ["no output"])[-1][-500:]
         raise RuntimeError(f"The database build failed: {tail}")
@@ -239,6 +252,7 @@ def summary(state: Dict[str, Any], args: List[str]) -> Dict[str, Any]:
                  ("failed_outputs", len(counted["failed"])), ("skipped_outputs", counted["skipped"])):
         done.setdefault(k, v)
     return {"done": state["done"] or {}, "files": files, "backup": state["backup"], "pruned": state["pruned"],
+            "resumed": state.get("resumed"),
             "new": counted["new"], "changed": counted["changed"], "failed": counted["failed"],
             "skipped": counted["skipped"], "command": command_text(args[:-1]),
             "message": done.get("message") or db_build.summary_message(done)}
@@ -250,4 +264,5 @@ class BuildCanceled(Exception):
         msg = f"Canceled after {len(written)} file{'' if len(written) == 1 else 's'} written"
         if backup:
             msg += f"; the backup is {backup}"
+        msg += ". With 'Only new and changed files' the next update continues where this one stopped"
         super().__init__(msg)

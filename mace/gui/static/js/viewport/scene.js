@@ -11,7 +11,8 @@ const SYNC_LIMIT = 2000;
 
 export function createScene(v, deps) {
   const M = deps.M;
-  const css = (k) => M.cssVar(k);
+  // the 3D view's own scope (app.js vpVar): on a background of the other lightness from the theme, that lightness's tokens
+  const css = (k) => (M.vpVar ? M.vpVar(k) : M.cssVar(k));
   const layer = { structure: null, selection: null, hover: null, drag: null, ghost: null, halo: null };
   let shapes = { cell: [], measure: [], ghost: [] }, labels = { atoms: [], measure: [], hover: [] };
   let bonded = null, compCache = null;
@@ -46,7 +47,7 @@ export function createScene(v, deps) {
     const o = deps.opts();
     const radii = new Float32Array(d.n), metal = new Uint8Array(d.n);
     for (let k = 0; k < d.n; k++) { radii[k] = s.radii[d.base[k]]; metal[k] = s.metal && s.metal[d.base[k]] ? 1 : 0; }
-    const tol = Number(deps.setting("bondTolerance")) || s.bond_scale || 1.2, mm = deps.setting("bondMetalMetal") === true;
+    const tol = Number(deps.setting("bondTolerance")) || s.bond_scale || 1.15, mm = deps.setting("bondMetalMetal") === true;
     if (d.n <= SYNC_LIMIT) return done(G.cellListBonds(d.cart, radii, metal, tol, mm));
     const v0 = version;
     performance.mark("vp:bonds:post");

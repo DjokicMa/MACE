@@ -52,6 +52,7 @@ class Task:
         self.result: Any = None
         self.error: Optional[str] = None
         self.traceback: Optional[str] = None
+        self.refused = False                  # it failed on a path the server refuses (PermissionError): 403
         self.slot: Optional[int] = None
         self.future = None
         self.cancel_requested = False
@@ -347,6 +348,7 @@ class TaskManager:
             cause = getattr(exc, "__cause__", None)
             tb = tb or getattr(cause, "tb", None) or "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
             line = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+            t.refused = isinstance(exc, PermissionError)
             self._set_state(t, "failed", error=line, traceback=tb, log=line, message="failed")
         finally:
             if release is not None:
@@ -408,9 +410,24 @@ class TaskManager:
         return {s: states.count(s) for s in STATES}
 
 
+MAX_WAIT_S = 600.0
+
+
+def clamp_wait(w: Any) -> float:
+    """A request's wait in seconds, 0 to MAX_WAIT_S (JSON's Infinity and NaN, or a huge number, never
+    reach the timer: Infinity overflowed it into a 500)."""
+    try:
+        w = float(w)
+    except (TypeError, ValueError):
+        return WAIT_S
+    if w != w:
+        return 0.0
+    return min(MAX_WAIT_S, max(0.0, w))
+
+
 def answer(handler, manager: TaskManager, t: Task, wait_s: float = WAIT_S):
     """The common route ending: the result now when the task was quick, else 202 {task}."""
-    if manager.wait(t, wait_s):
+    if manager.wait(t, clamp_wait(wait_s)):
         if t.state == "done":
             res = t.result
             t.result = None                  # handed over: not kept twice
@@ -419,6 +436,8 @@ def answer(handler, manager: TaskManager, t: Task, wait_s: float = WAIT_S):
             return handler._json(res)
         if t.state == "canceled":
             return handler._json({"canceled": True, "task": t.record()}, 409)
+        if t.refused:                        # a file outside the served folder (a symlink), found by the worker
+            return handler._json({"error": t.error or "outside the served directory"}, 403)
         return handler._json({"error": t.error or "the task failed", "task": t.record(),
                               "traceback": t.traceback}, 500)
     return handler._json({"detached": True, "task": t.record()}, 202)

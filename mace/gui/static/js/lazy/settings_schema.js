@@ -1,24 +1,43 @@
 /* The Settings dialog's rows: one declarative list (spec §3) that drives the
  * sections, the search and the reset links. Every key in settings.js
  * DEFAULTS appears here once, except keymap (the Keyboard section). */
+import { THEMES, groupLabel } from "../themes.js";
+
 export const P3 = "Not used in this version yet";
 const opts = (...xs) => xs.map((x) => (Array.isArray(x) ? x : [x, x]));
+// the plot presets (mace/plotting/presets.py ORDER) and families
+const PRESET_OPTIONS = [["default", "Default"], ["publication", "Publication"], ["vesta", "VESTA-like"], ["presentation", "Presentation"], ["grayscale", "Print grayscale"], ["colorblind", "Colorblind safe"]];
+// the spin color schemes (presets.py SPIN_SCHEMES)
+const SPIN_OPTIONS = [["auto", "Auto (the plot style's)"], ["mace", "MACE pink/cyan"], ["blue-red", "Blue/red"], ["black-vermilion", "Black/vermilion"], ["custom", "Custom"]];
+const FAMILY_ROWS = [["band", "Band & DOS style", false], ["spectra", "Spectra style", false], ["maps", "Maps & volumes style", true], ["scf", "SCF & run charts style", false]];
 export const SECTIONS = [["appearance", "Appearance"], ["viewport", "Viewport"], ["units", "Units and numbers"],
-  ["plots", "Plots"], ["editor", "Editor"], ["keyboard", "Keyboard"], ["files", "Files and data"], ["mace", "MACE defaults"], ["server", "Server"], ["cluster", "Cluster"], ["advanced", "Advanced"]];
+  ["plots", "Plots"], ["editor", "Editor"], ["keyboard", "Keyboard"], ["files", "Files and data"], ["mace", "MACE defaults"], ["server", "Server"], ["cluster", "Cluster"], ["folder", "This folder"], ["advanced", "Advanced"],
+  ["clusterdefaults", "Advanced: cluster defaults"]];
 /* {key, section, label, control, options, min, max, step, unit, help, wired} */
 export const SCHEMA = [
-  ["appearance", "theme", "Theme", "segmented", { options: opts(["system", "System"], ["light", "Light"], ["dark", "Dark"]) }],
+  ["appearance", "theme", "Theme", "themes", { options: THEMES.map((t) => [t.id, t.label, t.desc, groupLabel(t.group)]),
+    help: "Point at a theme to preview it; plots and 3D views follow. Also View › Theme › Color Theme…" }],
+  ["appearance", "plots.surface", "Plot background", "segmented", { options: opts(["theme", "Follow theme"], ["light", "Light"], ["dark", "Dark"]),
+    help: "A light or dark plot in any theme (band, DOS, runs, spectra, volume slices, Gallery); exports match. The 3D view's own: Viewport › Background" }],
+  ["appearance", "plots.style", "Plot style", "select", { options: PRESET_OPTIONS.filter(([k]) => k !== "vesta").concat([["vesta", "VESTA-like (maps and volumes)"]]),
+    help: "The look of every plot (exports match), or of each family below. Publication: Okabe–Ito after black, black frame, ticks outside, no grid, heavier lines. VESTA-like: VESTA's section map and yellow/cyan isosurfaces (maps and volumes; other plots draw Default). Presentation: large text, thick lines. Print grayscale: black and grays, told apart by line style and markers. Colorblind safe: Okabe–Ito, cividis maps. mace plotting --style draws the same. White figures: Plot background Light (and Viewport › Rendering preset Publication for the 3D view)" }],
+  ...FAMILY_ROWS.map(([f, label, vesta]) => ["appearance", `plots.style.${f}`, label, "select", { options: [["same", "Same as Plot style"], ...PRESET_OPTIONS.filter(([k]) => vesta || k !== "vesta")],
+    help: f === "maps" ? "2D maps (fort.25), volume slices and isosurfaces" : f === "band" ? "Band structures, DOS, BOLTZTRA data, and the Gallery's band and DOS panes" : f === "spectra" ? "IR and Raman spectra, the FREQ sticks" : "SCF and optimization charts, Compare Convergence" }]),
   ["appearance", "density", "Density", "segmented", { options: opts(["compact", "Compact"], ["comfortable", "Comfortable"]), help: "Rows of 24 or 28 px" }],
   ["appearance", "uiScale", "UI scale", "segmented", { options: [90, 100, 110, 120, 130].map((v) => [v, `${v}%`]), help: "Scales the interface, not the browser zoom" }],
   ["appearance", "reduceMotion", "Reduce motion", "segmented", { options: opts(["system", "System"], ["on", "On"], ["off", "Off"]) }],
-  ["viewport", "colorScheme", "Color scheme", "select", { options: opts(["jmol", "Jmol"], ["vesta", "VESTA"], ["cpk", "CPK (not in this version yet)"], ["custom", "Custom (not in this version yet)"]), disabled: ["cpk", "custom"], help: "Element colors (see element_colors.LICENSE.txt)" }],
-  ["viewport", "radiusSet", "Radii", "select", { options: opts(["atomic", "Atomic"], ["covalent", "Covalent"], ["ionic", "Ionic (Shannon)"], ["vdw", "van der Waals"]), wired: false }],
+  ["viewport", "colorScheme", "Color scheme", "select", { options: (H) => (H.M().paletteIds ? H.M().paletteIds().map((k) => [k, H.M().paletteLabel(k)]) : opts("vesta", "jmol")),
+    action: ["palette-editor", "Edit Element Colors…"],
+    help: "The element colors every view draws, and mace plotting's default. Edit them, save your own, share them as JSON (element_colors.LICENSE.txt)" }],
+  ["viewport", "radiusSet", "Radii", "select", { options: opts(["atomic", "Atomic"], ["covalent", "Covalent"], ["ionic", "Ionic (Shannon)"], ["vdw", "van der Waals"]),
+    help: "The radius each atom is drawn at, times Atom scale. Atomic: VESTA's atomic radii (Atom scale 0.4 is VESTA's ball and stick, 40 %); Covalent: Cordero 2008; Ionic: Shannon, six-coordinate; van der Waals: as the views drew before 1.1.6 (every transition metal one size)" }],
   ["viewport", "atomScale", "Atom scale", "range", { min: 0.1, max: 1, step: 0.05, help: "Ball and stick" }],
   ["viewport", "bondRadius", "Bond radius", "range", { min: 0.03, max: 0.4, step: 0.01, unit: "Å" }],
   ["viewport", "bondTolerance", "Bond tolerance", "range", { min: 1, max: 1.4, step: 0.01, unit: "× Σ r_cov", help: "Drawn bonds only; the bond table keeps 1.2" }],
   ["viewport", "bondMetalMetal", "Bonds between metals", "check", { help: "Off: no Mg–Mg in MgO, as VESTA draws ionic solids" }],
   ["viewport", "bondColoring", "Bond coloring", "segmented", { options: opts(["split", "Split"], ["uniform", "Uniform"]), wired: false }],
-  ["viewport", "background", "Background", "select", { options: opts(["theme", "Theme"], ["white", "White"], ["black", "Black"], ["custom", "Custom color"]) }],
+  ["viewport", "background", "Background", "select", { options: opts(["theme", "Theme"], ["white", "White"], ["black", "Black"], ["custom", "Custom color"]),
+    help: "White or Black keeps the 3D view light or dark in any theme; its axes, labels and cell follow it" }],
   ["viewport", "backgroundColor", "Custom background", "color", { help: "Used when Background is Custom color", needs: ["background", "custom"] }],
   ["viewport", "labels", "Labels", "select", { options: opts(["off", "Off"], ["element", "Element"], ["index", "Index"], ["both", "Element+Index"], ["wyckoff", "Wyckoff"]) }],
   ["viewport", "labelSize", "Label size", "number", { min: 9, max: 20, step: 1, unit: "px" }],
@@ -60,8 +79,26 @@ export const SCHEMA = [
     help: "Run energy charts: one curve across the FINALRUN restarts, or each segment relative to its own point" }],
   ["plots", "plots.logDeltaE", "Log |ΔE| by default", "check", { help: "Run energy charts open on the log view" }],
   ["plots", "plots.per", "Energy per", "segmented", { options: opts(["cell", "Cell"], ["atom", "Atom"], ["fu", "Formula unit"]) }],
+  ["plots", "plots.dosColors", "DOS colors", "select", { options: opts(["auto", "Auto"], ["total", "Total only"], ["element", "By element"], ["orbital", "By orbital"], ["element-orbital", "Element × orbital"]),
+    help: "Auto: by orbital for one element, element × orbital for two or three, by element for more. By element: the element's 3D color (Viewport › Color scheme), darkened where too light to read. By orbital: s, p, d, f in four hues, elements by line style. Element × orbital: shades of each element's color, s/p/d/f also by line style. mace plotting --dos-colors" }],
+  ["plots", "plots.dosTotal", "DOS total", "check", { help: "Draw the total DOS beside the projections" }],
+  ["plots", "plots.spinDos", "Spin DOS", "segmented", { options: opts(["auto", "Auto"], ["mirrored", "Mirrored"], ["overlaid", "Overlaid"]),
+    help: "Auto: a spin-polarized run mirrored (spin down on the left), a closed-shell run one-sided, as mace plotting draws them" }],
+  ["plots", "plots.spinColors", "Spin colors", "select", { options: SPIN_OPTIONS,
+    help: "Bands and DOS: the spin up / spin down pair, on light and dark plots. Auto: the plot style's (Blue/red; Publication black/vermilion; Print grayscale and Colorblind safe their own). Custom: the two colors below. mace plotting --spin-colors" }],
+  ["plots", "plots.spinUp", "Spin up color", "color", { help: "Custom spin colors (blank: the scheme's). A color set here also applies with Auto. mace plotting --spin-up-color" }],
+  ["plots", "plots.spinDown", "Spin down color", "color", { help: "Custom spin colors (blank: the scheme's). mace plotting --spin-down-color" }],
+  ["plots", "plots.bandColor", "Band color", "color", { help: "Bands and the one-sided DOS total of a run that is not spin-polarized (closed shell, or α = β). Blank: the plot style's, the plot's text color. A spin-polarized run keeps the spin colors. mace plotting --band-color" }],
+  ["plots", "plots.spinDownDash", "Spin down line", "segmented", { options: opts(["dash", "Dashed"], ["dot", "Dotted"], ["dashdot", "Dash-dot"], ["solid", "Solid"]),
+    help: "Bands and DOS: spin down (β) drawn this way, spin up solid; dashed by default so the spins read apart without color (mace plotting --spin-down-style, --spin-down-solid)" }],
+  ["plots", "plots.dosSmooth", "DOS smoothing", "number", { min: 0, max: 1, step: 0.01, unit: "eV",
+    help: "Gaussian smoothing of the drawn DOS (display only, labeled in the plot): its sigma; 0 = off, 0.05 takes the spikes off and keeps the structure (mace plotting --dos-smooth)" }],
   ["plots", "plots.lineWidth", "Line width", "number", { min: 0.5, max: 6, step: 0.5, unit: "px" }],
   ["plots", "plots.exportScale", "PNG export scale", "number", { min: 1, max: 8, step: 1, unit: "×" }],
+  ["plots", "plots.energyWindow", "Band and DOS energy window", "pair", { min: -100, max: 100, unit: "eV",
+    help: "Newly opened band structures and DOS: from, to, around the Fermi level (mace plotting --e-lower/--e-upper read a folder's value)" }],
+  ["plots", "plots.fermiShift", "Fermi shift", "number", { min: -50, max: 50, step: 0.01, unit: "eV",
+    help: "Newly opened band structures and DOS start with the reference moved by this much" }],
   ["plots", "analysis.imagNoiseCm", "Imaginary-mode noise level", "number", { min: 0, max: 200, step: 1, unit: "cm⁻¹",
     help: "Imaginary modes smaller than this are listed as numerical noise (info), larger ones as warnings" }],
   ["editor", "defects.minImageDistance", "Defect image distance", "number", { min: 6, max: 30, step: 0.5, unit: "Å",
@@ -80,6 +117,7 @@ export const SCHEMA = [
   ["files", "explorerExclude", "Hide in the Explorer", "list", { help: "One pattern per line, e.g. *.bak" }],
   ["files", "defaultDb", "Database", "text", { help: "What Database View (Mod+Shift+D) opens: a path inside the folder; blank uses materials.db" }],
   ["files", "recentLimit", "Recent files", "number", { min: 0, max: 50, step: 1 }],
+  ["files", "database.columns", "Database columns", "list", { help: "One per line, in order: material_id, formula, space_group, dimensionality, n_calcs, n_completed, status, updated_at; the Database view uses them the next time it draws its header" }],
   ["files", "database.refreshSeconds", "Refresh the Database view", "select", { options: [[0, "Off"], [15, "Every 15 s"], [30, "Every 30 s"], [60, "Every 60 s"]],
     help: "Checks the file only (no query) and reloads when running jobs record results" }],
   ["files", "files.liveMinutes", "Live window", "number", { min: 1, max: 1440, step: 1, unit: "min",
@@ -106,8 +144,8 @@ export const SCHEMA = [
   ["files", "export.vectorShading", "SVG shading", "segmented", { options: opts(["flat", "Flat"], ["shaded", "Shaded"]),
     help: "Shaded draws each atom with a gradient; flat colors otherwise" }],
   ["files", "saveFormat", "Save format", "segmented", { options: opts(["cif", "CIF"], ["poscar", "POSCAR"], ["xyz", "XYZ"]), help: "What Save As picks first" }],
-  ["mace", "functional", "Functional", "cli", { cli: "functional" }],
-  ["mace", "basisSet", "Basis set", "cli", { cli: "basis_set" }],
+  ["mace", "functional", "Functional", "cli", { cli: "functional", help: "Calculation Setup's default for a deck made from a CIF; a follow-up keeps its parent's" }],
+  ["mace", "basisSet", "Basis set", "cli", { cli: "basis_set", help: "Calculation Setup's default for a deck made from a CIF; a follow-up keeps its parent's" }],
   ["mace", "exampleConfig", "Example config", "cli", { cli: "example_config" }],
   ["mace", "optionsFileName", "Options file name", "text", { help: "Calculation Setup's Save Settings; the default name gives <stem>_options.json (cif2d12, opt2d12) or <stem>_<TYPE>_d3.json (opt2d3)" }],
   ["mace", "setupAutoPreview", "Preview the deck while editing", "check", { help: "Calculation Setup runs the CLI 600 ms after a change (nice 10, one CPU slot); off: Preview (Mod+Enter) only" }],
@@ -117,6 +155,11 @@ export const SCHEMA = [
   ["server", "session.maxDays", "Sign out at the latest after", "number", { min: 1, max: 30, step: 1, unit: "days" }],
   ["server", "server.idleStopHours", "Stop the server after … without use", "number", { min: 0, max: 72, step: 1, unit: "hours",
     help: "0 = never (the default). It stops only when no task is running; a warning comes 5 minutes before" }],
+  ["server", "update.check", "Check for MACE updates", "check", {
+    help: "mace update --check in the background at start and then every few hours; an available update shows in the status bar. Help ▸ Check for Updates works either way" }],
+  ["server", "update.channel", "Update channel", "segmented", { options: opts(["release", "Release"], ["preview", "Preview"], ["latest", "Latest"]),
+    help: "Release: the newest vX.Y.Z; Preview: also vX.Y.Z-preview; Latest: origin/main (docs/update.md)" }],
+  ["server", "update.intervalHours", "Check for updates every", "number", { min: 1, max: 168, step: 1, unit: "hours" }],
   ["cluster", "cluster.pollSeconds", "Job poll interval", "number", { min: 30, max: 300, step: 1, unit: "s",
     help: "How often the server asks SLURM for your jobs while the Jobs tab, the Cluster view or a Job document is open (one squeue per interval, shared)" }],
   ["cluster", "cluster.showView", "Cluster view", "segmented", { options: opts(["auto", "Auto"], ["on", "On"], ["off", "Off"]),

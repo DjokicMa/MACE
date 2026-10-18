@@ -14,18 +14,8 @@
  * opts = {ylog, xlog, unit, per, relTo, segments ("continuous" | "separate"), xr: [from, to], yr: [from, to], width} */
 import { overlayHost, place } from "./ui.js";
 
-export const HARTREE_EV = 27.211386245988;          // CODATA 2018
-export const AVOGADRO_EV_KJMOL = 96.48533212331;    // 1 eV per particle in kJ/mol
-export const EV_KCALMOL = 23.060547830619;          // 1 eV per particle in kcal/mol
-export const CM_PER_MEV = 8.065543937;              // 1 meV = 8.0655 cm⁻¹
-export const CM_PER_THZ = 33.35640952;
-
-/** value in the unit = value in eV × factor */
-export const ENERGY_UNITS = { eV: 1, meV: 1000, Ha: 1 / HARTREE_EV, "kJ/mol": AVOGADRO_EV_KJMOL, "kcal/mol": EV_KCALMOL };
-/** value in the unit = value in cm⁻¹ × factor */
-export const WAVENUMBER_UNITS = { "cm-1": 1, meV: 1 / CM_PER_MEV, THz: 1 / CM_PER_THZ };
-export const UNIT_LABEL = { eV: "eV", meV: "meV", Ha: "Ha", "kJ/mol": "kJ/mol", "kcal/mol": "kcal/mol", "cm-1": "cm⁻¹", THz: "THz" };
-export const PER_LABEL = { cell: "", atom: "/atom", fu: "/f.u." };
+import { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide } from "./plotbase.js";
+export { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide };
 
 export function energy(eV, unit = "eV") { return eV * (ENERGY_UNITS[unit] ?? 1); }
 export function wavenumber(cm, unit = "cm-1") { return cm * (WAVENUMBER_UNITS[unit] ?? 1); }
@@ -107,7 +97,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 export function attach(acts, adapter, H) {
   // the features may change with the document shown (a spectrum after a band plot)
   const feat = () => ({ logY: true, logX: false, units: null, per: false, relTo: false, segments: false, range: true, width: true,
-    png: true, svg: true, image: false, csv: true, pub: false, ...(adapter.features || {}) });
+    png: true, svg: true, image: false, csv: true, pub: false, style: false, cli: false, ...(adapter.features || {}) });
   let f = feat(), sig = "";
   const icon = H.icon || (() => "");
   acts.classList.add("pk-acts");
@@ -120,6 +110,7 @@ export function attach(acts, adapter, H) {
     sig = s;
     acts.innerHTML = `${f.logY ? `<button type="button" class="tb-btn-text pk-logy" aria-pressed="false" title="Logarithmic value axis">Log Y</button>` : ""}
     ${f.units ? `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-units" aria-haspopup="menu" aria-expanded="false" title="Units">Units<span class="pk-u"></span> ▾</button></span>` : ""}
+    ${f.style && adapter.styleMenu ? `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-style" aria-haspopup="menu" aria-expanded="false" title="Plot style, spin colors and DOS look of this plot">Style ▾</button></span>` : ""}
     <span class="pk-wrap"><button type="button" class="tb-btn-text pk-export" aria-haspopup="menu" aria-expanded="false" title="Export the plot or its data">${icon("download")}<span>Export</span> ▾</button></span>
     <span class="pk-wrap"><button type="button" class="tb-btn-text pk-more" aria-haspopup="dialog" aria-expanded="false" title="Plot options">⋯ Plot Options</button></span>`;
   }
@@ -131,8 +122,8 @@ export function attach(acts, adapter, H) {
     const m = document.createElement("div");
     m.className = "pk-menu";
     m.setAttribute("role", "menu");
-    m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` :
-      `<button type="button" role="${it.checked !== undefined ? "menuitemradio" : "menuitem"}" data-v="${esc(it.v)}"${it.checked !== undefined ? ` aria-checked="${it.checked}"` : ""}${it.disabled ? ' aria-disabled="true" disabled' : ""}>${esc(it.label)}</button>`).join("");
+    m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` : it.head ? `<div class="pk-head" role="presentation">${esc(it.head)}</div>` :
+      `<button type="button" role="${it.checked !== undefined ? (it.toggle ? "menuitemcheckbox" : "menuitemradio") : "menuitem"}" data-v="${esc(it.v)}"${it.checked !== undefined ? ` aria-checked="${it.checked}"` : ""}${it.disabled ? ' aria-disabled="true" disabled' : ""}>${esc(it.label)}</button>`).join("");
     float(m, btn);
     btn.setAttribute("aria-expanded", "true");
     m.close = () => { m.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
@@ -226,7 +217,20 @@ export function attach(acts, adapter, H) {
       if (f.image && adapter.image) items.push({ v: "image", label: "Image…" });
       if (f.csv) items.push({ v: "csv", label: "CSV" }, { v: "tsv", label: "Copy as TSV" });
       if (f.pub) items.push("-", { v: "pub", label: "Publication Figure…" });
+      if (f.cli && adapter.cli) items.push({ v: "cli", label: "Copy CLI Command" });
       menu(b, items, (v) => run(v));
+      return;
+    }
+    if (b.classList.contains("pk-style")) {
+      if (menuOpen) { closeMenus(); return; }
+      // the plot's own style (plot.js): picking an entry is one undoable option change
+      menu(b, adapter.styleMenu(), (v) => {
+        if (v === "cli") run("cli"); else adapter.styleSet(v);
+        refresh();
+        // the pick drew the toolbar again: the keyboard's focus goes to the new Style button, not to <body>
+        const back = () => { const nb = $(".pk-style"); if (nb && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) nb.focus(); };
+        back(); requestAnimationFrame(back);
+      });
       return;
     }
     if (b.classList.contains("pk-more")) { if (menuOpen) { closeMenus(); return; } popover(b); }
@@ -238,6 +242,11 @@ export function attach(acts, adapter, H) {
       else if (v === "svg") await adapter.svg();
       else if (v === "image") await adapter.image();
       else if (v === "pub") await adapter.pub();
+      else if (v === "cli") {
+        const text = adapter.cli();
+        const ok = await copyText(text);
+        H.toast(ok ? `Copied: ${text.split("\n").pop()}` : "Copy failed (the browser refused the clipboard)", ok ? "success" : "error");
+      }
       else if (v === "csv") H.download(new Blob([toCSV(adapter.table())], { type: "text/csv" }), `${adapter.name || "plot"}_data.csv`);
       else if (v === "tsv") {
         const t = adapter.table();
@@ -265,12 +274,7 @@ export function absIfNeeded(ys) {
    legend entry of its own (keyEntry: no data, a click hides nothing); the top and right
    margins are sized by fitLegends from the legends as drawn (plotly's own margin push
    leaves a legend where the previous size put it when a resize changes its height). */
-export function legendTop(more = {}) {
-  return { orientation: "h", x: 0, xanchor: "left", y: 1, yanchor: "bottom", font: { size: 11 }, ...more };
-}
-export function legendSide(more = {}) {
-  return { orientation: "v", x: 1, xanchor: "left", y: 1, yanchor: "top", font: { size: 11 }, tracegroupgap: 0, ...more };
-}
+/* legendTop and legendSide: plotbase.js (no DOM: the band/DOS figure builder imports them in node too) */
 /** A legend-only entry: a key for a line style, a reference line or a shaded band (meta "key"). */
 export function keyEntry(name, style = {}, more = {}) {
   const { line, marker, fill } = style;

@@ -343,6 +343,19 @@ def recent_finished(root: Path) -> List[Dict[str, str]]:
     return out[-200:]
 
 
+def recent_with_tracking(root: Path) -> List[Dict[str, Any]]:
+    """recent_finished, each job with its tracked row ({calc_id, status,
+    calc_type}) when a database of the folder has it, and whether Recover
+    applies (the row is failed)."""
+    rows = recent_finished(root)
+    tracked = tracked_rows(root, [str(root / r["workdir_rel"]) for r in rows if r.get("workdir_rel")])
+    for r in rows:
+        t = tracked.get(r["id"])
+        r["tracked"] = {k: t[k] for k in ("calc_id", "status", "calc_type")} if t else None
+        r["recoverable"] = bool(t and t.get("status") == "failed")
+    return rows
+
+
 class Watcher:
     """Finished transitions: the ids seen pending/running in the previous
     poll that are gone now give one ``jobs.finished`` event each."""
@@ -354,6 +367,8 @@ class Watcher:
         self.events = 0
         # a job the server announced already (the Cluster view's poller saw it first): no sacct, no event
         self.skip: Callable[[str], bool] = lambda jid: False
+        # called with (root, rows) after every poll (the Workflows view's WorkflowWatcher)
+        self.hooks: List[Callable[[Path, List[Dict[str, Any]]], None]] = []
 
     def update(self, root: Path, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         now_active = {r["id"]: r for r in rows if r["state"] in ACTIVE}
@@ -370,6 +385,11 @@ class Watcher:
             self.events += 1
             events.append(ev)
             self.emit("jobs.finished", ev)
+        for hook in list(self.hooks):
+            try:
+                hook(root, rows)
+            except Exception:
+                pass
         return events
 
 
@@ -414,7 +434,8 @@ class Jobs:
         counts = {"running": sum(1 for r in folder if r["state"] == "RUNNING"),
                   "pending": sum(1 for r in folder if r["state"] == "PENDING")}
         return {"jobs": listed, "polled_at": at, "slurm": self.own.available(), "error": self.own.error,
-                "counts": counts, "interval": self.interval(), "own_ids": own_ids, "scope": scope}
+                "counts": counts, "interval": self.interval(), "own_ids": own_ids, "scope": scope,
+                "queue": queue_budget_view(self.root, rows, scope)}
 
     def session_active(self) -> bool:
         if not self.session_jobs:
@@ -497,6 +518,37 @@ class Jobs:
 
 
 # ------------------------------------------------------------------ cancel
+HELD_WORDS = {"budget": "queue budget full", "workflow_cap": "the workflow's max_jobs reached",
+              "slurm_limit": "SLURM refused it (submit limit)"}
+
+
+def queue_budget_view(root: Path, rows: List[Dict[str, Any]], scope: str = "folder") -> Dict[str, Any]:
+    """The user-wide queue budget and the jobs held under it (this folder's,
+    or every registered database's for scope 'all'): mace queue status."""
+    out: Dict[str, Any] = {"budget": None, "limit": None, "used": None, "held": [], "held_counts": {}}
+    try:
+        from mace.queue import budget
+        cfg = budget.resolve(quiet=True)
+        out.update(budget=cfg.budget, limit=cfg.limit, reserve=cfg.reserve, source=cfg.source)
+        out["used"] = sum(1 for r in rows if str(r.get("state", "")).upper() in budget.LIVE_SLURM_STATES)
+        root = Path(root).resolve()
+        for db in budget.registered_dbs():
+            if scope == "folder" and not _inside(db, root):
+                continue
+            for c in budget.held_rows(db):
+                cwd = (c.submit or {}).get("cwd") or ""
+                out["held"].append({"calc_id": c.calc_id, "material_id": c.material_id, "calc_type": c.calc_type,
+                                    "reason": c.reason, "reason_text": HELD_WORDS.get(c.reason, c.reason),
+                                    "held_since": c.held_since, "workflow_id": c.workflow_id,
+                                    "workdir_rel": _rel(root, Path(cwd)) if cwd and _inside(cwd, root) else cwd})
+                out["held_counts"][c.reason] = out["held_counts"].get(c.reason, 0) + 1
+        out["held"].sort(key=lambda h: (h["held_since"] or "", h["calc_id"]))
+        out["held"] = out["held"][:500]
+    except Exception:
+        pass
+    return out
+
+
 def cancel(root: Path, ids: Sequence[str]) -> Dict[str, Any]:
     """scancel for the ids that pass every check; the others with the reason."""
     env = _env()

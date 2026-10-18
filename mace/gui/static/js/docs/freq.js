@@ -95,11 +95,11 @@ export function createFreqView(host, tableHost, optsHost, H) {
       }
     }
     if (dd.style === "wireframe") {
-      const cs = M().state.colors ? { prop: "elem", map: M().state.colors.schemes[M().schemeName()] } : "Jmol";
+      const cs = M().colorScheme();
       m.setStyle({}, dd.bonds ? { line: { colorscheme: cs }, sphere: { scale: 0.12, colorscheme: cs } } : { sphere: { scale: 0.12, colorscheme: cs } });
     } else m.setStyle({}, M().styleFor(dd.style, dd.bonds));
     const shown = boxed(s, dd.box);
-    if (dd.cell) M().drawCell(vw, shown, M().cssVar("--cell"), 0.025, 1);
+    if (dd.cell) M().drawCell(vw, shown, M().vpVar("--cell"), 0.025, 1);
     // labels at the atoms' rest positions (the cell's own atoms, as the structure view labels them)
     if (dd.labels && dd.labels !== "off") {
       const w = s.symmetry && s.symmetry.available ? s.symmetry.wyckoffs : null, size = Number(H.setting && H.setting("labelSize")) || 12;
@@ -107,8 +107,8 @@ export function createFreqView(host, tableHost, optsHost, H) {
         if (list.image[k]) continue;
         const i = list.base[k], c = cartOf(list, k), sym = s.symbols[i];
         const text = dd.labels === "element" ? sym : dd.labels === "index" ? String(i + 1) : dd.labels === "wyckoff" && w ? `${sym} ${w[i]}` : `${sym}${i + 1}`;
-        vw.addLabel(text, { position: { x: c[0], y: c[1], z: c[2] }, fontSize: size, fontColor: M().cssVar("--text"),
-          backgroundColor: M().cssVar("--surface"), backgroundOpacity: 0.75, borderThickness: 0, inFront: true });
+        vw.addLabel(text, { position: { x: c[0], y: c[1], z: c[2] }, fontSize: size, fontColor: M().vpVar("--text"),
+          backgroundColor: M().vpVar("--surface"), backgroundOpacity: 0.75, borderThickness: 0, inFront: true });
       }
     }
     drawnArrows = [];
@@ -126,7 +126,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
       // arrows that move with their atoms: one set per animation frame, each shape tagged with its frame
       // (3Dmol draws a shape with a frame only while the viewer shows that frame), so toggling them never
       // stops the animation and no shape is rebuilt per frame
-      const col = M().cssVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale, k0 = scaleOf(disp);
+      const col = M().vpVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale, k0 = scaleOf(disp);
       const live = moving();
       if (live.length * FRAMES > PLAY_ARROWS_MAX) doc.arrowsCapped = true;
       else {
@@ -144,7 +144,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
       }
     }
     if (disp && doc.opts.arrows && !playing) {
-      const col = M().cssVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale;
+      const col = M().vpVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale;
       for (const [c, dv] of moving()) {
         const len = Math.hypot(...dv);
         // from the sphere's surface (the atoms sit at rest in the still view), so no arrow is buried in its atom
@@ -205,8 +205,13 @@ export function createFreqView(host, tableHost, optsHost, H) {
       <span role="gridcell">${[m.ir_active ? "IR" : "", m.raman_active ? "Raman" : ""].filter(Boolean).join(" · ") || "silent"}</span></div>`).join("");
     sticks();
   }
+  // a plot style change (Settings › Appearance) redraws the sticks in the new preset
+  document.addEventListener("mace-theme", () => { try { if (doc && doc.modes && $(".fm-spec", tableHost)) sticks(); } catch (e) { /* not shown */ } });
   function sticks() {
     const svg = $(".fm-spec", tableHost), ms = doc.modes.filter((m) => !m.imaginary && m.freq > 1);
+    // the Spectra family's preset (Settings › Appearance › Plot style): its stick colors and weights (freq.css)
+    const pid = window.MACE && window.MACE.plotPreset ? window.MACE.plotPreset("spectra") : "default";
+    if (pid !== "default") svg.setAttribute("data-plot-preset", pid); else svg.removeAttribute("data-plot-preset");
     const W = Math.max(300, svg.clientWidth || 600), Hh = 80, max = Math.max(...ms.map((m) => m.freq), 100);
     const irMax = Math.max(...ms.map((m) => m.ir_intens || 0), 1e-9), raMax = Math.max(...ms.map((m) => m.raman_intens || 0), 1e-9);
     const x = (f) => 8 + (W - 16) * (f / max);
@@ -308,6 +313,11 @@ export function createFreqView(host, tableHost, optsHost, H) {
     if (!doc || !e.target.closest("[data-fo=xyz]") || !doc.mode) return;
     download(new Blob([framesXyz(doc, doc.mode.displacement)], { type: "chemical/x-xyz" }),
       `${doc.title.replace(/\.[^.]+$/, "")}_mode${doc.mode.mode}.xyz`);
+  });
+
+  // the element colors changed (Settings, Element Colors): draw the atoms again (draw keeps the animation going)
+  document.addEventListener("mace-colors", () => {
+    if (doc && doc.structure && !building) draw(true);
   });
 
   return {

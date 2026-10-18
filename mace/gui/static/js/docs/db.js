@@ -7,12 +7,14 @@
  * size of the database; every request is one page (≤200 rows, ≤30 KB). */
 import * as profile from "../profile.js";
 const PAGE = 200, OVERSCAN = 10, MAX_PAGES = 24, DEBOUNCE = 60;
-const COLS = [
+const ALL_COLS = [
   // w: the share of spare width (fr) above min px; a column the user resized keeps its px
+  // the minimums sum to 608 px: at 1280 px (explorer and inspector open) the table is 634 px wide, which
+  // leaves room for the widest classic scrollbar (17 px) without a sideways scroll
   { key: "material_id", label: "Material", w: 3, min: 88 }, { key: "formula", label: "Formula", w: 2, min: 88 },
-  { key: "space_group", label: "SG", w: 1, min: 44, num: true }, { key: "dimensionality", label: "Dim.", w: 1.4, min: 80 },
+  { key: "space_group", label: "SG", w: 1, min: 40, num: true }, { key: "dimensionality", label: "Dim.", w: 1.4, min: 80 },
   { key: "n_calcs", label: "Calcs", w: 1, min: 50, num: true }, { key: "n_completed", label: "Done", w: 1, min: 50, num: true },
-  { key: "status", label: "Status", w: 1.4, min: 88 }, { key: "updated_at", label: "Updated", w: 2, min: 132 },
+  { key: "status", label: "Status", w: 1.4, min: 88 }, { key: "updated_at", label: "Updated", w: 2, min: 124 },
 ];
 const DIMS = ["CRYSTAL", "SLAB", "POLYMER", "MOLECULE"];
 const UNITS = { angstrom: "Å", "angstrom^2": "Å²", "angstrom^3": "Å³", degree: "°", degrees: "°", hartree: "Ha", ev: "eV",
@@ -20,6 +22,13 @@ const UNITS = { angstrom: "Å", "angstrom^2": "Å²", "angstrom^3": "Å³", degr
 
 export function createDbView(host, detailHost, H) {
   const { api, q, esc, icon, toast } = H;
+  // Settings' Database columns (a folder's mace-folder.toml [database] may set them), in that order
+  const pickCols = () => {
+    const want = H.setting ? H.setting("database.columns") : null;
+    const picked = Array.isArray(want) ? want.map((k) => ALL_COLS.find((c) => c.key === k)).filter(Boolean) : [];
+    return picked.length ? picked : ALL_COLS;
+  };
+  let COLS = pickCols();
   const widths = { ...(profile.ui("dbWidths", {}) || {}) };     // column widths, in the profile
   let db = null;                     // {path, stats, props, total, sort, dir, filters, pages: Map, active (row index), selected (id)}
   let frame = 0, filterTimer = 0, gen = 0;
@@ -61,6 +70,7 @@ export function createDbView(host, detailHost, H) {
   const tableW = () => COLS.reduce((t, c) => t + colW(c), 0);
 
   function renderHead() {
+    COLS = pickCols();
     head.style.gridTemplateColumns = template();
     head.style.width = `max(100%, ${tableW()}px)`;
     rowsEl.style.width = `max(100%, ${tableW()}px)`;
@@ -408,10 +418,23 @@ export function createDbView(host, detailHost, H) {
   let longValues = [];
   /* what a property's name cannot say, shown on hover */
   const ZT_E = "ZTₑ (electrons only, no lattice κ; an upper bound that grows without limit as T·σ·S² approaches κ₀)";
-  const NOTES = { transport_zt_electronic_max: ZT_E, transport_zt_max: `${ZT_E}; the same value as transport_zt_electronic_max`,
-    transport_kappa0_at_zt_max: "κ₀, the zero-field K coefficient of KAPPA.dat, at the ZTₑ peak",
-    transport_kappa_electronic_at_zt_max: "κₑ = κ₀ − T·σ·S² at the ZTₑ peak (no lattice κ)" };
-  const propTitle = (n) => (NOTES[n] ? `${n}: ${NOTES[n]}` : n);
+  const AVG = "of the tensors averaged over their diagonal (transport_tensor_average): an average, not the value along any axis";
+  const NOTES = { transport_zt_electronic_max_avg: `${ZT_E}, ${AVG}`,
+    transport_power_factor_max_avg: `the peak power factor S²σ, ${AVG}`,
+    transport_kappa0_at_zt_max: "κ₀, the zero-field K coefficient of KAPPA.dat, at the averaged ZTₑ peak",
+    transport_kappa_electronic_at_zt_max: "κₑ = κ₀ − T·σ·S² at the averaged ZTₑ peak (no lattice κ)",
+    transport_zt_total_max_avg: `the total ZT = S²σT/(κₑ + κ_L) with the κ_L given to mace analyze --kappa-lattice, at transport_zt_total_tau_fs, ${AVG}`,
+    transport_zt_total_lattice_source: "where κ_L came from: one value, or a T,kappa_L table (its path and sha256)",
+    transport_zt_total_tau_fs: "the relaxation time τ the total ZT is at (σ and κ₀ scale with τ; κ_L does not)" };
+  NOTES.transport_tensor_average = "how the *_avg values average each tensor's diagonal: (xx+yy+zz)/3, or in plane (xx+yy)/2 for a slab";
+  /* one axis's value: that diagonal element alone (S_aa, σ_aa, κ₀,aa), not an average */
+  const AXIS_NOTES = [
+    [/^transport_power_factor_max_(xx|yy|zz)$/, (a) => `the peak power factor S²σ along ${a} (S_${a}, σ_${a})`],
+    [/^transport_zt_electronic_max_(xx|yy|zz)$/, (a) => `${ZT_E}, along ${a} (S_${a}, σ_${a}, κ₀,${a})`],
+    [/^transport_zt_total_max_(xx|yy|zz)$/, (a) => `the total ZT along ${a}, with the κ_L given to mace analyze --kappa-lattice`],
+    [/^transport_(power_factor|zt_electronic|zt_total)_best_axis$/, () => "the axis of the highest value (in plane for a slab)"]];
+  const axisNote = (n) => { for (const [re, f] of AXIS_NOTES) { const m = re.exec(n); if (m) return f(m[1]); } return null; };
+  const propTitle = (n) => { const t = NOTES[n] || axisNote(n); return t ? `${n}: ${t}` : n; };
   function textCell(p) {
     const t = String(p.property_value_text || "");
     if (t.length <= LONG) return esc(t);
@@ -526,7 +549,7 @@ export function createDbView(host, detailHost, H) {
     detail: () => detailHost,
     focus: () => grid.focus(),
     exportUrl: (fmt) => "api/db/export?" + q({ ...filterQuery(), format: fmt }),
-    exportName: (fmt) => `${db.path.split("/").pop().replace(/\.db$/, "")}_export.${fmt}`,
+    exportName: (fmt) => `${db.path.split("/").pop().replace(/\.db$/, "")}_export.${fmt === "excel" ? "xlsx" : fmt}`,
     state: () => db && { path: db.path, total: db.total, sort: db.sort, dir: db.dir, active: db.active, selected: db.selected, filters: { ...db.filters } },
     stats: () => ({ ...stats, domRows: rowsEl.childElementCount }),
     resetStats: () => { stats.maxRows = 0; stats.requests = 0; stats.firstPageMs = null; },

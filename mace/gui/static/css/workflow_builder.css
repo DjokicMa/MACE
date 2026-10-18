@@ -1,0 +1,143 @@
+/* New Workflow… (js/lazy/workflow_dialog.js): tokens only. Loaded with the
+ * builder; every rule is scoped to .wfb-dlg (or a wfb- class). The step
+ * forms reuse Calculation Setup's rows (setup.css: su-row, su-badge). */
+dialog.wfb-dlg { width: min(1180px, 96vw); height: min(820px, calc(100dvh - 32px)); max-height: none; display: none;
+  flex-direction: column; }
+dialog.wfb-dlg[open] { display: flex; }
+.wfb-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); container-type: inline-size; }
+.wfb-dlg .dlg-foot { display: flex; align-items: center; gap: var(--s-3); }
+.wfb-note { margin-right: auto; color: var(--text-2); font-size: var(--fs-sm); }
+.wfb-dlg .tb-btn-text:disabled, .wfb-dlg .icon-btn:disabled { opacity: .45; cursor: default; }
+.wfb-dlg .tb-btn-text.primary:disabled:hover { background: var(--accent); }
+.wfb-dlg [hidden] { display: none !important; }
+
+/* the sections, as a numbered list on the left */
+.wfb-nav { border-right: 1px solid var(--border); padding: var(--s-3); overflow: auto; background: var(--surface-2); }
+.wfb-nav ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+.wfb-tab { display: flex; align-items: center; gap: var(--s-3); width: 100%; text-align: left; padding: var(--s-2) var(--s-3);
+  border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--text); font: inherit; cursor: pointer; }
+.wfb-tab:hover:not(:disabled) { background: var(--surface-3, var(--surface)); }
+.wfb-tab.on { background: var(--accent-soft); border-color: var(--accent); }
+.wfb-tab:disabled { opacity: .5; cursor: default; }
+.wfb-tab:focus-visible, .wfb-chip:focus-visible, .wfb-stepbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.wfb-tab-t { display: flex; flex-direction: column; min-width: 0; }
+.wfb-num { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid var(--border-strong, var(--border)); font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
+.wfb-num.ok { background: var(--success); border-color: var(--success); color: var(--on-accent, #fff); }
+.wfb-num .i { width: 14px; height: 14px; }
+
+/* the section on the right */
+.wfb-sec { min-width: 0; min-height: 0; overflow: auto; padding: var(--s-4) var(--s-5); outline: none; }
+.wfb-sec h3 { margin: 0 0 var(--s-2); font-size: var(--fs-lg); }
+.wfb-intro { margin: 0 0 var(--s-4); color: var(--text-2); max-width: 75ch; line-height: 1.45; }
+.wfb-label { margin: var(--s-4) 0 var(--s-2); font-weight: 600; }
+.wfb-label.sm { margin: var(--s-2) 0 var(--s-1); font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+.wfb-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: var(--s-3) 0; }
+.wfb-row .f { font-weight: 600; }
+.wfb-row .field { height: var(--h-control); min-width: 200px; }
+.wfb-empty, .wfb-note2 { color: var(--text-2); }
+.wfb-note2 { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-2) var(--s-3); border-radius: var(--r-md);
+  background: var(--surface-2); font-size: var(--fs-sm); margin: 0 0 var(--s-3); }
+.wfb-note2 .i, .wfb-ok .i { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+.wfb-ok { display: flex; gap: var(--s-2); align-items: flex-start; color: var(--success); margin: var(--s-3) 0; }
+.wfb-ok span { color: var(--text); }
+
+/* structures */
+.wfb-pick { border: 1px solid var(--border); border-radius: var(--r-md); }
+.wfb-pick-acts { display: flex; gap: var(--s-2); padding: var(--s-2); border-bottom: 1px solid var(--border); }
+.wfb-files { list-style: none; margin: 0; padding: var(--s-1) var(--s-2); max-height: 320px; overflow: auto; }
+.wfb-files li { padding: 2px 0; }
+.wfb-files .tog { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.wfb-files .tog.off { opacity: .5; }
+.wfb-files .kb { font-size: var(--fs-xs); font-weight: 600; padding: 0 5px; border-radius: var(--r-sm); background: var(--surface-2);
+  border: 1px solid var(--border); color: var(--text-2); }
+
+/* steps */
+.wfb-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-2); }
+.wfb-chip { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: var(--s-2) var(--s-3); border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.wfb-chip:hover { border-color: var(--accent); }
+.wfb-chip.on { background: var(--accent-soft); border-color: var(--accent); }
+.wfb-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.wfb-node { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.wfb-node-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+  color: var(--on-accent, #fff); font-size: var(--fs-xs); font-weight: 600; }
+.wfb-node-t { display: flex; flex-direction: column; }
+.wfb-arrow { color: var(--text-3); display: inline-flex; }
+.wfb-arrow .i { width: 16px; height: 16px; }
+.wfb-glossary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-1) var(--s-3); margin: var(--s-3) 0;
+  font-size: var(--fs-sm); }
+.wfb-glossary div { display: contents; }
+.wfb-glossary dt { font-weight: 600; }
+.wfb-glossary dd { margin: 0; color: var(--text-2); }
+
+/* settings: the steps on the left, the step's form on the right */
+.wfb-split { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+.wfb-steplist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-1); position: sticky; top: 0; }
+.wfb-stepbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.wfb-stepbtn.on { background: var(--accent-soft); border-color: var(--accent); }
+.wfb-form { min-width: 0; }
+.wfb-form .su-sec { border-top: 1px solid var(--border); }
+.wfb-sec-h { font-weight: 600; font-size: var(--fs-sm); padding: var(--s-2) 0; }
+.wfb-form .su-row { grid-template-columns: 200px minmax(0, 1fr); }
+.wfb-form .su-row.locked .su-ctl { opacity: .7; }
+.wfb-det { margin: var(--s-2) 0; border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
+.wfb-det > summary { cursor: pointer; overflow-wrap: anywhere; }
+.wfb-pre { max-height: 320px; overflow: auto; margin: var(--s-1) 0; padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-sm);
+  font-size: var(--fs-xs); line-height: 1.4; white-space: pre; }
+.wfb-dlg .chip.projected { background: var(--warning); color: var(--on-accent); }   /* on-accent: 4.5:1 on --warning in every theme (test_tokens_contrast) */
+
+/* resources */
+.wfb-grid-wrap { overflow-x: auto; }
+.wfb-grid { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.wfb-grid th, .wfb-grid td { text-align: left; vertical-align: top; padding: var(--s-2); border-bottom: 1px solid var(--border); }
+.wfb-grid thead th { color: var(--text-2); font-weight: 600; white-space: nowrap; }
+.wfb-grid tbody th { white-space: nowrap; }
+.wfb-grid .field { height: var(--h-control); width: 100%; min-width: 80px; }
+.wfb-grid .field.num { min-width: 64px; }
+.wfb-cell { display: flex; gap: var(--s-1); }
+.wfb-cell .field:last-child { min-width: 88px; width: auto; }
+.wfb-origin { display: flex; gap: var(--s-2); align-items: center; margin-top: 2px; min-height: 16px; }
+.wfb-cell-err { color: var(--danger); font-size: var(--fs-xs); margin-top: 2px; max-width: 220px; }
+.wfb-opts { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }
+.wfb-opts .f.inline { display: inline-flex; align-items: center; gap: var(--s-2); }
+.wfb-opts .field.num { width: 90px; height: var(--h-control); }
+
+/* review */
+.wfb-summary { font-size: var(--fs-md); line-height: 1.5; margin: 0 0 var(--s-3); max-width: 80ch; }
+.wfb-cmds { display: flex; flex-direction: column; gap: var(--s-1); }
+.wfb-cmd { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-sm); }
+.wfb-cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-size: var(--fs-sm); }
+
+/* a narrow dialog (a small window, a big zoom): the sections go on top */
+@container (max-width: 760px) {
+  .wfb-split { grid-template-columns: minmax(0, 1fr); }
+  .wfb-steplist { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 860px) {
+  .wfb-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .wfb-nav { border-right: 0; border-bottom: 1px solid var(--border); }
+  .wfb-nav ol { flex-direction: row; overflow-x: auto; }
+  .wfb-tab .small { display: none; }
+}
+/* Phase 5: a cloned workflow's note; the built-in account kept on another cluster */
+.wfb-clone-note { display: flex; align-items: flex-start; gap: var(--s-2); padding: var(--s-2) var(--s-3); margin-bottom: var(--s-3);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface); }
+.wfb-clone-note svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.wfb-cell-warn { color: var(--warning); font-size: var(--fs-xs); margin-top: 2px; max-width: 220px; }
+
+/* spin-orbit coupling: a group of the step form (SP steps; disabled with the CLI's reason elsewhere) */
+.wfb-soc { margin: var(--s-4) 0 var(--s-3); padding: var(--s-2) var(--s-3) var(--s-3); border: 1px solid var(--border); border-radius: var(--r-md);
+  min-width: 0; }
+.wfb-soc > legend { padding: 0 var(--s-1); }
+.wfb-soc.off .su-rows { opacity: .55; }
+.wfb-soc:disabled .su-switch, .wfb-soc:disabled select, .wfb-soc:disabled input { cursor: not-allowed; }
+.wfb-soc-intro { margin: 0 0 var(--s-2); }
+.wfb-soc-why { display: flex; gap: var(--s-2); align-items: flex-start; margin: 0 0 var(--s-2); padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; }
+.wfb-soc-why .i { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+.wfb-soc-why.sm { background: none; padding: 0 0 0 var(--s-2); margin: calc(-1 * var(--s-1)) 0 var(--s-2); font-size: var(--fs-xs); color: var(--text-3); }
+.wfb-soc .su-ctl select { max-width: 100%; }
+.wfb-soc .su-ctl input.mono { width: 9em; }

@@ -8,10 +8,18 @@
  * origin):
  *
  * - View › Editor Groups: Split Editor Right (Mod+\), Move Document to Other
- *   Group (Mod+Shift+\), Focus Other Group (Mod+Alt+\), Close Group, Link
- *   Cameras; Open to the Side (Explorer); Move to Other Group (tab menu); a
- *   tab dragged onto the other group (or onto the right half of a single
- *   group) moves there.
+ *   Group (Mod+Shift+\), Focus Other Group (Mod+Alt+\), Focus Left Group,
+ *   Focus Right Group, Close Group, Link Cameras; Open to the Side
+ *   (Explorer); Move to Other Group, Move Left, Move Right (tab menu).
+ * - Dragging a tab (from either group): onto a tab strip it goes in at that
+ *   place (the same group: a new order; the other group: it moves there);
+ *   onto the other group's editor area it moves there; onto the right half
+ *   of a single group it splits the editor. Esc cancels the drag. The window
+ *   draws every drop marker and does every move (dragTab, dragFromPane); the
+ *   right group only reports its pointer, in its own px.
+ * - Closing the last tab of the right group, or moving it out, closes that
+ *   group; closing the last tab of the left group brings the right group's
+ *   documents left (when all of them can move: saved, with a file).
  * - The focused group has the accent ring; menu and keyboard commands that
  *   act on a document go to it; the explorer opens files into it.
  * - The Inspector and the bottom panel follow the focused group: the right
@@ -38,10 +46,10 @@ const DOC_CATEGORIES = new Set(["Edit", "Select", "Atom", "Analysis", "Trajector
   "Tools", "Build"]);
 const DOC_VIEW = /^view\.(along|rotate|reset|frameSelection|projection|cell|boundary|bonds|labels|axes|measurements|polyhedra|range|style)/;
 const DOC_FILE = /^file\.(save|saveAs|revert|exportImage|export\.|copyImage|closeTab)$/;
-const GROUP_CMDS = /^view\.(splitRight|moveToOtherGroup|focusOtherGroup|closeGroup|linkCameras)$/;
+const GROUP_CMDS = /^view\.(splitRight|moveToOtherGroup|focusOtherGroup|focusLeftGroup|focusRightGroup|closeGroup|linkCameras)$/;
 export function isDocCommand(id, category) {
   if (GROUP_CMDS.test(id)) return false;
-  if (id === "tab.moveToOtherGroup") return true;
+  if (/^tab\.(moveToOtherGroup|moveLeft|moveRight)$/.test(id)) return true;
   if (DOC_VIEW.test(id) || DOC_FILE.test(id)) return true;
   return DOC_CATEGORIES.has(category || "");
 }
@@ -51,7 +59,7 @@ const MOVABLE = (d) => !!(d && d.path);
 /** host: the shell's group API (window.__macePane of this page) plus
  *  toast, profile, dirHash(), afterChange(). */
 export function createGroups(host) {
-  const g = { open: false, ratio: 0.5, linked: false, focused: "main", frame: null, ready: null, restoring: false, focusTick: 0 };
+  const g = { open: false, ratio: 0.5, linked: false, focused: "main", frame: null, ready: null, restoring: false, restoreGen: 0, moving: 0, focusTick: 0 };
   const root = () => document.getElementById("editor-groups");
   const side = () => document.getElementById("group-side");
   const splitEl = () => document.getElementById("split-groups");
@@ -73,11 +81,48 @@ export function createGroups(host) {
       otherVolume: () => otherActive("volume"),
       otherStructure: () => otherActive("structure"),
       openModesOther: (path, opts) => { const o = other(); if (!o) return false; o.openModes(path, opts); parentGroups().focusGroup("main"); return true; },
-      moveToOther: (d) => moveFromHere(d, other(), () => parentGroups().focusGroup("main")),
-      dragTab: () => {},
+      // the window moves it (and closes this group when it was the last)
+      moveToOther: (d) => (d ? parentGroups().moveFromSide(d.id) : false),
+      dragTab: (e, d, onDropped) => paneDrag(e, d, onDropped),
+      docClosed: (n) => { if (n === 0) tell("sideEmptied"); },
       restore: () => {},
       state: () => ({ pane: true }),
     };
+  }
+
+  /* A tab of this group dragged: the window draws the markers and drops it.
+   * The pointer is captured here once the drag starts, so the moves keep
+   * coming while it is over the window's part of the screen. */
+  function paneDrag(e, d, onDropped) {
+    if (e.button !== 0 || !d) return;
+    const pg = window.parent.__maceGroups, el = document.getElementById("doc-tabs");
+    if (!pg) return;
+    const x0 = e.clientX, y0 = e.clientY, pid = e.pointerId;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return;
+        dragging = true;
+        try { el.setPointerCapture(pid); } catch (err) { /* the pointer is gone */ }
+        pg.dragStart("side", { id: d.id, title: d.title });
+      }
+      pg.dragMove(ev.clientX, ev.clientY, true);
+    };
+    const finish = (ev, cancel) => {
+      removeEventListener("pointermove", move, true); removeEventListener("pointerup", up, true);
+      removeEventListener("pointercancel", onCancel, true); removeEventListener("keydown", esc, true);
+      try { if (el.hasPointerCapture(pid)) el.releasePointerCapture(pid); } catch (err) { /* released */ }
+      if (!dragging) return;
+      if (onDropped) onDropped();
+      if (cancel) pg.dragCancel(); else pg.dragEnd(ev.clientX, ev.clientY, true);
+    };
+    const up = (ev) => finish(ev, false);
+    const onCancel = (ev) => finish(ev, true);
+    const esc = (ev) => { if (ev.key === "Escape" && dragging) { ev.preventDefault(); ev.stopPropagation(); finish(ev, true); } };
+    addEventListener("pointermove", move, true);
+    addEventListener("pointerup", up, true);
+    addEventListener("pointercancel", onCancel, true);
+    addEventListener("keydown", esc, true);
   }
 
   function otherActive(kind) {
@@ -90,17 +135,6 @@ export function createGroups(host) {
     return null;
   }
 
-  async function moveFromHere(d, to, after) {
-    if (!d) return false;
-    if (!MOVABLE(d)) { host.toast(`${d.title}: this document has no file, so it cannot move to the other group`, "info"); return false; }
-    if (host.isDirty(d)) { host.toast(`${d.title}: save it first (moving reopens the file in the other group)`, "info"); return false; }
-    if (!to) return false;
-    const desc = host.desc(d);
-    host.closeDoc(d, true);
-    await to.reopen(desc);
-    if (after) after();
-    return true;
-  }
 
   /* ------------------------------------------------------------ the window (left group) side */
   /* The right group's frame over the bottom panel's row and, while it has the
@@ -209,6 +243,9 @@ export function createGroups(host) {
       if (dirty.length && !force && !confirm(`${dirty.map((x) => x.title).join(", ")} in the right group ${dirty.length === 1 ? "has" : "have"} unsaved changes. Close the group anyway?`)) return;
     } catch (e) { /* closing anyway */ }
     g.open = false;
+    // a restore still opening this group never finishes now (its frame is gone): it must not leave the
+    // group "restoring", which blocked every later collapse, merge and save of the layout
+    g.restoreGen++; g.restoring = false;
     stopLink();
     if (g.frame) { g.frame.remove(); g.frame = null; g.ready = null; }
     g.focused = "main";
@@ -232,34 +269,91 @@ export function createGroups(host) {
     if (changed) host.afterChange();
   }
 
-  /* the right group's active document comes back left */
-  async function moveFromSide() {
+  /* A document of the right group (its active one, or the one with that id)
+   * comes back left, at `index` of the left group's tabs (null: the end). */
+  async function moveFromSide(id = null, index = null) {
     const o = other();
-    const a = o && o.active();
+    let a = null;
+    try { a = o && (id == null ? o.active() : o.docs().find((x) => x.id === id)); } catch (e) { a = null; }
     if (!a) { host.toast("The right group has no document", "info"); return false; }
     if (!a.path) { host.toast(`${a.title}: this document has no file, so it cannot move to the other group`, "info"); return false; }
     if (a.dirty) { host.toast(`${a.title}: save it first (moving reopens the file in the other group)`, "info"); return false; }
-    o.close(a.id, true);
-    await host.reopen(a);
+    g.moving++;
+    let moved = false;
+    try {
+      o.close(a.id, true);
+      await host.reopenAt(a, index);
+      moved = true;
+    } finally {
+      moveDone();
+      // a failed reopen still closes an emptied group
+      if (!moved && !collapseIfEmpty()) persist();
+    }
     focusGroup("main");
-    persist();
+    host.announce(`${a.title} moved to the left group`);
+    if (!collapseIfEmpty()) persist();
     return true;
   }
 
-  /* the active document of the left group goes right (or comes back) */
-  async function moveToOther(d) {
+  /* A document of the left group (the active one when none is given) goes
+   * right, at `index` of the right group's tabs (null: the end); with the
+   * right group focused and no document given, its active one comes back. */
+  async function moveToOther(d, index = null) {
     if (!d && g.open && g.focused === "side") return moveFromSide();
     d = d || host.activeDoc();
     if (!d) { host.toast("Open a document first", "info"); return false; }
     if (!MOVABLE(d)) { host.toast(`${d.title}: this document has no file, so it cannot move to the other group`, "info"); return false; }
     if (host.isDirty(d)) { host.toast(`${d.title}: save it first (moving reopens the file in the other group)`, "info"); return false; }
-    const api = await openSplit({ focus: "side" });
-    const desc = host.desc(d);
-    host.closeDoc(d, true);
-    await api.reopen(desc);
+    g.moving++;
+    try {
+      const api = await openSplit({ focus: "side" });
+      const desc = host.desc(d);
+      host.closeDoc(d, true);
+      await api.reopenAt(desc, index);
+    } finally { moveDone(); }
     focusGroup("side");
+    host.announce(`${d.title} moved to the right group`);
     persist();
     return true;
+  }
+
+  /* A move ended. A collapse asked for while moves ran (the pane emptied, two drags in quick succession)
+   * runs once the last one is done, whichever move finishes last. */
+  function moveDone() {
+    g.moving--;
+    if (!g.moving && g.recheck) {
+      g.recheck = false;
+      setTimeout(() => { if (!g.moving && collapseIfEmpty()) return; persist(); }, 0);
+    }
+  }
+
+  /* The right group with no document left closes (not while it is being
+   * filled or emptied by a move, nor the empty group Split Editor Right
+   * opens). True when it closed. */
+  function collapseIfEmpty() {
+    if (g.open && g.moving) g.recheck = true;          // asked again when the last move ends (moveDone)
+    if (!g.open || g.restoring || g.moving) return false;
+    let n = -1;
+    try { const o = other(); n = o ? o.docs().length : -1; } catch (e) { n = -1; }
+    if (n !== 0) return false;
+    closeGroup(true);
+    return true;
+  }
+
+  /* The left group's last tab closed: the right group's documents come left
+   * and the editor is one group again, when every one of them can move. */
+  async function mergeSide() {
+    if (!g.open || g.moving || g.restoring || host.docCount() > 0) return;
+    const o = other();
+    let list = [], act = null;
+    try { list = o ? o.docs() : []; act = o ? o.active() : null; } catch (e) { return; }
+    if (list.some((x) => !x.path || x.dirty)) return;          // the right group keeps what cannot move
+    g.moving++;
+    try {
+      for (const x of list) { o.close(x.id, true); await host.reopenAt(x, null); }
+      if (act && list.length > 1) await host.reopenAt(act, null);      // its active document stays active
+    } finally { g.moving--; }
+    closeGroup(true);
   }
 
   /* Split Editor Right: a second group with the active document (moved: one
@@ -350,56 +444,159 @@ export function createGroups(host) {
     });
   }
 
-  /* ------------------------------------------------------------ dragging a tab to the other group */
-  let drop = null;
-  function dropZone() {
-    if (!drop) {
-      drop = document.createElement("div");
-      drop.className = "group-drop";
-      drop.innerHTML = "<span></span>";
-      drop.hidden = true;
-      document.body.appendChild(drop);
+  /* ------------------------------------------------------------ dragging a tab (either group) */
+  /* All in the window's client px; the right group's points are mapped from
+   * its own (the frame's place, and the UI scale it applies inside). */
+  let drag = null;
+  const rectOf = (el) => (el ? el.getBoundingClientRect() : null);
+  const inside = (r, x, y) => !!r && r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  function frameMap() {
+    const f = g.frame;
+    if (!f || !f.contentWindow) return null;
+    const fr = f.getBoundingClientRect(), w = f.contentWindow.innerWidth;
+    const k = w ? fr.width / w : 1;
+    return { x: (px) => fr.left + px * k, y: (py) => fr.top + py * k };
+  }
+  function overlay(cls) {
+    let el = document.querySelector(`body > .${cls}`);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = cls;
+      el.setAttribute("aria-hidden", "true");
+      if (cls === "group-drop") el.innerHTML = "<span></span>";
+      el.hidden = true;
+      document.body.appendChild(el);
     }
-    return drop;
+    return el;
   }
-  function zoneRect() {
-    if (g.open) return side().getBoundingClientRect();
-    const v = document.getElementById("views").getBoundingClientRect();
-    return { left: v.left + v.width / 2, top: v.top, width: v.width / 2, height: v.height, right: v.right, bottom: v.bottom };
+  const place = (el, r) => Object.assign(el.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  /* the tab strips: their box and their tabs' left and right edges */
+  function strips() {
+    const out = [];
+    const el = document.getElementById("doc-tabs"), r = rectOf(el);
+    if (r && r.width > 0) {
+      out.push({ group: "main", rect: r, tabs: [...el.querySelectorAll(".doc-tab")].map((t) => {
+        const b = t.getBoundingClientRect();
+        return { id: Number(t.dataset.doc), left: b.left, right: b.right };
+      }) });
+    }
+    if (g.open) {
+      try {
+        const o = other(), m = frameMap(), st = o && o.tabStrip();
+        if (st && m) {
+          const left = m.x(st.left), top = m.y(st.top);
+          out.push({ group: "side", rect: { left, top, right: m.x(st.right), bottom: m.y(st.bottom), width: m.x(st.right) - left, height: m.y(st.bottom) - top },
+            tabs: st.tabs.map((t) => ({ id: t.id, left: m.x(t.left), right: m.x(t.right) })) });
+        }
+      } catch (e) { /* the frame is loading */ }
+    }
+    return out;
   }
-  /** Called from the tab strip's pointerdown on a tab of the left group. */
+  /* the editor area a document can be dropped on, for the drag's source */
+  function zoneFor(from) {
+    if (!g.open) {
+      const v = rectOf(document.getElementById("views"));
+      return from === "main" && v ? { group: "side", split: true, rect: { left: v.left + v.width / 2, top: v.top, width: v.width / 2, height: v.height,
+        right: v.right, bottom: v.bottom } } : null;
+    }
+    if (from === "main") return { group: "side", rect: rectOf(side()) };
+    return { group: "main", rect: rectOf(document.getElementById("views")) };
+  }
+  /* where a drop at (x, y) would put the document: {group, index|null} */
+  function targetAt(x, y) {
+    for (const st of strips()) {
+      if (x < st.rect.left || x > st.rect.right || y < st.rect.top - 4 || y > st.rect.bottom + 4) continue;
+      const tabs = st.tabs.filter((t) => !(st.group === drag.from && t.id === drag.id));
+      let i = tabs.findIndex((t) => x < (t.left + t.right) / 2);
+      if (i < 0) i = tabs.length;
+      const lx = i < tabs.length ? tabs[i].left : tabs.length ? tabs[tabs.length - 1].right : st.rect.left;
+      return { group: st.group, index: i, line: { left: Math.max(st.rect.left, lx - 1), top: st.rect.top, width: 2, height: st.rect.bottom - st.rect.top } };
+    }
+    const z = drag.zone;
+    if (z && inside(z.rect, x, y)) return { group: z.group, index: null, split: !!z.split };
+    return null;
+  }
+  function dragStart(from, info) {
+    if (drag) dragCancel();
+    drag = { from, id: info.id, title: info.title || "", target: null, zone: zoneFor(from) };
+    if (from === "main" && g.frame) g.frame.style.pointerEvents = "none";
+    const z = overlay("group-drop");
+    if (drag.zone && drag.zone.rect) {
+      place(z, drag.zone.rect);
+      z.querySelector("span").textContent = drag.zone.split ? `Split right with ${drag.title}`
+        : `Move ${drag.title} to the ${drag.zone.group === "side" ? "right" : "left"} group`;
+      z.hidden = false;
+    }
+    document.body.classList.add("tab-dragging");
+    addEventListener("keydown", dragKey, true);
+  }
+  const mapPoint = (x, y, fromPane) => {
+    if (!fromPane) return [x, y];
+    const m = frameMap();
+    return m ? [m.x(x), m.y(y)] : [x, y];
+  };
+  function dragMove(x, y, fromPane = false) {
+    if (!drag) return;
+    [x, y] = mapPoint(x, y, fromPane);
+    const t = targetAt(x, y);
+    drag.target = t;
+    const z = overlay("group-drop"), line = overlay("tab-drop-line");
+    z.classList.toggle("over", !!t && t.index === null && t.group !== drag.from);
+    if (t && t.line) { place(line, t.line); line.hidden = false; } else line.hidden = true;
+  }
+  function dragDone() {
+    removeEventListener("keydown", dragKey, true);
+    if (g.frame) g.frame.style.pointerEvents = "";
+    const z = overlay("group-drop"), line = overlay("tab-drop-line");
+    z.hidden = true; z.classList.remove("over"); line.hidden = true;
+    document.body.classList.remove("tab-dragging");
+    const d = drag;
+    drag = null;
+    return d;
+  }
+  function dragCancel() { dragDone(); }
+  function dragKey(e) { if (e.key === "Escape" && drag) { e.preventDefault(); e.stopPropagation(); dragCancel(); } }
+  async function dragEnd(x, y, fromPane = false) {
+    if (!drag) return false;
+    dragMove(x, y, fromPane);
+    const d = dragDone(), t = d.target;
+    if (!t) return false;
+    if (t.group === d.from) {
+      if (t.index === null) return false;                   // its own editor area: where it is
+      if (t.group === "main") return host.reorder(d.id, t.index);
+      const o = other();
+      const moved = o ? o.reorder(d.id, t.index) : false;
+      persist();
+      return moved;
+    }
+    if (d.from === "main") return moveToOther(host.docById(d.id), t.index);
+    return moveFromSide(d.id, t.index);
+  }
+  /** Called from the left group's tab strip on pointerdown on a tab. */
   function dragTab(e, d, onDropped) {
     if (e.button !== 0 || !d) return;
     const x0 = e.clientX, y0 = e.clientY;
-    let dragging = false, over = false;
-    const z = dropZone();
-    if (g.frame) g.frame.style.pointerEvents = "none";
+    let dragging = false;
     const move = (ev) => {
-      if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return;
       if (!dragging) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return;
         dragging = true;
-        const r = zoneRect();
-        Object.assign(z.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-        z.querySelector("span").textContent = g.open ? `Move ${d.title} to the right group` : `Split right with ${d.title}`;
-        z.hidden = false;
-        document.body.classList.add("tab-dragging");
+        dragStart("main", { id: d.id, title: d.title });
       }
-      const r = zoneRect();
-      over = ev.clientX >= r.left && ev.clientX <= r.left + r.width && ev.clientY >= r.top && ev.clientY <= r.top + r.height;
-      z.classList.toggle("over", over);
+      if (drag) dragMove(ev.clientX, ev.clientY);
     };
-    const up = () => {
+    const finish = (ev, cancel) => {
       removeEventListener("pointermove", move, true); removeEventListener("pointerup", up, true);
-      if (g.frame) g.frame.style.pointerEvents = "";
-      z.hidden = true; z.classList.remove("over");
-      document.body.classList.remove("tab-dragging");
-      if (dragging) {
-        if (onDropped) onDropped();
-        if (over) moveToOther(d);
-      }
+      removeEventListener("pointercancel", onCancel, true);
+      if (!dragging) return;
+      if (onDropped) onDropped();
+      if (cancel || !drag) dragCancel(); else dragEnd(ev.clientX, ev.clientY);
     };
+    const up = (ev) => finish(ev, false);
+    const onCancel = (ev) => finish(ev, true);
     addEventListener("pointermove", move, true);
     addEventListener("pointerup", up, true);
+    addEventListener("pointercancel", onCancel, true);
   }
 
   /* ------------------------------------------------------------ restore per folder */
@@ -409,6 +606,7 @@ export function createGroups(host) {
     g.ratio = typeof st.ratio === "number" ? Math.max(0.2, Math.min(0.8, st.ratio)) : 0.5;
     g.linked = !!st.linked;
     if (!st.open) { css(); return; }
+    const my = ++g.restoreGen;
     g.restoring = true;
     try {
       const api = await openSplit({ focus: "main" });
@@ -417,15 +615,22 @@ export function createGroups(host) {
       }
       if (st.active && host.exists(st.active)) await api.reopen({ path: st.active }).catch(() => null);
     } catch (e) { /* the folder changed: start with one group */ }
-    finally { g.restoring = false; }
+    finally { if (g.restoreGen === my) g.restoring = false; }
+    if (g.restoreGen !== my) return;                  // closed meanwhile (closeGroup)
     focusGroup("main");
     persist();
   }
 
   const api = {
     pane: false, isOpen: () => g.open, sideFocused: () => g.open && g.focused === "side", linked: () => g.linked, other,
-    openSplit, closeGroup, splitRight, moveToOther, openToSide, toggleLink, focusGroup, restore, dragTab,
+    openSplit, closeGroup, splitRight, moveToOther, moveFromSide, openToSide, toggleLink, focusGroup, restore, dragTab,
     focusOther: () => (g.open ? focusGroup(g.focused === "main" ? "side" : "main") : host.toast("There is only one editor group (Split Editor Right: Mod+\\)", "info")),
+    focusLeft: () => focusGroup("main"),
+    focusRight: () => (g.open ? focusGroup("side") : host.toast("There is only one editor group (Split Editor Right: Mod+\\)", "info")),
+    /** The left group's tab count after a close: its last one closed brings the right group's documents left. */
+    docClosed: (n) => { if (n === 0 && g.open && !g.moving && !g.restoring) setTimeout(() => { mergeSide(); }, 0); },
+    // a tab of the right group being dragged (its own px)
+    dragStart, dragMove, dragEnd, dragCancel, dragging: () => (drag ? { from: drag.from, target: drag.target } : null),
     /** A document command while the right group has the focus runs there. */
     shouldForward: (id, category) => (g.open && g.focused === "side" && isDocCommand(id, category) ? other() : null),
     forwardGlobal: () => null,
@@ -450,8 +655,9 @@ export function createGroups(host) {
     },
     // from the pane
     focusSideFromPane: () => { if (g.open && g.focused !== "side") focusGroup("side"); },
+    sideEmptied: () => setTimeout(collapseIfEmpty, 0),
     sideChanged: () => { persist(); host.afterChange(); },
-    state: () => ({ open: g.open, ratio: g.ratio, linked: g.linked, focused: g.focused }),
+    state: () => ({ open: g.open, ratio: g.ratio, linked: g.linked, focused: g.focused, moving: g.moving }),
     chrome: () => scheduleChrome(),
   };
   window.__maceGroups = api;

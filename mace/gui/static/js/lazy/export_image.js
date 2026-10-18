@@ -36,7 +36,7 @@ const max = () => MAX || (MAX = maxSide());
 function prefs(H) {
   // plan E9: the resolution and physical size, and SVG shading; defaults from Settings › export.*
   const g = (k, d) => { try { const v = H && H.settings && H.settings.get(k); return v === undefined || v === null || v === "" ? d : v; } catch (e) { return d; } };
-  const base = { format: "png", size: "1", w: 1920, h: 1080, transparent: false, triad: true, labels: true, cell: true,
+  const base = { format: "png", size: "1", w: 1920, h: 1080, transparent: false, triad: true, labels: true, cell: true, legend: "none",
     dpi: Number(g("export.dpi", 150)) || 150, units: g("export.units", "in") === "cm" ? "cm" : "in", pw: g("export.units", "in") === "cm" ? 8.9 : 3.5,
     shading: g("export.vectorShading", "flat") === "shaded" ? "shaded" : "flat" };
   // the last choices, in the profile (memory.exportImage); a pre-1.1.5 browser's own key until then
@@ -147,17 +147,38 @@ export async function render(X, o) {
     still.remove();
   }
   const img = await loadImage(url);
-  if (!img || (!triad && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
+  // the element legend at the picture's scale (the view's own px -> the image's)
+  const k = o.width / Math.max(1, viewRect.width);
+  const leg = o.legend && o.legend !== "none" && X.legend ? await legendImage(X, o.transparent ? null : X.bg(), k) : null;
+  if (!img || (!triad && !leg && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
   const out = document.createElement("canvas");
   out.width = o.width; out.height = o.height;
   const g = out.getContext("2d");
   g.drawImage(img, 0, 0, o.width, o.height);
+  if (leg) {
+    const [x, y] = corner(o.legend, o.width, o.height, leg.w, leg.h, 12 * k);
+    g.drawImage(leg.img, x, y, leg.w, leg.h);
+  }
   if (triad) {
-    const k = o.width / Math.max(1, viewRect.width);            // the triad keeps its share of the picture
+    // the triad keeps its share of the picture
     const x = (triad.left - viewRect.left) * k, h = triad.h * k;
     g.drawImage(triad.img, x, (triad.bottom - viewRect.top) * k - h, triad.w * k, h);
   }
   return out.toDataURL("image/png");
+}
+
+const LEGEND_CORNERS = [["none", "None"], ["top-left", "Top left"], ["top-right", "Top right"], ["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"]];
+/** Where a w x h legend sits in a W x H picture, `m` from the edges. */
+export function corner(where, W, H, w, h, m) {
+  return [where.endsWith("left") ? m : W - w - m, where.startsWith("top") ? m : H - h - m];
+}
+/** The legend (lazy/legend_dialog.js forImage, the same function as mace plotting --legend) as an image `k` times its size. */
+async function legendImage(X, background, k) {
+  const syms = X.symbols ? X.symbols() : [];
+  if (!syms.length) return null;
+  const L = await X.legend(syms, { background, scale: 1 });
+  const img = await loadImage(URL.createObjectURL(new Blob([L.svg], { type: "image/svg+xml" })));
+  return img ? { img, w: L.width * k, h: L.height * k } : null;
 }
 
 export function download(url, name) {
@@ -197,13 +218,15 @@ export async function open(H, X) {
     <label class="chk"><input type="checkbox" data-k="triad"${p.triad ? " checked" : ""}> Include the axis triad</label>
     <label class="chk"><input type="checkbox" data-k="labels"${p.labels ? " checked" : ""}> Include measurement labels</label>
     <label class="chk"><input type="checkbox" data-k="cell"${p.cell ? " checked" : ""}> Include the cell</label>
+    <label class="f legend-f">Element legend<select class="field" data-k="legend" aria-label="Element legend">${LEGEND_CORNERS.map(([v, t]) =>
+      `<option value="${v}"${v === p.legend ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <label class="f">File name<input class="field" data-k="name" spellcheck="false" autocomplete="off" value="${H.esc(X.plot ? `${X.stem}.png` : `${X.stem}_${X.view}.png`)}"></label>
     <div class="err" role="alert"></div>`;
   const q = (k) => body.querySelector(`[data-k="${k}"]`);
   const dpiOf = () => (q("dpisel").value === "custom" ? Number(q("dpi").value) : Number(q("dpisel").value));
   const read = () => ({ format: q("format").value, size: q("size").value, w: Number(q("w").value), h: Number(q("h").value), transparent: q("transparent").checked,
     triad: q("triad").checked, labels: q("labels").checked, cell: q("cell").checked, dpi: dpiOf(), units: q("units").value, pw: Number(q("pw").value),
-    shading: q("shading").value });
+    shading: q("shading").value, legend: q("legend").value });
   const check = () => {
     const r = read(), svg = r.format === "svg";
     for (const k of ["px", "triad", "labels"]) { const el = q(k); (el.closest("label") || el).hidden = svg; }
@@ -214,7 +237,7 @@ export async function open(H, X) {
     body.querySelector(".dpi-row").hidden = svg;
     body.querySelector(".dpi-custom").hidden = q("dpisel").value !== "custom";
     body.querySelector(".physical").hidden = svg || r.size !== "physical";
-    for (const k of ["triad", "labels", "cell", "transparent"]) { const el = q(k); if (X.plot && el) el.closest("label").hidden = true; }
+    for (const k of ["triad", "labels", "cell", "transparent", "legend"]) { const el = q(k); if (X.plot && el) el.closest("label").hidden = true; }
     const nm = q("name");
     if (svg && /\.png$/i.test(nm.value)) nm.value = nm.value.replace(/\.png$/i, ".svg");
     if (!svg && /\.svg$/i.test(nm.value)) nm.value = nm.value.replace(/\.svg$/i, ".png");
@@ -250,7 +273,7 @@ export async function open(H, X) {
           H.toast(`Exported ${name}`, "success");
           return;
         }
-        const n = await exportSvg(X, { transparent: r.transparent, cell: r.cell, name, shading: r.shading });
+        const n = await exportSvg(X, { transparent: r.transparent, cell: r.cell, name, shading: r.shading, legend: r.legend });
         d.close();
         H.toast(`Exported ${name} (${n} atoms)`, "success");
       } catch (e) { body.querySelector(".err").textContent = e.message || String(e); }
@@ -259,7 +282,7 @@ export async function open(H, X) {
     let name = q("name").value.trim() || `${X.stem}_${X.view}.png`;
     if (!/\.png$/i.test(name)) name += ".png";
     performance.mark("ui:export:start");
-    const raw = X.plot ? await X.plot.renderPng(wh[0], wh[1]) : await render(X, { width: wh[0], height: wh[1], ...r });
+    const raw = X.plot ? await X.plot.renderPng(wh[0], wh[1]) : await render(X, { width: wh[0], height: wh[1], ...r, legend: X.plot ? "none" : r.legend });
     // the PNG says its resolution (pHYs), so it keeps its printed size
     const url = dataUrlWithDpi(raw, r.dpi);
     performance.mark("ui:export:end");
@@ -272,15 +295,22 @@ export async function open(H, X) {
 }
 
 /** The structure view as SVG (js/lazy/export_svg.js); returns the number of atoms drawn. */
-export async function exportSvg(X, { transparent = false, cell = true, name = "structure.svg", shading = "flat" } = {}) {
+export async function exportSvg(X, { transparent = false, cell = true, name = "structure.svg", shading = "flat", legend = "none" } = {}) {
   const S = await import("./export_svg.js");
   const why = S.refuseReason(X.viewState && X.viewState.projection);
   if (why) throw new Error(why);
   performance.mark("ui:svg:start");
   const g = await S.sceneGroup(X, { cell });
   const c = X.viewer.getCanvas();
-  const text = await S.svgDocument({ width: c.clientWidth, height: c.clientHeight, background: transparent ? null : X.bg(), groups: [g],
+  let text = await S.svgDocument({ width: c.clientWidth, height: c.clientHeight, background: transparent ? null : X.bg(), groups: [g],
     title: `${X.stem} (${X.view})`, shading });
+  if (legend !== "none" && X.legend && X.symbols && X.symbols().length) {
+    // the legend's own <g id="element-legend"> (editable text), moved into its corner
+    const L = await X.legend(X.symbols(), { background: transparent ? null : X.bg(), scale: 1 });
+    const inner = L.svg.slice(L.svg.indexOf("<g id=\"element-legend\""), L.svg.lastIndexOf("</svg>")).trim();
+    const [x, y] = corner(legend, c.clientWidth, c.clientHeight, L.width, L.height, 12);
+    text = text.replace(/<\/svg>\s*$/, `<g id="legend-corner" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">\n${inner}\n</g>\n</svg>`);
+  }
   performance.mark("ui:svg:end");
   performance.measure("ui:svg", "ui:svg:start", "ui:svg:end");
   if (window.__maceExportHook) window.__maceExportHook(text, "svg");

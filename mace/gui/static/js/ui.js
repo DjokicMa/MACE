@@ -230,6 +230,9 @@ export function dialog({ id, title, body, foot = "", wide = false, narrow = fals
   d.innerHTML = `<div class="dlg-head"><h2></h2><button class="icon-btn sm" data-close aria-label="Close">${icon("x")}</button></div>
     <div class="dlg-body"></div>${foot ? `<div class="dlg-foot">${foot}</div>` : ""}`;
   $("h2", d).textContent = title;
+  // the dialog is named by its title (a screen reader says "Update MACE, dialog", not just "dialog")
+  $("h2", d).id = `${id}-title`;
+  d.setAttribute("aria-labelledby", `${id}-title`);
   const b = $(".dlg-body", d);
   if (typeof body === "string") b.innerHTML = body; else b.appendChild(body);
   $("[data-close]", d).addEventListener("click", () => d.close());

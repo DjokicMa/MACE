@@ -355,7 +355,8 @@ def _inside(p: Path, root: Path) -> bool:
 def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]:
     """[(real path, how)], bytes: what the mirror copies (how: file, stub
     (a one-byte stand-in for a wavefunction, empty when the real one is
-    empty), db, tree, marker)."""
+    empty), outhead (the start of the CRYSTAL output a deck is sized from,
+    when [resources] auto is on), db, tree, marker)."""
     items: List[Tuple[Path, str]] = []
     seen = set()
 
@@ -375,6 +376,12 @@ def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]
                 src = fort34_source(d)
                 if src is not None and _inside(src, root):
                     add(src, "stub")
+    if _auto_on():
+        from mace.submission.resources_suggest import find_size_out
+        for d in sel.decks:
+            out = find_size_out(d)
+            if out is not None:
+                add(out, "outhead")
     for f in folders:
         for name in STATE_DIRS:
             add(f / name, "tree")
@@ -395,11 +402,40 @@ def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]
         try:
             if how in ("file", "db"):
                 size += p.stat().st_size
+            elif how == "outhead":
+                size += min(p.stat().st_size, OUT_HEAD_BYTES)
             elif how == "tree":
                 size += sum(x.stat().st_size for x in p.rglob("*") if x.is_file() and not x.is_symlink())
         except OSError:
             pass
     return items, size
+
+
+OUT_HEAD_BYTES = 4 << 20
+
+
+def _auto_on() -> bool:
+    """[resources] auto is on for some calculation type (submit_env's site)."""
+    from mace.submission import site
+    try:
+        s = site.load(submit_env())
+    except Exception:
+        return False
+    return any(s.auto_raw.values())
+
+
+def _out_head(p: Path) -> bytes:
+    """The start of a CRYSTAL output, to its first SCF cycle: all the sizing
+    reads (resources_suggest.read_out_size)."""
+    out = []
+    size = 0
+    with open(p, "rb") as fh:
+        for line in fh:
+            if line.startswith(b" CYC ") or size > OUT_HEAD_BYTES:
+                break
+            out.append(line)
+            size += len(line)
+    return b"".join(out)
 
 
 def stage(sel: Selection, root: Path, mirror_root: Path, budget_free: Optional[int] = None) -> int:
@@ -424,6 +460,11 @@ def stage(sel: Selection, root: Path, mirror_root: Path, budget_free: Optional[i
             except OSError:
                 filled = False
             dst.write_bytes(b"\0" if filled else b"")
+        elif how == "outhead":
+            if p.is_symlink():
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(_out_head(p))
         elif how == "marker":
             dst.mkdir(parents=True, exist_ok=True)
         elif how == "db":
@@ -626,9 +667,20 @@ def fingerprint(root_gen: Any, cmds: Sequence[Command], decks: Sequence[Path], c
     outs = sorted([c["out_rel"], c["bucket"]] for c in conf["finished"])
     waves = sorted(c["rel"] for c in conf["wavefunction"])
     queued = sorted(json.dumps(q, sort_keys=True) for q in conf["queued"])
-    return {"root_gen": root_gen, "argv": [c.argv for c in cmds], "stdin": [c.stdin for c in cmds],
-            "cwd": [str(c.cwd) for c in cmds], "files": files, "outs": outs, "waves": waves, "queued": queued,
-            "site": site_inputs(env), "module": site_resolution(env)}
+    fp = {"root_gen": root_gen, "argv": [c.argv for c in cmds], "stdin": [c.stdin for c in cmds],
+          "cwd": [str(c.cwd) for c in cmds], "files": files, "outs": outs, "waves": waves, "queued": queued,
+          "site": site_inputs(env), "module": site_resolution(env)}
+    # a project folder's mace-folder.toml ([submit] job size, walltime): only when there is one
+    folder = {str(f) for f in (folder_file(c.cwd, env) for c in cmds) if f is not None}
+    if folder:
+        fp["folder"] = [_stamp(Path(f)) for f in sorted(folder)]
+    return fp
+
+
+def folder_file(cwd: Path, env: Dict[str, str]) -> Optional[Path]:
+    """The mace-folder.toml `mace submit` reads when it runs in ``cwd``."""
+    from mace.utils import folder_settings
+    return folder_settings.find(cwd, env)
 
 
 # ------------------------------------------------------------------ previews
@@ -754,6 +806,10 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
         warnings.append("No SLURM here: the preview uses default cluster limits")
     penv = dict(env)
     penv["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+    # the staged copy reads the real folder's mace-folder.toml, as the real run will (or none)
+    from mace.utils import folder_settings
+    ff = folder_file(sel.cwd, env)
+    penv[folder_settings.ENV] = str(ff) if ff is not None else "none"
     before = listing(mirror)
     logs, codes = [], []
     for c in real_cmds:
@@ -824,13 +880,33 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
     result.update(code=max(codes) if codes else 0, cli_log=log[-8000:], writes=writes, modified=modified,
                   job_writes=job_writes, resources=resources, arrays=arrays, singles=singles,
                   staged_bytes=staged, intercepted=intercepted, passed=passed, tracked=tracked,
-                  n_jobs=len(singles) + sum(a["tasks"] for a in arrays))
+                  n_jobs=len(singles) + sum(a["tasks"] for a in arrays),
+                  # the size-aware suggestion per deck, and whether [resources] auto applied it
+                  suggestions=suggestions(root, decks, env))
     if tracked and (sel.cwd / "materials.db").is_file():
         result["writes"] = sorted(set(result["writes"]) | {_rel(root, sel.cwd / "backups") + "/materials_backup_<TS>.db"})
     needs = {"overwrite": bool(conf["finished"] or conf["wavefunction"]), "duplicate": bool(conf["queued"])}
     p = Preview(id="", created=time.time(), where=where, cmds=real_cmds, decks=decks, fp=fp, result=result,
                 needs=needs, scripts=scripts, modified=modified, tracked=tracked)
     return p, result
+
+
+def suggestions(root: Path, decks: Sequence[Path], env: Optional[Dict[str, str]] = None,
+                calc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    """The size-aware job sizes of ``decks`` (mace site suggest: the same
+    function, site.suggest_decks), deck paths relative to the root."""
+    from mace.submission import site
+    try:
+        out = site.suggest_decks(list(decks), env=submit_env() if env is None else env, calc_type=calc_type)
+    except site.SiteConfigError as exc:
+        return [{"deck": _rel(root, Path(d)), "error": str(exc), "suggestion": None, "applies": None,
+                 "auto": False, "calc_type": None} for d in decks]
+    for e in out:
+        try:
+            e["deck"] = _rel(root, Path(e["deck"]))
+        except ValueError:
+            pass
+    return out
 
 
 def finalize(store: Store, p: Preview, account_check: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -862,6 +938,8 @@ def check_run(store: Store, pid: str, root: Path, root_gen: Any, ticks: Dict[str
         raise SubmitConflict("The files changed since the preview; preview again")
     if now["site"] != p.fp["site"]:
         raise SubmitConflict("Site settings changed since the preview; preview again")
+    if now.get("folder") != p.fp.get("folder"):
+        raise SubmitConflict("The folder settings (mace-folder.toml) changed since the preview; preview again")
     if now["module"] != p.fp["module"]:
         old = " ".join(p.fp["module"].get("modules") or []) or "?"
         new = " ".join(now["module"].get("modules") or []) or "?"

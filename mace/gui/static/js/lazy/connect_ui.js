@@ -214,6 +214,7 @@ export async function signOut(H) {
         Stopping cancels ${running.length === 1 ? "it" : "them"}.</p>` : ""}
       ${submit ? `<p>A submission is in progress; the server stops as soon as it has finished.</p>` : ""}
       ${info.slurm && info.slurm.job ? `<p id="so-job">This also ends the job ${H.esc(info.slurm.job)} that runs MACE GUI on ${H.esc(info.slurm.node || node)}.</p>` : ""}
+      ${H.updateDeferred && H.updateDeferred() ? `<p id="so-update">MACE ${H.esc(H.updateDeferred().version || "")} installs once the server has stopped (Update When I Sign Out); the result shows at the next start.</p>` : ""}
       <p class="insp-hint">Your SLURM jobs keep running; only MACE GUI stops.</p>
       <label class="chk"><input type="checkbox" id="so-clear"> Also remove the drafts and recent files for this folder</label>`,
   foot: `<button class="tb-btn-text" data-r="cancel">Cancel</button>` +

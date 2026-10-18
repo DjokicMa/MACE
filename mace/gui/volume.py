@@ -48,12 +48,16 @@ def read(path: str, skip_vacuum: bool = False):
 
 
 def _symbol(z: int) -> str:
-    """An element's symbol: ase's table, else the cube engine's own (no ase in a lean install)."""
+    """An element's symbol: ase's table, else MACE's own H-Lr table (no ase in a lean install).
+
+    The fallback needs neither ase nor plotly, so the orbitals viewer, which calls this
+    without reading a cube, works without the cube engine."""
     try:
         from ase.data import chemical_symbols
         return chemical_symbols[z] if 0 < z < len(chemical_symbols) else "X"
     except ImportError:
-        return _engine().get_atom_properties().get(z, {}).get("name", "X")
+        from mace.utils.formula import ELEMENTS
+        return ELEMENTS[z - 1] if 0 < z <= len(ELEMENTS) else "X"
 
 
 def _label(t: str) -> str:
@@ -98,6 +102,11 @@ def stats(c, path: Optional[Path] = None) -> Dict[str, Any]:
     out: Dict[str, Any] = {"min": float(d.min()), "max": float(d.max()), "mean": float(d.mean()),
                            "p01": float(np.percentile(d, 1)), "p99": float(np.percentile(d, 99)),
                            "absmax": float(np.abs(d).max()), "n": int(d.size)}
+    # values this small are numerical noise (a closed-shell run's SPIN cube): mace plotting warns too
+    if 0 < out["absmax"] < 1e-6:
+        out["noise_note"] = ("The values are at most {:.1e}: numerical noise".format(out["absmax"])
+                             + (" (no spin density: a closed-shell run)" if c.data_type == "spin" else "")
+                             + ", so the surface shows nothing physical.")
     if c.data_type != "density":
         return out
     dv = abs(float(np.linalg.det(np.asarray(c.voxel_vectors, float))))
@@ -149,17 +158,10 @@ def stats(c, path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def default_level(c) -> float:
-    """The level the CLI's isosurface view starts at: the middle of generate_smart_isovalues."""
-    import numpy as np
-    E = _engine()
-    if c.data_type == "orbital":
-        # CRYSTAL's own example renders a Wannier function at +-0.2 (manual, PRINTPLO)
-        m = float(np.abs(c.data).max())
-        return 0.2 if m > 0.4 else m / 2 or 1e-3
-    vals = E.generate_smart_isovalues(c.data, c.data_type if c.data_type in ("density", "spin", "potential") else
-                                      ("density_difference" if "difference" in c.data_type else "density"))
-    vals = [abs(v) for v in vals if v]
-    return float(sorted(vals)[len(vals) // 2]) if vals else float(np.abs(c.data).max() / 10 or 1e-3)
+    """The level the isosurface view starts at, the same rule as mace plotting's
+    (``default_iso_level``): the middle of generate_smart_isovalues; an orbital at
+    +-0.2 (CRYSTAL's PRINTPLO example) or half its largest |value|."""
+    return _engine().default_iso_level(c)
 
 
 def _crop(c):

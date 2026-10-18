@@ -1,6 +1,12 @@
 /* Settings (Mod+,), loaded the first time it opens (spec §8.5). One
  * declarative SCHEMA drives the eight sections, the search and the reset
- * links; changes apply at once (no OK button) and save after 500 ms. */
+ * links; changes apply at once (no OK button) and save after 500 ms.
+ *
+ * Folder settings (1.1.6): a row a project folder's mace-folder.toml can
+ * hold shows where its value comes from (a badge: Built-in, Mine, This
+ * folder, This session) once the folder has a file, and offers Save to this
+ * folder, Save as my default and Reset to my default; "This folder" lists the
+ * file, its warnings and its command-line values (settings.js has the layers). */
 import { loadCss } from "./lazy_util.js";
 import { SECTIONS, SCHEMA, P3 } from "./settings_schema.js";
 
@@ -34,7 +40,7 @@ function build() {
     <div class="set-main"><nav class="set-nav" aria-label="Sections">${SECTIONS.map(([k, t]) =>
       `<button class="set-nav-item" data-sec="${k}"><span>${esc(t)}</span><span class="n"></span></button>`).join("")}</nav>
     <div class="set-pane" id="set-pane" tabindex="-1"></div></div>
-    <div class="dlg-foot"><span class="grow muted">Saved to this browser and <code>${esc(H.settingsPath() || "~/.config/mace/gui.json")}</code></span></div>`;
+    <div class="dlg-foot"><span class="grow muted">Saved to this browser and <code>${esc(H.settingsPath() || "~/.config/mace/gui.json")}</code><span class="set-foot-folder"></span></span></div>`;
   document.body.appendChild(dlg);
   pane = dlg.querySelector("#set-pane"); nav = dlg.querySelector(".set-nav"); search = dlg.querySelector("#set-search");
   dlg.querySelector("[data-close]").addEventListener("click", () => dlg.close());
@@ -46,6 +52,13 @@ function build() {
   pane.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input[type=number], input[type=text]")) commit(e.target); });
   pane.addEventListener("focusout", (e) => { if (e.target.matches("input[type=number], input[type=text], textarea")) commit(e.target); });
   pane.addEventListener("click", onClick);
+  // a theme card previews its theme while the pointer or the focus is on it (Esc or leaving puts it back)
+  const card = (e) => e.target.closest && e.target.closest(".theme-card");
+  pane.addEventListener("pointerover", (e) => { const c = card(e); if (c) H.previewTheme(c.dataset.val); });
+  pane.addEventListener("pointerout", (e) => { const c = card(e); if (c && !c.contains(e.relatedTarget)) H.previewTheme(null); });
+  pane.addEventListener("focusin", (e) => { const c = card(e); if (c && c.matches(":focus-visible")) H.previewTheme(c.dataset.val); });
+  pane.addEventListener("focusout", (e) => { if (card(e)) H.previewTheme(null); });
+  dlg.addEventListener("close", () => H.previewTheme(null));
   H.settings.onChange((k) => {
     if (!dlg.open) return;
     refreshRow(k);
@@ -75,6 +88,15 @@ function render() {
     return;
   }
   const title = SECTIONS.find((s) => s[0] === section)[1];
+  footFolder();
+  if (section === "folder") { pane.innerHTML = folderPane(title); return; }
+  if (section === "clusterdefaults") {
+    // the site settings, read and changed through `mace site` (cluster_defaults.js)
+    pane.innerHTML = `<h3 class="set-h">${H.esc(title)}</h3><div id="cluster-defaults-host"><p class="muted">Loading…</p></div>`;
+    import("./cluster_defaults.js").then((m) => m.mount(pane.querySelector("#cluster-defaults-host"), H)).catch((e) => {
+      const host = pane.querySelector("#cluster-defaults-host"); if (host) host.textContent = `The cluster defaults did not load: ${e.message}`; });
+    return;
+  }
   if (section === "keyboard") {
     pane.innerHTML = `<h3 class="set-h">${H.esc(title)}</h3><div id="keymap-host"><p class="muted">Loading…</p></div>`;
     import("./keymap_editor.js").then((m) => m.mount(pane.querySelector("#keymap-host"), H)).catch((e) => {
@@ -102,11 +124,26 @@ function rowHtml(r, sectionNote = false) {
   // a control that only matters with another setting's value (Custom background) is off until then
   const off = r.needs && H.settings.get(r.needs[0]) !== r.needs[1];
   let ctl;
-  if (r.control === "segmented") {
+  if (r.control === "themes") {
+    // one card per theme: its swatch (tokens.css), name and what it is for; pointing at one previews it.
+    // The cards come in labeled groups (js/themes.js THEME_GROUPS), one radio group over all of them.
+    const card = ([o, t, d]) => `<button role="radio" class="theme-card" data-key="${r.key}" data-val="${esc(o)}" aria-checked="${String(v) === String(o)}" title="${esc(d)}">` +
+      `<span class="theme-swatch" data-swatch="${esc(o)}" aria-hidden="true"><i></i><i></i><i></i></span><span class="theme-name">${esc(t)}</span></button>`;
+    const groups = [];
+    for (const opt of r.options) {
+      const g = opt[3] || "";
+      if (!groups.length || groups[groups.length - 1].label !== g) groups.push({ label: g, opts: [] });
+      groups[groups.length - 1].opts.push(opt);
+    }
+    ctl = `<span class="segment theme-groups" role="radiogroup" aria-label="${esc(r.label)}">${groups.map((g, n) =>
+      `<span class="theme-group" role="group"${g.label ? ` aria-labelledby="${id}-g${n}"` : ""}>` +
+      (g.label ? `<span class="theme-group-h" id="${id}-g${n}">${esc(g.label)}</span>` : "") +
+      `<span class="theme-grid">${g.opts.map(card).join("")}</span></span>`).join("")}</span>`;
+  } else if (r.control === "segmented") {
     ctl = `<span class="segment" role="radiogroup" aria-label="${esc(r.label)}">${r.options.map(([o, t]) =>
       `<button role="radio" data-key="${r.key}" data-val="${esc(o)}" aria-checked="${String(v) === String(o)}">${esc(t)}</button>`).join("")}</span>`;
   } else if (r.control === "select" || r.control === "cli") {
-    const os = r.control === "cli" ? cliOptions(r) : r.options;
+    const os = r.control === "cli" ? cliOptions(r) : typeof r.options === "function" ? r.options(H) : r.options;
     ctl = `<select class="field" id="${id}" data-key="${r.key}">${os.map(([o, t]) => `<option value="${esc(o)}"${String(v) === String(o) ? " selected" : ""}${(r.disabled || []).includes(o) ? " disabled" : ""}>${esc(t)}</option>`).join("")}</select>`;
   } else if (r.control === "check") {
     ctl = `<input type="checkbox" class="set-check" id="${id}" data-key="${r.key}"${v ? " checked" : ""}>`;
@@ -116,9 +153,9 @@ function rowHtml(r, sectionNote = false) {
   } else if (r.control === "color") {
     ctl = `<span class="set-color"><input type="color" id="${id}" data-key="${r.key}"${off ? " disabled" : ""} value="${/^#[0-9a-f]{6}$/i.test(v) ? v : H.tokenColor(r.key)}">` +
       `<span class="muted small">${v ? esc(v) : "Theme"}</span></span>`;
-  } else if (r.control === "triple") {
+  } else if (r.control === "triple" || r.control === "pair") {
     ctl = `<span class="set-num"><input type="text" class="field" id="${id}" data-key="${r.key}" value="${esc((v || []).join(", "))}"` +
-      ` spellcheck="false" inputmode="decimal" aria-describedby="${err}"></span>`;
+      ` spellcheck="false" inputmode="decimal" aria-describedby="${err}">${r.unit ? `<span class="unit">${esc(r.unit)}</span>` : ""}</span>`;
   } else if (r.control === "list") {
     ctl = `<textarea class="field set-list" id="${id}" data-key="${r.key}" rows="3" spellcheck="false" aria-describedby="${err}">${esc((v || []).join("\n"))}</textarea>`;
   } else {
@@ -127,11 +164,87 @@ function rowHtml(r, sectionNote = false) {
       (type === "number" ? ` min="${r.min}" max="${r.max}" step="${r.step}" inputmode="decimal"` : ` spellcheck="false"`) +
       ` aria-describedby="${err}">${r.unit ? `<span class="unit">${esc(r.unit)}</span>` : ""}</span>`;
   }
+  if (r.action) ctl += ` <button type="button" class="tb-btn-text sm" data-act="${esc(r.action[0])}">${esc(r.action[1])}</button>`;
   const hint = [r.help, r.wired === false && !sectionNote ? (r.later ?? P3) : ""].filter(Boolean).join(" · ");
-  const lab = r.control === "segmented" ? `<span class="lbl" id="${id}-l">${esc(r.label)}</span>` : `<label id="${id}-l" for="${id}">${esc(r.label)}</label>`;
+  const lab = r.control === "segmented" || r.control === "themes" ? `<span class="lbl" id="${id}-l">${esc(r.label)}</span>` : `<label id="${id}-l" for="${id}">${esc(r.label)}</label>`;
   return `<div class="set-row${off ? " off" : ""}" data-row="${r.key}">${lab}<div class="set-ctl">${ctl}` +
-    `${hint ? `<div class="set-help">${esc(hint)}</div>` : ""}<div class="set-err" id="${err}" role="alert"></div><div class="set-dyn" data-dyn="${r.key}"></div></div>` +
-    `<button class="set-reset" data-reset="${r.key}"${H.settings.isDefault(r.key) ? " hidden" : ""}>Reset</button></div>`;
+    `${hint ? `<div class="set-help">${esc(hint)}</div>` : ""}<div class="set-err" id="${err}" role="alert"></div><div class="set-dyn" data-dyn="${r.key}"></div>${layerHtml(r)}</div>` +
+    `<button class="set-reset" data-reset="${r.key}"${resetHidden(r.key) ? " hidden" : ""}>Reset</button></div>`;
+}
+/* The plain Reset link resets the user's own value: off while the folder or this session decides */
+const resetHidden = (k) => H.settings.isDefault(k) || (H.settings.source && ["folder", "session"].includes(H.settings.source(k)));
+
+/* ---------------------------------------------------------------- the folder layer */
+const SRC_LABEL = { default: "Built-in", user: "Mine", folder: "This folder", session: "This session" };
+function srcTitle(src) {
+  const f = H.settings.folderInfo();
+  return { default: "MACE's built-in value", user: `Your default (${H.settingsPath() || "~/.config/mace/gui.json"})`,
+    folder: `Set by ${f.file || "this folder's mace-folder.toml"}`, session: "Changed in this session; not saved yet" }[src];
+}
+function layerHtml(r) {
+  if (!H.settings.folderable || !H.settings.folderable(r.key)) return "";
+  const { esc } = H, f = H.settings.folderInfo(), src = H.settings.source(r.key);
+  const badge = f.file || src === "session"
+    ? `<span class="set-src" data-src="${src}" title="${esc(srcTitle(src))}">${esc(SRC_LABEL[src])}</span>` : "";
+  const b = (act, label, title, extra = "") => `<button class="set-layer-btn${extra}" data-layer="${act}" data-key="${r.key}" title="${esc(title)}">${esc(label)}</button>`;
+  const acts = [];
+  const accepts = !H.settings.folderAccepts || H.settings.folderAccepts(r.key);
+  if (src !== "folder" && f.can_save && !accepts) {
+    acts.push(`<span class="set-layer-why muted small" title="A folder file names a preset palette; a palette of your own stays in your ~/.config/mace/element_colors.json">Your own palette: not saved to a folder</span>`);
+  } else if (src !== "folder") acts.push(f.can_save ? b("folder", "Save to this folder", `Write this value into ${f.target}`, src === "session" ? "" : " quiet")
+    : (src === "session" ? `<span class="set-layer-why muted small" title="${esc(f.why_not)}">Cannot save to this folder</span>` : ""));
+  if (src === "session" || src === "folder") acts.push(b("mine-save", "Save as my default", "Keep this value as your own default (gui.json)"));
+  if (src === "session" || (src === "folder" && f.can_save)) acts.push(b("mine", "Reset to my default",
+    src === "folder" ? `Remove it from ${f.file}; your default applies` : "Forget this session's change"));
+  const html = acts.filter(Boolean).join("");
+  return badge || html ? `<div class="set-layer" data-layer-row="${r.key}">${badge}${html}</div>` : "";
+}
+function footFolder() {
+  const el = dlg && dlg.querySelector(".set-foot-folder");
+  if (!el || !H.settings.folderInfo) return;
+  const f = H.settings.folderInfo();
+  el.innerHTML = f.file ? ` · this folder: <code>${H.esc(f.file)}</code>` : "";
+}
+const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "string" ? (v || "(blank)") : String(v));
+function folderPane(title) {
+  const { esc } = H, f = H.settings.folderInfo();
+  const rows = SCHEMA.filter((r) => r.key in (f.gui || {}));
+  const help = f.help || {};
+  let html = `<h3 class="set-h">${esc(title)}</h3>`;
+  html += f.file
+    ? `<p class="set-folder-file">Folder settings: <code>${esc(f.file)}</code>. They apply to everyone who works in this folder, in mace gui and in the CLI commands run here; a change you make in this session, or a command-line option, still wins.</p>`
+    : `<p class="set-folder-file">This folder has no <code>${esc(f.name || "mace-folder.toml")}</code>. Save to this folder, next to any setting below a badge, creates <code>${esc(f.target || "")}</code>: a commented file you can keep in git or share with your group.</p>`;
+  if (!f.can_save && f.why_not) html += `<p class="set-note">${esc(f.why_not)}</p>`;
+  if ((f.warnings || []).length) html += `<ul class="set-folder-warn">${f.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+  if (rows.length) {
+    html += `<h4 class="set-sub">Set by this folder</h4>` + rows.map((r) => `<div class="set-row" data-row="${r.key}"><span class="lbl">${esc(r.label)}</span>` +
+      `<div class="set-ctl"><span class="set-folder-val">${esc(fmtVal(f.gui[r.key]))}` +
+      `${H.settings.source(r.key) === "session" ? `<span class="muted"> · this session: ${esc(fmtVal(H.settings.get(r.key)))}</span>` : ""}</span>${layerHtml(r)}</div></div>`).join("");
+  }
+  const cli = Object.entries(f.cli || {});
+  if (cli.length) {
+    html += `<h4 class="set-sub">For the command line and Submit</h4><dl class="set-folder-cli">` +
+      cli.map(([k, v]) => `<dt><code>${esc(k)}</code></dt><dd>${esc(fmtVal(v))}${help[k] ? ` <span class="muted small">· ${esc(help[k])}</span>` : ""}</dd>`).join("") + "</dl>";
+  }
+  if (f.file && !rows.length && !cli.length) html += `<p class="muted">The file sets nothing yet.</p>`;
+  return html;
+}
+async function layerAction(btn) {
+  const k = btn.dataset.key, act = btn.dataset.layer, label = (SCHEMA.find((r) => r.key === k) || {}).label || k;
+  btn.disabled = true;
+  try {
+    if (act === "folder") { await H.settings.saveToFolder(k); H.toast(`Saved ${label} to this folder`, "success"); }
+    else if (act === "mine-save") {
+      const r = H.settings.saveAsDefault(k);
+      H.toast(r.stillFolder ? `Saved ${label} as your default; this folder's value still applies here` : `Saved ${label} as your default`, "success");
+    } else if (act === "mine") { await H.settings.resetToMine(k); H.toast(`${label}: your default applies`, "success"); }
+  } catch (e) {
+    H.toast(`${label}: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+  if (section === "folder" && !search.value.trim()) render(); else refreshRow(k);
+  footFolder();
 }
 const fmtNum = (v, r) => `${Number(v).toFixed(String(r.step).includes(".") ? String(r.step).split(".")[1].length : 0)}${r.unit ? " " + r.unit : ""}`;
 
@@ -165,10 +278,11 @@ function refreshDyn() {
 /* A setting changed (here, by a shortcut, or reverted by the server): redraw
  * its row, except a field being typed in, which only updates its Reset link. */
 function refreshRow(k) {
+  if (section === "folder" && !search.value.trim()) { render(); return; }
   const row = pane.querySelector(`[data-row="${CSS.escape(k)}"]`), r = SCHEMA.find((x) => x.key === k);
   if (!row || !r) return;
   const typing = row.contains(document.activeElement) && document.activeElement.matches("input[type=number], input[type=text], textarea");
-  if (typing) { row.querySelector("[data-reset]").hidden = H.settings.isDefault(k); return; }
+  if (typing) { row.querySelector("[data-reset]").hidden = resetHidden(k); return; }
   const had = row.contains(document.activeElement) ? document.activeElement.dataset.val || "ctl" : null;
   row.outerHTML = rowHtml(r, !!pane.querySelector(".set-note"));
   if (had) {   // keep keyboard focus on the control that changed
@@ -210,6 +324,13 @@ function commit(t) {
   const err = pane.querySelector(`#${t.getAttribute("aria-describedby")}`);
   const say = (m) => { if (err) err.textContent = m; t.setAttribute("aria-invalid", m && m.startsWith("Enter") ? "true" : "false"); };
   if (r.control === "list") { H.settings.set(k, t.value.split("\n").map((x) => x.trim()).filter(Boolean)); return; }
+  if (r.control === "pair") {
+    const xs = t.value.split(/[\s,;]+/).filter(Boolean).map(Number);
+    if (xs.length !== 2 || !xs.every((x) => Number.isFinite(x) && x >= r.min && x <= r.max) || xs[1] - xs[0] < 0.1) {
+      say(`Enter 2 numbers from ${r.min} to ${r.max}, low then high, e.g. -6, 6`); return;
+    }
+    say(""); H.settings.set(k, xs); return;
+  }
   if (r.control === "triple") {
     const xs = t.value.split(/[\s,;]+/).filter(Boolean).map(Number);
     if (xs.length !== 3 || !xs.every((x) => Number.isFinite(x) && x >= r.min && x <= r.max)) { say(`Enter 3 numbers from ${r.min} to ${r.max}, e.g. 0, 0, 0`); return; }
@@ -235,12 +356,15 @@ function commit(t) {
 function onClick(e) {
   const seg = e.target.closest(".segment [data-key]");
   if (seg) { H.settings.set(seg.dataset.key, typed(SCHEMA.find((x) => x.key === seg.dataset.key), seg.dataset.val)); return; }
+  const lay = e.target.closest("[data-layer]");
+  if (lay) { layerAction(lay); return; }
   const rs = e.target.closest("[data-reset]");
   if (rs) { H.settings.reset(rs.dataset.reset); refreshRow(rs.dataset.reset); return; }
   const act = e.target.closest("[data-act]");
   if (!act) return;
   if (act.dataset.act === "export") chooser("export");
   else if (act.dataset.act === "export-go") exportProfile();
+  else if (act.dataset.act === "palette-editor") H.elementColors();
   else if (act.dataset.act === "import") pane.querySelector("#set-import").click();
   else if (act.dataset.act === "import-go") applyImport();
   else if (act.dataset.act === "reset-all") chooser("reset");

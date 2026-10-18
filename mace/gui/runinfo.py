@@ -34,13 +34,13 @@ DEFAULT_TOLINTEG = (6, 6, 6, 6, 12)
 
 
 # ------------------------------------------------------------------ convergence
-def convergence(path: Path, idx=None) -> Dict[str, Any]:
+def convergence(path: Path, idx=None, sibling_ok=None) -> Dict[str, Any]:
     from mace.utils import out_convergence as oc
     from mace.utils import livefile
     snap = livefile.snapshot(path)
     live = livefile.is_live(path, snap)
     flines = [b.line + 1 for b in idx.blocks] if idx is not None else None
-    res = oc.parse(path, size=snap.size, complete_lines_only=live, frame_lines=flines)
+    res = oc.parse(path, size=snap.size, complete_lines_only=live, frame_lines=flines, sibling_ok=sibling_ok)
     if idx is not None and getattr(idx, "molecule", False):
         # a molecule prints only its initial and final geometry tables: a frame belongs to the
         # first point after it, and the later points have no geometry of their own
@@ -57,6 +57,8 @@ def convergence(path: Path, idx=None) -> Dict[str, Any]:
         res["final_frame"] = len(idx.labels) - 1
     res["live"] = live
     res["stop"] = oc.stop_sentence(res)
+    # the SCF timeline the run view's SCF card and Run Analysis › SCF draw (`--scf` prints the same)
+    res["scf_timeline"] = oc.scf_timeline(res)
     res["command"] = f"mace analyze --convergence {path.name}"
     return res
 
@@ -278,7 +280,7 @@ def meta_job(ctx=None, path: str = "", **_) -> Dict[str, Any]:
     procs = _RX["procs"].findall(text[:400_000])
     dims = {"0": "MOLECULE", "1": "POLYMER", "2": "SLAB", "3": "CRYSTAL"}
     d = first("dim")
-    n_atoms = struct.get("atoms_in_unit_cell") or struct.get("final_atoms_count")
+    n_atoms = struct.get("atoms_in_unit_cell")
     e_au = en.get("total_energy_au")
     out.update({
         "crystal_version": " ".join(x for x in (first("version"), first("release")) if x) or None,
@@ -290,7 +292,7 @@ def meta_job(ctx=None, path: str = "", **_) -> Dict[str, Any]:
         "spin": "unrestricted (spin-polarized)" if re.search(r"\bUNRESTRICTED|SPIN POLARIZED|SPINLOCK", text[:400_000]) else "closed shell",
         "mpi_processes": max(int(v) for v in procs) if procs else None,
         "started": first("start"), "ended": first("end"),
-        "wall_s": max(tel) if tel else None, "cpu_s": comp.get("total_cpu_time"),
+        "wall_s": max(tel) if tel else None, "cpu_s": comp.get("cpu_time_total_s"),
         "energy_au": e_au, "energy_ev": e_au * HARTREE_EV if e_au is not None else None,
         "energy_ev_per_atom": (e_au * HARTREE_EV / n_atoms) if (e_au is not None and n_atoms) else None,
     })

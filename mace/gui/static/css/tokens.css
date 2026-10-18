@@ -1,9 +1,14 @@
 /* MACE GUI design tokens: the only file with literal colors (besides the
  * element color tables). Light is the default; dark applies with the OS
- * setting unless the user picked light, or when the user picked dark.
- * WCAG 2.1 AA, checked by tests/gui/test_tokens_contrast.py: text and
- * status colors at least 4.5:1 on every surface, the focus ring and
- * control borders (--border-strong) at least 3:1. */
+ * setting when the user picked System (no data-theme), or when the user
+ * picked dark. The other themes (1.1.6) are full token sets of their own,
+ * each a :root[data-theme="..."] block below the dark one; js/themes.js
+ * lists them for the pickers.
+ * WCAG 2.1 AA, checked by tests/gui/test_tokens_contrast.py for every
+ * theme: text and status colors at least 4.5:1 on every surface, the focus
+ * ring and control borders (--border-strong) at least 3:1. The two
+ * high-contrast themes meet AAA: 7:1 text, 4.5:1 focus ring and borders,
+ * 3:1 plot series and axes. */
 :root {
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
@@ -65,10 +70,10 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     --bg: #0e1014; --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833;
     --border: #2a303b; --border-strong: #6b7383;
-    --text: #e7e9ee; --text-2: #a3abb8; --text-3: #8f97a4;
+    --text: #e7e9ee; --text-2: #aab2be; --text-3: #8f97a4;
     --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47; --on-accent: #0a1020;
     --focus: #8db6ff; --sel: #fbbf24; --hover-atom: #8db6ff; --measure: #e879f9;
     --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #38bdf8; --on-danger: #0a1020;
@@ -92,7 +97,7 @@
 :root[data-theme="dark"] {
   --bg: #0e1014; --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833;
   --border: #2a303b; --border-strong: #6b7383;
-  --text: #e7e9ee; --text-2: #a3abb8; --text-3: #8f97a4;
+  --text: #e7e9ee; --text-2: #aab2be; --text-3: #8f97a4;
   --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47; --on-accent: #0a1020;
   --focus: #8db6ff; --sel: #fbbf24; --hover-atom: #8db6ff; --measure: #e879f9;
   --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #38bdf8; --on-danger: #0a1020;
@@ -112,6 +117,458 @@
   --ghost-opacity: 0.5;
   color-scheme: dark;
 }
+/* High contrast, light: black on white, WCAG AAA (7:1) text, strong borders */
+:root[data-theme="hc-light"] {
+  --bg: #ffffff; --surface: #ffffff; --surface-2: #f5f5f5; --surface-3: #ebebeb; --border: #595959;
+  --border-strong: #000000; --text: #000000; --text-2: #1f1f1f; --text-3: #333333; --accent: #0033a0;
+  --accent-hover: #00257a; --accent-soft: #e6eeff; --on-accent: #ffffff; --focus: #0033a0; --sel: #e65c00;
+  --hover-atom: #0033a0; --measure: #8b008b; --success: #005a1e; --danger: #a00000; --warning: #6b3a00;
+  --info: #00476b; --on-danger: #ffffff; --viewport-bg: #ffffff; --cell: #000000; --ghost: #737373;
+  --plot-bg: #ffffff; --axis-a: #c00000; --axis-b: #006400; --axis-c: #0033a0; --scrollbar: #595959;
+  --e1: 0 1px 2px rgb(0 0 0 / .06); --e2: 0 4px 12px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
+  --e3: 0 16px 48px rgb(0 0 0 / .18); --overlay: rgb(0 0 0 / .28); --vol-plus: #0033a0; --vol-minus: #c00000;
+  --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #0033a0; --cmp-b: #b34700; --ghost-opacity: 0.3;
+  --k-cif: #00563a; --k-d12: #4b1d9c; --k-d3: #5b1a9c; --k-out: #0033a0; --k-band: #8a0f4a; --k-dos: #7a2600;
+  --k-db: #004a5c; --k-json: #3b4252; --k-image: #5c3d00; --k-ir: #00524c; --k-raman: #6b0f36; --k-freq: #6b3a00;
+  --plot-1: #0033a0; --plot-2: #c00000; --plot-3: #006400; --plot-4: #8f4a00; --plot-5: #7b1fa2;
+  --plot-6: #00636b; --plot-7: #b34700; --plot-8: #000000; --plot-9: #5c5c5c; --plot-10: #a3005c;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+/* High contrast, dark: white on black, WCAG AAA (7:1) text, a yellow focus ring */
+:root[data-theme="hc-dark"] {
+  --bg: #000000; --surface: #0a0a0a; --surface-2: #141414; --surface-3: #1f1f1f; --border: #8c8c8c;
+  --border-strong: #ffffff; --text: #ffffff; --text-2: #e6e6e6; --text-3: #cccccc; --accent: #8cc4ff;
+  --accent-hover: #b3d7ff; --accent-soft: #0d2347; --on-accent: #000000; --focus: #ffd700; --sel: #ffb000;
+  --hover-atom: #8cc4ff; --measure: #ff8cff; --success: #7dff9e; --danger: #ffa3a3; --warning: #ffd966;
+  --info: #7fdcff; --on-danger: #000000; --viewport-bg: #000000; --cell: #ffffff; --ghost: #9e9e9e;
+  --plot-bg: #000000; --axis-a: #ff8080; --axis-b: #80ff80; --axis-c: #80b3ff; --scrollbar: #a6a6a6;
+  --e1: 0 1px 2px rgb(0 0 0 / .6), 0 0 0 1px #8c8c8c; --e2: 0 4px 12px rgb(0 0 0 / .6), 0 0 0 1px #8c8c8c;
+  --e3: 0 16px 48px rgb(0 0 0 / .6), 0 0 0 1px #8c8c8c; --overlay: rgb(0 0 0 / .6); --vol-plus: #8cc4ff;
+  --vol-minus: #ff8080; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #8cc4ff; --cmp-b: #ffb366;
+  --ghost-opacity: 0.5;
+  --k-cif: #00563a; --k-d12: #4b1d9c; --k-d3: #5b1a9c; --k-out: #0033a0; --k-band: #8a0f4a; --k-dos: #7a2600;
+  --k-db: #004a5c; --k-json: #3b4252; --k-image: #5c3d00; --k-ir: #00524c; --k-raman: #6b0f36; --k-freq: #6b3a00;
+  --plot-1: #8cc4ff; --plot-2: #ffa3a3; --plot-3: #7dff9e; --plot-4: #ffd966; --plot-5: #d9a6ff;
+  --plot-6: #66e0e0; --plot-7: #ffb366; --plot-8: #ffffff; --plot-9: #bfbfbf; --plot-10: #ff8cd9;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Colorblind-safe: the Okabe-Ito hues for accents, status, plots and axes (red-green safe) */
+:root[data-theme="cvd"] {
+  --bg: #f3f4f6; --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4; --border: #e3e6eb;
+  --border-strong: #848b97; --text: #15181e; --text-2: #545b67; --text-3: #5f6672; --accent: #005a8c;
+  --accent-hover: #004670; --accent-soft: #e8f2f9; --on-accent: #ffffff; --focus: #005a8c; --sel: #e69f00;
+  --hover-atom: #0072b2; --measure: #a8457f; --success: #00704f; --danger: #a84300; --warning: #7a5200;
+  --info: #005a8c; --on-danger: #ffffff; --viewport-bg: #ffffff; --cell: #334155; --ghost: #9aa3b2;
+  --plot-bg: #ffffff; --axis-a: #d55e00; --axis-b: #009e73; --axis-c: #0072b2; --scrollbar: #c4c9d2;
+  --e1: 0 1px 2px rgb(16 24 40 / .06); --e2: 0 4px 12px rgb(16 24 40 / .10), 0 1px 3px rgb(16 24 40 / .06);
+  --e3: 0 16px 48px rgb(16 24 40 / .18); --overlay: rgb(16 24 40 / .28); --vol-plus: #0072b2;
+  --vol-minus: #d55e00; --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #0072b2; --cmp-b: #d55e00;
+  --ghost-opacity: 0.3;
+  --k-cif: #00704f; --k-d12: #6a3d9a; --k-d3: #8c4a87; --k-out: #005a8c; --k-band: #a8457f; --k-dos: #a84300;
+  --k-db: #00687a; --k-json: #5c6670; --k-image: #7a5200; --k-ir: #006b5e; --k-raman: #8c2d5f; --k-freq: #8f4a00;
+  --plot-1: #0072b2; --plot-2: #d55e00; --plot-3: #009e73; --plot-4: #e69f00; --plot-5: #cc79a7;
+  --plot-6: #56b4e9; --plot-7: #000000; --plot-8: #999933; --plot-9: #999999; --plot-10: #882255;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+/* Sepia: an e-reader's reading-comfort page: brown ink on darker, warm tan paper, a little softer
+ * than black on white (text about 8:1) and warm hues only (rust, ochre, olive, plum: no blue; the
+ * sequential data scale stays viridis), so it reads as paper beside Solarized Light's cool cream. The 3D view keeps a light cream page, where the
+ * common element colors still stand out. */
+:root[data-theme="sepia"] {
+  --bg: #e2d3b4; --surface: #eadcbf; --surface-2: #e6d7b8; --surface-3: #dbc9a6; --border: #cdb990;
+  --border-strong: #7d6646; --text: #47331f; --text-2: #5a4430; --text-3: #5f4833; --accent: #7e3c12;
+  --accent-hover: #6e3410; --accent-soft: #dfcaa1; --on-accent: #fbf3e2; --focus: #7e3c12; --sel: #b86e00;
+  --hover-atom: #8a4316; --measure: #8a2f5a; --success: #42590f; --danger: #9e2a16; --warning: #7a4a00;
+  --info: #54500f; --on-danger: #fbf3e2; --viewport-bg: #fbf6ea; --cell: #4a3622; --ghost: #a08c6c;
+  --plot-bg: #eadcbf; --axis-a: #a3271b; --axis-b: #4b6e14; --axis-c: #8a5a00; --scrollbar: #bfa77c;
+  --e1: 0 1px 2px rgb(60 40 10 / .08); --e2: 0 4px 12px rgb(60 40 10 / .12), 0 1px 3px rgb(60 40 10 / .08);
+  --e3: 0 16px 48px rgb(60 40 10 / .2); --overlay: rgb(60 40 10 / .3); --vol-plus: #5f6e14;
+  --vol-minus: #a3271b; --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #5f6e14; --cmp-b: #b35a00;
+  --ghost-opacity: 0.3;
+  --k-on: #fffaf0; --k-cif: #3f6b1f; --k-d12: #7a2f5a; --k-d3: #8e3b6a; --k-out: #8a4316; --k-band: #9b2f55;
+  --k-dos: #a1460f; --k-db: #5e5a14; --k-json: #6b5a45; --k-image: #7f5a00; --k-ir: #4f6a1a; --k-raman: #8e1f45; --k-freq: #8f4f00;
+  --plot-1: #a3271b; --plot-2: #4b6e14; --plot-3: #b86e00; --plot-4: #7a2f5a; --plot-5: #6b5d00;
+  --plot-6: #c2477a; --plot-7: #8a5a2b; --plot-8: #d0681a; --plot-9: #6b5a45; --plot-10: #3b2a1a;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+/* True black: pure black surfaces for OLED screens, the dark theme's accents */
+:root[data-theme="black"] {
+  --bg: #000000; --surface: #000000; --surface-2: #0a0a0a; --surface-3: #141414; --border: #262626;
+  --border-strong: #6b6b6b; --text: #e6e6e6; --text-2: #a6a6a6; --text-3: #949494; --accent: #6ea2ff;
+  --accent-hover: #8db6ff; --accent-soft: #0f1a2e; --on-accent: #0a1020; --focus: #8db6ff; --sel: #fbbf24;
+  --hover-atom: #8db6ff; --measure: #e879f9; --success: #4ade80; --danger: #f87171; --warning: #fbbf24;
+  --info: #38bdf8; --on-danger: #0a1020; --viewport-bg: #000000; --cell: #8aa4d6; --ghost: #6f7785;
+  --plot-bg: #000000; --axis-a: #f87171; --axis-b: #4ade80; --axis-c: #60a5fa; --scrollbar: #333333;
+  --e1: 0 1px 2px rgb(0 0 0 / .7), 0 0 0 1px #262626; --e2: 0 4px 12px rgb(0 0 0 / .7), 0 0 0 1px #262626;
+  --e3: 0 16px 48px rgb(0 0 0 / .7), 0 0 0 1px #262626; --overlay: rgb(0 0 0 / .7); --vol-plus: #60a5fa;
+  --vol-minus: #f87171; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #60a5fa; --cmp-b: #fb923c;
+  --ghost-opacity: 0.5;
+  --k-cif: #0b7a55; --k-d12: #6d28d9; --k-d3: #7c3aed; --k-out: #1d4ed8; --k-band: #be185d; --k-dos: #c2410c;
+  --k-db: #0e7490; --k-json: #475569; --k-image: #854d0e; --k-ir: #0f766e; --k-raman: #9d174d; --k-freq: #92400e;
+  --plot-1: #e5484d; --plot-2: #30a46c; --plot-3: #f59e0b; --plot-4: #8b5cf6; --plot-5: #0891b2;
+  --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* ---- Editor themes (1.1.6): popular editor palettes, mapped onto MACE's tokens. Each varies
+ * surfaces, accents, selection, borders, the 3D background, plots and status colors from its
+ * own palette; the layout and fonts stay MACE's. Every pair still meets WCAG AA (the test).
+ * Each project's MIT copyright notice and the license text: THEMES.LICENSE.txt beside this file. */
+/* Catppuccin Mocha: Catppuccin (github.com/catppuccin/catppuccin), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="catppuccin-mocha"] {
+  --bg: #181825; --surface: #1e1e2e; --surface-2: #232334; --surface-3: #313244; --border: #313244;
+  --border-strong: #7f849c; --text: #cdd6f4; --text-2: #bac2de; --text-3: #afb6ce; --accent: #cba6f7;
+  --accent-hover: #d8bcf9; --accent-soft: #3a3254; --on-accent: #11111b; --focus: #b4befe; --sel: #fab387;
+  --hover-atom: #89dceb; --measure: #f5c2e7; --success: #a6e3a1; --danger: #f38ba8; --warning: #f9e2af;
+  --info: #74c7ec; --on-danger: #11111b; --viewport-bg: #11111b; --cell: #9399b2; --ghost: #6c7086;
+  --plot-bg: #1e1e2e; --axis-a: #f38ba8; --axis-b: #a6e3a1; --axis-c: #89b4fa; --scrollbar: #45475a;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #313244; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #313244;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #313244; --overlay: rgb(0 0 0 / .5); --vol-plus: #89b4fa;
+  --vol-minus: #f38ba8; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #89b4fa; --cmp-b: #fab387;
+  --ghost-opacity: 0.5; --k-on: #11111b; --k-cif: #a6e3a1; --k-d12: #cba6f7; --k-d3: #b4befe; --k-out: #89b4fa;
+  --k-band: #eba0ac; --k-dos: #fab387; --k-db: #89dceb; --k-json: #9399b2; --k-image: #f9e2af; --k-ir: #94e2d5;
+  --k-raman: #f5c2e7; --k-freq: #f2cdcd; --plot-1: #f38ba8; --plot-2: #a6e3a1; --plot-3: #f9e2af; --plot-4: #cba6f7;
+  --plot-5: #89dceb; --plot-6: #f5c2e7; --plot-7: #94e2d5; --plot-8: #fab387; --plot-9: #9399b2; --plot-10: #89b4fa;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Catppuccin Latte: Catppuccin (github.com/catppuccin/catppuccin), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="catppuccin-latte"] {
+  --bg: #e6e9ef; --surface: #eff1f5; --surface-2: #e9ecf1; --surface-3: #dce0e8; --border: #ccd0da;
+  --border-strong: #797c91; --text: #4c4f69; --text-2: #585a71; --text-3: #575a6c; --accent: #7f2bee;
+  --accent-hover: #7426d9; --accent-soft: #e6dcfb; --on-accent: #ffffff; --focus: #8839ef; --sel: #fe640b;
+  --hover-atom: #1e66f5; --measure: #ea76cb; --success: #2d701e; --danger: #c40e35; --warning: #895712;
+  --info: #166c7a; --on-danger: #ffffff; --viewport-bg: #f8f9fb; --cell: #6c6f85; --ghost: #9ca0b0;
+  --plot-bg: #eff1f5; --axis-a: #d20f39; --axis-b: #40a02b; --axis-c: #1e66f5; --scrollbar: #bcc0cc;
+  --e1: 0 1px 2px rgb(16 24 40 / .06); --e2: 0 4px 12px rgb(16 24 40 / .10), 0 1px 3px rgb(16 24 40 / .06);
+  --e3: 0 16px 48px rgb(16 24 40 / .18); --overlay: rgb(16 24 40 / .28); --vol-plus: #1e66f5; --vol-minus: #d20f39;
+  --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #1e66f5; --cmp-b: #fe640b; --ghost-opacity: 0.3;
+  --k-on: #ffffff; --k-cif: #368624; --k-d12: #8839ef; --k-d3: #4a65fc; --k-out: #1e66f5; --k-band: #e22838;
+  --k-dos: #cb4b01; --k-db: #1a8192; --k-json: #717489; --k-image: #a46915; --k-ir: #148187; --k-raman: #d421a4;
+  --k-freq: #d04343; --plot-1: #d20f39; --plot-2: #40a02b; --plot-3: #df8e1d; --plot-4: #8839ef; --plot-5: #04a5e5;
+  --plot-6: #ea76cb; --plot-7: #179299; --plot-8: #fe640b; --plot-9: #7c7f93; --plot-10: #1e66f5;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+/* Dracula: Dracula (github.com/dracula/dracula-theme), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="dracula"] {
+  --bg: #21222c; --surface: #282a36; --surface-2: #2e303e; --surface-3: #343746; --border: #383a4a;
+  --border-strong: #7482ae; --text: #f8f8f2; --text-2: #e2e2dc; --text-3: #bfc3d9; --accent: #caa9fa;
+  --accent-hover: #cdaafb; --accent-soft: #44475a; --on-accent: #191a21; --focus: #ff79c6; --sel: #ffb86c;
+  --hover-atom: #8be9fd; --measure: #ff79c6; --success: #50fa7b; --danger: #ff9c9c; --warning: #f1fa8c;
+  --info: #8be9fd; --on-danger: #191a21; --viewport-bg: #191a21; --cell: #6272a4; --ghost: #6272a4;
+  --plot-bg: #282a36; --axis-a: #ff5555; --axis-b: #50fa7b; --axis-c: #8be9fd; --scrollbar: #44475a;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #383a4a; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #383a4a;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #383a4a; --overlay: rgb(0 0 0 / .5); --vol-plus: #8be9fd;
+  --vol-minus: #ff5555; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #bd93f9; --cmp-b: #ffb86c;
+  --ghost-opacity: 0.5; --k-on: #191a21; --k-cif: #50fa7b; --k-d12: #bd93f9; --k-d3: #bd93f9; --k-out: #8be9fd;
+  --k-band: #ff79c6; --k-dos: #ffb86c; --k-db: #8be9fd; --k-json: #f8f8f2; --k-image: #f1fa8c; --k-ir: #50fa7b;
+  --k-raman: #ff79c6; --k-freq: #ffb86c; --plot-1: #ff5555; --plot-2: #50fa7b; --plot-3: #f1fa8c; --plot-4: #bd93f9;
+  --plot-5: #8be9fd; --plot-6: #ff79c6; --plot-7: #ffb86c; --plot-8: #ff6e6e; --plot-9: #f8f8f2; --plot-10: #6272a4;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Gruvbox Dark: Gruvbox by Pavel Pertsev (github.com/morhetz/gruvbox), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="gruvbox-dark"] {
+  --bg: #1d2021; --surface: #282828; --surface-2: #32302f; --surface-3: #3c3836; --border: #3c3836;
+  --border-strong: #928374; --text: #ebdbb2; --text-2: #d5c4a1; --text-3: #c4b69e; --accent: #fabd2f;
+  --accent-hover: #fbcb5c; --accent-soft: #46402f; --on-accent: #282828; --focus: #fabd2f; --sel: #fe8019;
+  --hover-atom: #8ec07c; --measure: #d3869b; --success: #b8bb26; --danger: #fd8f82; --warning: #fe9137;
+  --info: #96b3a8; --on-danger: #282828; --viewport-bg: #1d2021; --cell: #a89984; --ghost: #7c6f64;
+  --plot-bg: #282828; --axis-a: #fb4934; --axis-b: #b8bb26; --axis-c: #83a598; --scrollbar: #504945;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #3c3836; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #3c3836;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #3c3836; --overlay: rgb(0 0 0 / .5); --vol-plus: #83a598;
+  --vol-minus: #fb4934; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #83a598; --cmp-b: #fe8019;
+  --ghost-opacity: 0.5; --k-on: #282828; --k-cif: #b8bb26; --k-d12: #d3869b; --k-d3: #d3869b; --k-out: #83a598;
+  --k-band: #fb5643; --k-dos: #fe8019; --k-db: #8ec07c; --k-json: #a89984; --k-image: #fabd2f; --k-ir: #8ec07c;
+  --k-raman: #d3869b; --k-freq: #fe8019; --plot-1: #fb4934; --plot-2: #b8bb26; --plot-3: #fabd2f; --plot-4: #d3869b;
+  --plot-5: #8ec07c; --plot-6: #fe8019; --plot-7: #83a598; --plot-8: #bdae93; --plot-9: #928374; --plot-10: #ebdbb2;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Nord: Nord by Arctic Ice Studio (github.com/nordtheme/nord), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="nord"] {
+  --bg: #292e39; --surface: #2e3440; --surface-2: #343a47; --surface-3: #3b4252; --border: #3b4252;
+  --border-strong: #828fa6; --text: #eceff4; --text-2: #d8dee9; --text-3: #ccd3de; --accent: #88c0d0;
+  --accent-hover: #8fbcbb; --accent-soft: #3a4a5c; --on-accent: #2e3440; --focus: #88c0d0; --sel: #ebcb8b;
+  --hover-atom: #88c0d0; --measure: #b48ead; --success: #a6c08f; --danger: #f7a1a9; --warning: #ebcb8b;
+  --info: #a5bcd3; --on-danger: #2e3440; --viewport-bg: #1c2027; --cell: #81a1c1; --ghost: #4c566a;
+  --plot-bg: #2e3440; --axis-a: #bf616a; --axis-b: #a3be8c; --axis-c: #81a1c1; --scrollbar: #4c566a;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #3b4252; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #3b4252;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #3b4252; --overlay: rgb(0 0 0 / .5); --vol-plus: #81a1c1;
+  --vol-minus: #bf616a; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #88c0d0; --cmp-b: #d08770;
+  --ghost-opacity: 0.5; --k-on: #2e3440; --k-cif: #a3be8c; --k-d12: #b691af; --k-d3: #b691af; --k-out: #81a1c1;
+  --k-band: #d08b91; --k-dos: #d28c76; --k-db: #88c0d0; --k-json: #d8dee9; --k-image: #ebcb8b; --k-ir: #8fbcbb;
+  --k-raman: #b691af; --k-freq: #d28c76; --plot-1: #bf616a; --plot-2: #a3be8c; --plot-3: #ebcb8b; --plot-4: #b48ead;
+  --plot-5: #88c0d0; --plot-6: #d08770; --plot-7: #d8dee9; --plot-8: #5e81ac; --plot-9: #8fbcbb; --plot-10: #81a1c1;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* One Dark: One Dark from Atom (github.com/atom/atom: one-dark-ui, one-dark-syntax), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="one-dark"] {
+  --bg: #21252b; --surface: #282c34; --surface-2: #2c313a; --surface-3: #333842; --border: #181a1f;
+  --border-strong: #7f848e; --text: #d7dae0; --text-2: #b4bac6; --text-3: #b4bac6; --accent: #74b8f1;
+  --accent-hover: #7dbcf2; --accent-soft: #3e4451; --on-accent: #21252b; --focus: #61afef; --sel: #d19a66;
+  --hover-atom: #56b6c2; --measure: #c678dd; --success: #98c379; --danger: #f7989f; --warning: #e5c07b;
+  --info: #69bec9; --on-danger: #21252b; --viewport-bg: #1d2026; --cell: #7f848e; --ghost: #5c6370;
+  --plot-bg: #282c34; --axis-a: #e06c75; --axis-b: #98c379; --axis-c: #61afef; --scrollbar: #4b5263;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #181a1f; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #181a1f;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #181a1f; --overlay: rgb(0 0 0 / .5); --vol-plus: #61afef;
+  --vol-minus: #e06c75; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #61afef; --cmp-b: #d19a66;
+  --ghost-opacity: 0.5; --k-on: #21252b; --k-cif: #98c379; --k-d12: #c678dd; --k-d3: #c678dd; --k-out: #61afef;
+  --k-band: #e06c75; --k-dos: #d19a66; --k-db: #56b6c2; --k-json: #abb2bf; --k-image: #e5c07b; --k-ir: #56b6c2;
+  --k-raman: #c678dd; --k-freq: #d19a66; --plot-1: #e06c75; --plot-2: #98c379; --plot-3: #e5c07b; --plot-4: #c678dd;
+  --plot-5: #56b6c2; --plot-6: #bf544a; --plot-7: #d19a66; --plot-8: #61afef; --plot-9: #abb2bf; --plot-10: #7f848e;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Solarized Dark: Solarized by Ethan Schoonover (github.com/altercation/solarized), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="solarized-dark"] {
+  --bg: #00222b; --surface: #002b36; --surface-2: #03303c; --surface-3: #073642; --border: #073642;
+  --border-strong: #687f87; --text: #9facac; --text-2: #9facad; --text-3: #9facad; --accent: #60ace2;
+  --accent-hover: #4aa0e0; --accent-soft: #0b3f55; --on-accent: #002b36; --focus: #268bd2; --sel: #b58900;
+  --hover-atom: #2aa198; --measure: #d33682; --success: #99b000; --danger: #f58684; --warning: #d19e00;
+  --info: #30b7ad; --on-danger: #002b36; --viewport-bg: #00222b; --cell: #839496; --ghost: #586e75;
+  --plot-bg: #002b36; --axis-a: #dc322f; --axis-b: #859900; --axis-c: #268bd2; --scrollbar: #586e75;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #073642; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #073642;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #073642; --overlay: rgb(0 0 0 / .5); --vol-plus: #268bd2;
+  --vol-minus: #dc322f; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #268bd2; --cmp-b: #cb4b16;
+  --ghost-opacity: 0.5; --k-on: #002b36; --k-cif: #859900; --k-d12: #8488cd; --k-d3: #dd649f; --k-out: #3094da;
+  --k-band: #dd649f; --k-dos: #e96630; --k-db: #2aa198; --k-json: #839496; --k-image: #b58900; --k-ir: #2aa198;
+  --k-raman: #e56663; --k-freq: #e96630; --plot-1: #dc322f; --plot-2: #859900; --plot-3: #b58900; --plot-4: #6c71c4;
+  --plot-5: #2aa198; --plot-6: #d33682; --plot-7: #93a1a1; --plot-8: #cb4b16; --plot-9: #839496; --plot-10: #268bd2;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Solarized Light: Solarized by Ethan Schoonover (github.com/altercation/solarized), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="solarized-light"] {
+  --bg: #eee8d5; --surface: #fdf6e3; --surface-2: #f7f0dc; --surface-3: #eee8d5; --border: #e4dcc4;
+  --border-strong: #657b83; --text: #073642; --text-2: #4a5c62; --text-3: #4a5c62; --accent: #1d6ca2;
+  --accent-hover: #1d6fa8; --accent-soft: #e3e9e6; --on-accent: #ffffff; --focus: #2588ce; --sel: #cb4b16;
+  --hover-atom: #268bd2; --measure: #d33682; --success: #5f6e00; --danger: #c82522; --warning: #826200;
+  --info: #1e726c; --on-danger: #ffffff; --viewport-bg: #fdf6e3; --cell: #586e75; --ghost: #93a1a1;
+  --plot-bg: #fdf6e3; --axis-a: #dc322f; --axis-b: #839600; --axis-c: #268bd2; --scrollbar: #93a1a1;
+  --e1: 0 1px 2px rgb(16 24 40 / .06); --e2: 0 4px 12px rgb(16 24 40 / .10), 0 1px 3px rgb(16 24 40 / .06);
+  --e3: 0 16px 48px rgb(16 24 40 / .18); --overlay: rgb(16 24 40 / .28); --vol-plus: #268bd2; --vol-minus: #dc322f;
+  --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #268bd2; --cmp-b: #cb4b16; --ghost-opacity: 0.3;
+  --k-on: #ffffff; --k-cif: #6d7d00; --k-d12: #686dc3; --k-d3: #d33682; --k-out: #227bba; --k-band: #d33682;
+  --k-dos: #cb4b16; --k-db: #22837b; --k-json: #637880; --k-image: #947000; --k-ir: #22837b; --k-raman: #dc322f;
+  --k-freq: #cb4b16; --plot-1: #dc322f; --plot-2: #859900; --plot-3: #b58900; --plot-4: #6c71c4; --plot-5: #2aa198;
+  --plot-6: #d33682; --plot-7: #586e75; --plot-8: #cb4b16; --plot-9: #93a1a1; --plot-10: #268bd2;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+/* Tokyo Night: Tokyo Night by enkia (github.com/enkia/tokyo-night-vscode-theme), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="tokyo-night"] {
+  --bg: #16161e; --surface: #1a1b26; --surface-2: #1f2030; --surface-3: #292e42; --border: #2a2e40;
+  --border-strong: #737aa2; --text: #c0caf5; --text-2: #a9b1d6; --text-3: #a3add2; --accent: #7aa2f7;
+  --accent-hover: #99b8fa; --accent-soft: #283457; --on-accent: #16161e; --focus: #7aa2f7; --sel: #ff9e64;
+  --hover-atom: #7dcfff; --measure: #bb9af7; --success: #9ece6a; --danger: #f7768e; --warning: #e0af68;
+  --info: #7dcfff; --on-danger: #16161e; --viewport-bg: #16161e; --cell: #737aa2; --ghost: #565f89;
+  --plot-bg: #1a1b26; --axis-a: #f7768e; --axis-b: #9ece6a; --axis-c: #7aa2f7; --scrollbar: #414868;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #2a2e40; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #2a2e40;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #2a2e40; --overlay: rgb(0 0 0 / .5); --vol-plus: #7aa2f7;
+  --vol-minus: #f7768e; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #7aa2f7; --cmp-b: #ff9e64;
+  --ghost-opacity: 0.5; --k-on: #16161e; --k-cif: #9ece6a; --k-d12: #bb9af7; --k-d3: #9d7cd8; --k-out: #7aa2f7;
+  --k-band: #f7768e; --k-dos: #ff9e64; --k-db: #7dcfff; --k-json: #a9b1d6; --k-image: #e0af68; --k-ir: #1abc9c;
+  --k-raman: #ff007c; --k-freq: #2ac3de; --plot-1: #f7768e; --plot-2: #9ece6a; --plot-3: #e0af68; --plot-4: #bb9af7;
+  --plot-5: #7dcfff; --plot-6: #ff007c; --plot-7: #73daca; --plot-8: #ff9e64; --plot-9: #a9b1d6; --plot-10: #7aa2f7;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* Tokyo Night Storm: Tokyo Night by enkia (github.com/enkia/tokyo-night-vscode-theme), MIT. The published palette's surfaces, accents and syntax
+ * hues; a color moved in lightness only (hue kept) where it fell short of WCAG AA here. */
+:root[data-theme="tokyo-night-storm"] {
+  --bg: #1f2335; --surface: #24283b; --surface-2: #292e42; --surface-3: #2f344d; --border: #363b54;
+  --border-strong: #787ea5; --text: #c0caf5; --text-2: #b5bcdc; --text-3: #b4bcda; --accent: #84a9f8;
+  --accent-hover: #99b8fa; --accent-soft: #2e3c64; --on-accent: #1f2335; --focus: #7aa2f7; --sel: #ff9e64;
+  --hover-atom: #7dcfff; --measure: #bb9af7; --success: #9ece6a; --danger: #f8879c; --warning: #e0af68;
+  --info: #7dcfff; --on-danger: #1f2335; --viewport-bg: #1c1f2e; --cell: #737aa2; --ghost: #565f89;
+  --plot-bg: #24283b; --axis-a: #f7768e; --axis-b: #9ece6a; --axis-c: #7aa2f7; --scrollbar: #414868;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #363b54; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #363b54;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #363b54; --overlay: rgb(0 0 0 / .5); --vol-plus: #7aa2f7;
+  --vol-minus: #f7768e; --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #7aa2f7; --cmp-b: #ff9e64;
+  --ghost-opacity: 0.5; --k-on: #1f2335; --k-cif: #9ece6a; --k-d12: #bb9af7; --k-d3: #9d7cd8; --k-out: #7aa2f7;
+  --k-band: #f7768e; --k-dos: #ff9e64; --k-db: #7dcfff; --k-json: #a9b1d6; --k-image: #e0af68; --k-ir: #1abc9c;
+  --k-raman: #ff3396; --k-freq: #2ac3de; --plot-1: #f7768e; --plot-2: #9ece6a; --plot-3: #e0af68; --plot-4: #bb9af7;
+  --plot-5: #7dcfff; --plot-6: #ff007c; --plot-7: #73daca; --plot-8: #ff9e64; --plot-9: #a9b1d6; --plot-10: #7aa2f7;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  color-scheme: dark;
+}
+/* ---- Forced surfaces (1.1.6): a light or dark plot in any theme (Settings › Appearance › Plot
+ * background: data-plot-surface on the root, app.js), and the 3D view's overlays (axis triad, labels,
+ * cell, selection, chips) on a White or Black background that is the other lightness from the theme
+ * (data-vp-surface). Each set scopes the tokens those draw with to the plot (a Plotly figure, the FREQ
+ * stick spectrum) or the viewer, and to a hidden probe that app.js reads (plotVar, vpVar). The
+ * aliases of :root are set again: a var() in a custom property resolves where it is declared.
+ * "Follow theme" and a background of the theme's own lightness set no attribute: the theme's tokens. */
+/* forced light */
+:root[data-plot-surface="light"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root[data-vp-surface="light"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4; --border: #e3e6eb; --border-strong: #848b97;
+  --text: #15181e; --text-2: #545b67; --text-3: #636a76; --accent: #2563eb; --accent-hover: #1d4ed8; --accent-soft: #ebf2ff;
+  --on-accent: #ffffff; --focus: #2563eb; --sel: #f59e0b; --hover-atom: #2563eb; --measure: #c026d3;
+  --success: #137336; --danger: #b91c1c; --warning: #a54b07; --info: #0369a1; --on-danger: #ffffff;
+  --viewport-bg: #ffffff; --cell: #334155; --ghost: #9aa3b2; --plot-bg: #ffffff;
+  --axis-a: #dc2626; --axis-b: #15803d; --axis-c: #2563eb;
+  --e1: 0 1px 2px rgb(16 24 40 / .06); --e2: 0 4px 12px rgb(16 24 40 / .10), 0 1px 3px rgb(16 24 40 / .06);
+  --plot-1: #e5484d; --plot-2: #30a46c; --plot-3: #f59e0b; --plot-4: #8b5cf6; --plot-5: #0891b2;
+  --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
+  --vol-plus: #2563eb; --vol-minus: #dc2626; --cmp-a: #2563eb; --cmp-b: #ea580c;
+  --line: var(--border); --line-strong: var(--border-strong); --muted: var(--text-2); --accent-text: var(--on-accent);
+  --good: var(--success); --bad: var(--danger); --warn: var(--warning); --viewer-bg: var(--viewport-bg); --shadow: var(--e1);
+  --lod-badge-bg: color-mix(in srgb, var(--surface) 85%, transparent); --chip-bg: color-mix(in srgb, var(--surface) 92%, transparent);
+  --sel-soft: color-mix(in srgb, var(--sel) 22%, transparent); --preview-cell: var(--accent);
+  color-scheme: light;
+}
+/* forced dark */
+:root[data-plot-surface="dark"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root[data-vp-surface="dark"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833; --border: #2a303b; --border-strong: #6b7383;
+  --text: #e7e9ee; --text-2: #aab2be; --text-3: #8f97a4; --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47;
+  --on-accent: #0a1020; --focus: #8db6ff; --sel: #fbbf24; --hover-atom: #8db6ff; --measure: #e879f9;
+  --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #38bdf8; --on-danger: #0a1020;
+  --viewport-bg: #000000; --cell: #8aa4d6; --ghost: #6f7785; --plot-bg: #16191f;
+  --axis-a: #f87171; --axis-b: #4ade80; --axis-c: #60a5fa;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #3a4150; --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+  --plot-1: #e5484d; --plot-2: #30a46c; --plot-3: #f59e0b; --plot-4: #8b5cf6; --plot-5: #0891b2;
+  --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
+  --vol-plus: #60a5fa; --vol-minus: #f87171; --cmp-a: #60a5fa; --cmp-b: #fb923c;
+  --line: var(--border); --line-strong: var(--border-strong); --muted: var(--text-2); --accent-text: var(--on-accent);
+  --good: var(--success); --bad: var(--danger); --warn: var(--warning); --viewer-bg: var(--viewport-bg); --shadow: var(--e1);
+  --lod-badge-bg: color-mix(in srgb, var(--surface) 85%, transparent); --chip-bg: color-mix(in srgb, var(--surface) 92%, transparent);
+  --sel-soft: color-mix(in srgb, var(--sel) 22%, transparent); --preview-cell: var(--accent);
+  color-scheme: dark;
+}
+/* the high-contrast themes keep AAA on a forced surface */
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-plot-surface="light"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-vp-surface="light"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --surface: #ffffff; --surface-2: #f5f5f5; --surface-3: #ebebeb; --border: #595959; --border-strong: #000000;
+  --text: #000000; --text-2: #1f1f1f; --text-3: #333333; --accent: #0033a0; --accent-soft: #e6eeff; --on-accent: #ffffff;
+  --focus: #0033a0; --sel: #e65c00; --hover-atom: #0033a0; --measure: #8b008b; --success: #005a1e; --danger: #a00000;
+  --warning: #6b3a00; --info: #00476b; --viewport-bg: #ffffff; --cell: #000000; --plot-bg: #ffffff;
+  --axis-a: #c00000; --axis-b: #006400; --axis-c: #0033a0;
+  --plot-1: #0033a0; --plot-2: #c00000; --plot-3: #006400; --plot-4: #8f4a00; --plot-5: #7b1fa2;
+  --plot-6: #00636b; --plot-7: #b34700; --plot-8: #000000; --plot-9: #5c5c5c; --plot-10: #a3005c;
+}
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-plot-surface="dark"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-vp-surface="dark"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --surface: #0a0a0a; --surface-2: #141414; --surface-3: #1f1f1f; --border: #8c8c8c; --border-strong: #ffffff;
+  --text: #ffffff; --text-2: #e6e6e6; --text-3: #cccccc; --accent: #8cc4ff; --accent-soft: #0d2347; --on-accent: #000000;
+  --focus: #ffd700; --sel: #ffb000; --hover-atom: #8cc4ff; --measure: #ff8cff; --success: #7dff9e; --danger: #ffa3a3;
+  --warning: #ffd966; --info: #7fdcff; --viewport-bg: #000000; --cell: #ffffff; --plot-bg: #000000;
+  --axis-a: #ff8080; --axis-b: #80ff80; --axis-c: #80b3ff;
+  --plot-1: #8cc4ff; --plot-2: #ffa3a3; --plot-3: #7dff9e; --plot-4: #ffd966; --plot-5: #d9a6ff;
+  --plot-6: #66e0e0; --plot-7: #ffb366; --plot-8: #ffffff; --plot-9: #bfbfbf; --plot-10: #ff8cd9;
+}
+/* Colorblind Safe keeps the Okabe-Ito hues on a forced surface */
+:root[data-theme="cvd"][data-plot-surface="light"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root[data-theme="cvd"][data-vp-surface="light"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --accent: #005a8c; --focus: #005a8c; --sel: #e69f00; --hover-atom: #0072b2; --measure: #a8457f;
+  --success: #00704f; --danger: #a84300; --warning: #7a5200; --info: #005a8c;
+  --axis-a: #d55e00; --axis-b: #009e73; --axis-c: #0072b2;
+  --plot-1: #0072b2; --plot-2: #d55e00; --plot-3: #009e73; --plot-4: #e69f00; --plot-5: #cc79a7;
+  --plot-6: #56b4e9; --plot-7: #000000; --plot-8: #999933; --plot-9: #999999; --plot-10: #882255;
+}
+:root[data-theme="cvd"][data-plot-surface="dark"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root[data-theme="cvd"][data-vp-surface="dark"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
+  --accent: #56b4e9; --focus: #56b4e9; --sel: #e69f00; --hover-atom: #56b4e9; --measure: #cc79a7;
+  --success: #009e73; --danger: #e8803a; --warning: #f0e442; --info: #56b4e9;
+  --axis-a: #d55e00; --axis-b: #009e73; --axis-c: #56b4e9;
+  --plot-1: #56b4e9; --plot-2: #d55e00; --plot-3: #009e73; --plot-4: #e69f00; --plot-5: #cc79a7;
+  --plot-6: #0072b2; --plot-7: #ffffff; --plot-8: #f0e442; --plot-9: #999999; --plot-10: #44aa99;
+}
+/* ---- Plot style (1.1.6): Settings › Appearance › Plot style sets a preset for every plot family, or one
+ * per family (mace/plotting/presets.py, js/plotpresets.js). A plot reads its tokens through a probe that
+ * carries its family's preset (app.js plotVar(name, family): .plot-probe[data-plot-preset]); the FREQ
+ * sticks (.fm-spec) carry the attribute themselves. data-plot-tone on the root is the plot surface's
+ * lightness. Default, Presentation and VESTA-like draw the theme's own series; these presets draw their own:
+ * - Publication: the Okabe–Ito series after a first one in ink (black on a light plot, white on a dark one),
+ *   --plot-ink for the axes, frame, ticks and text (app.js styleFigure draws them heavier, without the grid);
+ *   on a light plot the orange and sky blue a shade deeper and Paul Tol's olive for the yellow;
+ * - Colorblind safe: Okabe–Ito from its blue (the same hues, without the ink first);
+ * - Print grayscale: black and grays (told apart by line style and markers, styleFigure).
+ * Every series reads on tinted paper too (2:1, 3:1 in the high-contrast themes: the test). */
+:root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="publication"] {
+  --plot-ink: #000000;
+  --plot-1: #000000; --plot-2: #0072b2; --plot-3: #d55e00; --plot-4: #009e73; --plot-5: #cc79a7;
+  --plot-6: #c98500; --plot-7: #3d9ad1; --plot-8: #999933; --plot-9: #666666; --plot-10: #882255;
+}
+:root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="publication"] {
+  --plot-ink: #ffffff;
+  --plot-1: #ffffff; --plot-2: #56b4e9; --plot-3: #e8803a; --plot-4: #2fbf8f; --plot-5: #cc79a7;
+  --plot-6: #e69f00; --plot-7: #8fd0f5; --plot-8: #f0e442; --plot-9: #a6a6a6; --plot-10: #e07fb0;
+}
+:root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="colorblind"] {
+  --plot-1: #0072b2; --plot-2: #d55e00; --plot-3: #009e73; --plot-4: #cc79a7; --plot-5: #c98500;
+  --plot-6: #3d9ad1; --plot-7: #000000; --plot-8: #999933; --plot-9: #666666; --plot-10: #882255;
+}
+:root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="colorblind"] {
+  --plot-1: #56b4e9; --plot-2: #e8803a; --plot-3: #2fbf8f; --plot-4: #cc79a7; --plot-5: #e69f00;
+  --plot-6: #8fd0f5; --plot-7: #ffffff; --plot-8: #f0e442; --plot-9: #a6a6a6; --plot-10: #e07fb0;
+}
+:root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="grayscale"] {
+  --plot-ink: #000000;
+  --plot-1: #000000; --plot-2: #4d4d4d; --plot-3: #767676; --plot-4: #262626; --plot-5: #626262;
+  --plot-6: #3a3a3a; --plot-7: #555555; --plot-8: #6e6e6e; --plot-9: #1a1a1a; --plot-10: #808080;
+}
+:root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="grayscale"] {
+  --plot-ink: #ffffff;
+  --plot-1: #ffffff; --plot-2: #bdbdbd; --plot-3: #8c8c8c; --plot-4: #e0e0e0; --plot-5: #a6a6a6;
+  --plot-6: #d0d0d0; --plot-7: #b0b0b0; --plot-8: #9a9a9a; --plot-9: #eeeeee; --plot-10: #949494;
+}
+/* a forced plot draws its own surface (the figure's area; a Plotly figure's paper takes it too) */
+:root:is([data-plot-surface="light"], [data-plot-surface="dark"]) :is(.js-plotly-plot, .fm-spec) { background-color: var(--plot-bg); color: var(--text); }
+.plot-probe, .vp-probe { display: none; }
+.plot-probe { --plot-ink: var(--text); }
+/* The theme pickers' swatches (Settings › Appearance, the theme command):
+ * each card shows its theme's page, surface, text and accent colors. */
+.theme-swatch { --sw-bg: #f3f4f6; --sw-surface: #ffffff; --sw-text: #15181e; --sw-accent: #2563eb; }
+.theme-swatch[data-swatch="dark"] { --sw-bg: #0e1014; --sw-surface: #16191f; --sw-text: #e7e9ee; --sw-accent: #6ea2ff; }
+.theme-swatch[data-swatch="hc-light"] { --sw-bg: #ffffff; --sw-surface: #ebebeb; --sw-text: #000000; --sw-accent: #0033a0; }
+.theme-swatch[data-swatch="hc-dark"] { --sw-bg: #000000; --sw-surface: #1f1f1f; --sw-text: #ffffff; --sw-accent: #ffd700; }
+.theme-swatch[data-swatch="cvd"] { --sw-bg: #f3f4f6; --sw-surface: #ffffff; --sw-text: #15181e; --sw-accent: #d55e00; }
+.theme-swatch[data-swatch="sepia"] { --sw-bg: #e2d3b4; --sw-surface: #eadcbf; --sw-text: #47331f; --sw-accent: #7e3c12; }
+.theme-swatch[data-swatch="black"] { --sw-bg: #000000; --sw-surface: #000000; --sw-text: #e6e6e6; --sw-accent: #6ea2ff; }
+.theme-swatch[data-swatch="system"] { --sw-bg: #f3f4f6; --sw-surface: #16191f; --sw-text: #15181e; --sw-accent: #6ea2ff; }
+.theme-swatch[data-swatch="catppuccin-mocha"] { --sw-bg: #181825; --sw-surface: #1e1e2e; --sw-text: #cdd6f4; --sw-accent: #cba6f7; }
+.theme-swatch[data-swatch="catppuccin-latte"] { --sw-bg: #e6e9ef; --sw-surface: #eff1f5; --sw-text: #4c4f69; --sw-accent: #7f2bee; }
+.theme-swatch[data-swatch="dracula"] { --sw-bg: #21222c; --sw-surface: #282a36; --sw-text: #f8f8f2; --sw-accent: #caa9fa; }
+.theme-swatch[data-swatch="gruvbox-dark"] { --sw-bg: #1d2021; --sw-surface: #282828; --sw-text: #ebdbb2; --sw-accent: #fabd2f; }
+.theme-swatch[data-swatch="nord"] { --sw-bg: #292e39; --sw-surface: #2e3440; --sw-text: #eceff4; --sw-accent: #88c0d0; }
+.theme-swatch[data-swatch="one-dark"] { --sw-bg: #21252b; --sw-surface: #282c34; --sw-text: #d7dae0; --sw-accent: #74b8f1; }
+.theme-swatch[data-swatch="solarized-dark"] { --sw-bg: #00222b; --sw-surface: #002b36; --sw-text: #9facac; --sw-accent: #60ace2; }
+.theme-swatch[data-swatch="solarized-light"] { --sw-bg: #eee8d5; --sw-surface: #fdf6e3; --sw-text: #073642; --sw-accent: #1d6ca2; }
+.theme-swatch[data-swatch="tokyo-night"] { --sw-bg: #16161e; --sw-surface: #1a1b26; --sw-text: #c0caf5; --sw-accent: #7aa2f7; }
+.theme-swatch[data-swatch="tokyo-night-storm"] { --sw-bg: #1f2335; --sw-surface: #24283b; --sw-text: #c0caf5; --sw-accent: #84a9f8; }
 :root[data-density="compact"] { --h-row: 24px; --h-control: 24px; }
 :root[data-motion="reduce"] { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; }
 @media (prefers-reduced-motion: reduce) {

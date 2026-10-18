@@ -198,18 +198,17 @@ def _planes(heights, tol=PLANE_TOL):
 
 
 def _formula(numbers) -> str:
-    from ase.formula import Formula
+    """A cell's full formula in ase's "metal" order (mace.utils.formula)."""
     from ase.data import chemical_symbols
-    return Formula("".join(chemical_symbols[int(z)] for z in numbers)).format("metal")
+    from mace.utils.formula import count_symbols, format_formula
+    return format_formula(count_symbols(chemical_symbols[int(z)] for z in numbers), "metal")
 
 
 def _plane_name(formula: str) -> str:
     """A plane's composition as a reader names its termination: "Mg2O2" -> "MgO", "O4" -> "O"."""
-    from ase.formula import Formula
-    try:
-        return Formula(formula).reduce()[0].format("metal")
-    except Exception:
-        return formula
+    from mace.utils.formula import parse_formula, reduced_formula
+    counts = parse_formula(formula)
+    return reduced_formula(counts, "metal")[0] if counts else formula
 
 
 def _surface_cells(bulk, hkl, n):

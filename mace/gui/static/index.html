@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="static/@V@/css/tokens.css">
 <link rel="stylesheet" href="static/@V@/app.css">
 <link rel="stylesheet" href="static/@V@/css/shell.css">
+<link rel="stylesheet" href="static/@V@/css/panelctx.css">
 <script src="static/@V@/app.js" defer></script>
 <script src="static/@V@/editor.js" defer></script>
 <script type="module" src="static/@V@/js/shell.js"></script>
@@ -323,6 +324,17 @@ O 0.5 0.5 0.5</textarea>
               </div>
               <div id="o-energy" class="chart"></div>
             </div>
+            <div class="card" id="o-scf-card" data-sub="energy">
+              <div class="card-label" id="o-scf-label" data-s="label">SCF convergence <span class="muted"></span></div>
+              <div class="o-energy-row" role="toolbar" aria-label="SCF chart options">
+                <label class="o-e-sel" title="Which SCF: the latest (it follows a running job) or one the output prints per cycle">Step <select id="o-s-step" data-s="step" aria-label="SCF step"></select></label>
+                <button type="button" class="tb-btn-text" id="o-s-log" data-s="log" aria-pressed="true" title="Log of |ΔE| per cycle; off: E minus the last cycle's">Log |ΔE|</button>
+                <label class="o-e-sel">Units <select id="o-s-unit" data-s="unit" aria-label="SCF energy unit"><option>Ha</option><option>eV</option><option>meV</option><option value="kJ/mol">kJ/mol</option><option value="kcal/mol">kcal/mol</option></select></label>
+                <button type="button" class="tb-btn-text" id="o-s-tsv" data-s="tsv" title="Copy the cycles as tab-separated text (as mace analyze --convergence FILE --scf prints them)">Copy TSV</button>
+                <button type="button" class="tb-btn-text" id="o-s-plot" data-s="plot" title="Run Analysis › SCF">Open as Plot</button>
+              </div>
+              <div id="o-scf" class="chart" data-s="chart"></div>
+            </div>
             <div class="card" data-sub="cell">
               <div class="card-label">Cell parameters</div>
               <table class="data" id="o-cell"></table>
@@ -353,6 +365,9 @@ O 0.5 0.5 0.5</textarea>
       <div class="plot-opts" id="plot-opts"></div>
     </section>
 
+    <!-- PLOT GALLERY: many outputs' plots in panes (js/docs/gallery.js) -->
+    <section class="panel" id="tab-gallery" aria-label="Plot gallery"><div class="gallery-host" id="gallery-host"></div></section>
+
     <!-- FREQ: an output's normal modes (js/docs/freq.js) -->
     <section class="panel" id="tab-freq" aria-label="Normal modes">
       <div class="freq-host" id="freq-host"></div>
@@ -380,6 +395,8 @@ O 0.5 0.5 0.5</textarea>
     <!-- CLUSTER and JOB documents (js/docs/cluster.js, loaded on first use) -->
     <section class="panel" id="tab-cluster" aria-label="Cluster"><div class="cluster-host" id="cluster-host"></div></section>
     <section class="panel" id="tab-job" aria-label="Job details"><div class="job-host" id="job-host"></div></section>
+    <!-- WORKFLOWS document (js/docs/workflow.js, loaded on first use) -->
+    <section class="panel" id="tab-workflows" aria-label="Workflows"><div class="workflow-host" id="workflow-host"></div></section>
 
     <!-- BATCH SETUP (js/batch/panel.js) -->
     <section class="panel" id="tab-batch" aria-label="Batch Setup">

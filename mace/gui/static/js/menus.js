@@ -1,7 +1,7 @@
 /* The menu bar and popup menus (also the base for context menus). Built
  * from the registry: a menu entry is a command id, {cmd, args} (a command
  * run with arguments, e.g. the atom a context menu was opened on), "-" for a
- * separator, or {label, sub: [...]} for a submenu. Roving focus, arrows, Esc,
+ * separator, {head: "Name"} for a section's name, or {label, sub: [...]} for a submenu. Roving focus, arrows, Esc,
  * Alt+letter (the menu.open.* mnemonics in the chord index), F10. */
 import { registry, shortcutOf, disabledReason } from "./commands.js";
 import { $, $$, esc, icon, place, hideTip, overlayHost } from "./ui.js";
@@ -117,6 +117,7 @@ function buildMenu(items, label, args = null) {
   el.tabIndex = -1;
   el.innerHTML = items.map((it, k) => {
     if (it === "-") return '<div class="menu-sep" role="separator"></div>';
+    if (typeof it === "object" && it.head) return `<div class="menu-head" role="presentation">${esc(it.head)}</div>`;
     if (typeof it === "object" && it.sub) {
       return `<button class="menu-item" role="menuitem" aria-haspopup="menu" data-sub="${k}" tabindex="-1">` +
         `${icon(it.icon)}<span class="lbl">${esc(it.label)}</span><span></span>${icon("chevron-right", "i sub")}</button>`;
@@ -164,7 +165,11 @@ function buildMenu(items, label, args = null) {
     if (!b) return;
     $$(".menu-item", el).forEach((x) => x.classList.toggle("active", x === b));
     clearTimeout(hoverTimer);
+    // the pointer crossing the label or icon of the row whose submenu is open: keep that submenu
+    // (rebuilding it under a pointer on its way in pulled the entries away)
+    if (b.getAttribute("aria-expanded") === "true" && stack[stack.indexOf(el) + 1]) return;
     hoverTimer = setTimeout(() => {
+      if (!stack.includes(el)) return;      // this menu has closed: closeAfter would close every menu
       closeAfter(el);
       if (b.dataset.sub !== undefined) openSub(el, b, items[Number(b.dataset.sub)], false);
     }, 120);

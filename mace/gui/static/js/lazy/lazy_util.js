@@ -32,13 +32,21 @@ export function panel(H, { id, title, body, foot = "", onClose = null, wide = fa
   d.querySelector("h2").textContent = title;
   const b = d.querySelector(".dlg-body");
   if (typeof body === "string") b.innerHTML = body; else b.appendChild(body);
-  d.querySelector("[data-close]").addEventListener("click", () => d.close());
-  dragByHead(d);
-  d.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); d.close(); } };
-  d.addEventListener("close", () => {
+  // the "close" event comes a task later: a close by the panel's own button or
+  // Esc runs onClose at once, so what the panel owns (a preview in the
+  // viewport) goes in the same frame as the panel
+  let shut = false;
+  const closed = () => {
+    if (shut) return;
+    shut = true;
     if (onClose) onClose();
     if (opener && opener.focus && opener.isConnected) opener.focus();
-  }, { once: true });
+  };
+  const closeNow = () => { d.close(); closed(); };
+  d.querySelector("[data-close]").addEventListener("click", closeNow);
+  dragByHead(d);
+  d.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeNow(); } };
+  d.addEventListener("close", closed, { once: true });
   H.overlayOpening();
   d.show();
   const first = d.querySelector(".dlg-body :is(input, select, textarea)");

@@ -25,6 +25,21 @@
 .fm-spec .ra { stroke: var(--plot-1); stroke-width: 2; }
 .fm-spec .cur { stroke: var(--sel); stroke-width: 1; stroke-dasharray: 3 2; }
 .fm-spec .lab { font-size: 10px; fill: var(--text-3); }
+/* Settings › Appearance › Plot style, the Spectra family's preset (data-plot-preset on the svg, tokens.css):
+ * Publication: ink axis and labels, the IR and Raman sticks in Okabe–Ito blue and vermillion; Colorblind safe:
+ * blue and vermillion; Print grayscale: ink IR and dashed gray Raman; Presentation: heavier sticks, larger labels */
+.fm-spec[data-plot-preset="publication"] .axis { stroke: var(--plot-ink); stroke-width: 1.25; }
+.fm-spec[data-plot-preset="publication"] .ir { stroke: var(--plot-2); stroke-width: 2.5; }
+.fm-spec[data-plot-preset="publication"] .ra { stroke: var(--plot-3); stroke-width: 2.5; }
+.fm-spec[data-plot-preset="publication"] .lab { fill: var(--plot-ink); font-size: 11px; }
+.fm-spec[data-plot-preset="colorblind"] .ir { stroke: var(--plot-1); }
+.fm-spec[data-plot-preset="colorblind"] .ra { stroke: var(--plot-2); }
+.fm-spec[data-plot-preset="grayscale"] .axis { stroke: var(--plot-ink); }
+.fm-spec[data-plot-preset="grayscale"] .ir { stroke: var(--plot-1); stroke-width: 2.2; }
+.fm-spec[data-plot-preset="grayscale"] .ra { stroke: var(--plot-3); stroke-width: 2.2; stroke-dasharray: 4 2; }
+.fm-spec[data-plot-preset="grayscale"] .lab { fill: var(--plot-ink); }
+.fm-spec[data-plot-preset="presentation"] .ir, .fm-spec[data-plot-preset="presentation"] .ra { stroke-width: 3.5; }
+.fm-spec[data-plot-preset="presentation"] .lab { font-size: 13px; }
 .fm-grid { flex: 1; min-height: 0; overflow: auto; font-size: var(--fs-sm); outline: none; }
 .fm-grid:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .fm-head, .fm-row { display: grid; grid-template-columns: 52px 92px 74px 88px 88px minmax(80px, 1fr); align-items: center; height: 26px; padding: 0 var(--s-3); }

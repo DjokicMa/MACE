@@ -80,6 +80,8 @@ def kind_by_name(name: str) -> str:
     # ---- kinds hidden before (new values only, so no consumer of an old kind changes)
     if low.endswith(".cube") or _CUBE_DAT.search(name):
         return "cube"
+    if low.endswith(".molden"):
+        return "orbitals"           # CRYSTAL23 ORBITALS (Molden format): the orbital picker
     if low.endswith((".xyz", ".extxyz")):
         return "xyz"
     if low.endswith((".vasp", ".poscar")) or re.match(r"^(POSCAR|CONTCAR)([._-]|$)", name):
@@ -333,8 +335,8 @@ def info_payload(path: Path, kind: str) -> Dict[str, Any]:
 
 # ------------------------------------------------------------------ properties outputs
 _PROPS_SKIP = ("script", "wavefunction", "log", "d3", "d12")
-_PROPS_STEP_SUFFIXES = ("_band", "_doss", "_charge+potential", "_transport", "_BAND", "_DOSS", "_TRANSPORT",
-                        "_CHARGE+POTENTIAL", ".band", ".doss")
+_PROPS_STEP_SUFFIXES = ("_band", "_doss", "_charge+potential", "_transport", "_orbitals", "_BAND", "_DOSS",
+                        "_TRANSPORT", "_CHARGE+POTENTIAL", "_ORBITALS", ".band", ".doss")
 
 
 def rel_inside(st, path: Optional[Path]) -> Optional[str]:

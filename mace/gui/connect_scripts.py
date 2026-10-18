@@ -17,7 +17,32 @@ FIELDS = ("gateway", "jump", "node", "hop", "dir", "mace", "setup", "conda", "lo
 
 
 def _ps_str(v: str) -> str:
-    return "'" + v.replace("'", "''") + "'"
+    """A PowerShell string literal for ``v``, in plain ASCII.
+
+    Printable ASCII goes in a single-quoted string with ' doubled. Every other character
+    (controls, and anything non-ASCII) is spelled [char]0xNNNN, one per UTF-16 code unit,
+    so the literal cannot end early: PowerShell also ends a single-quoted string at the
+    curly quotes U+2018-U+201B, and Windows PowerShell 5.1 reads a .ps1 without a BOM
+    in the ANSI code page, where UTF-8 bytes such as the 0x91 in Ñ read as a quote."""
+    parts: List[str] = []
+    run = ""
+    units = v.encode("utf-16-le")
+    for i in range(0, len(units), 2):
+        code = units[i] | units[i + 1] << 8
+        if 0x20 <= code < 0x7F:
+            run += "''" if code == 0x27 else chr(code)
+            continue
+        if run:
+            parts.append(f"'{run}'")
+            run = ""
+        parts.append(f"[char]0x{code:04X}")
+    if run or not parts:
+        parts.append(f"'{run}'")
+    if len(parts) == 1 and parts[0].startswith("'"):
+        return parts[0]
+    if parts[0].startswith("[char]"):
+        parts.insert(0, "''")         # string + char, never char + char (that adds the code points)
+    return "(" + " + ".join(parts) + ")"
 
 
 def defaults_block(kind: str, prof: Dict[str, Any]) -> List[str]:

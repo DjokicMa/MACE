@@ -20,16 +20,16 @@ const HARTREE_MEV = 27211.386245988;
 const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "band", dos: "dos", ir: "IR", raman: "Ram",
   db: "db", json: "json", image: "img", html: "html", freq: "FREQ",
   // kinds hidden before plan E1, and the content chips of outputs and logs
-  cube: "cube", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34", f25: "f25",
+  cube: "cube", orbitals: "orb", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34", f25: "f25",
   transport: "trn", crystaldata: "data", wavefunction: "wf", script: "sh", log: "log", joblog: "log",
-  OPT: "OPT", SP: "SP", FREQ: "FREQ", BAND: "BAND", DOSS: "DOSS", "CHARGE+POTENTIAL": "CHG+POT", TRANSPORT: "TRANSP",
+  OPT: "OPT", SP: "SP", FREQ: "FREQ", BAND: "BAND", DOSS: "DOSS", "CHARGE+POTENTIAL": "CHG+POT", TRANSPORT: "TRANSP", ORBITALS: "ORB",
   PROPERTIES: "PROPS", props: "PROPS" };
 const FILTERS = [
   ["all", "All", null],
   ["struct", "Structures", ["cif", "d12", "out", "xyz", "poscar", "mol", "pdb", "gen", "fort34"]],
   // Properties (spec §1.1): band, DOS, IR and Raman data, FREQ outputs (by their index: the details), plots,
   // volumes, fort.25, transport data and properties outputs (by content)
-  ["results", "Properties", ["band", "dos", "ir", "raman", "image", "html", "freq", "cube", "f25", "transport", "props"]],
+  ["results", "Properties", ["band", "dos", "ir", "raman", "image", "html", "freq", "cube", "orbitals", "f25", "transport", "props"]],
   ["setup", "Setup", ["json", "d12", "d3"]],
   ["db", "Databases", ["db"]],
   ["logs", "Logs & data", ["joblog", "script", "crystaldata", "wavefunction", "log"]],
@@ -139,6 +139,100 @@ function viewerBg() {
   if (b === "custom" && /^#[0-9a-f]{6}$/i.test(setting("backgroundColor", ""))) return setting("backgroundColor", "");
   return cssVar("--viewer-bg");
 }
+/* Forced surfaces (1.1.6, tokens.css): Settings › Appearance › Plot background gives the plots a
+ * light or dark surface of their own (data-plot-surface on the root); a White, Black or custom 3D
+ * background of the other lightness from the theme gives the 3D view's overlays the token set of
+ * that lightness (data-vp-surface), so the triad, labels, cell and selection stay legible on it.
+ * plotVar and vpVar read a token as the plots and the 3D view draw it (a hidden probe in each scope). */
+function bgLightness() {
+  const b = setting("background", "theme"), c = setting("backgroundColor", "");
+  const hex = b === "white" ? cssVar("--viewport-white") : b === "black" ? cssVar("--viewport-black") : b === "custom" && /^#[0-9a-f]{6}$/i.test(c) ? c : "";
+  if (!hex) return "";
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.5 ? "light" : "dark";
+}
+function attr(el, k, v) { if ((el.getAttribute(k) || "") !== v) { if (v) el.setAttribute(k, v); else el.removeAttribute(k); } }
+function syncSurfaces() {
+  const root = document.documentElement, p = setting("plots.surface", "theme");
+  attr(root, "data-plot-surface", p === "light" || p === "dark" ? p : "");
+  const bg = bgLightness(), scheme = getComputedStyle(root).colorScheme === "dark" ? "dark" : "light";
+  attr(root, "data-vp-surface", bg && bg !== scheme ? bg : "");
+  // Settings › Appearance › Plot style (tokens.css): the publication series and ink, by the plot surface's lightness
+  attr(root, "data-plot-style", setting("plots.style", "default") !== "default" ? String(setting("plots.style", "default")) : "");
+  attr(root, "data-plot-tone", p === "light" || p === "dark" ? p : scheme);
+}
+/* Settings › Appearance › Plot style (1.1.6): a preset per plot family (mace/plotting/presets.py,
+ * js/plotpresets.js, which the shell installs as window.MACE_PRESETS): "plots.style" is the preset of
+ * every family ("Same for all"), "plots.style.<family>" a family's own ("same": follow it). A family a
+ * preset does not cover (VESTA-like is for maps and volumes) draws Default. */
+const PP = () => window.MACE_PRESETS || null;
+function plotPreset(family) {
+  const all = setting("plots.style", "default"), own = family ? setting(`plots.style.${family}`, "same") : "same";
+  const id = own && own !== "same" ? own : all, pp = PP();
+  if (pp) return pp.resolveId(id, family || "band");
+  return id === "publication" ? id : "default";
+}
+const presetOf = (family) => { const pp = PP(); return pp ? pp.get(plotPreset(family), family || "band") : null; };
+const plotTone = () => (document.documentElement.getAttribute("data-plot-tone") === "dark" ? "dark" : "light");
+const probes = {};
+function probeVar(kind, name, preset) {
+  syncSurfaces();
+  const k = preset ? `${kind}:${preset}` : kind;
+  let el = probes[k];
+  if (!el || !el.isConnected) {
+    el = probes[k] = document.createElement("div"); el.className = `${kind}-probe`; el.hidden = true;
+    if (preset) el.setAttribute("data-plot-preset", preset);
+    document.body.appendChild(el);
+  }
+  return getComputedStyle(el).getPropertyValue(name).trim();
+}
+/* a token as a plot of `family` draws it: its preset's series (tokens.css), on the theme's or the forced surface */
+const plotVar = (name, family) => probeVar("plot", name, plotPreset(family));
+/* a token as a plot in preset `pid` draws it (a plot's own Plot style, Plot options › Style) */
+const plotVarIn = (name, pid) => probeVar("plot", name, pid || "default");
+const vpVar = (name) => probeVar("vp", name);
+/** A Plotly layout's paper and plot colors: see-through on the theme's own surface, else the forced one (exports match). */
+function plotPaper() {
+  const p = setting("plots.surface", "theme");
+  const c = p === "light" || p === "dark" ? plotVar("--plot-bg") : "rgba(0,0,0,0)";
+  return { paper_bgcolor: c, plot_bgcolor: c };
+}
+/* The spin pair of a family's plots: Settings › Plots › Spin colors (a presets.py SPIN_SCHEMES scheme; Auto:
+ * the plot style's, Blue/red by default), the custom Spin up/down colors (with Custom, or alone with Auto)
+ * and the spin-down line style (dashed). */
+function spinStyle(family = "band") {
+  const pp = PP(), tone = plotTone();
+  const hex = (k) => { const v = setting(k, ""); return /^#[0-9a-f]{6}$/i.test(v) ? v : ""; };
+  const scheme = setting("plots.spinColors", "auto");
+  const pair = pp ? pp.spinColors(plotPreset(family), family, tone, scheme, hex("plots.spinUp"), hex("plots.spinDown"))
+    : { up: plotVar("--plot-1", family), down: plotVar("--plot-2", family) };      // presets not loaded yet: the theme's series
+  return { up: pair.up, down: pair.down, dash: setting("plots.spinDownDash", "dash") };
+}
+/* Spin and difference volumes: + and − (the 3D view and the slices agree: + blue, − red by default,
+ * yellow and cyan in VESTA-like) */
+function volumeColors() {
+  const P = presetOf("maps"), dark = plotTone() === "dark";
+  if (!P || plotPreset("maps") === "default") return [cssVar("--plot-10"), cssVar("--plot-1")];
+  if (dark && plotPreset("maps") === "grayscale") return [P.iso.minus, P.iso.plus];
+  return [P.iso.plus, P.iso.minus];
+}
+const mapScale = (signed) => { const pp = PP(); return pp ? pp.mapScale(plotPreset("maps"), signed)
+  : { colorscale: signed ? "RdBu" : "Viridis", reversescale: !!signed, contours: "both" }; };
+/* Every plot builder passes its figure through here before plotly draws it (the screen and the PNG/SVG
+ * exports alike), with its family. Default: unchanged. Publication: the axes, frame and ticks in ink
+ * (black on a light plot), outside ticks, larger tick labels, no decorative grid (an axis that asks for its
+ * grid, the band structure's high-symmetry k-points, keeps it, in ink), lines a quarter heavier.
+ * Presentation: larger text, thicker lines and frame. Print grayscale: Publication's frame, and the series
+ * of spectra and run charts told apart by line style and markers. The series colors come from tokens.css. */
+const isPublication = (family) => plotPreset(family) === "publication";
+function styleFigure(traces, layout, family, pid = null) {
+  const pp = PP();
+  if (!pp || !pp.styleFigure) return { traces, layout };
+  // js/plotpresets.js styleFigure (mace/plotting/plotly_bands.py style_figure draws mace plotting's the same way);
+  // pid: a plot's own preset (Plot options › Style) over its family's
+  const id = pid ? pp.resolveId(pid, family) : plotPreset(family);
+  return pp.styleFigure(traces, layout, family, id, (n) => (pid ? plotVarIn(n, id) : plotVar(n, family)));
+}
 function store(key, val) {
   try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); }
   catch (e) { return null; }
@@ -148,6 +242,7 @@ function store(key, val) {
 function applyTheme(t) {
   if (t === "system") document.documentElement.removeAttribute("data-theme");
   else if (t) document.documentElement.setAttribute("data-theme", t);
+  syncSurfaces();
   Object.values(state.viewers).forEach((v) => {
     if (v) { v.setBackgroundColor(viewerBg()); v.render(); }
   });
@@ -451,8 +546,12 @@ function load3Dmol() {
   import(new URL(assetUrl("js/viewport/clip.js"), document.baseURI).href),
   import(new URL(assetUrl("js/viewport/rendering.js"), document.baseURI).href),
   // the rotation center every fitted view starts from (geom/core.js pivotOf)
-  import(new URL(assetUrl("js/geom/core.js"), document.baseURI).href)]).then(([, clip, look, core]) => {
+  import(new URL(assetUrl("js/geom/core.js"), document.baseURI).href),
+  // Settings › Viewport › Radii (B7): the radius tables 3Dmol draws the spheres from
+  import(new URL(assetUrl("js/viewport/radii.js"), document.baseURI).href)]).then(([, clip, look, core, radii]) => {
     state.gl = { clip, look };
+    state.radii = radii;
+    applyRadii();
     window.MACE.pivotOf = core.pivotOf;
     // a viewer made in between (3Dmol here, the module not yet): it gets them now
     Object.values(state.viewers).forEach((v) => v && glExtras(v));
@@ -749,25 +848,93 @@ function bondsFor(atoms, s, scale) {
 }
 
 /* The element colors: Settings' colorScheme is the one source (the old
- * #opt-colors select only mirrors it). */
+ * #opt-colors select only mirrors it). It names a palette (1.1.6): a preset
+ * of element_colors.json (vesta, jmol, cvd) or "user:<name>", one of the
+ * user's palettes in ~/.config/mace/element_colors.json (state.palettes,
+ * from /api/palettes; mace plotting reads the same file). A user palette is
+ * its base preset plus the elements it changes. While Element Colors is
+ * open, its draft (state.paletteDraft) is what every view draws. */
+const paletteCache = new Map();
+function paletteMap(id) {
+  const c = state.colors;
+  if (!c || !id) return null;
+  if (c.schemes[id]) return c.schemes[id];
+  const p = id.startsWith("user:") && state.palettes && state.palettes.palettes ? state.palettes.palettes[id.slice(5)] : null;
+  if (!p) return null;
+  if (!paletteCache.has(id)) paletteCache.set(id, { ...(c.schemes[p.base] || c.schemes[c.default]), ...(p.colors || {}) });
+  return paletteCache.get(id);
+}
+function paletteIds() {
+  const c = state.colors;
+  if (!c) return [];
+  const users = Object.keys((state.palettes && state.palettes.palettes) || {}).sort((a, b) => a.localeCompare(b));
+  return [c.default, ...Object.keys(c.schemes).filter((k) => k !== c.default).sort(), ...users.map((n) => `user:${n}`)];
+}
+function paletteLabel(id) {
+  const c = state.colors;
+  if (id.startsWith("user:")) return id.slice(5);
+  return (c && c.labels && c.labels[id]) || id;
+}
+/* Every view draws the colors again (the classic views, the editor, FREQ, volumes). */
+function colorsChanged() {
+  document.dispatchEvent(new CustomEvent("mace-colors"));
+  fillColorOptions();
+  redrawViews();
+}
+function setPalettes(v) {
+  state.palettes = v || { palettes: {} };
+  paletteCache.clear();
+  colorsChanged();
+}
+function setPaletteDraft(map) {
+  state.paletteDraft = map || null;
+  colorsChanged();
+}
 function schemeName() {
   const c = state.colors, name = setting("colorScheme", c ? c.default : "vesta");
-  return c && c.schemes[name] ? name : (c ? c.default : name);
+  return paletteMap(name) ? name : (c ? c.default : name);
 }
+function currentPalette() { return state.paletteDraft || paletteMap(schemeName()) || {}; }
 function colorScheme() {
   const c = state.colors;
   if (!c) return "Jmol";
-  return { prop: "elem", map: c.schemes[schemeName()] };
+  return { prop: "elem", map: currentPalette() };
 }
 function elementColor(sym) {
   const c = state.colors;
   if (!c) return cssVar("--fallback-atom");
-  return (c.schemes[schemeName()] || {})[sym] || c.fallback;
+  return currentPalette()[sym] || c.fallback;
 }
-/* Ball-and-stick spheres are atomScale x 0.7 with bonds, x 0.95 without: the
- * default 0.40 gives the 0.28 and 0.38 the classic views always drew. */
+/* The classic panel's color select: every palette, the chosen one selected. */
+function fillColorOptions() {
+  const sel = document.getElementById("opt-colors");
+  if (!sel || !state.colors) return;
+  sel.innerHTML = paletteIds().map((k) => `<option value="${esc(k)}">${esc(paletteLabel(k))}</option>`).join("");
+  sel.value = schemeName();
+}
+/* Settings › Viewport › Radii (B7, viewport/radii.js): 3Dmol's radius table (GLModel.vdwRadii, which
+ * every view, the clipping and the picking read) holds the chosen set; its own van der Waals table is
+ * kept for the "vdw" set. Ball-and-stick spheres are atomScale × the radius with bonds (VESTA's rule: the
+ * default 0.40 draws 40 % of the atomic radius, T9), × 1.357 without; with van der Waals radii × 0.7
+ * and × 0.95, the 0.28 and 0.38 the classic views drew before 1.1.6. */
 const round6 = (x) => Math.round(x * 1e6) / 1e6;
-function sphereScale(bonds) { return round6(num("atomScale", 0.4) * (bonds ? 0.7 : 0.95)); }
+const radiusSet = () => { const r = setting("radiusSet", "atomic"); return ["atomic", "covalent", "ionic", "vdw"].includes(r) ? r : "atomic"; };
+function applyRadii() {
+  const G = window.$3Dmol && window.$3Dmol.GLModel;
+  if (!G || !state.radii) return;
+  const set = radiusSet();
+  if (state.radiiSet === set) return;
+  if (!state.vdw0) state.vdw0 = { ...G.vdwRadii };
+  const t = state.radii.table(set, state.vdw0);
+  for (const k of Object.keys(G.vdwRadii)) if (!(k in t)) delete G.vdwRadii[k];
+  Object.assign(G.vdwRadii, t);
+  state.radiiSet = set;
+}
+function sphereScale(bonds) {
+  applyRadii();
+  const f = state.radii ? state.radii.factor(radiusSet(), bonds) : (bonds ? 0.7 : 0.95);
+  return round6(num("atomScale", 0.4) * f);
+}
 function styleFor(kind, bonds, opacity = 1) {
   const cs = colorScheme();
   if (kind === "spacefill") return { sphere: { scale: 0.95, colorscheme: cs, opacity } };
@@ -1714,6 +1881,7 @@ function drawEnergy() {
   const t = state.traj;
   const el = $("#o-energy");
   if (!t) return;
+  drawScf();
   const { pts: all, o, conv, nSeg, grp } = energySeries(t);
   const pts = all.filter((p) => p.y !== null);
   $("#o-energy-card").classList.toggle("no-data", all.length < 2);
@@ -1761,6 +1929,158 @@ function drawEnergy() {
   const sel = pts.find((p) => p.k === state.frame);
   if (sel) svg += `<circle class="sel" cx="${X(sel.x)}" cy="${Y(o.log ? Math.log10(sel.y) : sel.y)}" r="7"/>`;
   el.innerHTML = svg + "</svg>";
+}
+/* The SCF card: one SCF's cycles (out_convergence.scf_timeline, with the convergence), |ΔE| per
+ * cycle on a log axis against TOLDEE (or E minus the last cycle's), the notable cycles marked
+ * (mixing, DIIS, the spin lock's release, conducting-state warnings); the latest SCF by default,
+ * which follows a running job. `mace analyze --convergence FILE --scf` prints the same (Copy TSV
+ * writes its columns). One component, two places: the run view's Timeline (an optimization) and
+ * the inspector's SCF section (a single point, a FREQ, any output that opens without the run view). */
+const SCF_CARD_HTML = `
+  <div class="card-label" data-s="label">SCF convergence <span class="muted"></span></div>
+  <div class="o-energy-row" role="toolbar" aria-label="SCF chart options">
+    <label class="o-e-sel" title="Which SCF: the latest (it follows a running job) or one the output prints per cycle">Step <select data-s="step" aria-label="SCF step"></select></label>
+    <button type="button" class="tb-btn-text" data-s="log" aria-pressed="true" title="Log of |ΔE| per cycle; off: E minus the last cycle's">Log |ΔE|</button>
+    <label class="o-e-sel">Units <select data-s="unit" aria-label="SCF energy unit"><option>Ha</option><option>eV</option><option>meV</option><option value="kJ/mol">kJ/mol</option><option value="kcal/mol">kcal/mol</option></select></label>
+    <button type="button" class="tb-btn-text" data-s="tsv" title="Copy the cycles as tab-separated text (as mace analyze --convergence FILE --scf prints them)">Copy TSV</button>
+    <button type="button" class="tb-btn-text" data-s="plot" title="Run Analysis › SCF">Open as Plot</button>
+  </div>
+  <div data-s="chart" class="chart o-scf-chart"></div>`;
+function scfKey(path) { return `mace.gui.scfcard.${(state.info && state.info.dir_hash) || ""}.${path || ""}`; }
+function scfOptsOf(path) {
+  let o = null;
+  try { o = JSON.parse(store(scfKey(path)) || "null"); } catch (e) { o = null; }
+  return { log: true, unit: "Ha", step: "latest", ...(o || {}) };
+}
+function scfPick(tl, step) {
+  const bl = (tl && tl.blocks) || [];
+  if (!bl.length) return null;
+  if (!step || step === "latest") return bl[bl.length - 1];
+  const k = Number(step);
+  return k >= 1 && k <= bl.length ? bl[k - 1] : bl[bl.length - 1];
+}
+function scfSeriesOf(tl, o) {
+  const blk = scfPick(tl, o.step), f = (E_UNITS[o.unit] || 1) * HARTREE_MEV / 1000;   // Ha -> unit
+  if (!blk) return { blk, pts: [], f };
+  const last = blk.cycles.length ? blk.cycles[blk.cycles.length - 1].etot : 0;
+  const pts = blk.cycles.map((c) => ({ cyc: c.cyc, e: c.etot, de: c.detot, spin: c.spin,
+    y: o.log ? (c.detot ? Math.abs(c.detot) * f : null) : (c.etot === null ? null : (c.etot - last) * f), up: c.detot > 0 && c.cyc > 0 }));
+  return { blk, pts, f };
+}
+/** The chosen SCF's cycles as tab-separated text: the columns of out_convergence.scf_tsv. */
+function scfTsvOf(tl, o) {
+  const { blk, f } = scfSeriesOf(tl, o);
+  if (!blk) return "";
+  const ev = {};
+  for (const e of blk.events) (ev[e.cyc] = ev[e.cyc] || []).push(e.text);
+  return [`cycle\tE_Ha\tdE_${o.unit}\tspin\tevents`, ...blk.cycles.map((c) =>
+    `${c.cyc}\t${c.etot ?? ""}\t${c.detot === null ? "" : c.detot * f}\t${c.spin ?? ""}\t${(ev[c.cyc] || []).join("; ")}`)].join("\n") + "\n";
+}
+/** Draw one SCF card: `root` holds SCF_CARD_HTML's parts, `tl` the timeline (null: not read yet). */
+function renderScfCard(root, path, tl) {
+  const q1 = (k) => root.querySelector(`[data-s="${k}"]`);
+  const el = q1("chart"), o = scfOptsOf(path);
+  root.classList.toggle("hidden", !tl);                   // until the convergence is read
+  if (!tl || !el) return;
+  const { blk, pts: all, f } = scfSeriesOf(tl, o);
+  const sel = q1("step"), bl = tl.blocks || [];
+  sel.innerHTML = [["latest", "Latest"], ...bl.map((b, i) => [String(i + 1), `${b.label} · ${b.cycles.length} cycles`])]
+    .map(([v, l]) => `<option value="${v}"${v === String(o.step || "latest") ? " selected" : ""}>${esc(l)}</option>`).join("");
+  sel.closest("label").hidden = bl.length < 2;
+  q1("log").setAttribute("aria-pressed", String(!!o.log)); q1("unit").value = o.unit;
+  const thr = tl.toldee;
+  q1("label").innerHTML = `SCF convergence <span class="muted">· ${blk ? `${esc(blk.label)}, ${blk.cycles.length} cycles${blk.running ? " so far" : blk.ended === "too_many_cycles" ? ", not converged" : ""}, ` : ""}` +
+    `${o.log ? "log |ΔE|" : "E − E(last cycle)"} in ${esc(o.unit)}${thr ? ` · TOLDEE ${thr.value.toExponential(0)} Ha` : ""}</span>`;
+  const pts = all.filter((p) => p.y !== null && (!o.log || p.y > 0));
+  if (!blk || pts.length < 1) {
+    el.innerHTML = `<p class="o-scf-note">${bl.length ? "No per-cycle SCF lines in this step." : "This output prints no per-cycle SCF lines."}` +
+      `${tl.moved_to_scfout_log && !tl.scfout ? " CRYSTAL prints the cycles of the first point only; the rest went to SCFOUT.LOG, which a MACE job copies back as <job>.SCFOUT.LOG (cycles per point: Run Analysis › SCF)." : ""}</p>`;
+    return;
+  }
+  const W = Math.max(240, el.clientWidth || 360), H = 200, L = 60, R = 12, T = 22, B = 34;
+  const tv = thr && o.log ? thr.value * f : null;
+  const ys = pts.map((p) => (o.log ? Math.log10(p.y) : p.y)).concat(tv ? [Math.log10(tv)] : []);
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const x0 = Math.min(...all.map((p) => p.cyc)), x1 = Math.max(...all.map((p) => p.cyc), x0 + 1), span = x1 - x0;
+  const X = (x) => L + (W - L - R) * ((x - x0) / span), Y = (y) => T + (H - T - B) * (1 - (y - lo) / (hi - lo));
+  const yv = (p) => Y(o.log ? Math.log10(p.y) : p.y);
+  let svg = `<svg class="echart" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="SCF convergence" data-plotkit="1">`;
+  niceTicks(lo, hi, 5).forEach((v) => { svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/>` +
+    `<text class="tick" x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${o.log ? `1e${Math.round(v)}` : +v.toPrecision(3)}</text>`; });
+  const xstep = Math.max(1, Math.ceil(span / 10));
+  for (let x = x0; x <= x1; x += xstep) svg += `<text class="tick" x="${X(x)}" y="${H - B + 16}" text-anchor="middle">${x}</text>`;
+  if (tv) svg += `<line class="thr-line" x1="${L}" x2="${W - R}" y1="${Y(Math.log10(tv))}" y2="${Y(Math.log10(tv))}"><title>TOLDEE ${thr.value} Ha (${esc(thr.source || "")})</title></line>` +
+    `<text class="thr-label" x="${W - R - 2}" y="${Y(Math.log10(tv)) - 3}" text-anchor="end">TOLDEE</text>`;
+  // the notable cycles: a dotted line and a short label (staggered when they crowd)
+  blk.events.forEach((e, i) => {
+    const xe = X(e.cyc);
+    svg += `<line class="ev-line${e.kind === "too_many_cycles" ? " bad" : ""}" x1="${xe}" x2="${xe}" y1="${T}" y2="${H - B}" data-kind="${esc(e.kind)}"><title>cycle ${e.cyc}: ${esc(e.text)}</title></line>` +
+      `<text class="ev-label" x="${xe + 3}" y="${T - 10 + (i % 2) * 9}">${esc(e.text)}</text>`;
+  });
+  svg += `<text class="axis-title" x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">SCF cycle</text>`;
+  svg += `<text class="axis-title" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${o.log ? "|ΔE|" : "E − E(last)"} (${esc(o.unit)})</text>`;
+  svg += `<polyline class="line" points="${pts.map((p) => `${X(p.cyc)},${yv(p)}`).join(" ")}"/>`;
+  const fmtE = (v) => (Math.abs(v) >= 0.01 && Math.abs(v) < 1e4 ? v.toPrecision(4) : v.toExponential(2));
+  pts.forEach((p) => {
+    const label = `cycle ${p.cyc}: ${o.log ? "|ΔE|" : "E − E(last)"} ${fmtE(p.y)} ${o.unit}${p.up ? " (the energy went up)" : ""}${p.spin !== null && p.spin !== undefined ? ` · spin ${p.spin}` : ""}`;
+    svg += `<circle class="pt${o.log && p.up ? " up" : ""}" cx="${X(p.cyc)}" cy="${yv(p)}" r="3" data-cyc="${p.cyc}"><title>${esc(label)}</title></circle>`;
+  });
+  el.innerHTML = svg + "</svg>";
+}
+/** Wire a card's controls once: `path()` and `tl()` give the current output and timeline. */
+function bindScfCard(root, path, tl) {
+  const redraw = () => renderScfCard(root, path(), tl());
+  const set = (patch) => { const p = path(); if (!p) return; store(scfKey(p), JSON.stringify({ ...scfOptsOf(p), ...patch })); redraw(); };
+  root.addEventListener("change", (e) => {
+    const k = e.target.dataset && e.target.dataset.s;
+    if (k === "step") set({ step: e.target.value });
+    else if (k === "unit") set({ unit: e.target.value });
+  });
+  root.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-s]");
+    if (!b || !path()) return;
+    const k = b.dataset.s;
+    if (k === "log") set({ log: !scfOptsOf(path()).log });
+    else if (k === "tsv") {
+      const text = scfTsvOf(tl(), scfOptsOf(path())), n = text.trim().split("\n").length - 1;
+      toast(text && (await copyPlain(text)) ? `Copied ${n} rows` : "Copy failed", "info");
+    } else if (k === "plot" && window.__maceOpenRunPlot) {
+      const o = scfOptsOf(path());
+      window.__maceOpenRunPlot(path(), "scf", { _tab: "scf", block: o.step || "latest", ylog: !!o.log, unit: o.unit });
+    }
+  });
+  return redraw;
+}
+/* the run view's card (an optimization): its timeline comes with the run's convergence */
+const runScfTl = () => (state.traj && state.trajConv && state.trajConv.path === state.traj.path ? state.trajConv.scf_timeline : null);
+const drawRunScf = bindScfCard($("#o-scf-card"), () => state.traj && state.traj.path, runScfTl);
+function drawScf() { if (state.traj) drawRunScf(); }
+function scfTSV() { return state.traj ? scfTsvOf(runScfTl(), scfOptsOf(state.traj.path)) : ""; }
+/** The inspector's SCF section for an output that opens without the run view (a single point,
+ * a FREQ): the card, its own read of the convergence, read again every 15 s while the output grows. */
+function scfSection(path) {
+  const root = document.createElement("div");
+  root.className = "scf-card hidden";
+  root.innerHTML = SCF_CARD_HTML;
+  let tl = null, timer = 0;
+  const redraw = bindScfCard(root, () => path, () => tl);
+  const load = async () => {
+    clearTimeout(timer);
+    if (!root.isConnected && tl) return;                   // the section left the inspector
+    try {
+      const r = await api("out/convergence?" + q({ path }));
+      tl = r.scf_timeline || { blocks: [] };
+      root.dataset.blocks = String(tl.blocks.length);
+      redraw();
+      if (r.live) timer = setTimeout(load, 15000 * (window.__maceLiveScale || 1));
+    } catch (e) { root.classList.remove("hidden"); root.querySelector('[data-s="chart"]').innerHTML = `<p class="o-scf-note">${esc(e.message)}</p>`; }
+  };
+  load();
+  // the width is known once the section is in the inspector
+  requestAnimationFrame(() => { if (tl) redraw(); });
+  return root;
 }
 function energyTSV() {
   const t = state.traj;
@@ -1940,12 +2260,9 @@ async function start() {
     state.boot = boot;
     state.templates = boot.templates;
     state.colors = colors;
-    if (colors) {
-      $("#opt-colors").innerHTML = Object.keys(colors.schemes).map((k) =>
-        `<option value="${k}">${k === "vesta" ? "VESTA colors" : "Jmol colors"}</option>`).join("");
-      // the shell keeps it in step with Settings' colorScheme, both ways
-      $("#opt-colors").value = schemeName();
-    }
+    state.palettes = boot.palettes || { palettes: {} };
+    // the shell keeps it in step with Settings' colorScheme, both ways
+    if (colors) fillColorOptions();
     await loadFiles(boot.files);
   } catch (e) { toast(e.message, true); }
   // the shell module may run after this (it is loaded later): it also checks the flag
@@ -1953,9 +2270,10 @@ async function start() {
   document.dispatchEvent(new CustomEvent("mace-app-ready", { detail: state.info || null }));
 }
 window.addEventListener("resize", () => Object.values(state.viewers).forEach((v) => v && (v.resize(), v.render())));
-window.MACE = { isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, store, viewer, openFile, load3Dmol,
-  loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, energyTSV, displayAtoms, bondsFor, addModel,
+window.MACE = { isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, plotVar, plotVarIn, plotTone, vpVar, plotPaper, styleFigure, isPublication, plotPreset, presetOf, spinStyle, volumeColors, mapScale, elementColors: () => currentPalette(), syncSurfaces, store, viewer, openFile, load3Dmol,
+  loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, energyTSV, scfTSV, drawScf, scfSection, displayAtoms, bondsFor, addModel,
   drawCell, axisLabels, fitView, fitPoints, styleFor, elementColor, showTab, state, highlightDeck,
+  colorScheme, paletteMap, paletteIds, paletteLabel, setPalettes, setPaletteDraft, fillColorOptions,
   redrawViews, sphereScale, schemeName, viewerBg, renderStructureInfo,
   loadFiles: () => loadFiles(), loadStructure: (p, d) => loadStructure(p, d), ensureStep: (t, i) => ensureStep(t, i), expandSummary,
   setTrajectory: (t, title, status) => setTrajectory(t, title, status), markTab,

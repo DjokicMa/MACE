@@ -8,7 +8,10 @@ own batch routes, each follow-up keeping its own parent's settings.
 2. **Plan**: the template is a set of Setup answers (only what the user
    changed), applied to each file on its own through ``setup.run_setup``
    (each parent staged and asked separately, so its functional, basis and
-   settings stay its own); an override changes one file only.
+   settings stay its own); an override changes one file only. The SOC
+   keys of the CLI's settings file ("soc", "soc_ecp", ...; Setup's SOC
+   section) come as ``template_patches`` (and ``override_patches`` per file),
+   written into each file's options as Setup writes them.
 3. **Write** ``batch_<calc>_<date>/``: ``options/`` (the CLI's saved answers,
    one file per CIF group or per parent, plus ``template.json``), ``inputs/``
    (cif2d12's CIF groups), ``decks/`` (what the commands write),
@@ -43,19 +46,22 @@ from .submit import SubmitConflict, SubmitError, path_ok
 NAME_RE = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 MAX_FILES = 5000
 MAX_DEPTH = 3
-FOLLOWUPS = ("SP", "OPT", "FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL")
-D3_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL")
+FOLLOWUPS = ("SP", "OPT", "FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "ORBITALS")
+D3_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "ORBITALS")
 BUCKET_TYPE = {"complete": "OPT", "completesp": "SP", "completefreq": "FREQ", "completeband": "BAND",
                "completedoss": "DOSS", "completetransport": "TRANSPORT", "completecharge_potential": "CHARGE+POTENTIAL",
-               "completeproperties": "PROPERTIES"}
+               "completeorbitals": "ORBITALS", "completeproperties": "PROPERTIES"}
 ERROR_BUCKETS = ("too_many_scf", "memory", "quota", "time", "geometry_small_dist", "shrink_error", "linear_basis",
-                 "scratch", "opt_unconverged", "stopped", "potential", "unknown", "ongoing")
+                 "scratch", "opt_unconverged", "stopped", "potential", "orbitals_no_files", "cube_empty", "unknown",
+                 "ongoing")
 FAILED_ROUTE = {
     "time": "Timed out: set up a restart from its last geometry with opt2d12 (OPT), or submit again with a longer walltime",
     "opt_unconverged": "Optimization did not converge: set up an OPT from its last geometry with opt2d12",
     "too_many_scf": "SCF did not converge: change FMIXING / smearing in Setup and set it up again",
     "memory": "Out of memory: submit again with more memory per core (mace submit -i)",
     "ongoing": "No end marker: still running, or stopped without a message",
+    "orbitals_no_files": "ORBITALS ended without writing its Molden files: check the ORBITALS records of its .d3",
+    "cube_empty": "Charge/potential run wrote an empty cube file (e.g. ECH3 from a two-component molecule)",
 }
 
 
@@ -207,6 +213,18 @@ def scan(root: Path, folder: Path, filt: str, followup: Optional[str], recursive
             rows.append({"rel": _rel(root, p), "kind": "cif", "eligible": ok,
                          "why_not": "" if ok else f"File names with spaces or shell characters cannot be submitted; rename {p.name}"})
         return {"rows": rows, "truncated": len(rows) >= MAX_FILES}
+    if filt == "d12":
+        # decks as their own parents (mace opt2d12 --d12-file): the CLI's own rule says which can be
+        from CRYSTALOptToD12 import deck_parent_refusal
+        for p in _walk(folder, "*.d12", recursive):
+            why = "" if path_ok(p) else f"File names with spaces or shell characters cannot be submitted; rename {p.name}"
+            if not why:
+                try:
+                    why = deck_parent_refusal(str(p)) or ""
+                except OSError as exc:
+                    why = f"cannot read {p.name}: {exc}"
+            rows.append({"rel": _rel(root, p), "kind": "d12", "eligible": not why, "why_not": why})
+        return {"rows": rows, "truncated": len(rows) >= MAX_FILES}
     outs = _walk(folder, "*.out", recursive)
     if filt == "followup":
         calc = (followup or "SP").upper()
@@ -228,6 +246,9 @@ def scan(root: Path, folder: Path, filt: str, followup: Optional[str], recursive
                 why = f"File names with spaces or shell characters cannot be submitted; rename {p.name}"
             elif calc in PERIODIC_ONLY and is_molecule(p):
                 why = f"{calc} needs a periodic structure; this output is a molecule ({PERIODIC_ONLY[calc]})"
+            elif calc == "ORBITALS" and S.parent_refusals(p).get(calc):
+                # a two-component (SOC) run: CRYSTAL23 crashes on ORBITALS (kchoice.SOC_REFUSAL)
+                why = S.parent_refusals(p)[calc]
             elif calc == "FREQ" and ptype != "OPT":
                 why = "FREQ needs a converged OPT geometry (imaginary modes otherwise)"
             elif calc in D3_TYPES and S.find_wavefunction(p) is None:
@@ -269,7 +290,7 @@ def scan(root: Path, folder: Path, filt: str, followup: Optional[str], recursive
                          "tracked": tracked,
                          "recover": (f"mace recover --db {shlex.quote(db_rel)}" if tracked else None)})
         return {"rows": rows, "truncated": len(outs) >= MAX_FILES}
-    raise BatchError("filter is cif, followup or failed")
+    raise BatchError("filter is cif, d12, followup or failed")
 
 
 # ------------------------------------------------------------------ plan
@@ -277,7 +298,10 @@ class Batch:
     def __init__(self, bid: str, root_gen, folder: Path, files: List[Path], mode: str, calc: str):
         self.id, self.root_gen, self.folder, self.files, self.mode, self.calc = bid, root_gen, folder, files, mode, calc
         self.template: Dict[str, Any] = {}
+        self.flags: Dict[str, Any] = {}         # Setup's charged-system switches (setup.charge_flags), on every command
         self.overrides: Dict[str, Dict[str, Any]] = {}
+        self.template_patches: Dict[str, Any] = {}
+        self.override_patches: Dict[str, Dict[str, Any]] = {}
         self.items: Dict[str, Dict[str, Any]] = {}          # rel -> plan
         self.representative: Optional[str] = None
         self.created = time.time()
@@ -306,18 +330,43 @@ class Store:
             self.items[b.id] = b
 
 
-def _setup_run(root: Path, p: Path, mode: str, calc: str, answers: Dict[str, Any], work: Path, cache, ctx):
+def _setup_run(root: Path, p: Path, mode: str, calc: str, answers: Dict[str, Any], work: Path, cache, ctx, flags=None,
+               patches: Optional[Dict[str, Any]] = None):
     rel = _rel(root, p)
-    req = S.Request({"answers": answers, "preview": True})
+    req = S.Request({"answers": answers, "patches": dict(patches or {}), "preview": True, "flags": flags or {}})
     get, put = cache
     return S.run_setup(req, mode, calc, work, p, rel, S.source_key(mode, p), get, put, ctx, schema_info=S.schema())
 
 
-def plan(root: Path, b: Batch, template: Dict[str, Any], overrides: Dict[str, Dict[str, Any]], disk, cache, ctx) -> Dict[str, Any]:
-    """Each file through Setup with template + its override, plus its
-    default deck (empty answers) for the diff."""
+def check_patches(patches: Any, what: str) -> Dict[str, Any]:
+    """Batch patches: the SOC keys of the CLI's settings file (Setup's SOC
+    section), each checked by the CLI's own checks (S.Request)."""
+    if patches is None:
+        return {}
+    if not isinstance(patches, dict):
+        raise BatchError(f"{what} is an object")
+    bad = [k for k in patches if k not in S.SOC_KEYS]
+    if bad:
+        raise BatchError(f"{what}: {bad[0]} is not a setting Batch Setup writes by hand (it writes {', '.join(S.SOC_KEYS)})")
+    try:
+        S.Request({"patches": patches})
+    except S.SetupError as exc:
+        raise BatchError(str(exc))
+    return dict(patches)
+
+
+def plan(root: Path, b: Batch, template: Dict[str, Any], overrides: Dict[str, Dict[str, Any]], disk, cache, ctx,
+         flags: Optional[Dict[str, Any]] = None, template_patches: Optional[Dict[str, Any]] = None,
+         override_patches: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Each file through Setup with template + its override (answers, and
+    the settings keys written by hand: the SOC keys) and the charged-system
+    switches, plus its default deck (no answers, no patches, no switches)
+    for the diff."""
+    b.flags = dict(flags or {})
     b.template = OrderedDict((k, v) for k, v in (template or {}).items())
     b.overrides = {k: OrderedDict(v) for k, v in (overrides or {}).items() if isinstance(v, dict)}
+    b.template_patches = OrderedDict((template_patches or {}).items())
+    b.override_patches = {k: OrderedDict(v) for k, v in (override_patches or {}).items() if isinstance(v, dict)}
     out = []
     n = len(b.files)
     for i, p in enumerate(b.files):
@@ -327,12 +376,14 @@ def plan(root: Path, b: Batch, template: Dict[str, Any], overrides: Dict[str, Di
         rel = _rel(root, p)
         answers = OrderedDict(b.template)
         answers.update(b.overrides.get(rel, {}))
+        patches = OrderedDict(b.template_patches)
+        patches.update(b.override_patches.get(rel, {}))
         key = "batch-" + secrets.token_hex(6)
         work = disk.acquire(key)
         try:
             try:
-                r = _setup_run(root, p, b.mode, b.calc, answers, work / "a", cache, ctx)
-                d = _setup_run(root, p, b.mode, b.calc, {}, work / "d", cache, ctx) if answers else r
+                r = _setup_run(root, p, b.mode, b.calc, answers, work / "a", cache, ctx, b.flags, patches)
+                d = _setup_run(root, p, b.mode, b.calc, {}, work / "d", cache, ctx) if answers or b.flags or patches else r
             except S.SetupError as exc:
                 r, d = {"deck": None, "refused": str(exc), "json_text": None}, None
         finally:
@@ -341,7 +392,13 @@ def plan(root: Path, b: Batch, template: Dict[str, Any], overrides: Dict[str, Di
                 "default_deck": (d or {}).get("deck"), "f9": r.get("f9"),
                 "status": "ok" if r.get("deck") else "refused",
                 "message": (r.get("refused") or "").strip().splitlines()[-1] if not r.get("deck") and r.get("refused") else "",
-                "override": bool(b.overrides.get(rel))}
+                "override": bool(b.overrides.get(rel) or b.override_patches.get(rel))}
+        soc = r.get("soc") or {}
+        if not r.get("deck") and soc.get("refusal"):
+            item["message"] = soc["refusal"]            # the CLI's reason, as it said it
+        # the CLI's SOC warnings for this file (all-electron atoms, f elements, metals), as it said them
+        item["soc_warnings"] = [x["message"] for x in (r.get("problems") or [])
+                                if x.get("field") == "soc" and x.get("severity") == "warning"]
         item["deck_sha"] = hashlib.sha256((item["deck"] or "").encode()).hexdigest()[:16] if item["deck"] else None
         if item["deck"] and item["default_deck"] is not None:
             diff = list(difflib.unified_diff(item["default_deck"].splitlines(), item["deck"].splitlines(), lineterm="", n=0))
@@ -402,10 +459,13 @@ def check_name(name: str) -> str:
     return name
 
 
-def move_new_files(stage: Path, out_dir: Path, st, prefix: str = "") -> Tuple[List[Path], List[str]]:
+def move_new_files(stage: Path, out_dir: Path, st, prefix: str = "",
+                   soc_f9: Optional[Path] = None) -> Tuple[List[Path], List[str]]:
     """Move what a CLI run wrote into ``stage`` to ``out_dir`` (Write decks
     now's rules: no symlink followed, a replaced deck keeps a .bak). A
-    ``prefix`` (a same-name parent's subfolder) goes in front of each name."""
+    ``prefix`` (a same-name parent's subfolder) goes in front of each name.
+    ``soc_f9``: the parent's .f9 a SOC restart copied as <deck>.f20, which
+    never replaces a different .f20."""
     from . import saving
     made = sorted(x for x in stage.iterdir() if x.is_file() and not x.is_symlink())
     targets = [(x, out_dir / (prefix + x.name)) for x in made]
@@ -420,6 +480,9 @@ def move_new_files(stage: Path, out_dir: Path, st, prefix: str = "") -> Tuple[Li
             if a.st_size != c.st_size or int(a.st_mtime) != int(c.st_mtime):
                 raise saving.ProtectedOutput(f"{target.name} holds a finished run's wavefunction; MACE never writes "
                                              "over it. Write the batch into another folder, or move it first.")
+        why = saving.f20_refusal(target, soc_f9) if soc_f9 is not None else None
+        if why:
+            raise saving.ProtectedOutput(why)
     written, backups = [], []
     for src, target in targets:
         deck = target.suffix.lower() in (".d12", ".d3")
@@ -489,8 +552,13 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
             seen.setdefault("options/" + S.json_name(b.mode, b.calc, pre[it["rel"]] + Path(it["rel"]).stem),
                             []).append(it["rel"])
     check_unique(seen)
-    if b.mode == "opt2d3":
-        need = sum((it.get("f9") or {}).get("bytes", 0) for it in ok) + (1 << 30)
+    from . import saving
+    # the parent .f9 a SOC restart (soc_guess) copies as <deck>.f20
+    soc_f9 = {it["rel"]: saving.soc_restart_matrix(it["json_text"] or "", root / it["rel"]) for it in ok} \
+        if b.mode == "opt2d12" else {}
+    soc_bytes = sum(f.stat().st_size for f in soc_f9.values() if f is not None)
+    if b.mode == "opt2d3" or soc_bytes:
+        need = sum((it.get("f9") or {}).get("bytes", 0) for it in ok) + soc_bytes + (1 << 30)
         free = shutil.disk_usage(b.folder).free
         if free < need:
             raise BatchError(f"The wavefunction copies need {need / 2**30:.1f} GB (plus 1 GB); "
@@ -513,6 +581,7 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     rel_b = _rel(cwd, B) if B != cwd else "."
     cmds: List[List[str]] = []
     cmd_pre: List[str] = []                 # follow-ups: the prefix each command's files get
+    cmd_f9: List[Optional[Path]] = []      # follow-ups: the .f9 a SOC restart copies as <deck>.f20
     written_opts: List[str] = []
     parents: Dict[str, str] = {}
     calc = b.calc
@@ -539,12 +608,15 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
             written_opts.append(_rel(root, opt))
             prel = os.path.relpath(p, cwd)
             cmd_pre.append(pre[it["rel"]])
+            cmd_f9.append(soc_f9.get(it["rel"]))
             if b.mode == "opt2d12":
-                cmds.append(["opt2d12", "--out-file", prel, "--config-file", f"{rel_b}/options/{jn}", "--yes",
+                cmds.append(["opt2d12", S.source_flag(prel), prel, "--config-file", f"{rel_b}/options/{jn}", "--yes",
                              "--output-dir", f"{rel_b}/decks"])
             else:
                 cmds.append(["opt2d3", "-i", prel, "-t", calc, "--config-file", f"{rel_b}/options/{jn}",
                              "--output-dir", f"{rel_b}/decks"])
+    charge = S.flag_args(b.flags, b.mode)
+    cmds = [c + charge for c in cmds]
     rep = b.items.get(b.representative or "") or ok[0]
     (B / "options" / "template.json").write_text(rep["json_text"])
     # run each command into a private stage inside decks/, then move the files in
@@ -567,7 +639,7 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
             if prefix:
                 renames[i] = [(x.name, prefix + x.name) for x in sorted(stage.iterdir())
                               if x.is_file() and not x.is_symlink()]
-            w, bk = move_new_files(stage, decks_dir, st, prefix)
+            w, bk = move_new_files(stage, decks_dir, st, prefix, cmd_f9[i] if i < len(cmd_f9) else None)
             written += w
             backups += bk
         finally:
@@ -589,7 +661,8 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     from mace import __version__
     record = {"version": 1, "mace_version": __version__, "created_at": datetime.now().isoformat(timespec="seconds"),
               "folder": st.rel_new(cwd), "calc": calc, "mode": b.mode, "selection": [it["rel"] for it in b.items.values()],
-              "template_answers": b.template, "overrides": b.overrides, "parents": parents,
+              "template_answers": b.template, "flags": b.flags, "overrides": b.overrides,
+              "template_patches": b.template_patches, "override_patches": b.override_patches, "parents": parents,
               "representative": b.representative, "commands": [" ".join(shlex.quote(a) for a in c) for c in cmds],
               "job_ids": {}}
     (B / "batch.json").write_text(json.dumps(record, indent=1) + "\n")
@@ -653,6 +726,17 @@ def post_route(handler, route: str, body: Dict[str, Any]):
                      client=handler.headers.get("X-Mace-Client"), supersede=("batch-scan", str(body.get("doc") or "")))
         return gui_tasks.answer(handler, st.tasks, t, float(body.get("wait", gui_tasks.WAIT_S))
                                 if isinstance(body.get("wait"), (int, float)) else gui_tasks.WAIT_S)
+    if route == "batch/stutsc":
+        # the files' elements whose STUTSC the CLI refuses (soc_ecp.py): the SOC section grays it out
+        files = body.get("files") or []
+        if not isinstance(files, list) or len(files) > MAX_FILES or not all(isinstance(f, str) for f in files):
+            raise BatchError("files is a list of the folder's files")
+        paths = [st.resolve(f) for f in files]
+        t = cli_task(st, "batch-stutsc", f"Batch Setup: elements of {len(paths)} file(s)",
+                     lambda ctx: S.stutsc_refusals(paths, name=st.rel),
+                     client=handler.headers.get("X-Mace-Client"), supersede=("batch-stutsc", str(body.get("doc") or "")))
+        return gui_tasks.answer(handler, st.tasks, t, float(body.get("wait", gui_tasks.WAIT_S))
+                                if isinstance(body.get("wait"), (int, float)) else gui_tasks.WAIT_S)
     if route == "batch/plan":
         folder = _folder(st, body.get("folder"))
         files = body.get("files") or []
@@ -669,8 +753,13 @@ def post_route(handler, route: str, body: Dict[str, Any]):
         elif all(p.suffix.lower() in S.OUT_SUFFIXES for p in paths):
             calc = calc or "SP"
             mode = followup_mode(calc)
+        elif all(S.is_deck(p.name) for p in paths):
+            calc = calc or "SP"
+            if calc in S.CALC_TYPES["opt2d3"]:
+                raise BatchError(S.deck_properties_refusal(paths[0].name, calc))
+            mode = "opt2d12"
         else:
-            raise BatchError("A batch is all CIFs or all .out files")
+            raise BatchError("A batch is all CIFs, all .out files or all .d12 decks")
         S.check_calc(mode, calc)
         bid = str(body.get("batch_id") or "")
         store = _store(st)
@@ -687,6 +776,12 @@ def post_route(handler, route: str, body: Dict[str, Any]):
         overrides = body.get("overrides") or {}
         if not isinstance(template, dict) or not isinstance(overrides, dict):
             raise BatchError("template_answers and overrides are objects")
+        flags = S.charge_flags(body.get("flags"), S.BATCH_CHARGE_FLAGS)
+        tpatches = check_patches(body.get("template_patches"), "template_patches")
+        opatches = body.get("override_patches") or {}
+        if not isinstance(opatches, dict):
+            raise BatchError("override_patches is an object")
+        opatches = {str(k): check_patches(v, f"override_patches[{k}]") for k, v in opatches.items()}
 
         def get(k):
             return st.parse_cache.get(("setup",) + (json.dumps(k, default=str),))
@@ -695,7 +790,7 @@ def post_route(handler, route: str, body: Dict[str, Any]):
             st.parse_cache.put(("setup",) + (json.dumps(k, default=str),), v, n)
             st.ledger.enforce()
         t = cli_task(st, "batch-plan", f"Batch Setup: {len(paths)} {calc} deck(s)",
-                     lambda ctx: plan(st.root, b, template, overrides, st.disk, (get, put), ctx),
+                     lambda ctx: plan(st.root, b, template, overrides, st.disk, (get, put), ctx, flags, tpatches, opatches),
                      client=handler.headers.get("X-Mace-Client"), supersede=("batch-plan", b.id))
         return gui_tasks.answer(handler, st.tasks, t, float(body.get("wait", gui_tasks.WAIT_S))
                                 if isinstance(body.get("wait"), (int, float)) else gui_tasks.WAIT_S)

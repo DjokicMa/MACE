@@ -407,5 +407,12 @@ def post(handler, route: str, body: Dict[str, Any]) -> None:
         if p.suffix != ".d12" or not p.is_file():
             raise ValueError("Estimate needs a .d12 deck in this folder")
         cores = int(body["cores"]) if body.get("cores") else None
-        return handler._json(history.estimate(p, cores=cores, history=p.parent, use_sacct=svc.slurm))
+        v = history.estimate(p, cores=cores, history=p.parent, use_sacct=svc.slurm)
+        # the Submit dialog's runtime estimate (1.1.6): what `mace cluster estimate DECK` prints, and that command
+        import shlex
+        from mace.cluster.cli import estimate_text
+        rel = st.rel(p)
+        v["text"] = estimate_text(v)
+        v["command"] = "mace cluster estimate " + shlex.quote(rel) + (f" --cores {cores}" if cores else "")
+        return handler._json(v)
     return handler._error(404, f"unknown API route cluster/{route}")

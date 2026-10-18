@@ -14,7 +14,15 @@
  * choice: it is dropped once and falls to the new default. The other keys
  * new in 3 (the viewer's ranges and look, plots, File History, sessions,
  * cluster.*, export.*, files.openFreqAs, submit.rememberLast, ...) need no
- * migration: an older object lacks them and takes their defaults. */
+ * migration: an older object lacks them and takes their defaults.
+ *
+ * Layers (1.1.6): the served folder's mace-folder.toml (setFolder, from
+ * /api/boot) sits above the user's values for the keys it sets, and a change
+ * made here to such a key stays in this session (sessionStorage) until it is
+ * saved to the folder or as the user's default. get() is the effective value:
+ * session > folder > the user's own > DEFAULTS. Only the user's own values go
+ * to localStorage and gui.json, so a folder's values never leak into them;
+ * without a folder file every path below is the one of 1.1.5. */
 export const VERSION = 3;
 export const SCHEMA_VERSION = VERSION;
 const KEY = "mace.gui.settings.v1";
@@ -22,7 +30,15 @@ const VERSION_KEY = "mace.gui.settings.version";
 const LEGACY_COLORS = "mace-gui-colors";
 
 export const DEFAULTS = Object.freeze({
-  theme: "system", density: "comfortable", uiScale: 100, reduceMotion: "system",
+  // plots.surface (1.1.6): "theme" (the plots follow it), or a "light" or "dark" plot in any theme;
+  // plots.style: the plot preset of every family (plotpresets.js: default, publication, vesta, presentation,
+  // grayscale, colorblind); plots.style.<family>: "same" (follow it) or the family's own preset
+  theme: "system", "plots.surface": "theme", "plots.style": "default", density: "comfortable", uiScale: 100, reduceMotion: "system",
+  "plots.style.band": "same", "plots.style.spectra": "same", "plots.style.maps": "same", "plots.style.scf": "same",
+  // band/DOS (1.1.6): DOS colors (auto, total, element, orbital, element-orbital) and the total beside them; the
+  // spin pair (blank: the preset's, presets.py SPIN_COLORS), spin down's line style, the spin DOS (auto: mirrored
+  // for a spin-polarized run, one-sided for a closed-shell one)
+  "plots.dosColors": "auto", "plots.dosTotal": true, "plots.dosSmooth": 0, "plots.spinColors": "auto", "plots.spinUp": "", "plots.spinDown": "", "plots.bandColor": "", "plots.spinDownDash": "dash", "plots.spinDos": "auto",
   // VESTA, as the classic views have always drawn (open decision D1: the spec's table says Jmol)
   colorScheme: "vesta", radiusSet: "atomic", atomScale: 0.4, bondRadius: 0.12, bondTolerance: 1.15,
   bondMetalMetal: false, bondColoring: "split", background: "theme", backgroundColor: "", labels: "off", labelSize: 12,
@@ -53,6 +69,7 @@ export const DEFAULTS = Object.freeze({
   "session.idleHours": 12, "session.maxDays": 7, "server.idleStopHours": 0,
   // the Cluster view (area F): own-job poll 30..300 s, the activity button, browser notifications
   "cluster.pollSeconds": 60, "cluster.showView": "auto", "cluster.notify": false,
+  "update.check": true, "update.channel": "release", "update.intervalHours": 6,
   // plan E (CLI parity): what a FREQ output opens as, notification timing, volumes, spectra, molecules, export units
   "files.openFreqAs": "modes", "notifications.infoSeconds": 6, "volume.quality": "medium", "volume.mepColors": "cli",
   "spectra.lineShape": "lorentzian", "structure.vacuumGap": 8,
@@ -60,11 +77,30 @@ export const DEFAULTS = Object.freeze({
   "export.dpi": 150, "export.units": "in", "export.vectorShading": "flat",
   // Submit (PLAN_submit): remember the Submit dialog's options (cluster.pollSeconds, above, also sets how often Jobs asks SLURM)
   "submit.rememberLast": true,
+  // 1.1.6: band/DOS defaults (a folder's [plots] sets them for the CLI too) and the Database view's columns
+  "plots.energyWindow": [-6, 6], "plots.fermiShift": 0,
+  "database.columns": ["material_id", "formula", "space_group", "dimensionality", "n_calcs", "n_completed", "status", "updated_at"],
 });
 
+const PRESET_IDS = ["default", "publication", "vesta", "presentation", "grayscale", "colorblind"];
+const CHOICES = {
+  "plots.style": PRESET_IDS,
+  ...Object.fromEntries(["band", "spectra", "maps", "scf"].map((f) => [`plots.style.${f}`, ["same", ...PRESET_IDS]])),
+  "plots.dosColors": ["auto", "total", "element", "orbital", "element-orbital"],
+  "plots.spinDownDash": ["dash", "dot", "dashdot", "solid"], "plots.spinDos": ["auto", "mirrored", "overlaid"],
+  "plots.spinColors": ["auto", "mace", "blue-red", "black-vermilion", "custom"],
+};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const listeners = new Set();
-let values = { ...DEFAULTS };
+let values = { ...DEFAULTS };            // the user's own layer (localStorage, gui.json)
+/* the folder layer: {file, target, can_save, why_not, gui: {key: value}, keys: {key: file key}, cli, warnings} */
+let folder = { file: null, gui: {}, keys: {}, cli: {}, warnings: [], can_save: false, why_not: "" };
+let session = {};                        // changes made here to keys the folder sets, not saved yet
+let sessionKey = "";
+const masked = (k) => k in session || k in folder.gui;
+const emit = (k) => listeners.forEach((fn) => fn(k, get(k)));
+/* the user's layer changed: listeners hear it only when it is the effective value */
+const emitUser = (k) => { if (!masked(k)) emit(k); };
 let saveTimer = 0;
 let api = null;
 
@@ -73,6 +109,14 @@ export function migrate(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj || {})) {
     if (k in DEFAULTS && typeof v === typeof DEFAULTS[k]) out[k] = v;
+  }
+  // fixed choices (settings.py _CHOICES): an unknown value (a hand-edited file, a newer version's) is dropped
+  for (const [k, ok] of Object.entries(CHOICES)) if (k in out && !ok.includes(out[k])) delete out[k];
+  for (const k of ["plots.spinUp", "plots.spinDown", "plots.bandColor"]) if (k in out && out[k] !== "" && !/^#[0-9a-f]{6}$/i.test(out[k])) delete out[k];
+  // the 1.1.6 preview's Publication theme is Light with Plot style Publication (as settings.py and boot.js read it)
+  if (out.theme === "publication") {
+    out.theme = "light";
+    if (!PRESET_IDS.includes(out["plots.style"])) out["plots.style"] = "publication";
   }
   return out;
 }
@@ -88,6 +132,14 @@ export function init(apiFn) {
   // version 2 -> 3: GPU 1 was the default, stored because the whole object was
   if (storedVersion < 3 && stored.gpu_device === "1") delete stored.gpu_device;
   values = { ...DEFAULTS, ...migrate(stored) };
+  // the Publication theme, once: stored again as Light + Plot style Publication; a theme the server
+  // has not heard of yet takes the plot style along, so the server's copy cannot reset it
+  if (stored.theme === "publication") {
+    try {
+      if (pendingKeys().includes("theme")) setPending([...pendingKeys(), "plots.style"]);
+      persistLocal();
+    } catch (e) { /* private window */ }
+  }
   // version 1 -> 2: the classic views' own element-color choice becomes colorScheme, once
   try {
     const legacy = localStorage.getItem(LEGACY_COLORS);
@@ -114,7 +166,7 @@ export async function syncFromServer(given) {
     const changed = Object.keys(DEFAULTS).filter((k) => !pend.has(k) && !same(values[k], want[k]));
     for (const k of changed) values[k] = want[k];
     persistLocal();
-    changed.forEach((k) => listeners.forEach((fn) => fn(k, values[k])));
+    changed.forEach(emitUser);
     if (pend.size) { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 50); }
     return r.path;
   } catch (e) { return null; }
@@ -127,32 +179,125 @@ function setPending(keys) {
   catch (e) { /* private */ }
 }
 
-export const get = (k) => values[k];
-export const all = () => ({ ...values });
+/** Take another page's values (the right editor group follows its window): the
+ * listeners run; nothing is saved, and the pending list and the server's copy
+ * as this page knows it stay as they are (the window saves its own changes). */
+export function adopt(given) {
+  const want = { ...DEFAULTS, ...migrate(given) };
+  const changed = Object.keys(DEFAULTS).filter((k) => !same(values[k], want[k]));
+  for (const k of changed) values[k] = want[k];
+  changed.forEach((k) => listeners.forEach((fn) => fn(k, get(k))));
+}
+/** Whether k was changed in this browser and has not reached the server yet. */
+export const isPending = (k) => pendingKeys().includes(k);
+export function get(k) { return k in session ? session[k] : k in folder.gui ? folder.gui[k] : values[k]; }
+export const all = () => ({ ...values, ...folder.gui, ...session });
+/* the user's own non-default values (what gui.json holds and Export writes) */
 export const nonDefault = () => Object.fromEntries(Object.entries(values).filter(([k, v]) => !same(v, DEFAULTS[k])));
 export const isDefault = (k) => same(values[k], DEFAULTS[k]);
 export function onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
+/** A change: to the user's own value, or, for a key the folder sets, to this session's. */
 export function set(k, v) {
   if (!(k in DEFAULTS)) throw new Error(`unknown setting ${k}`);
+  if (masked(k)) {
+    if (same(get(k), v)) return;
+    if (k in folder.gui && same(folder.gui[k], v)) delete session[k]; else session[k] = v;
+    persistSession();
+    emit(k);
+    return;
+  }
+  setUser(k, v);
+}
+function setUser(k, v) {
   if (same(values[k], v)) return;
   values[k] = v;
   persistLocal();
   setPending([...pendingKeys(), k]);
-  listeners.forEach((fn) => fn(k, v));
+  emitUser(k);
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 500);
 }
-export const reset = (k) => set(k, DEFAULTS[k]);
-/** Every setting back to its default (Settings › Advanced › Reset all). */
-export function resetAll() { Object.keys(DEFAULTS).forEach((k) => set(k, DEFAULTS[k])); }
+export const reset = (k) => setUser(k, DEFAULTS[k]);
+/** The user's own value (gui.json), even where the folder's file or this session sets the key. */
+export function setOwn(k, v) {
+  if (!(k in DEFAULTS)) throw new Error(`unknown setting ${k}`);
+  setUser(k, v);
+}
+/** Every setting of the user's back to its default (Settings › Advanced › Reset all). */
+export function resetAll() { Object.keys(DEFAULTS).forEach((k) => setUser(k, DEFAULTS[k])); }
+
+/* ---------------------------------------------------------------- the folder layer (mace-folder.toml) */
+function persistSession() {
+  try {
+    if (!sessionKey) return;
+    if (Object.keys(session).length) sessionStorage.setItem(sessionKey, JSON.stringify(session));
+    else sessionStorage.removeItem(sessionKey);
+  } catch (e) { /* private */ }
+}
+/** The served folder's layer (boot's `folder`, or a save's answer); dirHash keys this tab's session changes. */
+export function setFolder(view, dirHash) {
+  const before = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, get(k)]));
+  folder = { file: null, gui: {}, keys: {}, choices: {}, cli: {}, warnings: [], can_save: false, why_not: "", ...(view || {}) };
+  // only known keys of the right type (a newer server's keys wait for a newer page)
+  folder.gui = Object.fromEntries(Object.entries(folder.gui || {}).filter(([k, v]) => k in DEFAULTS && typeof v === typeof DEFAULTS[k]));
+  if (dirHash !== undefined) {
+    sessionKey = dirHash ? `mace.gui.settings.session.${dirHash}` : "";
+    try { session = (sessionKey && JSON.parse(sessionStorage.getItem(sessionKey) || "{}")) || {}; } catch (e) { session = {}; }
+  }
+  // a session change outlives only a key the folder still sets
+  for (const k of Object.keys(session)) if (!(k in DEFAULTS) || !(k in folder.gui) || same(session[k], folder.gui[k])) delete session[k];
+  persistSession();
+  Object.keys(DEFAULTS).forEach((k) => { if (!same(before[k], get(k))) emit(k); });
+}
+export const folderInfo = () => JSON.parse(JSON.stringify(folder));
+/** Can this key live in a folder file? */
+export const folderable = (k) => k in (folder.keys || {});
+/** Can the folder file hold this value of k? (a choice key names its choices: a palette of the user's own cannot) */
+export const folderAccepts = (k, v = get(k)) => folderable(k) && (!(folder.choices || {})[k] || folder.choices[k].includes(v));
+/** Where the effective value comes from: "session", "folder", "user" or "default". */
+export function source(k) {
+  if (k in session) return "session";
+  if (k in folder.gui) return "folder";
+  return same(values[k], DEFAULTS[k]) ? "default" : "user";
+}
+/** The user's own value (what this folder's file hides). */
+export const userValue = (k) => values[k];
+async function folderCall(body) {
+  if (!api) throw new Error("not started");
+  const r = await api("folder-settings", { body });
+  setFolder(r);
+  return r;
+}
+/** Save to this folder: the value in effect goes into mace-folder.toml. */
+export async function saveToFolder(k) {
+  const v = get(k);
+  await folderCall({ set: { [k]: v } });
+  if (k in session) { delete session[k]; persistSession(); }
+  emit(k);
+  return v;
+}
+/** Save as my default: the value in effect becomes the user's own (the folder's file, if it sets the key, still wins here). */
+export function saveAsDefault(k) {
+  const v = get(k);
+  if (k in session) { delete session[k]; persistSession(); }
+  setUser(k, v);
+  emit(k);
+  return { stillFolder: k in folder.gui && !same(folder.gui[k], v) };
+}
+/** Reset to my default: drop this session's change and the folder's value (from its file). */
+export async function resetToMine(k) {
+  if (k in session) { delete session[k]; persistSession(); }
+  if (k in folder.gui) await folderCall({ unset: [k] });
+  emit(k);
+}
 /** Several values at once (an imported settings file); unknown keys and wrong
  * types are skipped and returned. */
 export function setMany(obj) {
   const skipped = [];
   for (const [k, v] of Object.entries(obj || {})) {
     if (!(k in DEFAULTS) || typeof v !== typeof DEFAULTS[k] || (Array.isArray(DEFAULTS[k]) && !Array.isArray(v))) { skipped.push(k); continue; }
-    set(k, v);
+    setUser(k, v);
   }
   return skipped;
 }
@@ -223,7 +368,7 @@ export async function flush(isRetry = false) {
   for (const k of bad) {
     if (k in before) serverValues[k] = before[k];
     const back = k in before ? before[k] : DEFAULTS[k];
-    if (!same(values[k], back)) { values[k] = back; listeners.forEach((fn) => fn(k, back)); }
+    if (!same(values[k], back)) { values[k] = back; emitUser(k); }
   }
   if (bad.length) {
     persistLocal();

@@ -11,6 +11,8 @@ cell vector along such a direction is only a drawing aid (``pbc`` False).
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import sys
 from itertools import product
@@ -170,64 +172,29 @@ def _payload(cell, frac_or_none, cart, numbers, pbc, source, extra=None, symmetr
     return out
 
 
-# Pauling electronegativities (CRC Handbook values, as pymatgen tabulates
-# them); the noble gases without one sort last. Used only to order formulas.
-_PAULING = dict(zip(
-    "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu "
-    "Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba "
-    "La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi "
-    "Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr".split(),
-    [2.20, 9, 0.98, 1.57, 2.04, 2.55, 3.04, 3.44, 3.98, 9, 0.93, 1.31, 1.61, 1.90, 2.19,
-     2.58, 3.16, 9, 0.82, 1.00, 1.36, 1.54, 1.63, 1.66, 1.55, 1.83, 1.88, 1.91, 1.90,
-     1.65, 1.81, 2.01, 2.18, 2.55, 2.96, 3.00, 0.82, 0.95, 1.22, 1.33, 1.6, 2.16, 1.9,
-     2.2, 2.28, 2.20, 1.93, 1.69, 1.78, 1.96, 2.05, 2.1, 2.66, 2.6, 0.79, 0.89, 1.10,
-     1.12, 1.13, 1.14, 1.13, 1.17, 1.2, 1.2, 1.1, 1.22, 1.23, 1.24, 1.25, 1.1, 1.27,
-     1.3, 1.5, 2.36, 1.9, 2.2, 2.20, 2.28, 2.54, 2.00, 1.62, 2.33, 2.02, 2.0, 2.2, 2.2,
-     0.7, 0.9, 1.1, 1.3, 1.5, 1.38, 1.36, 1.28, 1.13, 1.28, 1.3, 1.3, 1.3, 1.3, 1.3,
-     1.3, 1.3]))
-
-
 def reduced_formula(numbers: Sequence[int]) -> Tuple[str, int]:
     """(reduced formula, Z): elements in ascending Pauling electronegativity,
     as pymatgen writes them (SiO2, GaAs, CsPbI3, NaHCO3), with the number of
-    formula units in the cell. A single element reads C with Z = 8."""
+    formula units in the cell. A single element reads C with Z = 8.
+    (mace.utils.formula, which the CLI uses too)"""
+    from mace.utils.formula import count_symbols, reduced_formula as _reduced
     sym = _symbols()
-    counts: Dict[str, int] = {}
-    for n in numbers:
-        counts[sym[int(n)]] = counts.get(sym[int(n)], 0) + 1
-    return _reduce(counts)
+    return _reduced(count_symbols(sym[int(n)] for n in numbers))
 
 
 def reduce_formula_text(formula: str) -> Optional[Tuple[str, int]]:
     """'F4Li4' (a cell formula, as materials.db stores it) -> ('LiF', 4).
     None when the text is not a plain formula (brackets, charges, ...)."""
-    if not formula or not re.fullmatch(r"(?:[A-Z][a-z]?\d*)+", formula):
-        return None
-    counts: Dict[str, int] = {}
-    for el, n in re.findall(r"([A-Z][a-z]?)(\d*)", formula):
-        if el not in _PAULING:
-            return None
-        counts[el] = counts.get(el, 0) + (int(n) if n else 1)
-    return _reduce(counts)
-
-
-def _reduce(counts: Dict[str, int]) -> Tuple[str, int]:
-    from math import gcd
-    if not counts:
-        return "", 0
-    z = 0
-    for c in counts.values():
-        z = gcd(z, c)
-    order = sorted(counts, key=lambda e: (_PAULING.get(e, 9), e))
-    text = "".join(e + (str(counts[e] // z) if counts[e] // z > 1 else "") for e in order)
-    return text, z
+    from mace.utils.formula import parse_formula, reduced_formula as _reduced
+    counts = parse_formula(formula)
+    return _reduced(counts) if counts else None
 
 
 def _formula(numbers: Sequence[int]) -> str:
-    """The cell's full formula in Hill order (what materials.db stores)."""
-    from ase.formula import Formula
+    """The cell's full formula in Hill order, as ase writes it (C and H first)."""
+    from mace.utils.formula import count_symbols, format_formula
     sym = _symbols()
-    return Formula("".join(sym[n] for n in numbers)).format("hill")
+    return format_formula(count_symbols(sym[int(n)] for n in numbers), "hill-ase")
 
 
 # --------------------------------------------------------------------------
@@ -261,34 +228,43 @@ def cif_deck_origin(path: Path, atoms):
     """``atoms`` as cif2d12 writes them for the deck (the GUI and
     ``mace preopt`` both read CIFs through this).
 
-    Without listed operators ase expands a CIF in origin choice 1; cif2d12
-    re-expands an Fd-3m CIF whose atoms say origin choice 2 (diamond at
-    1/8, 1/8, 1/8) in that origin (NewCifToD12.expand_to_p1). Same rule
-    here, so the GUI shows the 8-atom diamond the deck describes, not
-    ase's 16 overlapping atoms."""
+    Without listed operators ase expands a CIF in origin choice 1. For the
+    24 space groups with two origins cif2d12 reads which origin the CIF
+    uses (its tags, else its atoms: NewCifToD12.resolve_cif_origin) and
+    expands the records in that one. Same rule here, so the GUI shows the
+    8-atom diamond and the 4-atom FeSe the decks describe, not ase's
+    overlapping atoms. A CIF whose origin cannot be told raises
+    ValueError, as cif2d12 refuses it."""
     sg = atoms.info.get("spacegroup")
-    if getattr(sg, "no", None) != 227:
+    no = getattr(sg, "no", None)
+    if no not in _TWO_ORIGINS:
         return atoms
     try:
         import NewCifToD12 as cif2d12
+    except Exception:
+        return atoms
+    try:
         if cif2d12._cif_lists_symops(str(path)):
             return atoms
         records = cif2d12._parse_cif_atom_site_records(str(path))
         if not records:
             return atoms
-        data = dict(zip(("a", "b", "c", "alpha", "beta", "gamma"), atoms.cell.cellpar()),
-                    spacegroup=227, cif_lists_symops=False,
-                    cif_atom_symbols=records[0], cif_atom_positions=records[1])
-        expanded = cif2d12.expand_to_p1(data, {"origin_setting": "AUTO"})
+        cellpar = atoms.cell.cellpar()
+        with contextlib.redirect_stdout(io.StringIO()):
+            choice, _ = cif2d12.resolve_cif_origin(str(path), no, records, cellpar,
+                                                   None, False)
+    except cif2d12.AmbiguousOriginError as exc:
+        raise ValueError(f"{Path(path).name}: {exc}") from None
     except Exception:
         return atoms
-    if expanded is data:
+    if choice is None or choice == getattr(sg, "setting", 1):
         return atoms
-    # expand_to_p1's own expansion, rebuilt here so the atoms keep the group
-    # and spacegroup_kinds that mace preopt writes its CIF from.
+    # The same expansion cif2d12 writes, rebuilt with ase's crystal so the
+    # atoms keep the group and spacegroup_kinds that mace preopt writes its
+    # CIF from.
     from ase.spacegroup import crystal
-    return crystal(records[0], records[1], spacegroup=227, setting=2,
-                   cellpar=atoms.cell.cellpar())
+    return crystal(records[0], records[1], spacegroup=no, setting=choice,
+                   cellpar=cellpar, onduplicates="keep")
 
 
 def read_cif(path: Path) -> Dict[str, Any]:

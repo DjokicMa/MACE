@@ -58,7 +58,7 @@ h2 { font-size: 18px; margin: 0 0 6px; }
 .kb.db { background: var(--k-db); } .kb.json { background: var(--k-json); } .kb.image, .kb.html { background: var(--k-image); }
 /* kinds listed since plan E1 reuse the palette above (its contrast is tested) */
 .kb.xyz, .kb.poscar, .kb.mol, .kb.pdb, .kb.gen, .kb.fort34 { background: var(--k-cif); }
-.kb.cube, .kb.f25, .kb.transport, .kb.volume { background: var(--k-dos); } .kb.props, .kb.convergence { background: var(--k-band); }
+.kb.cube, .kb.orbitals, .kb.f25, .kb.transport, .kb.volume { background: var(--k-dos); } .kb.props, .kb.convergence { background: var(--k-band); }
 .kb.joblog, .kb.log, .kb.script, .kb.crystaldata, .kb.wavefunction { background: var(--k-json); }
 .side-foot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 
@@ -329,7 +329,7 @@ pre.log { max-height: 220px; overflow: auto; font-size: 11.5px; color: var(--mut
 .live-chip.done { color: var(--text-2); }
 
 /* plotkit (js/plotkit.js): the shared plot toolbar, its menus and the Plot Options popover */
-.pk-acts { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-width: 0; }
+.pk-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }   /* a narrow pane: the buttons take a second row, never a scroll bar */
 .pk-wrap { position: relative; display: inline-flex; }
 .pk-logy[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .pk-menu, .pk-pop { position: fixed; z-index: var(--z-menu); min-width: 168px; max-width: calc(100vw / var(--ovz, 1) - 8px); max-height: calc(100dvh / var(--ovz, 1) - 8px); overflow: auto; padding: 4px;
@@ -339,6 +339,7 @@ pre.log { max-height: 220px; overflow: auto; font-size: 11.5px; color: var(--mut
 .pk-menu button:hover, .pk-menu button:focus-visible { background: var(--accent-soft); outline: none; }
 .pk-menu button[aria-checked="true"]::before { content: "✓ "; }
 .pk-sep { height: 1px; margin: 4px 2px; background: var(--border); }
+.pk-head { padding: 4px 10px 2px; font-size: var(--fs-xs); color: var(--text-2); text-transform: none; font-weight: 600; }
 .pk-pop { min-width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .pk-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
 .pk-row > span:first-child { min-width: 82px; color: var(--text-2); }
@@ -355,12 +356,23 @@ pre.log { max-height: 220px; overflow: auto; font-size: 11.5px; color: var(--mut
 .echart .pt { cursor: pointer; }
 .echart .pt.below { fill: var(--danger); }
 .echart .seg-line { stroke: var(--text-3); stroke-dasharray: 2 3; }
+.echart .thr-line { stroke: var(--text-2); stroke-dasharray: 5 4; }
+.echart .ev-line { stroke: var(--text-3); stroke-dasharray: 1 3; }
+.echart .ev-line.bad { stroke: var(--danger); }
+.echart .ev-label, .echart .thr-label { fill: var(--text-2); font: var(--fs-xs, 11px) var(--font-sans); }
+.echart .pt.up { fill: var(--danger); }
+#o-scf-card .o-scf-note { color: var(--text-2); font-size: 12px; margin: 4px 0; }
 
 /* the Run card (PLAN_analysis C4.8) */
 .run-card { display: flex; flex-direction: column; gap: 6px; }
 .rc-stop { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; line-height: 1.35; }
 .rc-stop .i { flex: none; width: 16px; height: 16px; margin-top: 1px; }
 .rc-stop.good { color: var(--success); }
+.rc-eta-head { font-size: 12px; font-weight: 600; margin-top: 8px; color: var(--text-2); }
+.rc-eta-levels { margin: 2px 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.4; }
+.rc-eta-levels li.d1 { padding-left: 12px; }
+.rc-eta-levels li.d2 { padding-left: 24px; color: var(--text-2); }
+.rc-eta-levels .chip { font-size: 10px; padding: 0 4px; }
 .rc-stop.warn { color: var(--warning); }
 .rc-stop.bad { color: var(--danger); }
 .rc-stop span { color: var(--text); }

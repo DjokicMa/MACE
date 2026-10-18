@@ -1,0 +1,35 @@
+/* The panel context (js/panelctx.js, 1.1.6): a side panel with nothing for the
+ * document in focus shows one neutral placeholder; its tab is dimmed, never
+ * hidden; each panel's header names the document it shows. Tokens only, so
+ * every theme draws it. */
+.pc-ph { display: none; }
+.pc-empty > .pc-ph { display: flex !important; }
+.pc-empty > :not(.pc-ph) { display: none !important; }
+.bottom-pane.pc-empty.active { display: block !important; }
+.pc-ph { gap: var(--s-3); align-items: flex-start; padding: var(--s-4) 0; max-width: 72ch; color: var(--text-2); border-radius: var(--r-md); }
+.pc-ph:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pc-ph-i { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--text-3); }
+.pc-ph-b { min-width: 0; }
+.pc-ph-t { margin: 0; color: var(--text-2); font-weight: 600; overflow-wrap: anywhere; }
+.pc-ph-s { margin: var(--s-1) 0 0; color: var(--text-3); font-size: var(--fs-sm); }
+.pc-ph-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-3); }
+#inspector .pc-ph { display: flex; padding: var(--s-1) 0; }
+
+/* a tab with nothing for this document: quieter, still a tab you can click */
+.bottom-tab.pc-off:not(.active) { color: var(--text-3); font-weight: 500; }
+
+/* the document a panel refers to: "Atoms · NaCl.cif", "Inspector · NaCl.cif" */
+.bottom-tabs > .pc-doc { margin-left: auto; align-self: center; flex: 0 1 auto; min-width: 0; max-width: 50%; padding-left: var(--s-4);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 400 var(--fs-xs)/1 var(--font-sans); }
+.insp-bar-title:has(+ .pc-doc) { flex: none; }
+.insp-bar > .pc-doc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-3); font: 400 var(--fs-xs)/1 var(--font-sans); }
+
+/* a structure borrowed from the run a plot, spectrum or volume came from: read-only, and said so */
+.bottom-pane.atoms .pc-from { display: flex; align-items: center; gap: var(--s-2) var(--s-3); flex-wrap: wrap; padding: var(--s-1) var(--s-3);
+  font-size: var(--fs-sm); color: var(--text-2); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.pc-from .pc-from-t { display: inline-flex; align-items: center; gap: var(--s-2); flex: 1; min-width: 0; }
+.pc-from .pc-from-t .i { width: 14px; height: 14px; flex: none; color: var(--text-3); }
+.pc-from .pc-from-proj { flex-basis: 100%; color: var(--text-3); }
+.pc-ro .kv td.num { font-variant-numeric: tabular-nums; }
+.pc-ro .pc-ro-src { overflow-wrap: anywhere; }

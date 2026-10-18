@@ -34,6 +34,19 @@ export function frameOfPoint(points) {
   return m;
 }
 
+/** One SCF block of out_convergence.scf_timeline: "latest" (the default), "first", a 1-based number,
+ * or "point:N" (the twin of out_convergence.scf_block). */
+export function scfBlock(tl, step) {
+  const bl = (tl && tl.blocks) || [];
+  if (!bl.length) return null;
+  if (step === undefined || step === null || step === "latest") return bl[bl.length - 1];
+  if (step === "first") return bl[0];
+  const s = String(step);
+  if (s.startsWith("point:")) return bl.find((b) => b.point === Number(s.slice(6))) || null;
+  const k = Number(s);
+  return k >= 1 && k <= bl.length ? bl[k - 1] : null;
+}
+
 export function createRunPlot(host, H) {
   const { api, q, esc, icon, toast, cssVar, loadPlotly, download } = H;
   host.innerHTML = `<div class="rp pv" tabindex="-1">
@@ -60,7 +73,7 @@ export function createRunPlot(host, H) {
         segments: setting("plots.segments", "continuous") === "separate" ? "separate" : "continuous",
         width: Number(setting("plots.lineWidth", 1.5)) || 1.5, xr: null, yr: null, xlog: false },
       convergence: { ylog: true, width: Number(setting("plots.lineWidth", 1.5)) || 1.5, xr: null, yr: null },
-      scf: { ylog: true, width: 1.5, xr: null, yr: null },
+      scf: { ylog: true, unit: "Ha", block: "latest", width: 1.5, xr: null, yr: null },
       cell: { relTo: "absolute", width: 1.5, xr: null, yr: null, ylog: false },
       tracked: { width: 1.5, xr: null, yr: null, ylog: false }, _single: single,
     };
@@ -84,7 +97,9 @@ export function createRunPlot(host, H) {
   const O = () => doc.opts[doc.tab];
   function takeEnergy(d) {
     if (!d.energyPatch || !d.opts) return;
-    Object.assign(d.opts.energy, d.energyPatch);
+    // a card's options for the tab it opens: the energy card's (no _tab) or the SCF card's (_tab: "scf")
+    const { _tab, ...patch } = d.energyPatch;
+    Object.assign(d.opts[_tab || "energy"], patch);
     delete d.energyPatch;
     persist(d);
   }
@@ -123,12 +138,13 @@ export function createRunPlot(host, H) {
   function perDiv(r, per) { return per === "atom" ? r.n || 1 : per === "fu" ? (r.n / (r.z || 1)) || 1 : 1; }
 
   /* ------------------------------------------------ figures */
-  const css = (n) => cssVar(n);
+  // a token as the plots draw it: the theme's, or the forced plot surface's (Settings › Appearance › Plot background)
+  const css = (n) => (H.plotVar ? H.plotVar(n, "scf") : cssVar(n));   // the SCF & run charts preset's tokens
   function base(o) {
     const grid = css("--line");
     // the legend above the plot, its margin sized to it as drawn (plotkit fitLegends); the labels of
     // reference lines (thresholds, restarts, the stop) are legend entries of their own (key below)
-    return { margin: { l: 70, r: 18, t: 18, b: 46, autoexpand: false }, _keys: [], paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    return { margin: { l: 70, r: 18, t: 18, b: 46, autoexpand: false }, _keys: [], ...(H.plotPaper ? H.plotPaper() : { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)" }),
       font: { color: css("--text"), size: 12, family: css("--font-sans") }, hovermode: "closest", showlegend: true,
       legend: PK.legendTop(),
       modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
@@ -297,30 +313,45 @@ export function createRunPlot(host, H) {
         refKey(lay, `SCF MAXCYCLE ${mc.value}<br>(${SRC[mc.source] || mc.source})`, { line: { color: css("--text-3"), width: 1, dash: "dash" } });
       }
     }
-    // the per-cycle detail CRYSTAL printed: the selected point's block, else the first
-    const fr = H.frameOf ? H.frameOf(r.path) : null;
-    const selPoint = (pts.find((p) => p.frame === fr) || {}).point;
-    const blocks = conv.scf.detail || [];
-    const blk = blocks.find((b) => b.point === selPoint) || (selPoint === undefined || (pts.length === 0) ? blocks[0] : null);
+    // the per-cycle detail CRYSTAL printed (out_convergence.scf_timeline): the chosen block, the latest by default
+    const tl = conv.scf_timeline || { blocks: [] };
+    const blk = scfBlock(tl, o.block);
+    const f = (PK.ENERGY_UNITS[o.unit || "Ha"] || 1) * HA_EV, ul = PK.UNIT_LABEL[o.unit || "Ha"] || o.unit || "Ha";
     const grid = css("--line");
     lay.xaxis2 = { title: { text: "SCF cycle" }, domain: [0, 1], anchor: "y2", gridcolor: grid, showline: true, mirror: true, linecolor: grid };
-    lay.yaxis2 = { title: { text: "|ΔE| (Ha)" }, type: "log", domain: [0, pts.length ? 0.42 : 1], anchor: "x2", gridcolor: grid, showline: true, mirror: true, linecolor: grid };
+    lay.yaxis2 = { title: { text: o.ylog ? `|ΔE| (${ul})` : `E − E(last cycle) (${ul})` }, type: o.ylog ? "log" : "linear", domain: [0, pts.length ? 0.42 : 1],
+      anchor: "x2", gridcolor: grid, showline: true, mirror: true, linecolor: grid };
     if (!pts.length) { lay.yaxis = { visible: false }; lay.xaxis = { visible: false }; }
     d.scfNote = "";
+    d.scfBlock = blk;
     if (blk) {
-      const cyc = blk.cycles.filter((c) => c.detot !== null);
-      traces.push({ x: cyc.map((c) => c.cyc), y: cyc.map((c) => Math.abs(c.detot)), xaxis: "x2", yaxis: "y2", mode: "lines+markers", type: "scatter",
-        name: `|ΔE| per cycle${blk.point ? ` (POINT ${blk.point})` : ""}`, meta: "detail",
-        line: { color: blk.ended === "too_many_cycles" ? css("--danger") : pal[1], width: o.width }, hovertemplate: "cycle %{x}: %{y:.2e} Ha<extra></extra>" });
-      const t = conv.thresholds.toldee_scf;
-      if (t) {
-        lay.shapes.push({ type: "line", name: "toldee-scf", xref: "x2 domain", x0: 0, x1: 1, yref: "y2", y0: t.value, y1: t.value, line: { color: css("--text-2"), width: 1, dash: "dash" } });
+      const cyc = blk.cycles.filter((c) => (o.ylog ? c.detot !== null && c.detot !== 0 : c.etot !== null));
+      const last = blk.cycles.length ? blk.cycles[blk.cycles.length - 1].etot : 0;
+      const y = (c) => (o.ylog ? Math.abs(c.detot) * f : (c.etot - last) * f);
+      traces.push({ x: cyc.map((c) => c.cyc), y: cyc.map(y), xaxis: "x2", yaxis: "y2", mode: "lines+markers", type: "scatter",
+        name: `${o.ylog ? "|ΔE|" : "E"} per cycle (${blk.label})`, meta: "detail",
+        marker: { size: 7, symbol: cyc.map((c) => (o.ylog && c.detot > 0 ? "triangle-up" : "circle")) },
+        line: { color: blk.ended === "too_many_cycles" ? css("--danger") : pal[1], width: o.width },
+        hovertemplate: `cycle %{x}: %{y:.3e} ${esc(ul)}<extra></extra>` });
+      const t = tl.toldee || conv.thresholds.toldee_scf;
+      if (t && o.ylog) {
+        const ty = t.value * f;
+        lay.shapes.push({ type: "line", name: "toldee-scf", xref: "x2 domain", x0: 0, x1: 1, yref: "y2", y0: ty, y1: ty, line: { color: css("--text-2"), width: 1, dash: "dash" } });
         refKey(lay, `TOLDEE ${t.value.toExponential(0)} Ha<br>(${SRC[t.source] || t.source})`, { line: { color: css("--text-2"), width: 1, dash: "dash" } });
       }
-      if (blk.ended === "too_many_cycles") d.scfNote = "The SCF of this point did not converge (TOO MANY CYCLES): see Problems.";
+      // the notable cycles: mixing, DIIS, the spin lock's release, conducting-state and degeneracy warnings;
+      // a dotted line at the cycle, named in the legend (no boxes over the data, as every reference line)
+      blk.events.forEach((e) => {
+        const line = { color: e.kind === "too_many_cycles" ? css("--danger") : css("--text-3"), width: 1, dash: "dot" };
+        lay.shapes.push({ type: "line", name: `scf-event-${e.kind}`, xref: "x2", x0: e.cyc, x1: e.cyc, yref: "y2 domain", y0: 0, y1: 1, line });
+        refKey(lay, `${esc(e.text)} (cycle ${e.cyc})`, { line });
+      });
+      if (blk.ended === "too_many_cycles") d.scfNote = "This SCF did not converge (TOO MANY CYCLES): see Problems.";
+      else if (blk.running) d.scfNote = `${blk.label}: running, ${blk.cycles.length} cycles so far (updates while the output grows).`;
     } else {
-      d.scfNote = "Per-cycle SCF detail is printed only for the first point of an optimization." +
-        (conv.scf.moved_to_scfout_log ? " CRYSTAL moved the rest to SCFOUT.LOG, which stays in the job's scratch directory." : "");
+      d.scfNote = (tl.blocks.length ? "No per-cycle SCF lines for this choice." : "This output prints no per-cycle SCF lines.") +
+        (conv.is_opt && !conv.scf.scfout ? " Per-cycle SCF detail is printed only for the first point of an optimization." : "") +
+        (conv.scf.moved_to_scfout_log && !conv.scf.scfout ? " CRYSTAL moved the rest to SCFOUT.LOG; a MACE job (1.1.6 and later) copies it back next to the output as <job>.SCFOUT.LOG." : "");
     }
     if (pts.length) selLine(r, lay, "y domain");
     return { traces, layout: lay };
@@ -421,6 +452,7 @@ export function createRunPlot(host, H) {
       $(".pv-note").title = $(".pv-note").textContent;
       chips();
       criteria();
+      if (H.styleFigure) H.styleFigure(fig.traces, fig.layout, "scf");       // Settings › Appearance › Plot style (SCF & run charts)
       if (el.__sig !== sig) { if (el.__sig) window.Plotly.purge(el); el.__bound = false; await window.Plotly.newPlot(el, fig.traces, fig.layout, config); el.__sig = sig; }
       else await window.Plotly.react(el, fig.traces, fig.layout, config);
       building = false;
@@ -461,7 +493,7 @@ export function createRunPlot(host, H) {
       const p = ev.points[0];
       const fr = p.customdata;
       if (fr === null || fr === undefined) return;
-      if (doc.tab === "scf" && p.data.meta === "cycles") { pickFrame(fr); return; }
+      if (doc.tab === "scf" && p.data.meta === "cycles") { doc.opts.scf.block = `point:${p.x}`; persist(doc); showTab("scf"); pickFrame(fr); return; }
       pickFrame(fr);
     });
   }
@@ -492,10 +524,23 @@ export function createRunPlot(host, H) {
     persist(doc);
     host.querySelectorAll("[data-tab]").forEach((b) => { const on = b.dataset.tab === t; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; });
     $(".rp-tabopts").innerHTML = t === "cell" ? `<span class="segment" role="radiogroup" aria-label="Cell values">${[["absolute", "Absolute"], ["first", "% from first"]]
-      .map(([v, l]) => `<button role="radio" data-cellmode="${v}" aria-checked="${doc.opts.cell.relTo === v}">${l}</button>`).join("")}</span>` : "";
+      .map(([v, l]) => `<button role="radio" data-cellmode="${v}" aria-checked="${doc.opts.cell.relTo === v}">${l}</button>`).join("")}</span>` : t === "scf" ? scfPicker() : "";
     if (kit) kit.refresh();
     redraw();
   }
+
+  /* the SCF tab's block picker: the latest (default, follows a live run) and each block the .out prints */
+  function scfPicker() {
+    const bl = (doc.run && doc.run.conv.scf_timeline && doc.run.conv.scf_timeline.blocks) || [];
+    if (bl.length < 2) return "";
+    const cur = doc.opts.scf.block || "latest";
+    const opts = [["latest", "Latest"], ...bl.map((b, i) => [String(i + 1), `${b.label} · ${b.cycles.length} cycles`])];
+    return `<label class="rp-scfstep">Step <select data-scfstep aria-label="SCF step">${opts.map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  }
+  $(".rp-tabs").addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-scfstep]");
+    if (sel && doc) set({ block: sel.value }, `SCF ${sel.value}`);
+  });
 
   /* the table under every export (CSV, Copy as TSV): the plotted data in the plotted units */
   function table() {
@@ -505,7 +550,15 @@ export function createRunPlot(host, H) {
       return { columns: ["point", "frame", "max_grad", "rms_grad", "max_disp", "rms_disp"],
         rows: pts.map((p) => [p.point, p.frame, p.max_grad, p.rms_grad, p.max_disp, p.rms_disp]) };
     }
-    if (t === "scf") return { columns: ["point", "frame", "scf_cycles"], rows: d.run.conv.points.map((p) => [p.point, p.frame, p.scf_cycles]) };
+    if (t === "scf") {
+      // the chosen block's cycles, as `mace analyze --convergence FILE --scf` prints them; else the cycles per point
+      const blk = scfBlock(d.run.conv.scf_timeline, d.opts.scf.block);
+      if (!blk) return { columns: ["point", "frame", "scf_cycles"], rows: d.run.conv.points.map((p) => [p.point, p.frame, p.scf_cycles]) };
+      const u = d.opts.scf.unit || "Ha", f = (PK.ENERGY_UNITS[u] || 1) * HA_EV, ev = {};
+      for (const e of blk.events) (ev[e.cyc] = ev[e.cyc] || []).push(e.text);
+      return { columns: ["cycle", "E_Ha", `dE_${u}`, "spin", "events"],
+        rows: blk.cycles.map((c) => [c.cyc, c.etot ?? "", c.detot === null ? "" : c.detot * f, c.spin ?? "", (ev[c.cyc] || []).join("; ")]) };
+    }
     if (t === "cell") return { columns: ["point", "frame", "a", "b", "c", "alpha", "beta", "gamma", "volume"],
       rows: d.run.conv.points.filter((p) => p.cell).map((p) => [p.point, p.frame, p.cell.a, p.cell.b, p.cell.c, p.cell.alpha, p.cell.beta, p.cell.gamma, p.cell.volume]) };
     if (t === "tracked") {
@@ -541,9 +594,20 @@ export function createRunPlot(host, H) {
       doc.run = await runData(doc.runPath);
       if (doc.compare) doc.other = await runData(doc.compare);
       await retrack();
+      if (doc.tab === "scf") $(".rp-tabopts").innerHTML = scfPicker();
+      livePoll();
       if (kit) kit.refresh();          // the features follow the data (Segments only for a run with FINALRUN restarts)
       redraw();
     } catch (e) { $(".pv-note").textContent = e.message; }
+  }
+  /* a run still being written (no end marker): read it again every 15 s while this document shows it
+   * (the run view's own live refresh covers optimizations; this one also an SP or an OPT's first SCF) */
+  let liveTimer = 0;
+  function livePoll() {
+    clearTimeout(liveTimer);
+    if (!doc || !doc.run || !doc.run.conv.live) return;
+    const d = doc;
+    liveTimer = setTimeout(() => { if (doc === d && !document.hidden) refreshData(); else if (doc === d) livePoll(); }, 15000 * (window.__maceLiveScale || 1));
   }
   async function retrack() {
     for (const t of doc.tracks) {
@@ -566,7 +630,7 @@ export function createRunPlot(host, H) {
         host: el,
         get features() {
           const t = doc ? doc.tab : "energy";
-          return { logY: t !== "cell", logX: false, units: t === "energy" ? "energy" : null, per: t === "energy", relTo: t === "energy",
+          return { logY: t !== "cell", logX: false, units: t === "energy" || t === "scf" ? "energy" : null, per: t === "energy", relTo: t === "energy",
             segments: t === "energy" && !!doc && !!doc.run && doc.run.conv.segments.length > 1, range: true, width: true, png: true, svg: true, csv: true, pub: false };
         },
         get disabled() {
@@ -592,7 +656,7 @@ export function createRunPlot(host, H) {
         redraw();
       }
     },
-    close() { doc = null; },
+    close() { doc = null; clearTimeout(liveTimer); },
     /** the energy card's Open as Plot: the plot shows the card's data (reference, segments, unit, log) */
     setEnergy(d, patch) { if (!d || !patch) return; d.energyPatch = patch; if (doc === d && d.opts) { takeEnergy(d); if (kit) kit.refresh(); redraw(); } },
     showTab: (t) => doc && showTab(t),

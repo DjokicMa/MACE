@@ -9,8 +9,12 @@ import * as commands from "./commands.js";
 import { $, $$, esc, icon, toast, dialog, installTooltips, hideTip, asset, configureToasts } from "./ui.js";
 import * as notifications from "./notifications.js";
 import * as settings from "./settings.js";
+import * as plotPresets from "./plotpresets.js";
+// the plot presets for the classic views (app.js plotPreset, styleFigure): installed before any plot draws
+window.MACE_PRESETS = plotPresets;
 import { initMenubar, openMenuIndex, focusBar, closeAll as closeMenus, isOpen as menuOpen, openAt } from "./menus.js";
-import { initPalette, openPalette, isPaletteOpen, closePalette, results as paletteResults, bench as paletteBench, domRows } from "./palette.js";
+import { initPalette, openPalette, openPick, isPaletteOpen, closePalette, results as paletteResults, bench as paletteBench, domRows } from "./palette.js";
+import { THEMES, themeOf, groupLabel } from "./themes.js";
 import * as rank from "./rank.js";
 import { registerAll, registerMnemonics, MENUS, TOOLBAR, CONTEXT } from "./actions.js";
 import { initContext, openForFocus, contextAt, contextFor, openViewportMenu } from "./context.js";
@@ -19,6 +23,9 @@ import * as docprefs from "./docprefs.js";
 import * as profile from "./profile.js";
 import * as DS from "./viewport/display_state.js";
 import { PANE, createGroups } from "./groups.js";
+import { bindSplitter } from "./splitter.js";
+import { initSidebar } from "./sidebar.js";
+import { createPanelContext } from "./panelctx.js";
 
 const M = () => window.MACE;
 /* The viewport and the editor (js/editor, js/viewport, js/geom) load when the
@@ -45,9 +52,9 @@ function loadEditor() {
 }
 const edOf = (d) => (E && d ? E.edOf(d) : null);
 const KIND_PANEL = { structure: "structure", trajectory: "opt", plot: "results", runplot: "results", db: "db", editor: "edit", text: "text", freq: "freq",
-  cluster: "cluster", job: "job", volume: "volume", batch: "batch" };
+  cluster: "cluster", job: "job", volume: "volume", batch: "batch", gallery: "gallery", workflows: "workflows" };
 const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "band", dos: "dos", ir: "IR", raman: "Ram", db: "db", json: "json",
-  image: "img", html: "html", freq: "FREQ", cube: "cube", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34",
+  image: "img", html: "html", freq: "FREQ", cube: "cube", orbitals: "orb", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34",
   f25: "f25", transport: "trn", crystaldata: "data", wavefunction: "wf", script: "sh", log: "log", joblog: "log", volume: "vol", props: "PROPS", convergence: "conv" };
 const docs = [];
 let active = null, nextId = 1, tool = "select", symMode = "sym", setupOpen = false, info = null;
@@ -79,6 +86,8 @@ function ctxHere() {
     dialogOpen: !!document.querySelector("dialog:modal"),   // a non-modal panel (Edit Cell) leaves the keys on
     viewportFocus: !!ae && !!ae.closest && !!ae.closest(".viewer-wrap, .fv-view"),
     freqOffGamma: !!(d && d.kind === "freq" && d.gamma === false),
+    // a volume of a molecule: no cell, so no periodic images, no cell axes to look along
+    volNonPeriodic: !!(d && d.kind === "volume" && d.meta && !d.meta.periodic),
     setupOpen, setupHasDeck: !!(setupMod && setupMod.hasDeck()), setupFocus: !!ae && !!ae.closest && !!ae.closest("#inspector .setup"),
     isMac, symMode: eds ? eds.symMode === "sym" : symMode === "sym", toolNotSelect: tool !== "select",
     openFolderOn: !!(info && info.open_folder),
@@ -86,7 +95,7 @@ function ctxHere() {
     hasDos: files.some((f) => f.kind === "dos"), hasIr: files.some((f) => f.kind === "ir"), hasRaman: files.some((f) => f.kind === "raman"), hasCube: files.filter((f) => f.kind === "cube").length > 0,
     hasTwoCubes: files.filter((f) => f.kind === "cube").length > 1,
     docHasIr: !!partnerOf(d, "ir"), docHasRaman: !!partnerOf(d, "raman"), docIsFreq: isFreqDoc(d),
-    trajSteps: trajSteps(), activeTable: !!activeTableKind(), zenMode: !!layout.zen,
+    trajSteps: trajSteps(), activeTable: !!activeTableKind(), activeDbTable: activeTableKind() === "db", zenMode: !!layout.zen,
     noWebgl: !!(M() && M().webgl && !M().webgl.ok),
   };
 }
@@ -142,6 +151,7 @@ async function openDoc(path, opts = {}) {
   }
   if (INFO_KINDS.includes(fk)) return openInfo(path);
   if (fk === "cube") return openVolume(path);
+  if (fk === "orbitals") return openOrbitals(path);
   if ((fk === "out" || fk === "log") && as !== "structure") {
     let r = null;
     try { r = await M().roleOf(path); } catch (e) { r = null; }
@@ -242,10 +252,18 @@ async function activate(d) {
     M().showTab(panel);
     panelOwner[panel] = d.id;
     showRunPlot(d);
+  } else if (d.kind === "gallery") {
+    M().showTab(panel);
+    panelOwner[panel] = d.id;
+    galleryViewer().then((v) => { if (active === d) return v.open(d); }).catch((e) => toast(`Plot Gallery: ${e.message}`, "error"));
   } else if (d.kind === "cluster" || d.kind === "job") {
     M().showTab(panel);
     panelOwner[panel] = d.id;
     (d.kind === "cluster" ? clusterViewer() : jobViewer()).then((v) => { if (active === d) v.open(d); });
+  } else if (d.kind === "workflows") {
+    M().showTab(panel);
+    panelOwner[panel] = d.id;
+    workflowViewer().then((v) => { if (active === d) v.open(d); }).catch((e) => toast(`Workflows: ${e.message}`, "error"));
   } else {
     M().showTab(panel);
     if (d.kind === "text") renderTextDoc(d);
@@ -266,17 +284,17 @@ function afterSwitch() {
   // timeline for a run, tasks for a plot, nothing for the database
   const k = active ? active.kind : null;
   // (the Jobs tab is about the folder, not a document: it stays with no document open)
-  shell.classList.toggle("doc-no-bottom", (k === "db" || !k) && layout.bottomTab !== "jobs");
+  shell.classList.toggle("doc-no-bottom", (k === "db" || k === "workflows" || !k) && layout.bottomTab !== "jobs");
   const atomsPane = $(".bottom-pane.atoms");
   if (atomsPane) atomsPane.classList.toggle("no-structure", !(k === "structure" || k === "trajectory"));
-  if ((k === "plot" || k === "cluster" || k === "job") && ["atoms", "timeline", "coordination", "measurements"].includes(layout.bottomTab)) showBottom("tasks", false);
+  // a plot borrows Atoms and Coordination from its run (panelctx.js; a placeholder says when it has none): they stay
+  if (k === "plot" && ["timeline", "measurements"].includes(layout.bottomTab)) showBottom("tasks", false);
+  if ((k === "gallery" || k === "cluster" || k === "job" || k === "workflows") && ["atoms", "timeline", "coordination", "measurements"].includes(layout.bottomTab)) showBottom("tasks", false);
   if (k === "text" && ["atoms", "timeline", "measurements", "coordination"].includes(layout.bottomTab)) showBottom(active && active.deck ? "problems" : "tasks", false);
   if (k === "structure" && layout.bottomTab === "timeline") showBottom("atoms", false);
   if (k === "batch" && ["atoms", "timeline", "measurements", "coordination"].includes(layout.bottomTab)) showBottom("tasks", false);
   if (k === "freq") showBottom("modes", false);
   else if (layout.bottomTab === "modes") showBottom(k === "structure" ? "atoms" : k === "trajectory" ? "timeline" : "tasks", false);
-  const modesTab = $('.bottom-tab[data-bottom="modes"]');
-  if (modesTab) modesTab.hidden = k !== "freq";
   requestAnimationFrame(revealBottomTab);
   renderTabs(); renderStatus(); renderToolbarState(); renderOpenEditors(); updateTitle();
   if (setupOpen && setupMod && $("#inspector .setup")) setupMod.docChanged(); else renderInspector();
@@ -314,8 +332,12 @@ function closeDoc(d, force = false) {
   if (problems.some((p) => p.doc === d.id)) clearProblems(d.id);
   if (d.held) releaseHeld(d);
   if (d.kind === "db" && dbView) dbView.forget(d.path);
+  // a band plot's Brillouin zone view, and Setup's state for this document (its zone view too)
+  for (const o of [d, d.plot]) if (o && o.bz && o.bz.destroy) { o.bz.destroy(); o.bz = null; }
+  if (setupMod && setupMod.forget) setupMod.forget(d);
   if (d.kind === "job") { if (jobView) jobView.close(d); M().api("cluster/job/close", { body: { id: d.jobId } }).catch(() => {}); }
   if (d.kind === "cluster" && clusterView) clusterView.close();
+  if (d.kind === "workflows" && workflowView) workflowView.close();
   Object.keys(panelOwner).forEach((k) => { if (panelOwner[k] === d.id) delete panelOwner[k]; });
   if (active === d) {
     active = null;
@@ -324,6 +346,25 @@ function closeDoc(d, force = false) {
     if (M().state) { M().state.active = null; M().renderFiles(); }
   }
   afterSwitch();
+  if (GR && !docs.length) GR.docClosed(0);      // the group's last tab: groups.js closes or merges the group
+}
+/* A tab to another place in its own strip (dragged there, or Move Left/Right):
+ * `to` counts the other tabs (null: the end). True when it moved. */
+function moveDocTo(d, to) {
+  const from = docs.indexOf(d);
+  if (from < 0) return false;
+  docs.splice(from, 1);
+  const at = to == null ? docs.length : Math.max(0, Math.min(docs.length, Math.round(Number(to)) || 0));
+  docs.splice(at, 0, d);
+  renderTabs(); renderOpenEditors();
+  if (GR && GR.pane) GR.changed();
+  return at !== from;
+}
+function moveDocBy(d, step) {
+  if (!d || docs.length < 2) return false;
+  const i = docs.indexOf(d) + step;
+  if (i < 0 || i >= docs.length) return false;
+  return moveDocTo(d, i);
 }
 function closeAll() { [...docs].forEach((d) => closeDoc(d)); }
 function cycleDoc(step) {
@@ -369,14 +410,21 @@ function renderTabs() {
   host.innerHTML = html;
   // a tab list with no tab is not a tab list (WCAG 4.1.2): the role comes with the first document
   if (docs.length) host.setAttribute("role", "tablist"); else host.removeAttribute("role");
+  labelTabs();
+}
+/* With two editor groups each strip says whose it is (groups.js). */
+function labelTabs() {
+  const host = $("#doc-tabs");
+  const name = PANE ? "Right editor group: open documents" : GR && GR.isOpen() ? "Left editor group: open documents" : "Open documents";
+  if (host.getAttribute("aria-label") !== name) host.setAttribute("aria-label", name);
 }
 let tabDragged = false;
 $("#doc-tabs").addEventListener("pointerdown", (e) => {
   const t = e.target.closest(".doc-tab");
-  if (!t || e.target.closest("[data-close]") || !GR || GR.pane) return;
+  if (!t || e.target.closest("[data-close]") || !GR) return;
   GR.dragTab(e, docs.find((y) => y.id === Number(t.dataset.doc)), () => { tabDragged = true; setTimeout(() => { tabDragged = false; }, 0); });
 });
-// a tab moves by the pointer (groups.js): no native drag of a tab's text or icon
+// the tabs move by the pointer (groups.js): no native drag of a tab's text or icon
 $("#doc-tabs").addEventListener("dragstart", (e) => e.preventDefault());
 $("#doc-tabs").addEventListener("click", (e) => {
   if (tabDragged) { tabDragged = false; return; }
@@ -391,7 +439,12 @@ $("#doc-tabs").addEventListener("auxclick", (e) => {
   if (t && e.button === 1) closeDoc(docs.find((y) => y.id === Number(t.dataset.doc)));
 });
 $("#doc-tabs").addEventListener("keydown", (e) => {
-  if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); cycleDoc(e.key === "ArrowRight" ? 1 : -1); $(".doc-tab.active")?.focus(); }
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  e.preventDefault();
+  const step = e.key === "ArrowRight" ? 1 : -1;
+  // Shift+Arrow moves the tab itself (Move Left / Move Right); the arrows alone go to the next tab
+  if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) moveDocBy(active, step); else cycleDoc(step);
+  $(".doc-tab.active")?.focus();
 });
 $("#doc-tabs").addEventListener("contextmenu", (e) => {
   const t = e.target.closest(".doc-tab");
@@ -453,6 +506,7 @@ const shell = $("#shell");
  * new port or browser), with localStorage as the cache read before boot. Zen
  * and the narrow-screen drawer stay in this browser only. */
 const layout = (() => { try { return JSON.parse(localStorage.getItem(layoutKey) || "{}"); } catch (e) { return {}; } })();
+let sidebar = null;              // the explorer's sections: order, shown, sizes (sidebar.js, layout.sidebar)
 /* mode "local": a change the page made by itself (the bottom tab following the
  * document): kept in this browser, not sent to the server on every switch */
 function saveLayout(mode) {
@@ -495,6 +549,7 @@ function applyLayout() {
   shell.classList.toggle("no-bottom", layout.bottom === false);
   shell.classList.toggle("zen", !!layout.zen);
   zenChip();
+  renderPanelControls();
   // widths saved on another screen: clamped to this window
   const clampW = (v, f) => Math.min(v, Math.round(innerWidth * f));
   if (layout.wExplorer) shell.style.setProperty("--w-explorer", clampW(layout.wExplorer, 0.4) + "px");
@@ -502,6 +557,7 @@ function applyLayout() {
   // Setup needs room for its form; closing it gives the inspector its own width back
   const wInsp = clampW(layout.wInspector || 300, 0.45);
   shell.style.setProperty("--w-inspector", (setupOpen ? Math.max(wInsp, 460) : wInsp) + "px");
+  if (sidebar) sidebar.apply();
   relayout();
 }
 let relayoutFrame = 0;
@@ -514,11 +570,103 @@ function panelShown(name) {
   return !shell.classList.contains("no-" + name);
 }
 function togglePanel(name) {
-  if (name === "inspector" && narrow()) { drawerOpen = !drawerOpen; applyLayout(); renderActivity(); return; }
+  if (name === "inspector" && narrow()) { drawerOpen = !drawerOpen; afterPanels(name, drawerOpen); return; }
   if (name === "zen") layout.zen = !layout.zen;
   else layout[name] = !panelShown(name);
   saveLayout(name === "zen" ? "local" : undefined); applyLayout(); renderActivity();     // Zen stays in this browser
   if (name === "zen" && layout.zen) zenEntered();
+  if (name !== "zen") afterPanels(name, layout[name]);
+}
+
+/* ---------------------------------------------------------------- hiding and showing the panels
+ * The Explorer, the Inspector and the bottom panel each hide from their
+ * header's ×, the View menu, the palette, their key, the status bar's
+ * toggles, or a splitter dragged shut; a hidden one leaves a tab on its edge
+ * of the editor that brings it back. Hide All Panels remembers which were
+ * open and brings back exactly those (layout.focus). */
+const PANEL_INFO = { explorer: ["Explorer", "view.explorer"], inspector: ["Inspector", "view.inspector"], bottom: ["Bottom Panel", "view.bottom"] };
+const PANEL_NAMES = Object.keys(PANEL_INFO);
+const keyText = (id) => { const k = shortcutOf(id); return k ? ` (${k})` : ""; };
+function afterPanels(name, shown) {
+  if (layout.focus && PANEL_NAMES.some((n) => panelShown(n))) { delete layout.focus; saveLayout(); }
+  applyLayout(); renderActivity(); renderPanelControls(); renderStatus();
+  if (shown === false && name) panelHint(name);
+}
+function toggleAllPanels() {
+  if (layout.focus) {
+    const back = Array.isArray(layout.focus.restore) && layout.focus.restore.length ? layout.focus.restore : PANEL_NAMES;
+    delete layout.focus;
+    for (const n of back) { if (n === "inspector" && narrow()) drawerOpen = true; else layout[n] = true; }
+  } else {
+    const open = PANEL_NAMES.filter((n) => panelShown(n));
+    layout.focus = { restore: open.length ? open : PANEL_NAMES };
+    PANEL_NAMES.forEach((n) => { layout[n] = false; });
+    drawerOpen = false;
+  }
+  saveLayout(); applyLayout(); renderActivity(); renderPanelControls(); renderStatus();
+  if (layout.focus) panelHint(null);
+}
+/* The first time a panel goes (once a session, until "Don't show again"): how to get it back. */
+function panelHint(name) {
+  if (PANE) return;
+  try { if ((profile.ui("hints", {}) || {}).panelHidden || sessionStorage.getItem("mace.gui.panelHint")) return; sessionStorage.setItem("mace.gui.panelHint", "1"); } catch (e) { /* private */ }
+  const text = name ? `${PANEL_INFO[name][0]} hidden: click the tab on its edge or press ${shortcutOf(PANEL_INFO[name][1]) || "its key"} to bring it back`
+    : `All panels hidden: click Show Panels or press ${shortcutOf("view.hideAllPanels") || "its key"} to bring them back`;
+  toast(text, "info", { label: "Don't show again", ms: 10000,
+    run: () => profile.setUi("hints", { ...(profile.ui("hints", {}) || {}), panelHidden: true }) });
+}
+/* The header ×, the edge tabs, the status bar's toggles and the Show Panels chip follow the layout. */
+function renderPanelControls() {
+  if (PANE) return;
+  for (const n of PANEL_NAMES) {
+    const shown = panelShown(n), [label, cmd] = PANEL_INFO[n];
+    const edge = $(`.edge-tab[data-panel="${n}"]`);
+    if (edge) { edge.hidden = shown || !!layout.zen; edge.setAttribute("aria-label", `Show ${label}${keyText(cmd)}`); }
+    const x = $(`.panel-hide[data-panel="${n}"]`);
+    if (x) x.setAttribute("aria-label", `Hide ${label}${keyText(cmd)}`);
+  }
+  const chip = $("#panels-exit");
+  if (chip) { chip.hidden = !layout.focus || !!layout.zen; chip.querySelector("kbd").textContent = shortcutOf("view.hideAllPanels") || ""; }
+}
+function initPanelControls() {
+  if (PANE) return;
+  const btn = (n, cls, ico) => {
+    const [label, cmd] = PANEL_INFO[n];
+    return `<button class="${cls}" type="button" data-panel="${n}" data-panel-cmd="${cmd}" aria-controls="${n}" data-tip="${cls === "edge-tab" ? "Show" : "Hide"} ${label}" data-tip-cmd="${cmd}">${icon(ico)}</button>`;
+  };
+  $("#explorer .side-title").insertAdjacentHTML("beforeend", btn("explorer", "icon-btn sm panel-hide", "x"));
+  $("#bottom").insertAdjacentHTML("afterbegin", btn("bottom", "icon-btn sm panel-hide", "x"));
+  // the Inspector's × lives in its header: the Inspector's bar, or Calculation Setup's header while
+  // Setup replaces it (a bar of its own while neither is drawn yet)
+  const insp = $("#inspector");
+  const keepX = () => {
+    let x = $(".panel-hide[data-panel=inspector]", insp);
+    const head = $(":scope > .insp-bar:not(.insp-bar-min)", insp) || $(".su-head", insp);
+    const min = $(":scope > .insp-bar-min", insp);
+    if (head && min) min.remove();
+    const target = head || min || (() => {
+      const bar = document.createElement("div");
+      bar.className = "insp-bar insp-bar-min";
+      bar.innerHTML = `<span class="insp-bar-title">Inspector</span>`;
+      insp.prepend(bar);
+      return bar;
+    })();
+    if (x && x.parentElement === target) return;
+    if (!x) { target.insertAdjacentHTML("beforeend", btn("inspector", "icon-btn sm panel-hide", "x")); x = $(".panel-hide[data-panel=inspector]", target); x.setAttribute("aria-expanded", "true"); }
+    else target.appendChild(x);
+    renderPanelControls();
+  };
+  new MutationObserver(keepX).observe(insp, { childList: true, subtree: true });
+  keepX();
+  $("#center").insertAdjacentHTML("beforeend", btn("explorer", "edge-tab", "panel-left") + btn("inspector", "edge-tab", "panel-right") + btn("bottom", "edge-tab", "panel-bottom"));
+  document.body.insertAdjacentHTML("beforeend", `<button class="zen-exit panels-exit" id="panels-exit" type="button" data-panel-cmd="view.hideAllPanels" hidden>${icon("maximize")}<span>Show Panels</span><kbd></kbd></button>`);
+  $$(".edge-tab").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  $$(".panel-hide").forEach((b) => b.setAttribute("aria-expanded", "true"));
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-panel-cmd]");
+    if (b) { e.stopPropagation(); run(b.dataset.panelCmd); }
+  }, true);
+  renderPanelControls();
 }
 /* Zen Mode hides the menu bar, toolbar, activity bar and status bar: the chip
  * (top right), Esc and the viewport menu lead out. The chip fades after 3 s
@@ -547,26 +695,17 @@ function zenEntered() {
 }
 function splitter(el, prop, key, min, max, sign, axis = "x") {
   const def = { wExplorer: 260, wInspector: 300, hBottom: 240 }[key];
-  const set = (v) => { layout[key] = Math.round(Math.min(max, Math.max(min, v))); shell.style.setProperty(prop, layout[key] + "px");
-    el.setAttribute("aria-valuenow", layout[key]); relayout(); };
-  el.setAttribute("aria-valuemin", min); el.setAttribute("aria-valuemax", max);
-  el.setAttribute("aria-valuenow", layout[key] || def);
-  el.addEventListener("pointerdown", (e) => {
-    e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add("dragging");
-    const start = axis === "x" ? e.clientX : e.clientY, base = layout[key] || def, z = window.maceZoom.of(shell);
-    let frame = 0;
-    // the sizes are the shell's own px: a screen px of pointer travel is 1/zoom of them
-    const move = (ev) => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() =>
-      set(base + sign * ((axis === "x" ? ev.clientX : ev.clientY) - start) / z)); };
-    const up = () => { el.classList.remove("dragging"); el.removeEventListener("pointermove", move); saveLayout(); };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up, { once: true });
-  });
-  el.addEventListener("dblclick", () => { set(def); saveLayout(); });
-  el.addEventListener("keydown", (e) => {
-    const d = { ArrowLeft: -16, ArrowRight: 16, ArrowUp: -16, ArrowDown: 16 }[e.key];
-    if (d) { e.preventDefault(); set((layout[key] || def) + sign * d); saveLayout(); }
-  });
+  // the sizes are the shell's own px: a screen px of pointer travel is 1/zoom of them (splitter.js)
+  bindSplitter(el, { axis, sign, def, min: () => min, max: () => max, value: () => layout[key] || def,
+    set: (v) => { layout[key] = v; shell.style.setProperty(prop, v + "px"); relayout(); },
+    zoom: () => window.maceZoom.of(shell), commit: () => saveLayout(),
+    // dragged well past its smallest size: the panel closes (its size stays what it was)
+    release: (raw, base) => {
+      const panel = { wExplorer: "explorer", wInspector: "inspector", hBottom: "bottom" }[key];
+      if (!panel || raw >= min - 60 || (panel === "inspector" && narrow())) return false;
+      layout[key] = base; shell.style.setProperty(prop, base + "px");
+      layout[panel] = false; saveLayout(); afterPanels(panel, false); return true;
+    } });
 }
 
 /* ================================================================ activity bar */
@@ -669,7 +808,7 @@ function toggleOpt(id, value) {
  * structure viewer's owner. Its display state (viewport/display_state.js:
  * range, boundary atoms, rendering) is per document; Settings hold the defaults. */
 function viewDoc() {
-  if (active && ["structure", "trajectory", "freq"].includes(active.kind)) return active;
+  if (active && ["structure", "trajectory", "freq", "volume"].includes(active.kind)) return active;
   return docs.find((x) => x.id === panelOwner.structure) || active || null;
 }
 /** A Settings value as the 3D views use it: a per-document display key comes from the drawn document. */
@@ -717,16 +856,30 @@ function cycleLabels() { const order = ["off", "element", "index", "both", "wyck
 const style = () => (optEl("opt-style") ? optEl("opt-style").value : "ballstick");
 function setStyle(v) { const el = optEl("opt-style"); el.value = v; el.dispatchEvent(new Event("change")); redrawFreq(); refresh(); }
 function mainViewer() {
-  return M().state.viewers[active && active.kind === "trajectory" ? "viewer-before" : active && active.kind === "freq" ? "viewer-freq" : "viewer-main"];
+  return M().state.viewers[active && active.kind === "trajectory" ? "viewer-before" : active && active.kind === "freq" ? "viewer-freq"
+    : active && active.kind === "volume" ? "viewer-volume" : "viewer-main"];
 }
 /* The mode view (a FREQ document) draws with the toolbar's display options too (js/docs/freq.js). */
 const FREQ_VIEW_ONLY = "The mode view is view-only: open its structure (Structure, top right) to edit";
 const freqActive = () => !!(freqView && active && active.kind === "freq");
-function redrawFreq() { if (freqActive()) freqView.redraw(); }
+function redrawFreq() { if (freqActive()) freqView.redraw(); if (volumeActive()) volumeView.redraw(); }
+/* The volume views (cube, orbitals) draw with them too (js/docs/volume.js). */
+const volumeActive = () => !!(volumeView && active && active.kind === "volume");
 /* View along a, b, c, a*, b*, c* or [u v w]: the camera module in a
  * structure document (with a defined "up", animated); the old turn elsewhere. */
 function viewAlong(k) {
   const which = typeof k === "number" ? "abc"[k] : k;
+  if (volumeActive()) {
+    const v = mainViewer(), cell = volumeView.cell();
+    if (!v || !cell || Array.isArray(which)) return;
+    import("./geom/core.js").then((G) => {
+      const dir = G.alongDirection(cell, which);
+      v.setView([...v.getView().slice(0, 4), ...G.viewQuaternion(dir, G.upVector(cell, dir))]);
+      v.render();
+      if ($("#tb-along-label")) $("#tb-along-label").textContent = which;
+    });
+    return;
+  }
   if (freqActive()) {
     const v = mainViewer(), fd = freqView.doc(), s = fd && fd.structure;
     if (!v || !s || !s.cell || Array.isArray(which)) return;
@@ -751,7 +904,7 @@ function viewAlong(k) {
   $("#tb-along-label") && ($("#tb-along-label").textContent = label);
   updateTriad();
 }
-function resetView() { if (freqActive()) { freqView.resetView(); return; } M().drawStructure(false); updateTriad(); }
+function resetView() { if (freqActive()) { freqView.resetView(); return; } if (volumeActive()) { volumeView.resetView(); return; } M().drawStructure(false); updateTriad(); }
 function toggleProjection() {
   settings.set("projection", settings.get("projection") === "orthographic" ? "perspective" : "orthographic");
 }
@@ -814,18 +967,41 @@ function rotate(q, p) {   // quaternion (x, y, z, w) applied to vector p
   const iz = w * p[2] + x * p[1] - y * p[0], iw = -x * p[0] - y * p[1] - z * p[2];
   return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
 }
+/* The volume view's own triad: the same overlay on its 3D view (viewer-volume), fed from its lattice. */
+function attachVolumeTriad(v, wrap) {
+  if (!v || !wrap || v.__triadVol) return;
+  v.__triadVol = true;
+  wrap.insertAdjacentHTML("beforeend", `<svg class="axis-triad" id="axis-triad-vol" viewBox="-40 -40 80 80" aria-hidden="true"></svg>`);
+  const render = v.render, show = v.show;
+  v.render = (...a) => { const r = render(...a); updateTriad(); return r; };
+  v.show = (...a) => { const r = show(...a); updateTriad(); return r; };
+  updateTriad();
+}
+function updateVolumeTriad() {
+  const el = $("#axis-triad-vol");
+  if (!el) return;          // attached with the volume view: nothing before it exists
+  const v = M() && M().state.viewers["viewer-volume"], cell = volumeView && volumeView.cell();
+  if (!v || !v.getModel) return;
+  // a molecule has no cell: no axes to draw
+  el.style.display = settings.get("showAxes") && cell && active && active.kind === "volume" ? "" : "none";
+  if (!cell || !v.getModel()) return;
+  const view = v.getView(), css = (k) => (M().vpVar ? M().vpVar(k) : getComputedStyle(document.documentElement).getPropertyValue(k).trim());
+  el.innerHTML = triadSvg(triadAxes([view[4], view[5], view[6], view[7]], cell).sort((a, b) => a.z - b.z), (k) => css(`--axis-${"abc"[k]}`));
+}
 let triadFrame = 0;
 function updateTriad() {
   cancelAnimationFrame(triadFrame);
   triadFrame = requestAnimationFrame(() => {
+    updateVolumeTriad();
     const el = $("#axis-triad"), v = M() && M().state.viewers["viewer-main"], s = M() && M().state.structure;
     if (!el || !v || !s) return;
     el.style.display = settings.get("showAxes") ? "" : "none";
     const view = v.getView();
     const q = [view[4], view[5], view[6], view[7]];
-    const css = getComputedStyle(document.documentElement);
+    // the 3D view's own scope: a White or Black background in a theme of the other lightness has its own axis colors
+    const css = (k) => (M().vpVar ? M().vpVar(k) : getComputedStyle(document.documentElement).getPropertyValue(k).trim());
     const axes = triadAxes(q, s.cell).sort((a, b) => a.z - b.z);              // far axes first, near ones on top
-    el.innerHTML = triadSvg(axes, (k) => css.getPropertyValue(`--axis-${"abc"[k]}`).trim());
+    el.innerHTML = triadSvg(axes, (k) => css(`--axis-${"abc"[k]}`));
   });
 }
 const TRIAD_LEN = 22;
@@ -872,16 +1048,43 @@ function section(key, title, content, caption = "", startCollapsed = false) {
   if (caption) $(".insp-caption", sec).textContent = caption;
   const body = $(".insp-body", sec);
   if (typeof content === "string") body.innerHTML = content; else if (content) body.appendChild(content);
-  $(".insp-head", sec).addEventListener("click", () => setCollapsed(sec, !sec.classList.contains("collapsed")));
+  // Shift-click (or Alt-click, where the desktop leaves Alt-drag to the page) opens or shuts every section the way this one goes
+  $(".insp-head", sec).addEventListener("click", (e) => {
+    const on = !sec.classList.contains("collapsed");
+    if (e.altKey || e.shiftKey) setAllSections(!on); else setCollapsed(sec, on);
+  });
   return sec;
 }
-function setCollapsed(sec, on) {
+function setCollapsed(sec, on, save = true) {
   const key = sec.dataset.key;
   sec.classList.toggle("collapsed", on);
   const c = new Set(layout.collapsed || []), o = new Set(layout.opened || []);
   if (on) { c.add(key); o.delete(key); } else { c.delete(key); o.add(key); }
-  layout.collapsed = [...c]; layout.opened = [...o]; saveLayout();
+  layout.collapsed = [...c]; layout.opened = [...o];
+  if (save) saveLayout();
   $(".insp-head", sec).setAttribute("aria-expanded", String(!on));
+}
+/** View › Expand All Sections / Collapse All Sections (and the Inspector's
+ * header buttons): every section of the Inspector, or of Calculation Setup
+ * while it is open, remembered like a single collapse. */
+function setAllSections(open) {
+  if (!panelShown("inspector")) togglePanel("inspector");
+  if (setupOpen) { setupPanel().then((m) => m.setAllSections(open)).catch((e) => toast(`Calculation Setup: ${e.message}`, "error")); return; }
+  $$("#inspector .insp-section").forEach((s) => { if (s.classList.contains("collapsed") === open) setCollapsed(s, !open, false); });
+  saveLayout();
+}
+/* The Inspector's header, always: its name, the Expand all / Collapse all buttons when it has more
+ * than one section, and the hide × (initPanelControls moves it in; it never floats over a section). */
+function sectionBar(host) {
+  const many = $$(".insp-section", host).length >= 2;
+  const btn = (cmd, ic, label) => `<button type="button" class="icon-btn sm" data-all="${cmd === "view.expandSections" ? "open" : "shut"}" ` +
+    `data-tip="${label}" data-tip-cmd="${cmd}" aria-label="${label}">${icon(ic)}</button>`;
+  const bar = document.createElement("div");
+  bar.className = "insp-bar";
+  bar.innerHTML = `<span class="insp-bar-title">Inspector</span>` + (many ? `<span class="insp-bar-acts" role="group" aria-label="Inspector sections">` +
+    btn("view.expandSections", "chevrons-up-down", "Expand All Sections") + btn("view.collapseSections", "chevrons-down-up", "Collapse All Sections") + "</span>" : "");
+  bar.addEventListener("click", (e) => { const b = e.target.closest("[data-all]"); if (b) setAllSections(b.dataset.all === "open"); });
+  host.prepend(bar);
 }
 /* The Range & boundary and Rendering groups (viewport/display_panel.js, loaded with the first structure). */
 let displayPanel = null, displayPanelLoading = null;
@@ -954,10 +1157,17 @@ function renderInspector() {
   }
   const k = active ? active.kind : null;
   const ed = edOf(active);
+  // a plot, spectrum, volume or properties file: the structure of the run it came from, read-only (panelctx.js)
+  const lent = k === "structure" || k === "trajectory" ? [] : PC.inspectorSections(active);
   if (k === "structure" && ed) {
     // a structure document: its selection, nudge, cell and symmetry are editable (js/editor/inspector.js)
     const editable = !ed.editBlock();
     inspEditable = editable;
+    // a single-point output opens here (one geometry, no run view): its SCF first, then its Run card
+    if (active.path && /\.(out|log)$/i.test(active.path)) {
+      if (M().scfSection) host.appendChild(section("scf", "SCF", M().scfSection(active.path)));
+      host.appendChild(section("run", "Run", runCard(active)));
+    }
     host.appendChild(section("selection", "Selection", E.inspector.selection(ed)));
     if (editable) host.appendChild(section("nudge", "Nudge", E.inspector.nudge(ed)));
     host.appendChild(section("structure", "Structure", pieces.structureTitle));
@@ -971,7 +1181,11 @@ function renderInspector() {
     }
   } else if (k === "structure" || k === "trajectory") {
     // a run (.out): the Run card first (PLAN_analysis C4.8)
-    if (active.path && /\.(out|log)$/i.test(active.path)) host.appendChild(section("run", "Run", runCard(active)));
+    if (active.path && /\.(out|log)$/i.test(active.path)) {
+      host.appendChild(section("run", "Run", runCard(active)));
+      // a single point (no run view): its SCF, cycle by cycle, where it opens (an optimization has it in the Timeline)
+      if (k === "structure" && M().scfSection) host.appendChild(section("scf", "SCF", M().scfSection(active.path)));
+    }
     host.appendChild(section("selection", "Selection", `<p class="insp-hint">Click an atom. Shift-click or drag to select more.</p>`));
     host.appendChild(section("structure", "Structure", pieces.structureTitle));
     host.appendChild(section("cell", "Cell", pieces.lattice));
@@ -981,10 +1195,16 @@ function renderInspector() {
   }
   else if (k === "runplot") host.appendChild(section("run", "Run", runCard({ path: active.runPath, id: active.id })));
   else if (k === "plot") host.appendChild(section("plotopts", "Plot options", pieces.plotOpts));
-  else if (k === "freq") host.appendChild(section("mode", "Mode", pieces.freqOpts));
+  else if (k === "freq") {
+    host.appendChild(section("mode", "Mode", pieces.freqOpts));
+    if (active.path && M().scfSection) host.appendChild(section("scf", "SCF", M().scfSection(active.path)));
+  }
   else if (k === "volume") host.appendChild(section("volume", "Volume", pieces.volumeOpts));
   else if (k === "db") host.appendChild(section("material", "Selected material", pieces.dbDetail));
-  else host.appendChild(section("none", "Inspector", `<p class="insp-hint">Open a structure, an output or a database to see its properties here.</p>`));
+  else if (!lent.length) host.appendChild(section("none", "Inspector", PC.inspectorPlaceholder(active)));
+  lent.forEach(([key, title, el, caption]) => host.appendChild(section(key, title, el, caption)));
+  sectionBar(host);
+  PC.labelInspector(active);
 }
 /* The selection, nudge, cell and symmetry sections follow the document:
  * rebuilt in place (the focused field gets its focus back). */
@@ -1036,6 +1256,52 @@ function toggleSetup(force) {
 /* ================================================================ bottom panel */
 const BOTTOM = [["atoms", "Atoms"], ["measurements", "Measurements"], ["history", "History"], ["timeline", "Timeline"],
   ["modes", "Modes"], ["coordination", "Coordination"], ["tasks", "Tasks"], ["jobs", "Jobs"], ["problems", "Problems"]];
+/* The panel context (js/panelctx.js): every document-scoped panel follows the document in
+ * focus, with a neutral placeholder where it has nothing for it; Tasks, Jobs and Problems are global. */
+const OWN_KINDS = ["structure", "trajectory"];
+const NO_RELATED = ["db", "workflows", "gallery", "cluster", "job", "batch", "editor", "structure", "trajectory"];
+const PC = createPanelContext({ esc, icon, api: (route) => M().api(route),
+  own: (d) => edOf(d) || runFrameOf(d),
+  wantsRelated: (d) => {
+    if (!d || NO_RELATED.includes(d.kind) || (d.plot && d.plot.kind === "convergence")) return null;
+    return d.path || d.srcPath || d.runPath || (d.plot && d.plot.path && !String(d.plot.path).includes("|") ? d.plot.path : null) || null;
+  },
+  changed: (d) => {
+    if (d !== active) return;
+    if (!setupOpen) renderInspector();
+    renderPanels();
+    if (layout.bottomTab === "coordination") renderCoordination();
+    PC.apply(active, true);
+  },
+  openPath: (p) => openDoc(p, { as: "structure" }),
+  activeTab: () => layout.bottomTab, coordMode: () => (settings.get("coordMode") === "cart" ? "cart" : "frac") });
+{
+  const pane = (k) => () => $(`.bottom-pane.${k}`), tab = (k) => () => $(`.bottom-tab[data-bottom="${k}"]`);
+  const ownKind = (s) => !!s.doc && OWN_KINDS.includes(s.doc.kind);
+  const atomsWhat = "structures, outputs, and the plots, spectra and volumes of a run";
+  PC.register("inspector", { title: "Inspector", thing: "properties", what: "structures, outputs, plots, volumes, normal modes and the database",
+    host: () => null, applies: (s) => !!s.doc && (!["text", "gallery", "workflows", "cluster", "job", "batch", "editor"].includes(s.doc.kind) || !!s.frame) });
+  PC.register("atoms", { title: "Atoms", thing: "atoms", what: atomsWhat, borrow: true, host: pane("atoms"), tab: tab("atoms"),
+    applies: (s) => !!s.frame || ownKind(s) });
+  PC.register("measurements", { title: "Measurements", thing: "measurements", what: "structures and outputs", host: pane("measurements"), tab: tab("measurements"),
+    applies: ownKind });
+  PC.register("history", { title: "History", thing: "edit history", what: "structures open for editing (Edit This Step opens a run's step)",
+    host: pane("history"), tab: tab("history"), applies: (s) => !!edOf(s.doc) || settingsHistory(s.doc) });
+  PC.register("timeline", { title: "Timeline", thing: "timeline", what: "optimization runs", host: pane("timeline"), tab: tab("timeline"),
+    applies: (s) => !!s.doc && s.doc.kind === "trajectory" });
+  PC.register("modes", { title: "Modes", thing: "normal modes", what: "FREQ outputs", host: pane("modes"), tab: tab("modes"),
+    applies: (s) => !!s.doc && s.doc.kind === "freq" });
+  PC.register("coordination", { title: "Coordination", thing: "coordination table", what: atomsWhat, borrow: true,
+    host: pane("coordination"), tab: tab("coordination"), applies: (s) => !!s.frame || ownKind(s) });
+  PC.register("tasks", { title: "Tasks", scope: "global", note: "all documents" });
+  PC.register("jobs", { title: "Jobs", scope: "global", note: "this folder" });
+  PC.register("problems", { title: "Problems", scope: "global", note: "all documents" });
+}
+/** The document has a Calculation Setup history of its own (the History tab's Settings chip). */
+function settingsHistory(d) {
+  const subj = d && d.setupFor ? docs.find((x) => x.id === d.setupFor) : d;
+  return !!(setupMod && subj && setupMod.historyRows(subj).length >= 2);
+}
 function initBottom() {
   $("#bottom-tabs").innerHTML = BOTTOM.map(([k, t]) => `<button class="bottom-tab" role="tab" data-bottom="${k}">${t}</button>`).join("");
   $("#bottom-body").innerHTML = BOTTOM.map(([k]) => `<div class="bottom-pane ${k}" data-pane="${k}" role="tabpanel"></div>`).join("");
@@ -1067,6 +1333,7 @@ function showBottom(k, reveal = true) {
   $$(".bottom-tab").forEach((b) => { b.classList.toggle("active", b.dataset.bottom === k); b.setAttribute("aria-selected", String(b.dataset.bottom === k)); });
   $$(".bottom-pane").forEach((p) => p.classList.toggle("active", p.dataset.pane === k));
   layout.bottomTab = k;
+  PC.header();
   revealBottomTab();
   if (reveal && !panelShown("bottom")) { layout.bottom = true; applyLayout(); }
   saveLayout(reveal ? undefined : "local");
@@ -1097,7 +1364,7 @@ function coordinationPanel() {
 }
 function renderCoordination() {
   if (!coordPanel && layout.bottomTab !== "coordination") return;
-  coordinationPanel().then((p) => p.render(edOf(active) || runFrameOf(active))).catch((e) => console.error("coordination:", e));
+  coordinationPanel().then((p) => p.render(edOf(active) || runFrameOf(active) || PC.borrowed(active))).catch((e) => console.error("coordination:", e));
 }
 function showCoordination() { showBottom("coordination"); }
 
@@ -1110,6 +1377,7 @@ function jobsPanel() {
   if (!jobsLoading) jobsLoading = Promise.all([import("./docs/jobs.js"), submitCss()]).then(([m]) => {
     jobsView = m.createJobsPanel($(".bottom-pane.jobs"), { esc, icon, toast, api: (...a) => M().api(...a),
       confirm: (o) => SETUP_API.confirm(o), countsChanged: (c) => { jobCounts = c; renderStatus(); },
+      apiTask: (p, b) => apiTask(p, b),
       openOutput: (rel) => openAsText(rel), openLog: (rel) => openAsText(rel), openJob: (id) => openJob(id) });
     return jobsView;
   }).catch((e) => { jobsLoading = null; throw e; });
@@ -1119,6 +1387,7 @@ function batchPanel() {
   if (batchView) return Promise.resolve(batchView);
   if (!batchLoading) batchLoading = Promise.all([import("./batch/panel.js"), submitCss()]).then(([m]) => {
     batchView = m.createBatch($("#batch-host"), { esc, icon, toast, api: (...a) => M().api(...a),
+      legend: (paths, title) => legendDialog({ title: `Elements of ${title}`, stem: "batch_selection", paths }),
       apiTask: (p, b) => apiTask(p, b), refreshFiles: () => M().loadFiles().catch(() => {}),
       showText: (title, text) => openTextDoc(title, text), openText: (rel) => openAsText(rel), copyText: (t, m) => copyText(t, m),
       submit: (targets, arrays) => openSubmit({ targets, preset: arrays ? { array: true } : null }),
@@ -1145,7 +1414,7 @@ function submitTargets(a) {
   const p = pathOf(a);
   return p && /\.(d12|d3)$/i.test(p) ? [p] : [];
 }
-function openBatch(folder = "") {
+function openBatch(folder = "", preset = null) {
   const f = folder === "." ? "" : folder;
   let d = docs.find((x) => x.kind === "batch" && x.folder === f);
   if (!d) {
@@ -1153,6 +1422,7 @@ function openBatch(folder = "") {
     d = { id: nextId++, path: null, kind: "batch", fileKind: "", folder: f, title: `Batch: ${f || "this folder"}` };
     docs.push(d);
   }
+  if (preset) d.batchPreset = preset;          // from Calculation Setup: its kind of file, calculation and fields
   return activate(d);
 }
 
@@ -1180,6 +1450,11 @@ function setCursor(t) {
   if (el) el.textContent = cursorText;
 }
 let connection = "connecting", task = "", cpuState = null;
+// Update MACE (1.1.6): the dialog loads on first use; the state for the status-bar item
+let updateState = null, updateStarted = false;
+const updateUi = () => lazy("update_dialog").then((m) => { m.bind(H); return m; });
+function updateDialog(opts) { return updateUi().then((m) => m.open(H, opts)); }
+function updateFetch() { return M().api("update").then((d) => { updateState = d; renderStatus(); return d; }).catch(() => null); }
 function setTask(t) { task = t; renderStatus(); }
 const NEEDS_3D = ["file.exportImage", "file.copyImage", "build.clean", "build.slab", "tool.lasso", "tool.move", "tool.add",
   "tool.replace", "tool.measure", "tool.bond", "build.addAtom"];
@@ -1203,6 +1478,13 @@ function renderStatus() {
   }
   if (M() && M().webgl && !M().webgl.ok) items.push(`<span class="st-item warn" id="st-no3d" title="This browser cannot draw 3D here (WebGL is off or not supported)">No 3D</span>`);
   items.push(`<span class="st-spacer"></span><span class="st-item st-num" id="st-cursor">${esc(cursorText)}</span>`);
+  if (!PANE) {
+    items.push(`<span class="st-panels" role="group" aria-label="Panels">${[["explorer", "panel-left"], ["bottom", "panel-bottom"], ["inspector", "panel-right"]].map(([n, ico]) => {
+      const on = panelShown(n), [label, cmd] = PANEL_INFO[n];
+      return `<button class="st-item st-panel${on ? " on" : ""}" type="button" id="st-panel-${n}" data-panel-cmd="${cmd}" aria-pressed="${on}" aria-controls="${n}" ` +
+        `aria-label="${label}${esc(keyText(cmd))}" data-tip="${on ? "Hide" : "Show"} ${label}" data-tip-cmd="${cmd}">${icon(ico)}</button>`;
+    }).join("")}</span>`);
+  }
   // a per-process CPU-time limit (plan D18): the chip from 50 % of it
   if (cpuState && cpuState.level) {
     const m = (x) => Math.round(x / 60);
@@ -1227,12 +1509,17 @@ function renderStatus() {
       `<span class="st-task-bar" role="progressbar" aria-label="${esc(t.title)}" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></span></button>`);
   } else if (task) items.push(`<button class="st-item" id="st-task">${icon("loader-circle")}<span>${esc(task)}</span></button>`);
   if (storageChip) items.push(`<button class="st-item st-storage ${storageChip.level === "critical" ? "crit" : "warn"}" id="st-storage" data-tip="Storage" data-desc="Open the Cluster view's Storage tab">${icon("triangle-alert")}<span>${esc(storageChip.text)}</span></button>`);
+  // Update MACE (1.1.6): a quiet item while an update is available (lazy/update_dialog.js)
+  if (updateState && updateState.notice) {
+    const nv = ((updateState.report || {}).target || {}).version || "";
+    items.push(`<button class="st-item" id="st-update" data-tip="An update of MACE is available" data-desc="Show what changed and update">${icon("download")}<span>MACE ${esc(nv)} available</span></button>`);
+  }
   const unread = notifications.unreadCount();
   items.push(`<button class="st-item st-bell" id="st-bell" data-tip="Notifications" data-desc="Every notice of this session" aria-label="${unread ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}">${icon("bell")}<span class="bell-n">${unread || ""}</span></button>`);
   if (jobCounts && (jobCounts.running || jobCounts.pending)) {
     items.push(`<button class="st-item" id="st-jobs" data-tip="Your SLURM jobs in this folder" data-desc="Open the Jobs panel">Jobs: ${jobCounts.running} running · ${jobCounts.pending} pending</button>`);
   }
-  if (active) items.push(`<span class="st-item" id="st-doc">${active.kind === "batch" ? "Batch Setup" : `${active.deck ? "Preview" : active.kind === "text" || active.kind === "volume" || (active.plot && (active.plot.source === "modes" || active.plot.kind === "convergence" || active.plot.kind === "map")) ? "Read only" : isDirty(active) ? "Modified" : active.path ? "Saved" : "Unsaved"} · ${esc(KIND_LABEL[active.fileKind] || active.kind)}`}</span>`);
+  if (active) items.push(`<span class="st-item" id="st-doc">${active.kind === "batch" ? "Batch Setup" : `${active.deck ? "Preview" : active.kind === "workflows" ? "View" : active.kind === "text" || active.kind === "volume" || active.kind === "gallery" || (active.plot && (active.plot.source === "modes" || active.plot.kind === "convergence" || active.plot.kind === "map")) ? "Read only" : isDirty(active) ? "Modified" : active.path ? "Saved" : "Unsaved"} · ${esc(KIND_LABEL[active.fileKind] || active.kind)}`}</span>`);
   $("#statusbar").innerHTML = items.join("");
 }
 window.__maceLost = () => connectionLost();
@@ -1266,6 +1553,7 @@ $("#statusbar").addEventListener("click", (e) => {
   else if (e.target.closest("#st-jobs")) showBottom("jobs");
   else if (e.target.closest("#st-cell, #st-sg")) { if (!panelShown("inspector")) togglePanel("inspector"); }
   else if (e.target.closest("#st-storage")) openCluster("storage");
+  else if (e.target.closest("#st-update")) updateDialog();
 });
 new MutationObserver(() => {
   const tip = $("#hover-tip");
@@ -1306,6 +1594,8 @@ function connect() {
     beat(e);
     reconcileTasks();
     claimHeld();
+    // the dialog's module loads only for a result to report (or on a click)
+    if (!updateStarted) { updateStarted = true; updateFetch().then((d) => { if (d && d.result) updateUi().then((m) => m.startup(H)); }); }
     document.dispatchEvent(new CustomEvent("mace-client", { detail: clientId }));
   });
   es.addEventListener("task", (e) => { try { taskEvent(JSON.parse(e.data)); } catch (err) { /* malformed */ } });
@@ -1324,6 +1614,9 @@ function connect() {
     serverStopped();
     connectUi().then((m) => m.stoppedPage(H, d.reason === "browser" ? !stopInitiator : d.reason));
   });
+  // Update MACE (update_gui.py): a check's result, and Update Now's progress (the in-place restart)
+  es.addEventListener("update", () => { updateFetch(); });
+  es.addEventListener("update-progress", (e) => { let d = {}; try { d = JSON.parse(e.data); } catch (err) { /* */ } updateUi().then((m) => m.progress(H, d)); });
   es.addEventListener("stop-pending", (e) => { let d = {}; try { d = JSON.parse(e.data); } catch (err) { /* */ } window.__maceStopPending = true; connectUi().then((m) => m.stopPending(H, d)); });
   es.addEventListener("stop-canceled", () => { window.__maceStopPending = false; connectUi().then((m) => m.stopPending(H, null)); });
   // File > Open Folder in another tab: this one follows (plan T6)
@@ -1332,7 +1625,9 @@ function connect() {
     if (String(d.gen) !== window.__maceRootGen && !leaving) connectUi().then((m) => m.folderChanged(H, d));
   });
   es.addEventListener("task-removed", (e) => { try { const d = JSON.parse(e.data); taskStore.delete(d.id); tasksChanged(); } catch (err) { /* */ } });
-  es.addEventListener("jobs.finished", (e) => { try { jobFinished(JSON.parse(e.data)); } catch (err) { /* malformed */ } });
+  es.addEventListener("jobs.finished", (e) => { try { jobFinished(JSON.parse(e.data)); } catch (err) { /* malformed */ } if (workflowView) workflowView.changed(); });
+  // a step of a workflow under this folder changed state (workflow.py's watcher on the jobs poll)
+  es.addEventListener("workflow.changed", () => { window.__maceWorkflowEvents = (window.__maceWorkflowEvents || 0) + 1; if (workflowView) workflowView.changed(); });
   // a file appeared in or left the folder (a job's output, a copy from a shell): the Explorer lists it again
   es.addEventListener("files-changed", (e) => {
     let d = {}; try { d = JSON.parse(e.data); } catch (err) { /* */ }
@@ -1502,7 +1797,8 @@ async function exportStructure(fmt, mode = "p1") {
 /* "Changed on disk" for documents with no unsaved changes (spec §8.4.2):
  * checked when the page becomes visible or gets the focus, at most every
  * 2 s, never on a timer; one /api/files request. */
-let diskCheckAt = 0;
+// -Infinity, never 0: performance.now() starts at 0 on a page load, so 0 would throttle a page's first 2 s
+let diskCheckAt = -Infinity;
 const diskIgnored = new Map();          // path -> stamp the user said to ignore
 function stampOf(d) {
   const e = edOf(d);
@@ -2054,6 +2350,8 @@ function applyFilesOpen() {
 }
 applyFilesOpen();
 $("#files-toggle").addEventListener("click", () => { setExplorerOpen("filesOpen", !(explorerUi().filesOpen !== false)); applyFilesOpen(); });
+// their order, which show and their heights (1.1.6): splitters between them, headers to drag, a header menu
+sidebar = initSidebar({ layout, saveLayout, bindSplitter, openAt, zoom: (el) => window.maceZoom.of(el) });
 $("#root-chip").addEventListener("contextmenu", (e) => {
   e.preventDefault();
   openAt(["file.copyRootPath"], e.clientX, e.clientY, "Folder menu");
@@ -2111,6 +2409,10 @@ const H = {
   settingsPath: () => settingsPath, templates: () => M().state.templates, boot: () => M().state.boot,
   elements: () => Object.keys((M().state.colors && M().state.colors.schemes.vesta) || {}),
   openSettings: (section) => settingsDialog(section),
+  // themes and element colors (1.1.6)
+  previewTheme: (id) => previewTheme(id), elementColors: () => elementColors(), M: () => M(),
+  setPalettes: (v) => { M().setPalettes(v); tellPane("adoptColors", v, M().state.paletteDraft || null); },
+  setPaletteDraft: (map) => { M().setPaletteDraft(map); tellPane("adoptColors", M().state.palettes, map || null); },
   tokenColor: (k) => getComputedStyle(document.documentElement).getPropertyValue(k === "cellColor" ? "--cell" : k === "outlineColor" ? "--text" : "--viewport-bg").trim(),
   // the editor's dialogs (Edit Cell, Set Coordinates, selection): the active document and the editor
   editor: () => ({ ed: edOf(active), E, doc: active }),
@@ -2128,6 +2430,7 @@ const H = {
   copyText: (text, done) => copyText(text, done),
   stopping: () => { stopInitiator = true; serverStopped(); },
   docsUrl: (anchor) => docsUrl() + (anchor ? "#" + anchor : ""),
+  setUpdate: (d) => { updateState = d; renderStatus(); }, updateDeferred: () => (updateState && updateState.deferred) || null,
 };
 const connectUi = () => lazy("connect_ui");
 function openFolderDialog() { return connectUi().then((m) => m.openFolder(H)); }
@@ -2197,7 +2500,8 @@ function aboutDialog() {
     <tr><td>3D viewer</td><td>3Dmol.js 2.5.5 (BSD-3-Clause)</td></tr>
     <tr><td>Plots</td><td>plotly.js from the installed plotly package (MIT)${info && !info.plotly ? ", not installed here" : ""}</td></tr>
     <tr><td>Icons</td><td>Lucide 0.469 (ISC; Feather, MIT) and MACE's own crystal glyphs</td></tr>
-    <tr><td>Element colors</td><td>the VESTA and Jmol schemes of pymatgen's ElementColorSchemes.yaml (MIT, The Materials Project / LBNL; see element_colors.LICENSE.txt)</td></tr>
+    <tr><td>Element colors</td><td>the VESTA and Jmol schemes of pymatgen's ElementColorSchemes.yaml (MIT, The Materials Project / LBNL); the colorblind-safe scheme is MACE's own, from the Okabe–Ito hues (see element_colors.LICENSE.txt)</td></tr>
+    <tr><td>Editor themes</td><td>colors of Catppuccin, Dracula, Gruvbox, Nord, One Dark, Solarized and Tokyo Night (MIT; see css/THEMES.LICENSE.txt)</td></tr>
     <tr><td>Logo</td><td>MACE wordmark (MIT, this repository)</td></tr></table>`,
   foot: `<button class="tb-btn-text" id="about-diag">${icon("copy")}<span>Copy Diagnostics</span></button>` });
   prefetchDiagnostics();
@@ -2355,7 +2659,8 @@ function refresh() {
 }
 function applySetting(k) {
   const root = document.documentElement;
-  if (k === "theme") { M().applyTheme(settings.get("theme")); updateTriad(); }
+  if (k === "theme") { themePreview = null; M().applyTheme(settings.get("theme")); updateTriad(); }
+  if (!PANE && booted) tellPaneSoon();
   if (k === "autosaveDrafts" && E && E.drafts) E.drafts.schedule();
   if (k === "density") {
     if (settings.get("density") === "compact") root.setAttribute("data-density", "compact");
@@ -2381,13 +2686,22 @@ function applySetting(k) {
   if (k === "labels" && optEl("opt-labels") && optEl("opt-labels").checked !== (settings.get("labels") !== "off")) {
     toggleOpt("opt-labels", settings.get("labels") !== "off");
   } else if (k === "labels") redrawSoon();
-  if (k === "colorScheme" && optEl("opt-colors") && optEl("opt-colors").value !== settings.get(k)) optEl("opt-colors").value = settings.get(k);
+  if (k === "colorScheme") {
+    if (M().fillColorOptions) M().fillColorOptions();
+    // the default palette is also the CLI's (mace plotting): kept in ~/.config/mace/element_colors.json.
+    // It is the user's own value: a folder's color_scheme or a change made in this session (to a key the
+    // folder sets) is never written there
+    if (!PANE && booted) savePaletteDefault(settings.userValue(k));
+  }
+  // the plots redraw on mace-theme: the plot background, the presets, the DOS colors and the spin styling
+  if (k === "plots.surface" || /^plots\.(style|dos(Colors|Total)|spin(Colors|Up|Down|DownDash|Dos))/.test(k)) M().applyTheme(themePreview || settings.get("theme"));
+  if (k === "background" || k === "backgroundColor") { M().syncSurfaces(); updateTriad(); }
   if (REDRAW_KEYS.has(k)) redrawSoon();
   if (DS.KEYS.has(k) && displayPanel) displayPanel.refresh();    // a default changed: documents without their own value follow it
   refresh();
 }
 /* Settings that change what the 3D views draw: one redraw per frame, camera kept. */
-const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "labelSize",
+const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "radiusSet", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "labelSize",
   "background", "backgroundColor", "cellColor", "decimals.length", "decimals.angle", "decimals.coord",
   "displayLo", "displayHi", "showBoundary", "bondedOutside", "lightStrength", "lightDirection", "ambient", "outline",
   "outlineWidth", "outlineColor", "ambientOcclusion"]);
@@ -2406,10 +2720,93 @@ function mirrorClassicControls() {
   on("opt-labels", () => { if (optChecked("opt-labels") !== (settings.get("labels") !== "off")) settings.set("labels", optChecked("opt-labels") ? "both" : "off"); });
   on("opt-colors", () => settings.set("colorScheme", optEl("opt-colors").value));
 }
+/* ================================================================ themes and element colors (1.1.6) */
+let themePreview = null, booted = false, paneTimer = 0;
+/** Show theme id for now (a picker's hover or arrow keys); null goes back to the chosen one. */
+function previewTheme(id) {
+  if (id === themePreview) return;
+  themePreview = id;
+  M().applyTheme(id || settings.get("theme"));
+  updateTriad();
+  tellPane("previewTheme", id);
+}
+/** View › Theme › Color Theme…: the command search lists the themes; each previews while it is active. */
+function pickTheme() {
+  const cur = settings.get("theme");
+  openPick({ title: "Color Theme", placeholder: "Select a color theme (the arrow keys preview)",
+    items: THEMES.map((x) => ({ label: x.label, desc: x.desc, icon: x.icon, current: x.id === cur, aliases: [x.id, ...(x.aliases || [])],
+      group: groupLabel(x.group),
+      preview: () => previewTheme(x.id), unpreview: () => previewTheme(null),
+      run: () => { settings.set("theme", x.id); previewTheme(null); } })) });
+}
+/* The right editor group is its own page: it takes this window's settings and colors. */
+function tellPane(fn, ...args) {
+  if (PANE) return;
+  try {
+    const f = document.querySelector("#group-side iframe");
+    const p = f && f.contentWindow && f.contentWindow.__macePane;
+    if (p && p[fn]) p[fn](...args);
+  } catch (e) { /* the pane is loading */ }
+}
+function tellPaneSoon() {
+  clearTimeout(paneTimer);
+  paneTimer = setTimeout(() => tellPane("adoptSettings", settings.nonDefault()), 50);
+}
+function savePaletteDefault(id) {
+  const pal = M().state.palettes || {};
+  if (!id || pal.default === id || !(M().paletteMap && M().paletteMap(id))) return;
+  if (!pal.default && settings.isDefault("colorScheme")) return;      // nothing chosen yet: nothing to keep
+  M().api("palettes", { body: { op: "default", id } }).then((v) => { M().setPalettes(v); tellPane("adoptColors", v, M().state.paletteDraft || null); })
+    .catch((e) => toast(`The default element colors were not saved: ${e.message}`, "warning"));
+}
+/** At start the palettes file's default becomes the user's own value (a hand edit, another computer's
+ * GUI), except over a choice made in this browser that has not reached the server yet, which is saved
+ * there. It is the user's layer: a folder's color_scheme (and this session's change) still wins. */
+function adoptPaletteDefault() {
+  const d = (M().state.palettes || {}).default, own = settings.userValue("colorScheme");
+  if (settings.isPending("colorScheme")) { if (d !== own) savePaletteDefault(own); return; }
+  if (d && d !== own && M().paletteMap && M().paletteMap(d)) settings.setOwn("colorScheme", d);
+}
+/* Export Element Legend… (lazy/legend_dialog.js): a scope {title, paths?, symbols?} */
+const legendDialog = (scope) => lazy("legend_dialog").then((m) => m.open(H, scope)).catch((e) => toast(`Export Element Legend did not load: ${e.message}`, "error"));
+const STRUCTURE_KINDS = new Set(["cif", "d12", "out", "xyz", "poscar"]);
+function legendActive() {
+  const s = structureOf(active);
+  if (!s) return toast("Open a structure first", "info");
+  return legendDialog({ title: `Elements of ${active.title}`, stem: active.title, symbols: [...s.symbols] });
+}
+/** The open documents with a structure: saved files by path, the edited or unsaved ones by their symbols. */
+function openStructures() {
+  const paths = [], symbols = [];
+  for (const d of docs) {
+    if (!["structure", "trajectory", "editor"].includes(d.kind) && !edOf(d)) continue;
+    const e = edOf(d);
+    if (e && (isDirty(d) || !d.path)) symbols.push(...e.structure.symbols);
+    else if (d.path) paths.push(d.path);
+  }
+  return { paths, symbols };
+}
+function legendOpenDocs() {
+  const { paths, symbols } = openStructures();
+  if (!paths.length && !symbols.length) return toast("No structure is open", "info");
+  return legendDialog({ title: `Elements of the ${paths.length + (symbols.length ? 1 : 0)} open structure document(s)`, stem: "open_documents",
+    paths, symbols: symbols.length ? symbols : undefined });
+}
+function legendExplorer(a) {
+  if (a && a.dir !== undefined) return legendDialog({ title: `Structures in the folder ${a.dir || "(the served folder)"}`, stem: (a.dir || "folder").split("/").pop(), paths: [a.dir || ""] });
+  const picked = new Set(M().state.selected || []);
+  const p = pathOf(a);
+  if (p) picked.add(p);
+  const paths = [...picked].filter((x) => { const f = M().fileByPath(x); return f && STRUCTURE_KINDS.has(f.kind) && !M().isJobLog(f); });
+  if (!paths.length) return toast("Pick structure files (CIF, d12, out, XYZ, POSCAR) or a folder", "info");
+  return legendDialog({ title: paths.length === 1 ? `Elements of ${paths[0]}` : `Elements of ${paths.length} files`,
+    stem: paths.length === 1 ? paths[0].split("/").pop() : "selected_files", paths });
+}
+const elementColors = () => lazy("palette_editor").then((m) => m.open(H)).catch((e) => toast(`Element Colors did not load: ${e.message}`, "error"));
 function cycleTheme() {
   const order = ["system", "light", "dark"];
   settings.set("theme", order[(order.indexOf(settings.get("theme")) + 1) % 3]);
-  toast(`Theme: ${settings.get("theme")}`, "info");
+  toast(`Theme: ${themeOf(settings.get("theme")).label.toLowerCase()}`, "info");
 }
 function zoomUi(d) { settings.set("uiScale", d ? Math.min(150, Math.max(80, settings.get("uiScale") + d)) : 100); }
 let settingsPath = "";
@@ -2498,12 +2895,14 @@ function plotViewer() {
   if (!plotViewLoading) plotViewLoading = Promise.all([import("./docs/plot.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
     await lu.loadCss(new URL("./docs/plot.js", import.meta.url).href, "../../css/plot.css");
     plotView = m.createPlotView($("#plot-host"), pieces.plotOpts, { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
-      cssVar: (n) => M().cssVar(n), loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
       exportImage: (X) => lazy("export_image").then((m) => m.open(H, { ...X, view: "plot", viewState: { projection: "orthographic" } })),
       openPath: (p) => openDoc(p),
       // with two editor groups, a clicked peak opens its mode in the other group
       openModes: (p, o) => (GR && GR.openModesOther(p, o)) || openModes(p, o), lineShape: (kind) => (kind === "ir" ? settings.get("spectra.lineShape") || "lorentzian" : "lorentzian"),
-      download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k) });
+      download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k), setSetting: (k, v) => settings.set(k, v),
+      folderFile: () => settings.folderInfo().file });
     return plotView;
   }).catch((e) => { plotViewLoading = null; throw e; });
   return plotViewLoading;
@@ -2526,7 +2925,8 @@ function runViewer() {
   if (!runViewLoading) runViewLoading = Promise.all([import("./docs/runplot.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
     await lu.loadCss(new URL("./docs/runplot.js", import.meta.url).href, "../../css/plot.css");
     runView = m.createRunPlot($("#runplot-host"), { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
-      cssVar: (n) => M().cssVar(n), loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
       download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k),
       expandSummary: (r) => M().expandSummary(r), selectFrame: (p, k) => M().selectFrame(p, k), frameOf: (p) => M().frameOf(p),
       openRun: async (p) => { const cur = active; await openDoc(p); if (cur) activate(cur); } });
@@ -2546,6 +2946,7 @@ function runPathOf(a) {
   return null;
 }
 async function openRunPlot(path, tab = null, compare = null, energy = null) {
+  // `energy`: the options the opening card shows, for the tab it opens (the energy or the SCF card)
   path = path || runPathOf(null);
   if (!path) { toast("Open an optimization output (.out) first", "info"); return null; }
   let d = docs.find((x) => x.kind === "runplot" && x.runPath === path && (x.compare || null) === (compare || null));
@@ -2587,7 +2988,7 @@ function runCard(d) {
     const scf = m.scf_cycles ? `${m.scf_cycles.min} / ${m.scf_cycles.median} / ${m.scf_cycles.max}` : null;
     el.innerHTML = `<div class="rc-stop ${cls}">${icon(ic)}<span>${esc(r.stop || "")}</span></div>
       <div class="rc-acts"><button class="tb-btn-text" data-rc="show"${r.stop_line ? "" : " disabled"}>Show in Output</button>
-        <button class="tb-btn-text" data-rc="cli">Copy CLI</button><button class="tb-btn-text" data-rc="plot">Run Analysis</button></div>
+        <button class="tb-btn-text" data-rc="cli">Copy CLI</button><button class="tb-btn-text" data-rc="plot">Run Analysis</button><button class="tb-btn-text" data-rc="scf" title="Run Analysis › SCF: each SCF cycle's energy change against TOLDEE">SCF</button></div>
       <table class="kv rc-kv">${row("CRYSTAL", m.crystal_version)}${row("Calculation", m.calc_type)}${row("Dimensionality", m.dimensionality)}
         ${row("Space group", m.space_group)}${row("Atoms in the cell", m.atoms)}${row("Functional", m.functional)}${row("Basis", m.basis)}
         ${row("SHRINK", m.shrink ? m.shrink.join(" ") + (m.gilat ? ` · ${m.gilat}` : "") : null)}${row("TOLINTEG", m.tolinteg ? m.tolinteg.join(" ") : null)}
@@ -2602,14 +3003,34 @@ function runCard(d) {
     const r = runMeta.get(path);
     if (b.dataset.rc === "show" && r && r.stop_line) showInOutput(path, r.stop_line);
     if (b.dataset.rc === "cli") copyText(`mace analyze --convergence ${path}\nmace check ${path}`, "Copied the CLI commands");
-    if (b.dataset.rc === "plot") openRunPlot(path, "energy");
+    if (b.dataset.rc === "plot") openRunPlot(path, r && r.reason ? "energy" : "scf");     // a single point: its SCF
+    if (b.dataset.rc === "scf") openRunPlot(path, "scf");
   });
+  // 1.1.6: time left, as the Job document and `mace cluster job` word it (mace/cluster/progress.py), for an
+  // output still being written; read again every 30 s while the card is shown
+  const eta = document.createElement("div");
+  eta.className = "rc-eta";
+  let etaTimer = 0;
+  const loadEta = () => {
+    clearTimeout(etaTimer);
+    if (!eta.isConnected && eta.dataset.done) return;
+    M().api("out/progress?" + M().q({ path })).then((r) => {
+      eta.dataset.done = "1";
+      if (r.ended || !(r.levels || []).length) { eta.innerHTML = ""; return; }
+      const lv = r.levels.filter((x) => x.depth === 0 || x.status !== "done");
+      eta.innerHTML = `<div class="rc-eta-head">Time left</div><ol class="rc-eta-levels" aria-label="Progress and time left">${lv.map((x) =>
+        `<li class="d${x.depth} ${esc(x.status)}"${x.basis ? ` title="${esc(x.basis)}"` : ""}>${esc(x.text)}${x.depth === 0 ? ` <span class="chip conf-${esc(x.confidence)}">${esc(x.confidence)}</span>` : ""}</li>`).join("")}</ol>`;
+      etaTimer = setTimeout(() => { if (eta.isConnected) loadEta(); }, 30000 * (window.__maceLiveScale || 1));
+    }).catch(() => { eta.innerHTML = ""; });
+  };
   const have = runMeta.get(path);
   if (have && !have.pending) paint(have);
   else {
     paint(null);
-    loadRunMeta(path).then((r) => { if (el.isConnected) paint(r); }).catch((err) => { el.innerHTML = `<p class="insp-hint">${esc(err.message)}</p>`; });
+    loadRunMeta(path).then((r) => { if (el.isConnected) { paint(r); el.appendChild(eta); } }).catch((err) => { el.innerHTML = `<p class="insp-hint">${esc(err.message)}</p>`; });
   }
+  el.appendChild(eta);
+  loadEta();
   return el;
 }
 async function loadRunMeta(path) {
@@ -2780,6 +3201,87 @@ async function openModes(path, opts = {}) {
   return d;
 }
 
+/* The Plot Gallery (js/docs/gallery.js, MACE 1.1.6): many outputs' plots of one kind in panes, cycled one
+ * at a time, with a caption table; the same grid as `mace plotting --gallery`. A document of its own. */
+let galleryView = null, galleryLoading = null;
+function galleryViewer() {
+  if (galleryView) return Promise.resolve(galleryView);
+  if (!galleryLoading) galleryLoading = Promise.all([import("./docs/gallery.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
+    await lu.loadCss(new URL("./docs/gallery.js", import.meta.url).href, "../../css/gallery.css");
+    galleryView = m.createGallery($("#gallery-host"), { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
+      download: (b, n) => download(b, n), copyText: (t, m) => copyText(t, m), openPath: (p) => openDoc(p),
+      setting: (k) => settings.get(k), folderFile: () => settings.folderInfo().file, sets: () => gallerySets(), retitle: () => { renderTabs(); updateTitle(); } });
+    return galleryView;
+  }).catch((e) => { galleryLoading = null; throw e; });
+  return galleryLoading;
+}
+/** The sets a gallery can show: this folder, the Explorer's selection, each open database's filtered materials. */
+function gallerySets() {
+  const out = [{ label: "This folder", source: { type: "folder", folder: "" } }];
+  const picked = [...(M().state.selected || [])];
+  if (picked.length) out.push({ label: `Explorer selection (${picked.length})`, source: { type: "paths", paths: picked } });
+  for (const d of docs.filter((x) => x.kind === "db" && x.path)) {
+    let filters = {};
+    try {
+      if (dbView && active === d) {
+        const qs = new URLSearchParams(dbView.exportUrl("csv").split("?")[1] || "");
+        for (const k of ["q", "dim", "calc_type", "calc_status", "sg_min", "sg_max", "prop"]) if (qs.get(k)) filters[k] = qs.get(k);
+      }
+    } catch (e) { filters = {}; }
+    const n = Object.keys(filters).length;
+    out.push({ label: `Database ${d.path.split("/").pop()}${n ? " (filtered)" : ""}`, source: { type: "db", db: d.path, filters }, db: d.path });
+  }
+  return out;
+}
+/** The kind a set most likely wants: the most common plottable kind among its files. */
+function galleryKind(source) {
+  const files = M().state.files || [];
+  const inSet = source.type === "paths" ? files.filter((f) => source.paths.includes(f.path))
+    : source.type === "folder" && source.folder ? files.filter((f) => f.path.startsWith(source.folder + "/")) : files;
+  const n = (k) => inSet.filter((f) => f.kind === k).length;
+  const kinds = [["band", n("band")], ["dos", n("dos")], ["ir", n("ir")], ["raman", n("raman")], ["structure", n("cif")],
+    ["scf", inSet.filter((f) => f.kind === "out" && !M().isJobLog(f)).length]];
+  const best = kinds.reduce((a, b) => (b[1] > a[1] ? b : a), ["band", 0]);
+  return best[1] ? best[0] : "band";
+}
+/** Plot Gallery: a set (a folder, the Explorer's selection, a Batch Setup folder, a database query) and a kind. */
+async function openGallery(opts = {}) {
+  let source = opts.source, label = opts.label;
+  if (!source) {
+    const picked = [...(M().state.selected || [])];
+    if (active && active.kind === "db") {
+      const s = gallerySets().find((x) => x.source.type === "db" && x.source.db === active.path);
+      source = s.source; label = s.label;
+    } else if (picked.length >= 2) { source = { type: "paths", paths: picked }; label = `Explorer selection (${picked.length})`; }
+    else { source = { type: "folder", folder: "" }; label = "This folder"; }
+  }
+  if (source.type === "folder" && /(^|\/)batch_[^/]*$/.test(source.folder || "") && M().fileByPath(`${source.folder}/batch.json`)) {
+    source = { type: "batch", batch: source.folder };
+    label = `Batch ${source.batch.split("/").pop()}`;
+  }
+  label = label || (source.type === "folder" ? (source.folder || "This folder") : "This set");
+  // the same set already has a gallery: go back to it (a kind asked for switches it)
+  const same = docs.find((x) => x.kind === "gallery" && x.g && JSON.stringify(x.g.source) === JSON.stringify(source));
+  if (same) {
+    if (opts.kind && same.g.kind !== opts.kind) { same.g.kind = opts.kind; same.g.index = 0; }
+    if (active !== same) await activate(same);
+    else await galleryViewer().then((v) => v.open(same));
+    return same;
+  }
+  saveView(active);
+  // the band/DOS window: Settings' (this session > the folder's mace-folder.toml > yours), as a band plot opens
+  const win = settings.get("plots.energyWindow");
+  const [emin, emax] = Array.isArray(win) && win.length === 2 && Number(win[0]) < Number(win[1]) ? [Number(win[0]), Number(win[1])] : [-6, 6];
+  const d = { id: nextId++, path: null, kind: "gallery", fileKind: "", title: `Gallery: ${label}`,
+    g: { source, sourceLabel: label, kind: opts.kind || galleryKind(source), cols: 3, shared: true, emin, emax, mode: "grid", index: 0,
+      db: source.type === "db" ? source.db : undefined } };
+  docs.push(d);
+  await activate(d);
+  return d;
+}
+
 /* The Database document (js/docs/db.js, loaded on first use): paged on the server, a virtual table. */
 let dbView = null, dbViewLoading = null;
 function dbViewer() {
@@ -2812,7 +3314,8 @@ function clusterModule() {
   return clusterLoading;
 }
 const clusterHelpers = () => ({ api: (...a) => M().api(...a), esc, icon, toast, files: () => M().state.files,
-  copy: (t) => copyText(t), openJob: (id) => openJob(id), abbrev: (p) => (info ? abbrev(p, { home: info.home || "", max: 80 }) : p),
+  copy: (t) => copyText(t), openJob: (id) => openJob(id), newWorkflow: (a) => openWorkflowBuilder(a), abbrev: (p) => (info ? abbrev(p, { home: info.home || "", max: 80 }) : p),
+  apiTask: (p, b) => apiTask(p, b), confirm: (o) => SETUP_API.confirm(o),
   retitle: () => { renderTabs(); updateTitle(); },
   openPath: (rel, kind) => (kind === "out" || kind === "stdout" || kind === "stderr" ? openAsText(rel) : openDoc(rel)) });
 async function clusterViewer() {
@@ -2840,6 +3343,35 @@ function openJob(id) {
   let d = docs.find((x) => x.kind === "job" && x.jobId === id);
   if (!d) { d = { id: nextId++, path: null, kind: "job", fileKind: "", jobId: id, title: `Job ${id}` }; docs.push(d); }
   return activate(d);
+}
+/* The Workflows document (js/docs/workflow.js, loaded on first use): read-only. */
+let workflowView = null, workflowLoading = null;
+function workflowViewer() {
+  if (!workflowLoading) workflowLoading = Promise.all([import("./docs/workflow.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
+    await lu.loadCss(new URL("./docs/workflow.js", import.meta.url).href, "../../css/workflow.css");
+    if (!workflowView) workflowView = m.createWorkflowView($("#workflow-host"), clusterHelpers());
+    return workflowView;
+  }).catch((e) => { workflowLoading = null; throw e; });
+  return workflowLoading;
+}
+function openWorkflows(key = null) {
+  saveView(active);
+  let d = docs.find((x) => x.kind === "workflows");
+  if (!d) { d = { id: nextId++, path: null, kind: "workflows", fileKind: "", title: "Workflows" }; docs.push(d); }
+  // a workflow to show (one the builder just started): selected when the view lists it
+  if (key) { d.wfKey = key; d.wfNode = null; }
+  const wasActive = active === d;
+  const r = activate(d);
+  if (key && wasActive && workflowView) workflowView.open(d);
+  return r;
+}
+/* New Workflow… (js/lazy/workflow_dialog.js): the builder writes a spec and runs the CLI; nothing runs until its Submit. */
+function openWorkflowBuilder(a) {
+  // Clone (the Workflows view): the builder pre-filled from an existing workflow (GET workflow/clone)
+  if (a && a.clone) return lazy("workflow_dialog").then((m) => m.open(H, { clone: a.clone }));
+  const p = a && Array.isArray(a.paths) && a.paths.length ? a.paths : a && a.dir !== undefined ? [a.dir || "."]
+    : (() => { const x = pathOf(a) || (active && active.path); return x && /\.(cif|d12)$/i.test(x) ? [x] : []; })();
+  return lazy("workflow_dialog").then((m) => m.open(H, { targets: p }));
 }
 /* jobs.finished: a job of yours left the queue. The server sends one event per
  * job (the Jobs panel's refresh and the Cluster view's poller share one record
@@ -2973,6 +3505,10 @@ function volumeViewer() {
       lu.loadCss(new URL("./docs/volume.js", import.meta.url).href, "../../css/plot.css")]);
     volumeView = m.createVolumeView($("#volume-host"), pieces.volumeOpts, { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
       apiTask: (p, b, u, x) => apiTask(p, b, u, x), M, setting: (k) => settings.get(k),
+      // the toolbar's display options, as the structure view takes them (the range and boundary atoms per document)
+      viewOpts: () => viewOpts(), setSetting: (k, v) => settings.set(k, v), setRange: (n) => setRange(n),
+      ownRange: () => DS.isOverride(viewDoc(), "displayHi") || DS.isOverride(viewDoc(), "displayLo"),
+      attachTriad: (v, wrap) => attachVolumeTriad(v, wrap), updateTriad: () => updateTriad(),
       colorByPotential: (d) => colorByPotential(d), difference: (d) => volumeDifference(d), saveResult: (d) => saveVolumeResult(d),
       renderWithCli: (p) => { const f = M().fileByPath(p); if (f) run("explorer.plot", { path: p }); } });
     return volumeView;
@@ -2988,6 +3524,12 @@ async function openVolume(path, extra = null) {
   if (path) pushRecent(path);
   await activate(d);
   return d;
+}
+/* CRYSTAL23 ORBITALS (.molden): the Volume document with the orbital picker (js/docs/orbitals.js).
+ * The picker lists every k point of the run; it starts at the k point of the file that was opened. */
+async function openOrbitals(path) {
+  const m = /_(\d{5})_K\d+_(real|complex)\.molden$/i.exec(path);
+  return openVolume(path, { fileKind: "orbitals", orbitals: { index: null, request: null, startK: m ? Number(m[1]) : null } });
 }
 const cubeFiles = () => (M().state.files || []).filter((f) => f.kind === "cube");
 /** The potential that goes with a density: the same stem's POT cube, else a choice. */
@@ -3134,12 +3676,12 @@ async function renderInfoDoc(d) {
   const mb = (n) => (n >= 2 ** 20 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   if (P.error) { host.innerHTML = `<p class="warn">${esc(P.error)}</p>`; return; }
   if (d.props) {
-    const LBL = { band: "Open Band Structure", dos: "Open Density of States", cube: "Open Volume", f25: "Open fort.25",
+    const LBL = { band: "Open Band Structure", dos: "Open Density of States", cube: "Open Volume", orbitals: "Open Orbitals", f25: "Open fort.25",
       transport: "Open Transport Data", image: "Open Image", html: "Open Plot", ir: "Open IR Spectrum", raman: "Open Raman Spectrum" };
     host.innerHTML = `<h3>Properties output · ${esc(P.calc || "properties")}</h3>
       <p>${esc(P.status)}${P.errors && P.errors.length ? ` · <span class="warn">${esc(P.errors[0])}</span>` : ""}</p>
       ${P.files.length ? `<p class="muted small">Data files of this run</p><div class="info-acts">${P.files.map((f) =>
-        `<button class="tb-btn-text" data-info-open="${esc(f.path)}" title="${esc(f.name)}">${icon(f.kind === "cube" ? "box" : f.kind === "image" ? "image" : "chart-line")}<span>${esc(LBL[f.kind] || "Open " + f.kind)}</span><span class="muted small">${esc(f.name.slice(-28))}</span></button>`).join("")}</div>`
+        `<button class="tb-btn-text" data-info-open="${esc(f.path)}" title="${esc(f.name)}">${icon(f.kind === "cube" || f.kind === "orbitals" ? "box" : f.kind === "image" ? "image" : "chart-line")}<span>${esc(LBL[f.kind] || "Open " + f.kind)}</span><span class="muted small">${esc(f.name.slice(-28))}</span></button>`).join("")}</div>`
         : `<p class="muted">No data files with this run's name are in the folder.</p>`}
       <div class="info-acts">${P.parent ? `<button class="tb-btn-text" data-info-open="${esc(P.parent)}">${icon("atom")}<span>Structure from ${esc(P.parent.split("/").pop())}</span></button>` : ""}
       <button class="tb-btn-text" data-info-text="${esc(P.path)}">${icon("file-text")}<span>Show Output</span></button></div>`;
@@ -3417,6 +3959,9 @@ function exportCtx() {
     stem: stemOf(active), view: viewName(),
     // the SVG projector (js/lazy/export_svg.js): the camera's calibrated projection and what is drawn
     camera: E ? E.viewport.camera() : null, M: M(), setting: (k) => viewSetting(k), range: viewOpts().box,
+    // the element legend in a corner (1.1.6): the drawn structure's elements, made by /api/legend
+    symbols: () => { const s = structureOf(active); return s ? [...s.symbols] : []; },
+    legend: (symbols, o) => lazy("legend_dialog").then((m) => m.forImage(H, symbols, o)),
     get viewState() { return window.__mace.viewState(); } };
 }
 /** Export Image on a Compare document: the comparison as SVG, both panes when side by side (plan T12). */
@@ -3761,7 +4306,9 @@ let measurementsShown = true;
 function renderPanels() {
   const e = edOf(active), host = $(".bottom-pane.measurements");
   const rf = e ? null : runFrameOf(active);
-  if (rf && !E) { loadEditor().then(() => renderPanels()).catch(() => {}); }
+  const lent = e || rf ? null : PC.borrowed(active);      // the structure of the run a plot or volume came from
+  PC.apply(active);                                         // a panel that applies is shown before it is drawn into
+  if ((rf || lent) && !E) { loadEditor().then(() => renderPanels()).catch(() => {}); }
   if (host && rf) renderRunMeasurements(host, rf);
   else if (host && E && E.api.measure) E.api.measure.panel(host, e);
   else if (host && !e) host.innerHTML = `<p class="empty-note">Open a structure to measure it.</p>`;
@@ -3770,15 +4317,18 @@ function renderPanels() {
   if (atoms) {
     let t = $(".at-host", atoms);
     if (!t) { atoms.insertAdjacentHTML("afterbegin", `<div class="at-host"></div>`); t = $(".at-host", atoms); }
-    const view = e || rf;
+    const view = e || rf || lent;
     const mine = !!(view && E);
+    if (lent) atoms.classList.remove("no-structure");
     atoms.classList.toggle("editor-table", mine);
-    atoms.classList.toggle("run-table", mine && !!rf);
+    atoms.classList.toggle("run-table", mine && !!(rf || lent));
     runBanner(atoms, mine && rf ? rf : null);
+    PC.banner(atoms, mine && lent ? lent : null);
     if (E) E.atomsTable.update(t, mine ? view : null);
   }
   const hist = $(".bottom-pane.history");
   if (hist) renderHistoryPane(hist, e);
+  PC.apply(active);
 }
 /* The History tab: the structure's undo stack, and with a "Settings" chip the
  * document's Calculation Setup history (its own, plan B4). */
@@ -3825,6 +4375,8 @@ function setItems(e) {
 
 /* ================================================================ Calculation Setup's view of the shell */
 const SETUP_API = {
+  /** The served folder's command-line-only values (mace-folder.toml: setup.opt2d12_config, ...). */
+  folderCli: () => (settings.folderInfo().cli || {}),
   api: (p, o) => M().api(p, o), dirHash: () => dirHash(), activeDoc: () => active, docById: (id) => docs.find((d) => d.id === id) || null,
   isDirty: (d) => isDirty(d), editRev: (d) => (edOf(d) ? edOf(d).rev : 0), structureOf: (d) => structureOf(d),
   /** A run's step on screen: {frame, n} for the active trajectory document, else null. */
@@ -3844,7 +4396,7 @@ const SETUP_API = {
   },
   apiTask: (p, b, u) => apiTask(p, b, u), setupDeck: (d, r, show) => setupDeck(d, r, show),
   clearProblems: (id, src) => clearProblems(id, src), problem: (p) => addProblem(p), toast: (m, k, a) => toast(m, k, a),
-  setting: (k) => settings.get(k), set: (k, v) => settings.set(k, v), shortcut: (id) => shortcutOf(id), run: (id, a) => run(id, a),
+  setting: (k) => settings.get(k), settingSource: (k) => settings.source(k), set: (k, v) => settings.set(k, v), shortcut: (id) => shortcutOf(id), run: (id, a) => run(id, a),
   cancelTask: (id) => cancelTask(id), reveal: (p) => reveal(p), focusRegion: (r) => focusRegion(r), copyText: (t, m) => copyText(t, m),
   refreshFiles: () => M().loadFiles().catch(() => {}),
   showText: (title, text) => openTextDoc(title, text), showProblems: () => showBottom("problems"),
@@ -3863,9 +4415,9 @@ const SETUP_API = {
     document.addEventListener("mace-saved", done);
     run("file.saveAs", { preset: { name: `${stem}.cif`, format: "cif", cifMode: "p1" } });
   },
-  confirm: ({ title, body, yes, no, defaultNo }) => new Promise((resolve) => {
+  confirm: ({ title, body, yes, no, defaultNo, pre }) => new Promise((resolve) => {
     let ok = false;
-    const dl = dialog({ id: "setup-confirm", title, narrow: true, body: `<p>${esc(body)}</p>`,
+    const dl = dialog({ id: "setup-confirm", title, narrow: !pre, body: `<p>${esc(body)}</p>${pre ? `<pre class="confirm-pre">${esc(pre)}</pre>` : ""}`,
       foot: `<button class="tb-btn-text${defaultNo ? " primary" : ""}" data-r="no">${esc(no || "Cancel")}</button><button class="tb-btn-text${defaultNo ? "" : " primary"}" data-r="yes">${esc(yes || "OK")}</button>`,
       onClose: () => resolve(ok) });
     dl.querySelectorAll("[data-r]").forEach((b) => b.addEventListener("click", () => { ok = b.dataset.r === "yes"; dl.close(); }));
@@ -3885,7 +4437,7 @@ const S = {
   settingsDialog, cheatSheet, aboutDialog, docsDialog, tunnelDialog, clusterDocs: () => docsDialog("the-cluster-view"), dirty: () => docs.some(isDirty),
   openFolder: () => openFolderDialog(), openFolderOn: () => !!(info && info.open_folder),
   signOut: () => connectUi().then((m) => m.signOut(H)),
-  copyDiagnostics: () => copyDiagnostics(), reportProblem: () => connectUi().then((m) => m.reportProblem(H)),
+  copyDiagnostics: () => copyDiagnostics(), checkForUpdates: () => updateDialog({ check: true }), reportProblem: () => connectUi().then((m) => m.reportProblem(H)),
   undo: () => (edOf(active) ? E.api.undo(edOf(active)) : Promise.resolve()),
   redo: () => (edOf(active) ? E.api.redo(edOf(active)) : Promise.resolve()),
   showBottom, viewAlong, resetView, toggleProjection, setting: (k) => viewSetting(k), set: (k, v) => settings.set(k, v),
@@ -3893,7 +4445,11 @@ const S = {
   /* a per-document display value (Shift+P, Shift+A): the drawn document's override, never the default */
   displayValue: (k) => viewSetting(k), toggleDisplay: (k) => { const d = viewDoc(); if (d) DS.set(d, k, !viewSetting(k)); },
   displayPanel: (group) => openDisplayGroup(group),
-  range, setRange, rangeText: () => DS.rangeLabel(viewDoc()), style, setStyle, panelShown, togglePanel, cycleTheme, zoomUi, focusRegion,
+  range, setRange, rangeText: () => DS.rangeLabel(viewDoc()), style, setStyle, panelShown, togglePanel, toggleAllPanels, allPanelsHidden: () => !!layout.focus, cycleTheme, zoomUi, focusRegion, setAllSections,
+  /** Can Expand All / Collapse All do anything? Two or more Inspector sections, or Calculation Setup open. */
+  manySections: () => setupOpen || $$("#inspector .insp-section").length >= 2,
+  previewTheme, pickTheme, elementColors, legendActive, legendOpenDocs, legendExplorer,
+  openStructureCount: () => { const o = openStructures(); return o.paths.length + o.symbols.length; },
   openDb: () => {
     const want = settings.get("defaultDb"), fs = M().state.files;
     const f = (want && fs.find((x) => x.path === want && x.kind === "db")) || fs.find((x) => x.name === "materials.db" && !x.path.includes("/"))
@@ -3901,7 +4457,8 @@ const S = {
     return f && openDoc(f.path);
   },
   exportTable: (fmt) => exportTable(fmt),
-  openCluster: (tab) => openCluster(tab), openJob: (id) => openJob(id),
+  openCluster: (tab) => openCluster(tab), openJob: (id) => openJob(id), openWorkflows: (key) => openWorkflows(key),
+  newWorkflow: (a) => openWorkflowBuilder(a),
   jobDetailsPrompt: async () => {
     const id = window.prompt("Job id (N or N_T):", "");
     if (id) openJob(id);
@@ -3930,6 +4487,7 @@ const S = {
     return [...picked].filter((x) => { const f = M().fileByPath(x); return f && (f.kind === "out" || f.kind === "log") && !M().isJobLog(f); });
   },
   compareConvergence: (paths) => openConvergence(paths),
+  openGallery: (o) => openGallery(o || {}),
   openSpectrum: (kind) => {
     const p = partnerOf(active, kind);
     if (p) return openDoc(p.path);
@@ -3991,9 +4549,11 @@ const S = {
   pickElement: (anchor, cb, opts) => lazy("ptable").then((m) => m.open(H, anchor, cb, opts))
     .catch(() => toast("The periodic table could not be loaded", "error")),
   toSym: (ed) => toSym(ed),
-  focusMenuBar: () => focusBar(), contextMenuForFocus: () => openForFocus(),
+  focusMenuBar: () => focusBar(), contextMenuForFocus: () => (sidebar && sidebar.menuForFocus()) || openForFocus(), sidebar: () => sidebar,
   rotateView, zoomView, trajStep, trajPlay, trajPlaying: () => !!playTimer, trajLayout,
   tabOf: (a) => (a && a.docId !== undefined ? docs.find((d) => d.id === a.docId) : active) || null,
+  moveTab: (d, step) => { const r = moveDocBy(d, step); if (r) announce(`${d.title} moved ${step < 0 ? "left" : "right"}`); return r; },
+  canMoveTab: (d, step) => !!d && docs.length > 1 && docs.indexOf(d) + step >= 0 && docs.indexOf(d) + step < docs.length,
   closeOthers: (d) => docs.filter((x) => x !== d).forEach((x) => closeDoc(x)),
   closeRight: (d) => docs.slice(docs.indexOf(d) + 1).forEach((x) => closeDoc(x)),
   hasRight: (d) => !!d && docs.indexOf(d) >= 0 && docs.indexOf(d) < docs.length - 1,
@@ -4056,12 +4616,13 @@ const S = {
   builder: (name, fn, ...args) => lazy(name).then((m) => m[fn](H, ...args)),
   // Phase 4: tasks, problems
   awaitTask, apiTask, taskEvent, cancelTask, problem: (p) => addProblem(p), clearProblems, dbBuild,
-  exportStructure, sourceOf: (d) => sourceOf(d || active), openHeld, exportName, checkDisk: () => { diskCheckAt = 0; return checkDisk(); },
+  exportStructure, sourceOf: (d) => sourceOf(d || active), openHeld, exportName, checkDisk: () => { diskCheckAt = -Infinity; return checkDisk(); },
   clientId: () => clientId, tasks: () => taskStore,
   // Submit, Jobs and Batch Setup (PLAN_submit)
   submit: (a) => openSubmit({ targets: submitTargets(a), where: "slurm" }),
   runHere: (a) => openSubmit({ targets: submitTargets(a), where: "local" }),
-  batch: (a) => openBatch(a && a.dir !== undefined ? a.dir : (a && a.path && a.path.includes("/") ? a.path.slice(0, a.path.lastIndexOf("/")) : "")),
+  batch: (a) => openBatch(a && a.dir !== undefined ? a.dir : (a && a.path && a.path.includes("/") ? a.path.slice(0, a.path.lastIndexOf("/")) : ""),
+    a && a.preset),
   submitTargets: (a) => submitTargets(a), jobsPanel: () => jobsPanel(), batchPanel: () => batchPanel(),
   refreshFiles: () => M().loadFiles().catch(() => {}),
 };
@@ -4124,6 +4685,7 @@ async function boot() {
     selectAtom: (i) => jumpToAtom(i) });
   installTooltips();
   initContext({ viewer: mainViewer, hovered: () => M().state.hover || null, model: (v) => structureModel(v) });
+  initPanelControls();
   splitter($("#split-explorer"), "--w-explorer", "wExplorer", 200, 480, 1);
   splitter($("#split-inspector"), "--w-inspector", "wInspector", 240, 480, -1);
   splitter($("#split-bottom"), "--h-bottom", "hBottom", 120, 600, -1, "y");
@@ -4190,12 +4752,33 @@ async function onAppReady(detail) {
   renderDbSection();
   connect();
   if (!PANE) initCluster();
+  // the served folder's mace-folder.toml, above the user's own values for the keys it sets
+  settings.setFolder(M().state.boot && M().state.boot.folder, (info && info.dir_hash) || "");
+  { const fw = (settings.folderInfo().warnings || []).length;
+    if (fw && !PANE) toast(`This folder's mace-folder.toml: ${fw} problem${fw === 1 ? "" : "s"}; what it could not use is ignored`, "warning",
+      { label: "Show", run: () => settingsDialog("folder") }); }
   settingsPath = await settings.syncFromServer(M().state.boot && M().state.boot.settings);
   ["theme", "density", "uiScale", "reduceMotion", "showCell", "showBoundary", "labels", "colorScheme"].forEach(applySetting);
+  if (!PANE) adoptPaletteDefault();
+  booted = true;
   document.documentElement.dataset.appReady = "1";
   if (PANE) return;            // the right editor group: the window offers drafts and restores the split
+  noticeSetupDefaults();
   offerDrafts();               // modified documents from before a reload or a restart (spec §2.6)
   if (GR) GR.restore();        // the split of this folder (groups.js)
+}
+/* Settings' Functional and Basis set were saved but unused in 1.1.5; 1.1.6 makes them Calculation
+ * Setup's defaults. Said once, on the first 1.1.6 start, to whoever had set them then. */
+function noticeSetupDefaults() {
+  const FLAG = "notice.setupDefaults116";
+  if (profile.memory(FLAG)) return;
+  profile.remember(FLAG, true);
+  const f = settings.userValue("functional"), b = settings.userValue("basisSet");
+  if (!f && !b) return;
+  const set = [f && `Functional ${f}`, b && `Basis set ${b}`].filter(Boolean).join(" and ");
+  toast(`Calculation Setup now uses your ${set} (Settings › MACE defaults) for decks made from a CIF. `
+    + "In 1.1.5 these were saved but not used; clear them to keep MACE's defaults.", "info",
+    { label: "Show", run: () => settingsDialog("mace"), ms: 30000 });
 }
 let appReadyHandled = false;
 function appReady() { if (!appReadyHandled) { appReadyHandled = true; onAppReady(M().state.info || null); } }
@@ -4237,8 +4820,31 @@ const groupHost = {
   docCount: () => docs.length, desc: docDesc, reopen: reopenDesc, viewer: activeViewer, focusView: focusActiveView,
   viewChanged: () => updateTriad(), exists: (p) => !!(M() && M().fileByPath(p)),
   setupOpen: () => setupOpen,
-  afterChange: () => { renderTabs(); renderStatus(); refresh(); },
+  afterChange: () => { renderTabs(); labelTabs(); renderStatus(); refresh(); },
+  reorder: (id, i) => moveDocTo(docs.find((d) => d.id === id), i), reopenAt: (x, i) => reopenAt(x, i),
+  docById: (id) => docs.find((d) => d.id === id) || null, announce: (text) => announce(text),
 };
+/* A moved document opens in this group at `i` of its tabs (null: the end). */
+async function reopenAt(x, i = null) {
+  await reopenDesc(x);
+  const d = active && movablePath(active) === x.path ? active : docs.find((y) => movablePath(y) === x.path);
+  if (!d) return null;
+  if (i != null) moveDocTo(d, i);
+  return docDesc(d);
+}
+/* Said to a screen reader (the polite live region). */
+function announce(text) {
+  const el = document.getElementById("sr-live");
+  if (!el) return;
+  el.textContent = "";
+  requestAnimationFrame(() => { el.textContent = text; });
+}
+/* The tab strip and its tabs, in this page's client px (a drag over the right group, groups.js). */
+function tabStrip() {
+  const el = $("#doc-tabs"), r = el.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+    tabs: [...el.querySelectorAll(".doc-tab")].map((t) => { const b = t.getBoundingClientRect(); return { id: Number(t.dataset.doc), left: b.left, right: b.right }; }) };
+}
 /* The right editor group's own Inspector and bottom panel, in the room the
  * window gives its frame (groups.js chrome()): sizes in CSS px, 0 = none. */
 function paneChrome(c) {
@@ -4254,9 +4860,14 @@ function paneChrome(c) {
 }
 window.__macePane = {
   chrome: (c) => paneChrome(c),
+  // the window's settings, theme preview and element colors (the window owns the profile)
+  adoptSettings: (vals) => settings.adopt(vals),
+  previewTheme: (id) => { M().applyTheme(id || settings.get("theme")); updateTriad(); },
+  adoptColors: (pal, draft) => { M().state.paletteDraft = draft || null; M().setPalettes(pal || { palettes: {} }); },
   run: (id, args) => run(id, args), ctx: () => ctxHere(),
   docs: () => docs.map(docDesc), active: () => (active ? docDesc(active) : null),
   reopen: (x) => reopenDesc(x), close: (id, force) => closeDoc(docs.find((d) => d.id === id), force),
+  reopenAt: (x, i) => reopenAt(x, i), reorder: (id, i) => moveDocTo(docs.find((d) => d.id === id), i), tabStrip: () => tabStrip(),
   viewer: () => activeViewer(), openModes: (p, o) => openModes(p, o), focusView: () => focusActiveView(),
   // Link Cameras: the rotation of this group's 3D view, read and set in this page
   getQ: () => { const v = activeViewer(); return v ? Array.from(v.getView().slice(4, 8)) : null; },
@@ -4270,11 +4881,13 @@ window.__macePane = {
 };
 
 window.__mace = {
-  lastCommand: () => lastCommand,
+  lastCommand: () => lastCommand, sidebar: () => sidebar,
   // the per-document display state (viewport/display_state.js) and its storage
   display: DS, docprefs, profile,
   spyRun: (on) => { if (on) { window.__maceRan = []; runSpy = (id) => window.__maceRan.push(id); } else runSpy = null; },
   openCluster: (tab) => openCluster(tab), openJob: (id) => openJob(id), clusterView: () => clusterView, jobView: () => jobView,
+  openWorkflows: (key) => openWorkflows(key), workflowView: () => workflowView,
+  newWorkflow: (a) => openWorkflowBuilder(a), wfBuilder: () => window.__maceWfBuilder || null,
   storageChip: () => storageChip,
   renderRecent: () => renderWelcome(),
   // every lazily loaded module settled, one frame later (a dialog loading over a slow tunnel has opened)
@@ -4341,7 +4954,8 @@ window.__mace = {
     return { x: p.x - r.left, y: p.y - r.top, cx: r.width / 2, cy: r.height / 2 };
   },
   settings: { get: settings.get, set: settings.set, all: settings.all, nonDefault: settings.nonDefault, flush: settings.flush,
-    resetAll: settings.resetAll, defaults: () => ({ ...settings.DEFAULTS }), reset: settings.reset },
+    resetAll: settings.resetAll, defaults: () => ({ ...settings.DEFAULTS }), reset: settings.reset,
+    source: settings.source, userValue: settings.userValue, saveAsDefault: settings.saveAsDefault, saveToFolder: settings.saveToFolder, migrate: settings.migrate },
   palette: { results: (q) => paletteResults(q, ctx()), open: openPalette, close: closePalette, isOpen: isPaletteOpen,
     bench: paletteBench, domRows,
     // the pure ranking alone on n items, for a regression check in the regular suite
@@ -4354,13 +4968,14 @@ window.__mace = {
   menuReason: (id) => disabledReason(registry.get(id), ctx()),
   modalRows: () => Object.values(commands.MODAL_LAYERS).reduce((t, l) => t + l.rows.length, 0),
   activeDoc: () => active,
+  panelContext: () => PC.state(), pickRelated: (p) => PC.pick(active, p),
   openUntitled: (p, title) => openUntitled(p, title),
   // Firefox gives a synthetic ClipboardEvent an empty DataTransfer: the tests hand the handler an event-like object
   onPaste: (target, text) => { let prevented = false; onPaste({ target, clipboardData: { getData: () => text }, preventDefault: () => { prevented = true; } }); return prevented; },
   runProblemAction: (source) => { const p = problems.find((x) => x.source === source); return p && p.action ? p.action.run() : null; },
   tasks: () => [...taskStore.values()].map((t) => ({ ...t })), problems: () => problems.map((p) => ({ ...p, action: p.action ? p.action.label : null })),
   clientId: () => clientId, apiTask: (p, b) => apiTask(p, b),
-  checkDisk: () => { diskCheckAt = 0; return checkDisk(); }, exportName: (fmt) => exportName(active, fmt),
+  checkDisk: () => { diskCheckAt = -Infinity; return checkDisk(); }, exportName: (fmt) => exportName(active, fmt),
   exportStructure: (fmt, mode) => exportStructure(fmt, mode), heldIds: () => docs.filter((d) => d.held).map((d) => d.held),
   openTestBuilder: (opts) => lazy("builder_util").then((m) => m.openIdentity(H, opts || {})),
   dropFiles: (dt) => dropFiles(dt), importClipboard: (text) => importClipboard(text || ""),
@@ -4387,7 +5002,7 @@ window.__mace = {
   get setup() { return setupMod; }, setupReady: () => setupPanel().then(() => true), shortcut: (id) => shortcutOf(id),
   get textView() { return textView; }, openAsText: (p) => openAsText(p),
   get dbView() { return dbView; }, exportTable: (fmt) => exportTable(fmt),
-  get plotView() { return plotView; }, get runView() { return runView; }, get freqView() { return freqView; }, openModes: (p, o) => openModes(p, o),
+  get plotView() { return plotView; }, get runView() { return runView; }, get galleryView() { return galleryView; }, openGallery: (o) => openGallery(o || {}), get freqView() { return freqView; }, openModes: (p, o) => openModes(p, o),
   notifications: { recent: (n) => notifications.recent(n), clear: () => notifications.clear(), unread: () => notifications.unreadCount(),
     subscribe: (fn) => notifications.subscribe(fn) },
   openStructure: (p) => openStructure(p), openInfo: (p) => openInfo(p), openJobLog: (p) => openJobLog(p),
