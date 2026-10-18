@@ -339,6 +339,8 @@ class PropertyCorrelation:
         Returns:
             Dictionary with plot data
         """
+        from mace.utils.property_keys import canonical  # a 1.1.6 rename: its current name
+        property_1, property_2 = canonical(property_1), canonical(property_2)
         # Get properties
         all_properties = self.db.get_all_properties()
         

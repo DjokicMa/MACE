@@ -50,9 +50,10 @@ FAMILIES = (
 
 # Data-only families: loadable by name, never mapped from a basis path, so
 # they cannot be picked up as an ordinary external basis of a deck.
-# pob-tzvp-rev2-soc: X_pob_TZVP_rev2_SOC, valence bases re-fitted for CRYSTAL's
-# internal STUTSC library (fully relativistic, manual p.84) - for two-component
-# SOC decks only (manual pp.169-175); read with soc_basis_record().
+# pob-tzvp-rev2-soc: X_pob_TZVP_rev2_SOC, the pob-TZVP-rev2 valence bases
+# (numerically identical) on CRYSTAL's internal STUTSC library (fully
+# relativistic, manual p.84) - for two-component SOC decks only (manual
+# pp.169-175); read with soc_basis_record().
 SOC_FAMILY = "pob-tzvp-rev2-soc"
 DATA_ONLY_FAMILIES = (SOC_FAMILY,)
 
@@ -240,10 +241,50 @@ def _sibling_library(norm):
     return lib if os.path.isfile(lib) else None
 
 
+def _bare_family(path):
+    """The family a bare library name ("full.basis.triplezeta", with or
+    without a trailing slash) names, when no directory of that name is in
+    the way; else None."""
+    name = str(path).strip().rstrip("/")
+    if name in FAMILIES and os.sep not in name and not os.path.isdir(os.path.expanduser(str(path))):
+        return name
+    return None
+
+
+def portable_path(path):
+    """A basis path as a settings file should store it: the bare family
+    name for a bundled library (any checkout's or $MACE_HOME's path to it),
+    so the file works on another machine; anything else unchanged."""
+    family = bundled_family_for(path) if path else None
+    return family if family else path
+
+
+def portable_options(options):
+    """A copy of saved settings with basis_set / basis_set_path made
+    portable (portable_path) where they name a bundled library."""
+    if not isinstance(options, dict):
+        return options
+    out = dict(options)
+    for key in ("basis_set", "basis_set_path"):
+        value = out.get(key)
+        if isinstance(value, str) and value:
+            out[key] = portable_path(value)
+    return out
+
+
 def _match(path):
-    """(family, library file) that serves a basis path, or None."""
+    """(family, library file) that serves a basis path, or None.
+
+    A bare family name serves that family from this checkout's library."""
     if not path:
         return None
+    bare = _bare_family(path)
+    if bare:
+        for root in _bundled_roots():
+            lib = os.path.join(root, bare + ".lib")
+            if os.path.isfile(lib):
+                return bare, lib
+        return bare, library_file(bare)
     norm = _normalize(path)
     real = os.path.realpath(norm)
     for family in FAMILIES:
@@ -286,8 +327,8 @@ def bundled_family_for(path):
     absolute, trailing slash dropped; symlinks resolved as a second try),
     must be <basis_sets>/<family> for one of FAMILIES - in this checkout, in
     $MACE_HOME, or any directory-less <family> path with <family>.lib beside
-    it. An existing directory of that name is never redirected. Data-only
-    families are never mapped."""
+    it, or the bare family name itself. An existing directory of that name is
+    never redirected. Data-only families are never mapped."""
     match = _match(path)
     return match[0] if match else None
 
@@ -336,6 +377,11 @@ def _readable(path, text, key):
     if text:
         number = str(key).split(".")[0]
         check_basis_file(path, text, int(number) if number.isdigit() else 0)
+        # A deck writer writes the records one after another and then "99 0":
+        # a record stored without its final newline (92 of the stuttgart
+        # family) would have the next one glued onto its last line.
+        if not text.endswith("\n"):
+            text += "\n"
     return text
 
 

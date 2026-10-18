@@ -1480,11 +1480,9 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
         charge_config["n_points"] = _nav_int(
             "\nNumber of points along the B-A segment [50]: ", default=50)
 
-        # Map plane definition
-        charge_config["need_map_points"] = yes_no_prompt("\nDefine charge density map plane?", "yes")
-        if not charge_config["need_map_points"]:
-            print("Warning: ECHG requires the MAPNET map-plane records - the generated")
-            print("         D3 will be incomplete until points A, B, C are added by hand")
+        # The map plane (MAPNET records, mandatory for ECHG, manual p. 324) is
+        # asked when the deck is written: its points A, B, C belong to each file.
+        charge_config["need_map_points"] = True
     
     return charge_config
 
@@ -1501,6 +1499,12 @@ def configure_potential_calculation() -> Dict[str, Any]:
     print("2: POTC - Potential at specific points")
     
     calc_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+    if calc_type not in ("1", "2"):
+        # an answer meant for another question (a 1.1.5-era stream's "y" to
+        # the removed map-plane question) would shift every later one
+        print(f"Error: the potential type is 1 (POT3) or 2 (POTC), not '{calc_type}'; "
+              "no D3 file was written.", file=sys.stderr)
+        raise SystemExit(1)
     
     if calc_type == "1":
         potential_config["type"] = "POT3"
@@ -1584,6 +1588,102 @@ def configure_potential_calculation() -> Dict[str, Any]:
     return potential_config
 
 
+_KCHOICE = None
+
+
+def orbitals_kchoice():
+    """mace/orbitals/kchoice.py (standard library only): from the mace package,
+    else loaded by path, for a run of these scripts without it installed."""
+    global _KCHOICE
+    if _KCHOICE is None:
+        try:
+            from mace.orbitals import kchoice as mod
+        except ImportError:
+            import importlib.util as ilu
+            path = Path(__file__).resolve().parent.parent / "mace" / "orbitals" / "kchoice.py"
+            spec = ilu.spec_from_file_location("_mace_orbitals_kchoice", path)
+            mod = ilu.module_from_spec(spec)
+            sys.modules[spec.name] = mod      # its dataclasses look their module up
+            spec.loader.exec_module(mod)
+        _KCHOICE = mod
+    return _KCHOICE
+
+
+def orbitals_file_warnings(kc, is_: Optional[int], dimensionality: int, out_text: str) -> List[str]:
+    """The file count/size warnings for an ORBITALS mesh (HPCC 1M-file quota)."""
+    nbf = re.search(r'NUMBER OF AO\s+(\d+)', out_text or "")
+    spin = "UNRESTRICTED OPEN SHELL" in (out_text or "")
+    est = kc.estimate_orbital_files(is_, dimensionality, nbf=int(nbf.group(1)) if nbf else None,
+                                    spin=spin, scf_text=out_text)
+    return est.warnings
+
+
+def configure_orbitals_calculation(out_file: Optional[str] = None) -> Dict[str, Any]:
+    """Configure an ORBITALS (Molden export) calculation: which k points.
+
+    CRYSTAL writes every orbital at every k point of the NEWK mesh; the
+    question is the mesh. ICAR (no effect on the files) and ILOC (always 0:
+    Wannier functions go through the Wannier90 / lcao2wannier route) are not
+    asked.
+    """
+    kc = orbitals_kchoice()
+    print("\n=== ORBITALS (MOLDEN FILES) CONFIGURATION ===")
+    text = ""
+    if out_file:
+        try:
+            text = Path(out_file).read_text(errors="replace")
+        except OSError:
+            text = ""
+    dim = kc.dimensionality_of(text) if text else None
+    dim = 3 if dim is None else dim
+    config: Dict[str, Any] = {"calculation_type": "ORBITALS", "kmesh": "band_edges"}
+    if dim == 0:
+        print("Molecule: ORBITALS writes one Molden file with every molecular orbital "
+              "(no k points to choose).")
+        return config
+
+    if text:
+        preview = kc.choose_kmesh(text, "band_edges", dimensionality=dim)
+        for edge in preview.edges:
+            print(f"  {edge.describe()}")
+        print(f"  Band edges: IS {preview.is_}")
+        for note in preview.notes:
+            print(f"  Note: {note}")
+
+    print("\nk points to write:")
+    print("1: Γ and the real k points of the band edges (default)")
+    print("2: Γ only (IS 1, one file)")
+    print("3: All real k points (IS 2)")
+    print("4: Custom shrinking factor IS")
+    choice = _nav_read("Select k points (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
+    while choice not in ("1", "2", "3", "4"):
+        print(f"  '{choice}' is not a valid choice; enter a number 1-4.")
+        choice = _nav_read("Select k points (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
+    config["kmesh"] = {"1": "band_edges", "2": "gamma", "3": "all_real", "4": "custom"}[choice]
+
+    is_ = {"gamma": 1, "all_real": 2}.get(config["kmesh"])
+    if config["kmesh"] == "band_edges" and text:
+        is_ = preview.is_
+    if config["kmesh"] == "custom":
+        if dim >= 2:
+            print(f"  A {dim}D structure: only IS 1 and IS 2 are usable (IS 3 and up has complex "
+                  f"k points, whose {dim}D Molden coefficients fail validation).")
+        else:
+            print("  1D: complex k points (IS 3 and up) were validated and can be used.")
+        while True:
+            is_ = _nav_int("Shrinking factor IS [2]: ", default=2)
+            problem = kc.custom_is_problem(is_, dim)
+            if not problem:
+                break
+            print(f"  {problem}")
+        config["is"] = is_
+
+    if is_ is not None:
+        for warning in orbitals_file_warnings(kc, is_, dim, text):
+            print(f"  Warning: {warning}")
+    return config
+
+
 def configure_d3_calculation(calc_type: str, out_file: Optional[str] = None, 
                            save_prompt: bool = False) -> Dict[str, Any]:
     """Main function to configure any D3 calculation type.
@@ -1605,6 +1705,8 @@ def configure_d3_calculation(calc_type: str, out_file: Optional[str] = None,
         config = configure_doss_calculation(out_file)
     elif calc_type == "TRANSPORT":
         config = configure_transport_calculation(out_file)
+    elif calc_type == "ORBITALS":
+        config = configure_orbitals_calculation(out_file)
     elif calc_type in ["CHARGE", "ECH3", "ECHG"]:
         config = configure_charge_density_calculation()
     elif calc_type in ["POTENTIAL", "POT3", "POTC"]:

@@ -792,8 +792,19 @@ def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tupl
     # Every rational special point (1/3, 1/4, 3/8, ...) must land on an
     # integer: raise the shrink to a common multiple of their denominators,
     # the same way an insufficient shrink is raised above.
-    step = exact_shrink_step([c for seg in frac_segments for c in seg])
+    coords = [c for seg in frac_segments for c in seg]
+    step = exact_shrink_step(coords)
     exact = round_up_to_exact_shrink(shrink, step)
+    if not all(abs(c * exact - round(c * exact)) < 1e-6 for c in coords):
+        # A point with a finer denominator than the special points (an
+        # edited 0.123 raised the shrink to 1000): a multiple of the special
+        # points' step alone moves it (1008 writes 0.123 as 124/1008). Take a
+        # common multiple of both, so that point stays exact too.
+        from math import gcd
+        both = step * min_shrink // gcd(step, min_shrink)
+        if all(abs(c * both - round(c * both)) < 1e-6 for c in coords):
+            step = both
+            exact = round_up_to_exact_shrink(shrink, step)
     if exact != shrink:
         print(f"WARNING: Shrink factor {shrink} cannot represent the k-path points exactly")
         print(f"         Adjusting shrink to {exact} (a multiple of {step})")

@@ -2488,6 +2488,12 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
 
     Returns:
         Content of the basis set file
+
+    Raises:
+        BasisFileError: when the directory (or bundled family) has no record
+            for the element, or the record is one CRYSTAL could not read. A
+            missing record used to come back as "", which wrote a deck with
+            no basis for that element - one CRYSTAL always rejects.
     """
     import os
 
@@ -2510,11 +2516,27 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
             except FileNotFoundError:
                 pass
 
-        print(
-            f"Warning: Basis set file for element {atomic_number} (Z={atomic_number}) "
-            f"not found in {basis_dir} (tried: {file_number})"
-        )
-        return ""
+        raise missing_basis_record(basis_dir, atomic_number, file_number)
+
+
+def basis_family_name(basis_dir) -> str:
+    """The family a basis directory names: its last path component."""
+    import os
+
+    return os.path.basename(str(basis_dir or "").rstrip("/\\")) or str(basis_dir)
+
+
+def missing_basis_record(basis_dir, atomic_number, tried=None):
+    """The BasisFileError for an element a basis directory has no record for,
+    naming the element and the family (a deck without it never runs)."""
+    from basis_file_check import BasisFileError
+
+    z = int(atomic_number) - 200 if int(atomic_number) > 200 else int(atomic_number)
+    symbol = ATOMIC_NUMBER_TO_SYMBOL.get(z, str(z))
+    tried_note = f" (no record {tried} in {basis_dir})" if tried is not None else f" ({basis_dir})"
+    return BasisFileError(
+        f"the basis set '{basis_family_name(basis_dir)}' has no basis for {symbol} (Z={z})"
+        + tried_note)
 
 
 def get_element_info_string(basis_name: str) -> str:
@@ -2791,9 +2813,9 @@ def check_basis_set_compatibility(basis_set, atomic_numbers, basis_set_type="INT
                     missing_elements.append(atom_num)
     else:  # EXTERNAL
         # An external basis set is a DIRECTORY of per-element files. The only
-        # honest check is whether the file this run would actually read exists:
-        # read_basis_file() returns "" for a missing file, which silently drops
-        # that element's basis block out of the deck.
+        # honest check is whether the file this run would actually read exists
+        # (read_basis_file raises for a missing one). A directory that does
+        # not exist raises BasisFileError here.
         for atom_num in set(atomic_numbers):
             if atom_num > 99 or not _external_basis_file_exists(basis_set, atom_num):
                 missing_elements.append(atom_num)
@@ -2845,9 +2867,15 @@ def _external_basis_file_exists(basis_dir, atomic_number):
         candidates.insert(0, atomic_number + 200)
     bundled = bundled_family_for(basis_dir)
     if not bundled and (not basis_dir or not os.path.isdir(basis_dir)):
-        # Not a usable directory - let the existing "basis file not found"
-        # warning in read_basis_file speak rather than blaming the elements.
-        return True
+        # Not a usable directory (an options file saved on another machine,
+        # say): no element has a record, so refuse the path itself rather
+        # than writing a deck with no basis at all.
+        from basis_file_check import BasisFileError
+        raise BasisFileError(
+            f"the EXTERNAL basis set directory {basis_dir or '(none given)'} does not exist "
+            "on this machine; give a directory of per-element files, or the name of one of "
+            "MACE's bundled libraries (\"basis_set\": \"full.basis.triplezeta\", "
+            "\"full.basis.doublezeta\" or \"stuttgart\")")
     for n in candidates:
         # A bundled family is one library file, not a directory.
         if (record_exists(basis_dir, n) if bundled

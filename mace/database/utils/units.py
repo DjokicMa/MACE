@@ -280,7 +280,22 @@ class UnitConverter:
         """
         if property_name in self.PROPERTY_UNITS:
             return list(self.PROPERTY_UNITS[property_name].keys())
-        return []
+        table = self._table_of_unit(self.get_default_unit(property_name))
+        return list(table.keys()) if table else []
+
+    def _table_of_unit(self, unit: Optional[str]) -> Optional[Dict]:
+        """The conversion table a unit (units.py's name) belongs to."""
+        if not unit:
+            return None
+        for table in (self.ENERGY_CONVERSIONS, self.LENGTH_CONVERSIONS, self.PRESSURE_CONVERSIONS,
+                      self.TEMPERATURE_CONVERSIONS, self.FREQUENCY_CONVERSIONS, self.ANGLE_CONVERSIONS):
+            if unit in table:
+                return table
+        if unit == 'angstrom^3':
+            return self.PROPERTY_UNITS['cell_volume']
+        if unit == 'angstrom^2':
+            return self.PROPERTY_UNITS['cell_area']
+        return None
         
     def get_default_unit(self, property_name: str) -> Optional[str]:
         """
@@ -292,9 +307,15 @@ class UnitConverter:
         Returns:
             Default unit or None
         """
+        # a database property: the unit the extractor stores it in
+        # (property_keys, the one registry; an old name: its new name's)
+        from mace.utils import property_keys
+        k = property_keys.key(property_name)
+        if k is not None:
+            return property_keys.CONVERTER_UNITS.get(k.unit)
         defaults = {
             'total_energy': 'hartree',
-            'fermi_energy': 'ev',
+            'fermi_energy': 'hartree',  # as the extractor stores it
             'band_gap': 'ev',
             'a_lattice': 'angstrom',
             'b_lattice': 'angstrom',

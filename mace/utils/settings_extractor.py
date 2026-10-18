@@ -84,7 +84,11 @@ def extract_input_settings(input_file: Path) -> Dict[str, Any]:
         'SHRINK', 'TOLINTEG', 'TOLDEE', 'SCFDIR', 'FMIXING',
         'MAXCYCLE', 'ANDERSON', 'DIIS', 'BROYDEN', 'LEVSHIFT',
         'BIPOSIZE', 'EXCHSIZE', 'ILASIZE', 'INTGPACK',
-        'MADELIMIT', 'BIPOLARIZ', 'EXCHPERM', 'POLEORDR'
+        'MADELIMIT', 'BIPOLARIZ', 'EXCHPERM', 'POLEORDR',
+        # spin, spin-orbit, smearing, restart, charge and supercell keywords
+        # MACE writes, and the FREQ intensity ones
+        'SPIN', 'TWOCOMPON', 'SOC', 'SMEAR', 'GUESSP', 'SPINLOCK', 'ATOMSPIN',
+        'CHARGED', 'CHEMOD', 'SUPERCEL', 'INTENS', 'INTCPHF', 'INTRAMAN',
     ]
     
     # A keyword is a whole record. A .d3 file has no title line.
@@ -260,6 +264,10 @@ def _extract_optimization_parameters(content: str) -> Dict[str, Any]:
     return opt_params
 
 
+# CRYSTAL23's 3c composite methods (one keyword each)
+THREE_C_FUNCTIONALS = ('HSESOL3C', 'HSE3C', 'PBEH3C', 'B973C', 'HF3C', 'PBESOL03C')
+
+
 def _extract_functional_info(content: str) -> Dict[str, Any]:
     """Extract exchange-correlation functional information."""
     functional_info = {}
@@ -267,13 +275,26 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
     # "..._opt_HSE06_..."), so none of the tests below look at it.
     body = _deck_body(content).upper()
 
+    records = _deck_records(content)
+
     # Check for DFT
-    if 'DFT' in _deck_records(content):
+    if 'DFT' in records:
         functional_info['method'] = 'DFT'
-        
+        # SPIN in the DFT block: an unrestricted (spin-polarized) run
+        functional_info['spin'] = 'SPIN' in records
+
+        # The 3c composite methods first, as whole records: PBEH3C and
+        # PBESOL03C hold 'PBE' and 'PBESOL', which the test below matches
+        for func in THREE_C_FUNCTIONALS:
+            if func in records:
+                functional_info['exchange'] = func
+                break
+
         # Check for complete functional specifications first
         complete_functionals = ['PBESOL', 'B3LYP', 'HSE06', 'PBE0', 'BLYP', 'PBE', 'LDA', 'SVWN', 'PWGGA']
         for func in complete_functionals:
+            if 'exchange' in functional_info:
+                break
             if func in body:
                 functional_info['exchange'] = func
                 break
@@ -327,12 +348,12 @@ def _extract_property_parameters(content: str) -> Dict[str, Any]:
     prop_params = {}
     
     # Common property calculation keywords. ECH3/POT3 are what MACE writes for
-    # CHARGE+POTENTIAL and BOLTZTRA for TRANSPORT; without them those decks
+    # CHARGE+POTENTIAL, BOLTZTRA for TRANSPORT and ORBITALS; without them those decks
     # were recorded with no property type at all (or only NEWK).
     property_keywords = [
         'BAND', 'DOSS', 'NEWK', 'COND', 'ECHG', 'POTM',
         'PPAN', 'RDFMWF', 'RHOLINE', 'MOLDRAW',
-        'ECH3', 'POT3', 'POTC', 'BOLTZTRA',
+        'ECH3', 'POT3', 'POTC', 'BOLTZTRA', 'ORBITALS',
     ]
     
     # Whole records, never the free-text title after BAND (the material name)

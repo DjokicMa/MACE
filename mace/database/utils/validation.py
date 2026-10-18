@@ -16,7 +16,7 @@ class PropertyValidator:
     # Property validation rules
     PROPERTY_RULES = {
         # Energy properties (should be negative for stable structures)
-        'total_energy': {
+        'total_energy_au': {
             'type': 'float',
             'unit_type': 'energy',
             'constraints': {
@@ -24,7 +24,7 @@ class PropertyValidator:
                 'warning_if_positive': True
             }
         },
-        'fermi_energy': {
+        'fermi_energy_au': {
             'type': 'float',
             'unit_type': 'energy',
             'constraints': {
@@ -43,7 +43,7 @@ class PropertyValidator:
         },
         
         # Structural properties
-        'a_lattice': {
+        'primitive_a': {
             'type': 'float',
             'unit_type': 'length',
             'constraints': {
@@ -52,7 +52,7 @@ class PropertyValidator:
                 'unit': 'angstrom'
             }
         },
-        'b_lattice': {
+        'primitive_b': {
             'type': 'float',
             'unit_type': 'length',
             'constraints': {
@@ -61,7 +61,7 @@ class PropertyValidator:
                 'unit': 'angstrom'
             }
         },
-        'c_lattice': {
+        'primitive_c': {
             'type': 'float',
             'unit_type': 'length',
             'constraints': {
@@ -70,7 +70,7 @@ class PropertyValidator:
                 'unit': 'angstrom'
             }
         },
-        'cell_volume': {
+        'primitive_cell_volume': {
             'type': 'float',
             'unit_type': 'volume',
             'constraints': {
@@ -81,7 +81,7 @@ class PropertyValidator:
         },
         
         # Angular properties
-        'alpha': {
+        'primitive_alpha': {
             'type': 'float',
             'unit_type': 'angle',
             'constraints': {
@@ -90,7 +90,7 @@ class PropertyValidator:
                 'unit': 'degree'
             }
         },
-        'beta': {
+        'primitive_beta': {
             'type': 'float',
             'unit_type': 'angle',
             'constraints': {
@@ -99,7 +99,7 @@ class PropertyValidator:
                 'unit': 'degree'
             }
         },
-        'gamma': {
+        'primitive_gamma': {
             'type': 'float',
             'unit_type': 'angle',
             'constraints': {
@@ -110,6 +110,14 @@ class PropertyValidator:
         },
         
         # Integer properties
+        'space_group_number': {
+            'type': 'int',
+            'constraints': {
+                'min': 1,
+                'max': 230,
+                'allowed_values': list(range(1, 231))
+            }
+        },
         'space_group': {
             'type': 'int',
             'constraints': {
@@ -148,18 +156,19 @@ class PropertyValidator:
                                  'tetragonal', 'trigonal', 'hexagonal', 'cubic']
             }
         },
-        'conductivity_type': {
+        'electronic_classification': {
             'type': 'string',
             'constraints': {
-                'allowed_values': ['metal', 'semiconductor', 'insulator', 'unknown']
+                # what the property extractor writes (property_keys.classify_gap)
+                'allowed_values': ['metal', 'semimetal', 'semiconductor', 'insulator']
             }
         },
         
         # Boolean properties
-        'converged': {
+        'optimization_converged': {
             'type': 'bool'
         },
-        'is_magnetic': {
+        'spin_polarized': {
             'type': 'bool'
         },
         
@@ -345,44 +354,37 @@ class PropertyValidator:
         return report
         
     def _validate_cross_properties(self, material_data: Dict[str, Any]) -> List[str]:
-        """Validate relationships between properties."""
+        """Validate relationships between properties (the database's names:
+        property_keys)."""
         issues = []
-        
-        # Check lattice parameters consistency
-        if all(k in material_data for k in ['a_lattice', 'b_lattice', 'c_lattice', 'crystal_system']):
-            a = material_data['a_lattice']
-            b = material_data['b_lattice']
-            c = material_data['c_lattice']
-            system = material_data['crystal_system']
-            
-            # Validate lattice parameters match crystal system
+
+        def val(name):
+            v = material_data.get(name)
+            return v['value'] if isinstance(v, dict) and 'value' in v else v
+
+        # Conventional cell parameters against the crystal system (the
+        # primitive cell of a centered lattice is not a=b=c, 90 degrees)
+        lengths = [val(f'crystallographic_{x}') for x in 'abc']
+        system = val('crystal_system')
+        if system and all(isinstance(x, (int, float)) for x in lengths):
+            a, b, c = lengths
             if system == 'cubic' and not (abs(a - b) < 0.01 and abs(b - c) < 0.01):
                 issues.append(f"Cubic system but lattice parameters not equal: a={a}, b={b}, c={c}")
-                
             elif system == 'tetragonal' and not (abs(a - b) < 0.01 and abs(a - c) > 0.01):
                 issues.append(f"Tetragonal system but a≠b or a=c: a={a}, b={b}, c={c}")
-                
-        # Check angles consistency
-        if all(k in material_data for k in ['alpha', 'beta', 'gamma', 'crystal_system']):
-            alpha = material_data['alpha']
-            beta = material_data['beta']
-            gamma = material_data['gamma']
-            system = material_data['crystal_system']
-            
-            if system == 'cubic' and not all(abs(angle - 90) < 0.01 for angle in [alpha, beta, gamma]):
-                issues.append(f"Cubic system but angles not 90°: α={alpha}, β={beta}, γ={gamma}")
-                
-        # Check band gap vs conductivity type
-        if 'band_gap' in material_data and 'conductivity_type' in material_data:
-            gap = material_data['band_gap']
-            cond_type = material_data['conductivity_type']
-            
-            if cond_type == 'metal' and gap > 0.1:  # eV
+        angles = [val(f'crystallographic_{x}') for x in ('alpha', 'beta', 'gamma')]
+        if system == 'cubic' and all(isinstance(x, (int, float)) for x in angles):
+            if not all(abs(angle - 90) < 0.01 for angle in angles):
+                issues.append("Cubic system but angles not 90°: α={}, β={}, γ={}".format(*angles))
+
+        # Band gap against electronic_classification (property_keys.classify_gap)
+        gap, kind = val('band_gap'), val('electronic_classification')
+        if isinstance(gap, (int, float)) and kind:
+            from mace.utils.property_keys import INSULATOR_GAP_EV, METAL_GAP_EV
+            if kind in ('metal', 'semimetal') and gap >= METAL_GAP_EV:
                 issues.append(f"Metal with non-zero band gap: {gap} eV")
-                
-            elif cond_type == 'insulator' and gap < 3.0:  # eV
+            elif kind == 'insulator' and gap <= INSULATOR_GAP_EV:
                 issues.append(f"Insulator with small band gap: {gap} eV")
-                
         return issues
         
     def suggest_corrections(self, property_name: str, value: Any, 

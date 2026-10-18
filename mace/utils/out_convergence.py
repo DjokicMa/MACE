@@ -50,9 +50,9 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-VERSION = 2
+VERSION = 4
 CHUNK = 1 << 20
 
 # ------------------------------------------------------------------ patterns
@@ -79,6 +79,15 @@ _INFO_MAXCYC_OPT = re.compile(r"INFORMATION \*+ MAXCYCLE \*+\s+MAXIMUM NUMBER OF
 _INFO_MAXCYC_SCF = re.compile(r"INFORMATION \*+ MAXCYCLE \*+ MAX NUMBER OF SCF CYCLES SET TO\s+(\d+)")
 _SCF_TOLDEE = re.compile(r"CONVERGENCE ON ENERGY\s+10\*\*-\s*(\d+)")
 _SCF_MAXCYC = re.compile(r"MAX NUMBER OF SCF CYCLES\s+(\d+)")
+# what CRYSTAL prints between two SCF cycles (each belongs to the cycle printed just before it)
+_DIIS_MIX = re.compile(r"DIIS TEST:\s*(\S+)\s+AT SCF\s+CYCLE\s*(\d+)\s+-\s+MIX\s+(\d+)\s*%")
+_DIIS_ON = re.compile(r"DIIS TEST:\s*(\S+)\s+AT SCF\s+CYCLE\s*(\d+)\s+-\s+DIIS ACTIVE - HISTORY:\s*(\d+)")
+_SPIN_DENSITY = re.compile(r"SUMMED SPIN DENSITY\s+(\S+)")
+_CONDUCTING = re.compile(r"POSSIBLY CONDUCTING STATE - EFERMI\(AU\)\s*(\S+)")
+_SPINLOCK = re.compile(r"ALPHA-BETA ELECTRONS LOCKED TO\s+(-?\d+)\s+FOR\s+(\d+)\s+SCF CYCLES")
+_LEVSHIFT = re.compile(r"ENERGY LEVEL SHIFTING\s+(\S+)")
+_SCF_ENDED_E = re.compile(r"E\(AU\)\s*(\S+)")
+_FMIX_DEFAULT = re.compile(r"FOCK/KS MATRIX MIXING SET TO\s+(\d+)\s*%")
 
 FIRST_CYCLE_TEXT = "CONVERGENCE ON GRADIENTS SATISFIED AFTER THE FIRST OPTIMIZATION CYCLE"
 UNITS_NOTE = "GIVEN WITHOUT"          # "... HESSIAN MATRIX IN TERMS OF THIS SYSTEM ARE GIVEN WITHOUT UNITS"
@@ -197,6 +206,7 @@ class _State:
         self.scf: List[Dict[str, Any]] = []
         self.scf_cur: Optional[Dict[str, Any]] = None
         self.moved = False
+        self.scf_settings: Dict[str, Any] = {}     # spin lock, level shift, Fock mixing, DIIS as printed
         self.out_thr: Dict[str, Tuple[float, int]] = {}
         self.complete = False          # CRYSTAL's normal end (TOTAL CPU TIME)
         self.terminated = False        # CRYSTAL's error end (EEEEEEEEEE TERMINATION)
@@ -313,10 +323,58 @@ def _line(st: _State, raw: str, n: int):
                 st.scf.append(st.scf_cur)
             st.scf_cur["cycles"].append({"cyc": c, "etot": _f(m.group(2)), "detot": _f(m.group(3)), "line": n})
             return
+    sc = st.scf_cur
+    if sc is not None and sc["cycles"]:
+        # what CRYSTAL prints after a cycle, on that cycle: mixing or DIIS, the spin lock, the spin density
+        c = sc["cycles"][-1]
+        if "DIIS TEST" in s:
+            m = _DIIS_MIX.search(s)
+            if m:
+                c["mix"] = int(m.group(3))
+                return
+            m = _DIIS_ON.search(s)
+            if m:
+                c["diis"] = int(m.group(3))
+                return
+        if "SPIN LOCKING" in s:
+            c["spinlock"] = True
+            return
+        if "SUMMED SPIN DENSITY" in s:
+            m = _SPIN_DENSITY.search(s)
+            if m:
+                c["spin"] = _f(m.group(1))
+            return
+        if "POSSIBLY CONDUCTING STATE" in s:
+            m = _CONDUCTING.search(s)
+            c["conducting"] = _f(m.group(1)) if m else True
+            return
+        if "QUASI-DEGENERACIES NEAR FERMI LEVEL" in s:
+            c["quasi_degenerate"] = True
+            return
+    if "LOCKED TO" in s:
+        m = _SPINLOCK.search(s)
+        if m:
+            st.scf_settings["spinlock"] = {"value": int(m.group(1)), "cycles": int(m.group(2)), "line": n}
+            return
+    if "ENERGY LEVEL SHIFTING" in s:
+        m = _LEVSHIFT.search(s)
+        if m and "levshift" not in st.scf_settings:
+            st.scf_settings["levshift"] = {"value": _f(m.group(1)), "line": n}
+    if "MATRIX MIXING SET TO" in s:
+        m = _FMIX_DEFAULT.search(s)
+        if m:
+            st.scf_settings["fmixing"] = {"value": int(m.group(1)), "line": n}
+            return
+    if "LEVEL SHIFTER DISABLED" in s:
+        st.scf_settings["levshift_disabled"] = {"line": n}
+        return
     if "== SCF ENDED" in s:
         if st.scf_cur is not None:
             st.scf_cur["ended"] = "too_many_cycles" if "TOO MANY CYCLES" in s else "energy"
             st.scf_cur["end_line"] = n
+            m = _SCF_ENDED_E.search(s)
+            if m:
+                st.scf_cur["energy"] = _f(m.group(1))
             st.scf_cur = None
         return
     if "TOO MANY CYCLES" in s and st.scf_cur is not None:
@@ -500,19 +558,72 @@ def _classify(st: _State, points: List[Dict[str, Any]], thr: Dict[str, Any]) -> 
     return out
 
 
+def scfout_path(out: Path, sibling_ok: Optional[Callable[[Path], bool]] = None) -> Optional[Path]:
+    """The SCFOUT.LOG a MACE job copied back next to its output (<stem>.SCFOUT.LOG):
+    CRYSTAL writes the SCF cycles of every point after an optimization's first
+    there, in the job's scratch directory. ``sibling_ok``: whether a file beside
+    the output may be read (the GUI: inside the served folder, not through a
+    symbolic link out of it); None reads any."""
+    cand = Path(out).with_name(Path(out).stem + ".SCFOUT.LOG")
+    if not (cand.is_file() and cand.stat().st_size > 0):
+        return None
+    return cand if sibling_ok is None or sibling_ok(cand) else None
+
+
+def _attach_scfout(path: Path, st: _State, points: List[Dict[str, Any]],
+                   sibling_ok: Optional[Callable[[Path], bool]] = None) -> Optional[str]:
+    """Read <stem>.SCFOUT.LOG (if any) into st.scf: one block per SCF in its order,
+    each given the optimization point whose energy it ended with (the .out's
+    TOTAL ENERGY(DFT) of that point, to 1e-8 Ha), else the next point without
+    detail. A SCFOUT.LOG older than its .out by more than a minute is from an
+    earlier run of the job and is left alone."""
+    sp = scfout_path(path, sibling_ok)
+    if sp is None:
+        return None
+    try:
+        if sp.stat().st_mtime < Path(path).stat().st_mtime - 60:
+            return None
+    except OSError:
+        return None
+    sub = _State()
+    with open(sp, "r", errors="replace") as fh:
+        for n, raw in enumerate(fh, 1):
+            _line(sub, raw.rstrip("\n"), n)
+    have = {b["point"] for b in st.scf if b.get("point") is not None}
+    free = [p for p in points if p["point"] not in have]
+    for b in sub.scf:
+        b["source"] = sp.name
+        e = b.get("energy")
+        hit = None
+        if e is not None:
+            hit = next((p for p in free if p.get("energy_scf_au") is not None and abs(p["energy_scf_au"] - e) < 1e-8), None)
+        if hit is None and free:
+            hit = free[0]
+        if hit is not None:
+            b["point"] = hit["point"]
+            free.remove(hit)
+        st.scf.append(b)
+    st.scf.sort(key=lambda b: (b.get("point") is None, b.get("point") or 0))
+    for k, v in sub.scf_settings.items():
+        st.scf_settings.setdefault(k, v)
+    return sp.name
+
+
 def parse(path, size: Optional[int] = None, complete_lines_only: bool = False,
-          frame_lines: Optional[List[int]] = None, d12: Optional[Path] = None) -> Dict[str, Any]:
+          frame_lines: Optional[List[int]] = None, d12: Optional[Path] = None,
+          sibling_ok: Optional[Callable[[Path], bool]] = None) -> Dict[str, Any]:
     """Everything above as one JSON-able dict. ``size`` bounds the read
     (a snapshot of a file still being written); ``frame_lines`` are the
     frames' 1-based block start lines (outindex's), else the parser's own
     block detection is used (the same blocks on every corpus output; a test
-    compares them)."""
+    compares them). ``sibling_ok`` decides whether a file beside the output
+    (its .d12, its SCFOUT.LOG) may be read; None reads any."""
     path = Path(path)
     st = _State()
     n_lines = _stream(path, size, st, complete_lines_only)
     if d12 is None:
         cand = path.with_suffix(".d12")
-        d12 = cand if cand.is_file() else None
+        d12 = cand if cand.is_file() and (sibling_ok is None or sibling_ok(cand)) else None
     d12v = _d12_values(d12) if d12 is not None else {}
     points = [p for p in st.points if p.get("energy_line") is not None]
     is_opt = bool(points) or st.opt_control or st.end is not None
@@ -563,6 +674,7 @@ def parse(path, size: Optional[int] = None, complete_lines_only: bool = False,
             "cell": cell,
         })
 
+    scfout = _attach_scfout(path, st, out_points, sibling_ok) if st.moved else None
     units = "internal" if st.units_note else "Ha/bohr"
     res = {
         "version": VERSION, "file": path.name, "lines": n_lines, "is_opt": is_opt,
@@ -570,7 +682,7 @@ def parse(path, size: Optional[int] = None, complete_lines_only: bool = False,
         "n_frames": len(flines),
         "opt": {"end": _classify(st, out_points, thr) if is_opt else None,
                 "satisfied": st.satisfied, "finalrun_restarts": st.restarts},
-        "scf": {"detail": st.scf, "moved_to_scfout_log": st.moved},
+        "scf": {"detail": st.scf, "moved_to_scfout_log": st.moved, "settings": st.scf_settings, "scfout": scfout},
         "thresholds": thr,
         "gradient_units": units if is_opt else None,
         "displacement_units": ("internal" if st.units_note else "bohr") if is_opt else None,
@@ -647,6 +759,142 @@ def energy_tsv(rows: List[Dict[str, Any]], unit: str = "meV") -> str:
         fr = "" if r["frame"] is None else r["frame"]
         out.append(f"{r['point']}\t{r['segment'] + 1}\t{fr}\t{r['energy_au']!r}\t{r['de_au'] * f!r}")
     return "\n".join(out) + "\n"
+
+
+# ------------------------------------------------------------------ SCF timeline
+SCF_EVENT_WORDS = {
+    "fmix": "Fock/KS mixing {mix}%",
+    "diis": "DIIS on",
+    "spinlock_release": "spin lock released",
+    "conducting": "possibly conducting",
+    "quasi_degenerate": "quasi-degeneracy warning",
+    "too_many_cycles": "TOO MANY CYCLES",
+}
+
+
+def _scf_events(cycles: List[Dict[str, Any]], spinlock: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The notable cycles of one SCF block, from what CRYSTAL printed after each cycle:
+    Fock/KS mixing at the start, the cycle DIIS took over, the cycle the spin lock
+    stopped (SPINLOCK, CRYSTAL23 manual p.131), the first "possibly conducting" and
+    quasi-degeneracy warnings."""
+    ev: List[Dict[str, Any]] = []
+    mix = next((c for c in cycles if c.get("mix") is not None), None)
+    if mix is not None:
+        ev.append({"cyc": mix["cyc"], "kind": "fmix", "text": SCF_EVENT_WORDS["fmix"].format(mix=mix["mix"])})
+    diis = next((c for c in cycles if c.get("diis") is not None), None)
+    if diis is not None:
+        ev.append({"cyc": diis["cyc"], "kind": "diis", "text": SCF_EVENT_WORDS["diis"]})
+    # the lock is on while CRYSTAL prints SPIN LOCKING after a cycle; the last cycle of a
+    # block prints nothing after it, so only a cycle with later ones can show the release
+    locked = [c for c in cycles if c.get("spinlock")]
+    if locked:
+        free = [c for c in cycles[:-1] if c["cyc"] > locked[-1]["cyc"] and not c.get("spinlock")]
+        if free:
+            ev.append({"cyc": free[0]["cyc"], "kind": "spinlock_release", "text": SCF_EVENT_WORDS["spinlock_release"]})
+    elif spinlock and cycles and cycles[-1]["cyc"] > spinlock["cycles"] > 0:
+        # the lock's cycle count printed at the input (the per-cycle line is not printed for every run)
+        ev.append({"cyc": spinlock["cycles"], "kind": "spinlock_release", "text": SCF_EVENT_WORDS["spinlock_release"]})
+    for key in ("conducting", "quasi_degenerate"):
+        c = next((c for c in cycles if c.get(key) is not None), None)
+        if c is not None:
+            ev.append({"cyc": c["cyc"], "kind": key, "text": SCF_EVENT_WORDS[key]})
+    return sorted(ev, key=lambda e: e["cyc"])
+
+
+def scf_timeline(res: Dict[str, Any]) -> Dict[str, Any]:
+    """The SCF convergence of a run, block by block: every SCF the .out prints
+    per cycle (an SP's one, an optimization's first point, a FREQ's reference
+    and any others), each cycle's total energy, its change (DETOT), the spin
+    density of a spin-polarized run, and the notable cycles (_scf_events); the
+    SCF threshold (TOLDEE) with where it came from; and, for an optimization,
+    the SCF cycles of every point (CRYSTAL moves the later points' cycles to
+    SCFOUT.LOG). The GUI's SCF card and Run Analysis › SCF draw it and `mace
+    analyze --convergence FILE --scf` prints it."""
+    scf = res.get("scf") or {}
+    settings = scf.get("settings") or {}
+    blocks = []
+    for i, b in enumerate(scf.get("detail") or []):
+        cyc = [{"cyc": c["cyc"], "etot": c.get("etot"), "detot": c.get("detot"),
+                "spin": c.get("spin"), "line": c.get("line")} for c in b.get("cycles") or []]
+        ev = _scf_events(b.get("cycles") or [], settings.get("spinlock"))
+        if b.get("ended") == "too_many_cycles" and cyc:
+            ev.append({"cyc": cyc[-1]["cyc"], "kind": "too_many_cycles", "text": SCF_EVENT_WORDS["too_many_cycles"]})
+        label = f"POINT {b['point']}" if b.get("point") is not None else (f"SCF {i + 1}" if len(scf.get("detail") or []) > 1 else "SCF")
+        blocks.append({"index": i, "point": b.get("point"), "label": label, "ended": b.get("ended"), "source": b.get("source"),
+                       "running": b.get("ended") is None and not res.get("complete"), "cycles": cyc, "events": ev})
+    thr = res.get("thresholds") or {}
+    return {
+        "blocks": blocks,
+        "toldee": thr.get("toldee_scf"),
+        "maxcycle": thr.get("scf_maxcycle"),
+        "settings": settings,
+        "moved_to_scfout_log": bool(scf.get("moved_to_scfout_log")),
+        "scfout": scf.get("scfout"),
+        "points": [{"point": p["point"], "scf_cycles": p.get("scf_cycles"),
+                    "detail": any(b["point"] == p["point"] for b in blocks)} for p in res.get("points") or []],
+        "spin": any(c["spin"] is not None for b in blocks for c in b["cycles"]),
+    }
+
+
+def scf_block(tl: Dict[str, Any], step: Any = "latest") -> Optional[Dict[str, Any]]:
+    """One block of scf_timeline(): "latest" (the default: the last one printed,
+    the running one of a live run), "first", a block number (1-based) or
+    "point:N" (an optimization point's)."""
+    bl = tl.get("blocks") or []
+    if not bl:
+        return None
+    if step in (None, "latest"):
+        return bl[-1]
+    if step == "first":
+        return bl[0]
+    st = str(step)
+    if st.startswith("point:"):
+        n = int(st.split(":", 1)[1])
+        return next((b for b in bl if b["point"] == n), None)
+    k = int(st)
+    return bl[k - 1] if 1 <= k <= len(bl) else None
+
+
+def scf_tsv(block: Dict[str, Any], unit: str = "Ha") -> str:
+    """One block as the GUI's SCF card copies it: cycle, total energy (Ha), its
+    change in ``unit``, the spin density (empty for a closed shell) and the
+    events of that cycle."""
+    if unit not in ENERGY_UNITS:
+        raise ValueError(f"unit is one of {', '.join(ENERGY_UNITS)}")
+    f = HARTREE_EV * ENERGY_UNITS[unit]
+    ev: Dict[int, List[str]] = {}
+    for e in block.get("events") or []:
+        ev.setdefault(e["cyc"], []).append(e["text"])
+    out = [f"cycle\tE_Ha\tdE_{unit}\tspin\tevents"]
+    for c in block.get("cycles") or []:
+        de = "" if c["detot"] is None else repr(c["detot"] * f)
+        out.append(f"{c['cyc']}\t{'' if c['etot'] is None else repr(c['etot'])}\t{de}\t"
+                   f"{'' if c.get('spin') is None else repr(c['spin'])}\t{'; '.join(ev.get(c['cyc'], []))}")
+    return "\n".join(out) + "\n"
+
+
+def render_scf_text(tl: Dict[str, Any], block: Optional[Dict[str, Any]], unit: str = "Ha") -> str:
+    """`mace analyze --convergence FILE --scf`: the block's cycles, the threshold,
+    the events and, for an optimization, the cycles of every point."""
+    rows: List[str] = []
+    t = tl.get("toldee") or {}
+    if block is None:
+        rows.append("No SCF cycles printed in this output.")
+    else:
+        rows.append(f"SCF{'' if block['label'] == 'SCF' else ' of ' + block['label']} ({len(block['cycles'])} cycles"
+                    f"{', ' + ('did not converge: TOO MANY CYCLES' if block['ended'] == 'too_many_cycles' else 'converged') if block['ended'] else ', running'})")
+        rows.append(scf_tsv(block, unit).rstrip("\n"))
+    if t.get("value") is not None:
+        rows.append(f"TOLDEE {t['value']:g} Ha ({ {'out': 'from the .out', 'd12': 'from the .d12', 'default': 'CRYSTAL23 default'}.get(t.get('source'), t.get('source')) })")
+    others = [b["label"] for b in tl.get("blocks") or [] if block is None or b["index"] != block["index"]]
+    if others:
+        rows.append("Other SCF blocks: " + ", ".join(others) + " (--step)")
+    if tl.get("moved_to_scfout_log") and tl.get("points"):
+        rows.append("SCF cycles per point: " + " ".join(f"{p['point']}:{p['scf_cycles']}" for p in tl["points"])
+                    + (f" (the later points' cycles read from {tl['scfout']})" if tl.get("scfout") else
+                       " (CRYSTAL prints the cycles of the first point only; the rest went to SCFOUT.LOG,"
+                       " which a MACE job copies back as <job>.SCFOUT.LOG)"))
+    return "\n".join(rows)
 
 
 # ------------------------------------------------------------------ words
@@ -738,19 +986,37 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "or one per FINALRUN segment (separate)")
     ap.add_argument("--relative-to", choices=RELATIVE_TO, default="final",
                     help="with --energy: the reference point (default: final)")
-    ap.add_argument("--unit", choices=tuple(ENERGY_UNITS), default="meV", help="with --energy: the ΔE unit (default: meV)")
+    ap.add_argument("--unit", choices=tuple(ENERGY_UNITS), default=None,
+                    help="with --energy: the ΔE unit (default: meV); with --scf: the ΔE unit (default: Ha)")
+    ap.add_argument("--scf", action="store_true",
+                    help="print the SCF convergence instead: each cycle's energy, its change, the spin density and "
+                         "the notable cycles (tab-separated, as the GUI's SCF card copies it; with --json, the timeline)")
+    ap.add_argument("--step", default="latest",
+                    help="with --scf: which SCF: latest (default), first, a block number, or point:N")
     a = ap.parse_args(argv)
     p = Path(a.output)
     if not p.is_file():
         print(f"Error: {p} is not a file", file=sys.stderr)
         return 2
     res = parse(p)
+    if a.scf:
+        tl = scf_timeline(res)
+        try:
+            blk = scf_block(tl, a.step)
+        except ValueError:
+            print(f"Error: --step is latest, first, a block number or point:N, not {a.step!r}", file=sys.stderr)
+            return 2
+        if a.json:
+            print(json.dumps({**tl, "selected": None if blk is None else blk["index"]}, indent=1))
+        else:
+            print(render_scf_text(tl, blk, a.unit or "Ha"))
+        return 0
     if a.energy:
         rows = energy_along_run(res, relative_to=a.relative_to, segments=a.segments)
         if a.json:
             print(json.dumps(rows, indent=1))
         else:
-            sys.stdout.write(energy_tsv(rows, a.unit))
+            sys.stdout.write(energy_tsv(rows, a.unit or "meV"))
         return 0
     if a.json:
         print(json.dumps(res, indent=1))

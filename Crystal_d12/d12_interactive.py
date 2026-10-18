@@ -25,7 +25,7 @@ from d12_constants import (
     UNRECOGNISED_FUNCTIONAL_FALLBACK,
     CUSTOM_FUNCTIONAL, describe_custom_functional,
     SCF_TOLERANCE_PRESETS, scf_tolerances, describe_scf_preset,
-    FREQ_SCF_LEVEL, freq_default_tolerances,
+    FREQ_SCF_LEVEL, freq_default_tolerances, INTERNAL_BASIS_SETS,
 )
 
 # Import calculation-specific modules
@@ -36,8 +36,10 @@ from d12_calc_freq import (
 )
 
 
-def display_default_settings():
-    """Display default calculation settings"""
+def display_default_settings(scratch: Optional[Dict[str, Any]] = None):
+    """Display default calculation settings (with a project folder's
+    functional and basis set, ``scratch_defaults()``, when it sets them)"""
+    scratch = scratch or {}
     print("\n" + "="*60)
     print("DEFAULT RECOMMENDED SETTINGS FOR CRYSTAL23")
     print("="*60)
@@ -62,8 +64,16 @@ def display_default_settings():
     print("\n### BASIS SET AND DFT SETTINGS ###")
     print(f"Method: {DEFAULT_SETTINGS['method_type']}")
     print(f"Basis set type: {DEFAULT_SETTINGS['basis_set_type']}")
-    print(f"Basis set: {DEFAULT_SETTINGS['basis_set']} (Triple-ζ + polarization, revised)")
-    print(f"DFT functional: {DEFAULT_SETTINGS['functional']}-D3 (Screened hybrid with D3 dispersion)")
+    if "basis_set" in scratch:
+        print(f"Basis set: {scratch['basis_set'][0]} (from {scratch['basis_set'][1]})")
+    else:
+        print(f"Basis set: {DEFAULT_SETTINGS['basis_set']} (Triple-ζ + polarization, revised)")
+    if "functional" in scratch:
+        base, d3, src = scratch["functional"]
+        d3 = (base in D3_FUNCTIONALS) if d3 is None else d3
+        print(f"DFT functional: {base}{'-D3' if d3 else ''} (from {src})")
+    else:
+        print(f"DFT functional: {DEFAULT_SETTINGS['functional']}-D3 (Screened hybrid with D3 dispersion)")
     print(f"DFT grid: {DEFAULT_SETTINGS['dft_grid']} (Extra large grid, most accurate)")
     print(f"Spin polarized: {DEFAULT_SETTINGS['spin_polarized']}")
     print(f"Fermi smearing: No")
@@ -239,7 +249,7 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False, 
             if scf.get('histdiis'):
                 print(f"HISTDIIS: {scf['histdiis']}")
             if scf.get('ppan'):
-                print(f"PPAN: Yes (parallel diagonalization)")
+                print(f"PPAN: Yes (Mulliken population analysis)")
             if scf.get('biposize'):
                 print(f"BIPOSIZE: {scf['biposize']}")
             if scf.get('exchsize'):
@@ -724,7 +734,7 @@ def configure_scf_settings_with_defaults(current_scf: Dict[str, Any],
     
     # PPAN
     current_ppan_str = "yes" if current_ppan else "no"
-    ppan_input = yes_no_prompt(f"Enable PPAN (parallel diagonalization)?", current_ppan_str)
+    ppan_input = yes_no_prompt(f"Enable PPAN (Mulliken population analysis)?", current_ppan_str)
     scf_settings["ppan"] = ppan_input
     
     # BIPOSIZE/EXCHSIZE
@@ -803,7 +813,11 @@ def configure_smearing_with_defaults(current_settings: Dict[str, Any],
     """Wrapper for configure_smearing that shows current settings as defaults"""
     # Extract current values
     current_use_smearing = current_settings.get('use_smearing', current_settings.get('smearing', False))
-    current_width = current_settings.get('smearing_width', 0.01)
+    # a parent without smearing carries smearing_width None (or 0): 0.01 Ha
+    try:
+        current_width = float(current_settings.get('smearing_width') or 0.01)
+    except (TypeError, ValueError):
+        current_width = 0.01
     
     smearing_config = {}
     
@@ -897,8 +911,57 @@ def _forget_unrecognised_functional(options: Dict[str, Any]) -> None:
     options.pop("unrecognised_functional_source", None)
 
 
+_SCRATCH_CACHE: Dict[str, Any] = {}
+
+
+def scratch_defaults() -> Dict[str, Any]:
+    """The functional and basis set for a deck that has no parent value:
+    a project folder's mace-folder.toml [setup] (or, under mace gui's
+    Calculation Setup, the GUI's settings), checked against the menus.
+    {"functional": (name, d3 or None, source), "basis_set": (name, source)};
+    {} without them, so every built-in default stays as it is. Read once."""
+    if "v" in _SCRATCH_CACHE:
+        return _SCRATCH_CACHE["v"]
+    out: Dict[str, Any] = {}
+    try:
+        from mace.utils import folder_settings
+        got = folder_settings.setup_defaults()
+    except Exception:            # a copy of this script without MACE: the built-in defaults
+        got = {}
+    if "functional" in got:
+        name, src = got["functional"]
+        d3 = name.upper().endswith("-D3")
+        base = name[:-3] if d3 else name
+        hf = base in FUNCTIONAL_CATEGORIES.get("HF", {}).get("functionals", [])
+        if (not hf and _menu_lists_functional(base) and (d3 and base in D3_FUNCTIONALS
+                                                         or _written_functional_is_valid(base, False))):
+            out["functional"] = (base, True if d3 else None, src)
+        else:
+            print(f"MACE: the default functional {name} from {src} is not a DFT functional MACE's menus "
+                  f"offer{' with D3' if d3 else ''}; using the built-in default")
+    if "basis_set" in got:
+        name, src = got["basis_set"]
+        match = next((k for k in INTERNAL_BASIS_SETS if k.upper() == name.upper()), None)
+        if match:
+            out["basis_set"] = (match, src)
+        else:
+            print(f"MACE: the default basis set {name} from {src} is not one of CRYSTAL23's internal basis "
+                  f"sets; using the built-in default")
+    _SCRATCH_CACHE["v"] = out
+    return out
+
+
+def fallback_functional() -> str:
+    """The functional used when a parent's functional cannot be used and the
+    user names none: the folder's default (mace-folder.toml) or HSE06."""
+    f = scratch_defaults().get("functional")
+    return f[0] if f else UNRECOGNISED_FUNCTIONAL_FALLBACK
+
+
 def _set_fallback_functional(options: Dict[str, Any], use_d3: bool) -> None:
-    fallback = UNRECOGNISED_FUNCTIONAL_FALLBACK
+    fallback = fallback_functional()
+    if use_d3 and fallback not in D3_FUNCTIONALS:
+        use_d3 = False
     options["method"] = "DFT"
     options["method_type"] = "DFT"
     options["functional"] = fallback + ("-D3" if use_d3 else "")
@@ -985,10 +1048,10 @@ def _ask_functional_record(keyword: str) -> Optional[str]:
 def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
     """Ask for a functional to replace one the parent had that is unusable.
 
-    Returns the functional typed (validated), "" for the HSE06 default, or
-    None when the user asks for the menus instead.
+    Returns the functional typed (validated), "" for the default (HSE06, or
+    a project folder's), or None when the user asks for the menus instead.
     """
-    fallback = UNRECOGNISED_FUNCTIONAL_FALLBACK
+    fallback = fallback_functional()
     print(f"\n{unrecognised_functional_message(options)}")
     while True:
         answer = input(
@@ -1144,7 +1207,7 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
             if replacement == "":
                 parent_d3 = bool(options.get("dispersion"))
                 use_d3 = yes_no_prompt(
-                    f"\nAdd D3 dispersion correction to {UNRECOGNISED_FUNCTIONAL_FALLBACK}?",
+                    f"\nAdd D3 dispersion correction to {fallback_functional()}?",
                     "yes" if parent_d3 else "no")
                 _set_fallback_functional(options, bool(use_d3))
                 print(f"\nWARNING: {unrecognised_functional_message(options)} "
@@ -1673,7 +1736,7 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         print(f"SCF method: {current_scf_method}{'' if current_scf.get('method') else ' (Default)'}")
         print(f"SCF max cycles: {current_maxcycle}{'' if current_scf.get('maxcycle') else ' (Default)'}")
         print(f"FMIXING: {current_fmixing}%{'' if current_scf.get('fmixing') else ' (Default)'}")
-        print(f"PPAN: {current_ppan} (parallel diagonalization){'' if current_scf.get('ppan') is not None else ' (Default)'}")
+        print(f"PPAN: {current_ppan} (Mulliken population analysis){'' if current_scf.get('ppan') is not None else ' (Default)'}")
         
         # Check if BIPOSIZE/EXCHSIZE were explicitly set
         has_bipo_exch = current_scf.get('biposize') is not None or current_scf.get('exchsize') is not None
@@ -1721,14 +1784,23 @@ def get_calculation_options(current_settings: Optional[Dict[str, Any]] = None) -
 def get_calculation_options_new() -> Dict[str, Any]:
     """Get calculation options for new calculations (from CIF)"""
     options = {}
+    # a project folder's functional and basis set (mace-folder.toml [setup]): no parent here
+    scratch = scratch_defaults()
     
     # First, show default settings and ask if user wants to use them
-    display_default_settings()
+    display_default_settings(scratch)
     use_defaults = yes_no_prompt("\nDo you want to use these default settings?", "yes")
     
     if use_defaults:
         # Use all default settings
         options = DEFAULT_SETTINGS.copy()
+        if "functional" in scratch:
+            base, d3, _src = scratch["functional"]
+            d3 = (base in D3_FUNCTIONALS) if d3 is None else d3
+            options["functional"] = options["dft_functional"] = base
+            options["dispersion"] = d3
+        if "basis_set" in scratch:
+            options["basis_set"] = scratch["basis_set"][0]
         options["optimization_settings"] = DEFAULT_OPT_SETTINGS.copy()
         options["tolerances"] = DEFAULT_TOLERANCES.copy()
         options["calculation_type"] = "OPT"  # Default to optimization
@@ -1746,7 +1818,7 @@ def get_calculation_options_new() -> Dict[str, Any]:
         options["method"] = "DFT"
         options["method_type"] = "DFT"
         options["dft_functional"] = options.get("functional", "HSE06")
-        options["use_dispersion"] = True
+        options["use_dispersion"] = options.get("dispersion", True)
         options["is_spin_polarized"] = options.get("spin_polarized", True)
         options["scf_method"] = "DIIS"
         options["scf_maxcycle"] = 800
@@ -1821,7 +1893,10 @@ def get_calculation_options_new() -> Dict[str, Any]:
             if freq_settings.get("use_advanced"):
                 options["advanced_freq_settings"] = get_advanced_frequency_settings()
         
-        # 4. Method selection (HF/DFT)
+        # 4. Method selection (HF/DFT); a project folder's functional is the menus' default
+        if "functional" in scratch:
+            base, d3, _src = scratch["functional"]
+            options["functional"] = base + ("-D3" if d3 else "")
         options = configure_method(options, from_parent=False)
         
         # 5. Functional selection (if DFT) - already handled in configure_method
@@ -1832,7 +1907,7 @@ def get_calculation_options_new() -> Dict[str, Any]:
             options.get("method_type", "DFT"), 
             options.get("functional"),
             current_basis_type=options.get("basis_set_type", "INTERNAL"),
-            current_basis=options.get("basis_set", "POB-TZVP-REV2")
+            current_basis=options.get("basis_set", scratch["basis_set"][0] if "basis_set" in scratch else "POB-TZVP-REV2")
         )
         options.update(basis_config)
         
@@ -2022,8 +2097,10 @@ def configure_print_options() -> List[str]:
 def save_options_to_file(options: Dict[str, Any], filename: str):
     """Save calculation options to JSON file"""
     try:
+        from basis_library import portable_options
         with open(filename, 'w') as f:
-            json.dump(options, f, indent=2)
+            # a bundled basis library by name, so the file works elsewhere
+            json.dump(portable_options(options), f, indent=2)
         print(f"\nOptions saved to {filename}")
     except Exception as e:
         print(f"Error saving options: {e}")
@@ -2258,7 +2335,7 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         print("SCF method: DIIS")
         print("SCF max cycles: 800")
         print("FMIXING: 30%")
-        print("PPAN: Yes (parallel diagonalization)")
+        print("PPAN: Yes (Mulliken population analysis)")
         print("BIPOSIZE/EXCHSIZE: 110000000/110000000")
         print("="*60)
 

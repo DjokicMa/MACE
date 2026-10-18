@@ -632,6 +632,95 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 - Validate settings before writing
 - Support all CRYSTAL input sections
 
+### `soc_ecp.py`
+
+**Purpose:** Two-component spin-orbit (SOC) single-point decks, only when asked
+for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
+
+- Reads the Stuttgart spin-orbit ECPs in `Crystal_d3/Archived/basis/sopseud/2NN.mol`
+  (MOLPRO format) and writes them as CRYSTAL23 `INPSOC` records, INTERNAL
+  convention (manual pp. 84-87; the manual's Eu example is reproduced exactly).
+- An atom's ECP is replaced only if it is exactly the scalar part of the
+  spin-orbit ECP, so its valence basis stays the one published with that
+  potential. The `full.basis.doublezeta`/`triplezeta` ECPs of Rb-Bi (not Yb)
+  qualify, and those of `full.basis.triplezeta.rev2022` (not La or Yb).
+  All-electron atoms are left as they are and get no spin-orbit term (manual
+  p. 175): the log names them, with a warning from Ga (Z = 31) on, where the
+  4p splitting lost is about 0.3-0.5 eV (Ga-Br are all-electron in the
+  `full.basis` families; the stuttgart library's ECP10 records 231-234 for
+  Ga-Se carry the term, but no writer picks them: enter them by hand).
+  An ECP label above 300 (382 for a second Pb) is its element, Z = label
+  modulo 100. CHEMOD after `99 0` is kept (manual p. 172); GHOSTS, CHARGED
+  and other basis-input records are refused by name.
+- Adds `TWOCOMPON` / `SOC` / `END` before `SCFDIR` (manual sec. 6.2).
+- Settings measured on the stock CRYSTAL/23 build: DIIS and HISTDIIS are left
+  out (a DIIS record stops a 2c run), SHRINK gets its Gilat net equal to the
+  Monkhorst net (`IS IS`, or `0 max(IS1,IS2,IS3)` in the directional form), and
+  the deck gets FMIXING 50 and at least 200 cycles. FMIXING 50 converged
+  fastest of 30/50/60/70/85 in every system measured (Bi2 bilayer 12 cycles,
+  PbTe 9, fcc Au at SHRINK 12 12 25) with the same energies as 85; FMIXING 30
+  aborted Bi2 in cycle 1. Any other FMIXING in the deck (MACE's 30, or the
+  parent's or template's) is replaced, and the log names the value replaced.
+  `"soc_fmixing": N` (0-100) in the options file or template writes FMIXING N
+  instead. A MAXCYCLE below 200 is kept, with a warning.
+- Never adds SMEAR by itself. `"smear": <width in hartree>` in the options
+  file or template writes SMEAR (manual p. 126) after SHRINK. opt2d12 warns
+  when the parent's .out looks metallic (its last SCF cycle reports "POSSIBLY
+  CONDUCTING STATE" or a band gap below 0.1 eV) and the SOC deck has no SMEAR,
+  and asks for a width at a terminal (Enter = none); in a batch it lists the
+  deck in the closing summary. cif2d12 prints one such warning per run.
+- Accepts SPIN and the `-D3` forms of BLYP, PBE, B3LYP, PBE0 and PW1PW. SPIN
+  has no effect in a 2c deck: the same energy with and without it (HPCC).
+- Measured on the stock CRYSTAL/23 build (HPCC): PbTe (SHRINK 7 7) and a Bi2
+  bilayer (SHRINK 0 10 / 10 10 1) converge. fcc Au converges on a 12 12 mesh
+  but aborts in the first SCF cycles on MACE's default 10 10, and on 11 11
+  ("ERROR **** ZERO **** FERMI ENERGY NOT IN INTERVAL"); SMEAR 0.005 lets
+  10 10 converge.
+- A parent deck with a TWOCOMPON block holding SOC makes the `opt2d12` child a
+  SOC deck too (with a note) unless the template sets `"soc": false`; the
+  parent's INPSOC records are kept when they are exactly MACE's. A scalar child
+  of a SOC parent gets a warning; an OPT or FREQ child of a SOC parent is
+  refused (manual p. 166).
+- Refuses, writing no deck: OPT/FREQ and other non-single-point runs,
+  functionals and keywords manual chapter 6 does not list (including a DFTD3
+  block), `BASISSET`, and ECPs that are not a spin-orbit ECP's scalar part.
+
+Options for SOC decks (keys of a cif2d12 options file or an opt2d12 template;
+none is on by default, and without them every deck is as above):
+
+| Key | Values | What it does |
+| --- | --- | --- |
+| `soc_fmixing` | 0-100 | FMIXING of the SOC deck (default 50). |
+| `smear` | width in hartree | SMEAR after SHRINK (see above). |
+| `soc_ecp` | `"inpsoc"` (default), `"stutsc"` | `"stutsc"` writes CRYSTAL's internal `STUTSC` record (manual p. 84) in place of the INPSOC records, for the elements where it was measured to be the same potential with the same core (`soc_ecp.STUTSC_CORES`: Rb-Mo, Ru-I, Cs, Ba, Ta-Bi; not Hf, whose STUTSC gives the r² local term the exponent of the first term, 10.2488560 instead of the published ECP60MDF's 10.7291270, +9.67e-5 Ha measured, nor La-Lu, where CRYSTAL stops). The ECP must still pass the pairing check, and SOSCALE must be 1 (STUTSC has no scale factor). A parent deck's STUTSC is kept when its valence basis is MACE's library basis for such an element, or the official pob-TZVP-rev2-SOC block; anything else is refused. |
+| `soc_guess` | `"guesspso"`, `"guesspnoso"` | opt2d12 and workflow plan steps only (refused by cif2d12: no parent). Writes the 2c restart record in the TWOCOMPON block (manual p. 173) and stages the parent's `.f9` (beside its `.out`) as `<deck stem>.f20`, which the job script copies to fort.20. `guesspso`: the parent must be a 2c run (with or without SOC). `guesspnoso`: the parent must be a 1c run that was unrestricted (UHF or SPIN) and ran without symmetry (group 1 or SYMMREMO); the child gets no SYMMREMO (TWOCOMPON deactivates symmetry, p. 169). The parent deck and the deck as written must have the same symmetry frame and per-atom shells (ECP records aside), or nothing is written. FMIXING 80 for both (measured on a Bi2 bilayer only: at 50 both restarts diverged; at 80 GUESSPSO converged in 3-5 cycles and GUESSPNOSO in 29, where a cold SOC start takes 12), unless `soc_fmixing` is set. `mace preflight` and `mace submit` refuse a restart deck with nothing to stage (CRYSTAL stops on GUESSPSO with nothing in fort.20, measured; GUESSPNOSO without its parent's matrix was not run). A `guesspnoso` parent that is restricted or kept its symmetry is refused before anything is written: CRYSTAL23 aborts such a restart at once in READFG (measured; see "A 1c parent for GUESSPNOSO" below). A GUESSPSO or GUESSPNOSO outside the TWOCOMPON block is refused everywhere (`soc_deck`, `mace preflight`, `mace submit` with or without `--nosubmit`): CRYSTAL stops on it at input ("KEYWORD GUESSPSO NOT ALLOWED", measured). |
+| `soc_basis` | `"pob-tzvp-rev2-soc"` | Replaces every ECP atom's basis block whole by the official X_pob_TZVP_rev2_SOC block for its element (CRYSTAL's STUTSC with the valence basis published for it, "to be used with CRYSTAL23"; J. Laun, T. Bredow, J. Comput. Chem. 43 (2022) 839, doi 10.1002/jcc.26839; J. K. Desmarais, J. P. Flament, A. Erba, Phys. Rev. B 101 (2020) 235142, doi 10.1103/PhysRevB.101.235142). The set covers Rb-I except Tc, Cs, Ba and Hf-Bi; a deck with any other ECP element (La-Lu, actinides, Po onwards) is refused, naming it. All-electron atoms (H-Br, and MACE's all-electron Tc) keep their block, since there is no SOC operator on an all-electron atom (manual p. 175); atom numbers never change. Refused with `"soc_ecp": "inpsoc"`, with SOSCALE other than 1, and for BASISSET decks. The data, with source URL, retrieval date and references, is `basis_sets/pob-tzvp-rev2-soc.lib`, built by `basis_sets/build_library.py` and read through `basis_library.soc_basis_record`. Its valence shells are pob-TZVP-rev2's (for Rb-I those of `full.basis.triplezeta.rev2022`, not the 2018 ones of `full.basis.triplezeta`), and the ECP is CRYSTAL's STUTSC - except for Hf, which gets the official valence shells on MACE's INPSOC (the published ECP60MDF; `soc_ecp.STUTSC_NOT_THE_PUBLISHED_ECP`) - so the energy differs from a scalar parent's: the SOC contribution needs a 2c run without SOC in the same basis (manual p. 174), which MACE does not write - copy the deck and delete the `SOC` line of its TWOCOMPON block. |
+
+**A 1c parent for GUESSPNOSO.** `"soc_guess": "guesspnoso"` needs a parent
+that ran as an unrestricted one-component SCF without symmetry (manual p. 173).
+MACE does not write that parent; make it by hand from the SOC deck you want to
+start (or from any deck in the same frame and basis):
+
+1. Delete the `TWOCOMPON` ... `END` block (the `TWOCOMPON`, `SOC` and `END`
+   lines before `SCFDIR`, and a `GUESSPSO` or `GUESSPNOSO` line between them).
+2. Add `SYMMREMO` (p. 78) as the last record of the geometry block, before its
+   `END`.
+3. Add `SPIN` (p. 140) as the first record of the `DFT` block, unless it is
+   there already. A Hartree-Fock deck has no `DFT` block: add `UHF` (p. 131)
+   to its SCF records instead.
+4. Keep the basis as it is, `INPSOC` (or `STUTSC`) records included, so the
+   parent's matrix has the shells of the SOC deck.
+
+Run it, then make the SOC deck from its `.out` with `opt2d12` and a template
+holding `"soc": true, "soc_guess": "guesspnoso"`; the parent's `.f9` is staged
+as the child's `.f20`, and the child gets FMIXING 80. Measured on CRYSTAL23
+(Bi2 bilayer): the restart from such a parent converged in 29 cycles to the
+cold-start SOC energy (5.6e-8 Ha apart; FMIXING 50 diverged); `SYMMREMO` in the
+2c deck changes nothing, so opt2d12 does not write it there. A parent that kept
+its symmetry makes CRYSTAL abort at once with `ERROR **** READFG **** RESTART
+NOT POSSIBLE - SYMMETRY INCOMPATIBILITY`, a restricted one with `... - OPEN-CLOSED
+SHELL INCOMPATIBILITY`; opt2d12 refuses both before writing anything.
+
 ### `d12_interactive.py`
 
 **Purpose:** Interactive prompts and user interface utilities.

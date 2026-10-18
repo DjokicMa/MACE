@@ -223,10 +223,12 @@ def save_d12_config(config: Dict[str, Any], filename: str,
     os.makedirs(config_dir, exist_ok=True)
     
     # Add metadata
+    from basis_library import portable_options
     config_with_meta = {
         "version": "1.0",
         "type": "d12_configuration",
-        "configuration": config
+        # a bundled basis library by name, so the file works elsewhere
+        "configuration": portable_options(config)
     }
     
     # Full path

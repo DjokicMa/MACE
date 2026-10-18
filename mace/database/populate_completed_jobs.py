@@ -4,6 +4,7 @@ Module to populate database with completed calculations found in workflow output
 This is crucial for workflow progression in isolated context mode.
 """
 
+import contextlib
 import os
 import re
 from pathlib import Path
@@ -197,8 +198,13 @@ def _structure_key(output_file, input_file=None) -> Optional[tuple]:
 def _material_structure(db, material_id: str, cache: Dict) -> Optional[tuple]:
     """(reduced formula, space group) of an existing material, from the
     first of its calculations whose output can be read (never the row's
-    formula, which may be typed by hand); None when none can."""
-    if material_id in cache:
+    formula, which may be typed by hand); None when none can.
+
+    A known structure is cached for the build; an unknown one is not: the
+    material can get a calculation with a readable structure later in the
+    same build (one first recorded from a BAND output, then an SP), and a
+    cached None let every later calculation of another structure join it."""
+    if cache.get(material_id) is not None:
         return cache[material_id]
     key = None
     with db._get_connection() as conn:
@@ -209,7 +215,8 @@ def _material_structure(db, material_id: str, cache: Dict) -> Optional[tuple]:
             key = _structure_key(out, inp if inp and Path(inp).is_file() else None)
             if key:
                 break
-    cache[material_id] = key
+    if key is not None:
+        cache[material_id] = key
     return key
 
 
@@ -307,6 +314,12 @@ def _stale_for_array_task(existing: Dict, calc_info: Dict) -> bool:
         return True
 
 
+def _transaction(db):
+    """db.transaction() of a MaterialDatabase; no transaction for another db."""
+    transaction = getattr(db, 'transaction', None)
+    return transaction() if callable(transaction) else contextlib.nullcontext()
+
+
 def populate_database(completed_calcs: List[Dict], db) -> int:
     """
     Populate database with completed calculations.
@@ -322,148 +335,153 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
     structures: Dict = {}       # material id -> (formula, space group), for distinct_material_id
     
     for calc_info in completed_calcs:
-        try:
-            duplicate = _check_job_id(db, calc_info)
-            if duplicate == 'copy':
-                _complete_left_pending(db, calc_info)
-                continue
-            if duplicate == 'drop':
-                calc_info = dict(calc_info, slurm_job_id=None)
-            material_id = distinct_material_id(db, calc_info, structures)
-            calc_info = dict(calc_info, material_id=material_id)
-            calc_type = calc_info['calc_type']
-            
-            # Check if material exists, create if not
-            material = db.get_material(material_id)
-            if not material:
-                # Create material with minimal info; the dimensionality is
-                # the one CRYSTAL prints (a molecule was stored as CRYSTAL)
-                print(f"  Creating material: {material_id}")
-                dimensionality = None
-                if calc_info.get('output_file'):
-                    try:
-                        from mace.utils.formula_extractor import output_dimensionality
-                        dimensionality = output_dimensionality(calc_info['output_file'])
-                    except Exception:
-                        dimensionality = None
-                db.create_material(
-                    material_id=material_id,
-                    formula="Unknown",  # Will be updated later from output
-                    space_group=1,      # Will be updated later
-                    dimensionality=dimensionality or "CRYSTAL",
-                    source_type="d12",
-                    source_file=calc_info.get('input_file', 'unknown')
-                )
-                
-            # Create calculation ID
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
-            calc_id = f"{material_id}_{calc_type}_{timestamp}"
-            
-            # Check if this calculation already exists (by output file)
+        # one transaction per calculation (each db call inside is a savepoint
+        # of it): a commit per calculation instead of one per call. The try
+        # inside catches every error, so what was written before one is kept
+        # and committed, as when each call committed on its own.
+        with _transaction(db):
             try:
-                existing_calcs = db.get_material_calculations(material_id)
-            except AttributeError:
-                # Fallback for older database interface
-                existing_calcs = []
-                all_calcs = db.get_all_calculations()
-                for calc in all_calcs:
-                    if calc.get('material_id') == material_id:
-                        existing_calcs.append(calc)
+                duplicate = _check_job_id(db, calc_info)
+                if duplicate == 'copy':
+                    _complete_left_pending(db, calc_info)
+                    continue
+                if duplicate == 'drop':
+                    calc_info = dict(calc_info, slurm_job_id=None)
+                material_id = distinct_material_id(db, calc_info, structures)
+                calc_info = dict(calc_info, material_id=material_id)
+                calc_type = calc_info['calc_type']
             
-            already_exists = False
-            for existing in existing_calcs:
-                # Match by output file, or -- for records whose stored output_file
-                # (a submission-time guess set by the executor) differs from the
-                # actual scanned filename -- by work_dir + base calc type. The scan
-                # always emits a BASE calc type (OPT/SP/BAND/...), while the engine
-                # persists NUMBERED steps (OPT2/SP2/BAND3), so compare on the
-                # digit-stripped base or a second OPT/SP would dedup-miss.
-                same_output = (
-                    calc_info.get('output_file')
-                    and existing.get('output_file') == calc_info.get('output_file')
-                )
-                same_workdir = (
-                    existing.get('work_dir') and calc_info.get('work_dir')
-                    and str(existing['work_dir']).rstrip('/') == str(calc_info['work_dir']).rstrip('/')
-                    and str(existing.get('calc_type') or '').rstrip('0123456789')
-                        == str(calc_info.get('calc_type') or '').rstrip('0123456789')
-                )
-                if same_output or same_workdir:
-                    already_exists = True
-                    if _stale_for_array_task(existing, calc_info):
-                        # A job array task is judged from its own output
-                        # written after its submission, never an older one.
+                # Check if material exists, create if not
+                material = db.get_material(material_id)
+                if not material:
+                    # Create material with minimal info; the dimensionality is
+                    # the one CRYSTAL prints (a molecule was stored as CRYSTAL)
+                    print(f"  Creating material: {material_id}")
+                    dimensionality = None
+                    if calc_info.get('output_file'):
+                        try:
+                            from mace.utils.formula_extractor import output_dimensionality
+                            dimensionality = output_dimensionality(calc_info['output_file'])
+                        except Exception:
+                            dimensionality = None
+                    db.create_material(
+                        material_id=material_id,
+                        formula="Unknown",  # Will be updated later from output
+                        space_group=1,      # Will be updated later
+                        dimensionality=dimensionality or "CRYSTAL",
+                        source_type="d12",
+                        source_file=calc_info.get('input_file', 'unknown')
+                    )
+                
+                # Create calculation ID
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:-3]
+                calc_id = f"{material_id}_{calc_type}_{timestamp}"
+            
+                # Check if this calculation already exists (by output file)
+                try:
+                    existing_calcs = db.get_material_calculations(material_id)
+                except AttributeError:
+                    # Fallback for older database interface
+                    existing_calcs = []
+                    all_calcs = db.get_all_calculations()
+                    for calc in all_calcs:
+                        if calc.get('material_id') == material_id:
+                            existing_calcs.append(calc)
+            
+                already_exists = False
+                for existing in existing_calcs:
+                    # Match by output file, or -- for records whose stored output_file
+                    # (a submission-time guess set by the executor) differs from the
+                    # actual scanned filename -- by work_dir + base calc type. The scan
+                    # always emits a BASE calc type (OPT/SP/BAND/...), while the engine
+                    # persists NUMBERED steps (OPT2/SP2/BAND3), so compare on the
+                    # digit-stripped base or a second OPT/SP would dedup-miss.
+                    same_output = (
+                        calc_info.get('output_file')
+                        and existing.get('output_file') == calc_info.get('output_file')
+                    )
+                    same_workdir = (
+                        existing.get('work_dir') and calc_info.get('work_dir')
+                        and str(existing['work_dir']).rstrip('/') == str(calc_info['work_dir']).rstrip('/')
+                        and str(existing.get('calc_type') or '').rstrip('0123456789')
+                            == str(calc_info.get('calc_type') or '').rstrip('0123456789')
+                    )
+                    if same_output or same_workdir:
+                        already_exists = True
+                        if _stale_for_array_task(existing, calc_info):
+                            # A job array task is judged from its own output
+                            # written after its submission, never an older one.
+                            break
+                        _correct_calc_type(db, existing, calc_type)
+                        # Update status to completed if needed
+                        if existing.get('status') != 'completed':
+                            job = calc_info.get('slurm_job_id')
+                            owner = _job_owner(db, job) if job else None
+                            if owner and owner['calc_id'] != existing['calc_id']:
+                                job = None      # another calculation has it (unique)
+                            db.update_calculation_status(
+                                existing['calc_id'],
+                                'completed',
+                                slurm_job_id=job,
+                                output_file=calc_info.get('output_file')
+                            )
+                            print(f"  Updated {existing['calc_id']} to completed status")
                         break
-                    _correct_calc_type(db, existing, calc_type)
-                    # Update status to completed if needed
-                    if existing.get('status') != 'completed':
-                        job = calc_info.get('slurm_job_id')
-                        owner = _job_owner(db, job) if job else None
-                        if owner and owner['calc_id'] != existing['calc_id']:
-                            job = None      # another calculation has it (unique)
+                    
+                if not already_exists:
+                    # Create new calculation record
+                    calc_id = db.create_calculation(
+                        material_id=material_id,
+                        calc_type=calc_type,
+                        input_file=calc_info.get('input_file'),
+                        work_dir=calc_info.get('work_dir')
+                    )
+                
+                    # Update with completion info; output_file MUST be stored on
+                    # the record — the dedup check above compares against it, so
+                    # leaving it NULL re-added every calculation on each scan.
+                    # A failed update takes the new row back out: a 'pending' row
+                    # with no output file was left behind, and the build filed
+                    # the output's properties under it.
+                    try:
                         db.update_calculation_status(
-                            existing['calc_id'],
+                            calc_id,
                             'completed',
-                            slurm_job_id=job,
+                            slurm_job_id=calc_info.get('slurm_job_id'),
                             output_file=calc_info.get('output_file')
                         )
-                        print(f"  Updated {existing['calc_id']} to completed status")
-                    break
-                    
-            if not already_exists:
-                # Create new calculation record
-                calc_id = db.create_calculation(
-                    material_id=material_id,
-                    calc_type=calc_type,
-                    input_file=calc_info.get('input_file'),
-                    work_dir=calc_info.get('work_dir')
-                )
-                
-                # Update with completion info; output_file MUST be stored on
-                # the record — the dedup check above compares against it, so
-                # leaving it NULL re-added every calculation on each scan.
-                # A failed update takes the new row back out: a 'pending' row
-                # with no output file was left behind, and the build filed
-                # the output's properties under it.
-                try:
-                    db.update_calculation_status(
-                        calc_id,
-                        'completed',
-                        slurm_job_id=calc_info.get('slurm_job_id'),
-                        output_file=calc_info.get('output_file')
-                    )
-                except Exception:
-                    with db._get_connection() as conn:
-                        conn.execute("DELETE FROM calculations WHERE calc_id = ?", (calc_id,))
-                    raise
+                    except Exception:
+                        with db._get_connection() as conn:
+                            conn.execute("DELETE FROM calculations WHERE calc_id = ?", (calc_id,))
+                        raise
 
-                # Also keep the output file path in the settings JSON
-                if calc_info.get('output_file'):
-                    try:
-                        # Get current settings
-                        current_calc = db.get_calculation(calc_id)
-                        if current_calc:
-                            import json
-                            settings = json.loads(current_calc.get('settings_json') or '{}')
-                            settings['output_file'] = calc_info.get('output_file')
-                            # Carry the workflow the job belongs to. This scan runs
-                            # from the completion callback, where the job script has
-                            # exported the authoritative id; without it the record
-                            # looks workflow-less and progression cannot resolve the
-                            # plan or the output directory from it.
-                            env_wfid = os.environ.get('MACE_WORKFLOW_ID')
-                            if env_wfid and not settings.get('workflow_id'):
-                                settings['workflow_id'] = env_wfid
-                            db.update_calculation_settings(calc_id, settings)
-                    except Exception as e:
-                        print(f"  Failed to update output file in settings: {e}")
+                    # Also keep the output file path in the settings JSON
+                    if calc_info.get('output_file'):
+                        try:
+                            # Get current settings
+                            current_calc = db.get_calculation(calc_id)
+                            if current_calc:
+                                import json
+                                settings = json.loads(current_calc.get('settings_json') or '{}')
+                                settings['output_file'] = calc_info.get('output_file')
+                                # Carry the workflow the job belongs to. This scan runs
+                                # from the completion callback, where the job script has
+                                # exported the authoritative id; without it the record
+                                # looks workflow-less and progression cannot resolve the
+                                # plan or the output directory from it.
+                                env_wfid = os.environ.get('MACE_WORKFLOW_ID')
+                                if env_wfid and not settings.get('workflow_id'):
+                                    settings['workflow_id'] = env_wfid
+                                db.update_calculation_settings(calc_id, settings)
+                        except Exception as e:
+                            print(f"  Failed to update output file in settings: {e}")
 
-                added_count += 1
-                print(f"  Added completed calculation: {calc_id}")
+                    added_count += 1
+                    print(f"  Added completed calculation: {calc_id}")
                 
-        except Exception as e:
-            print(f"  Error adding calculation to database: {e}")
-            continue
+            except Exception as e:
+                print(f"  Error adding calculation to database: {e}")
+                continue
             
     return added_count
 

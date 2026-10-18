@@ -44,7 +44,9 @@ def deck_records(content: str, is_d3: bool = False) -> Set[str]:
             continue
         record = line.strip().upper()
         records.add(record)
-        if is_d3 and record == 'BAND':
+        # the line after BAND is the band title, the one after ORBITALS the
+        # root name of the Molden files: free text either way
+        if is_d3 and record in ('BAND', 'ORBITALS'):
             skip_title = True
     return records
 
@@ -93,6 +95,8 @@ _TRANSPORT_OUTPUT_LINE = re.compile(
     r'|^[ \t]*T{10,}[ \t]+BOLTZTRA\b',
     re.MULTILINE,
 )
+# Its timing-line alternative alone, matched at a line start.
+_TRANSPORT_TIMING_LINE = re.compile(r'[ \t]*T{10,}[ \t]+BOLTZTRA\b')
 
 
 def is_optimization_output(content: str) -> bool:
@@ -107,13 +111,35 @@ def is_frequency_output(content: str) -> bool:
 
 def is_transport_output(content: str) -> bool:
     """True when a properties .out is from a BOLTZTRA (transport) run."""
-    return _TRANSPORT_OUTPUT_LINE.search(content) is not None
+    # _TRANSPORT_OUTPUT_LINE, without a MULTILINE scan of the whole file: the
+    # two phrases are plain substrings, and the timing-line alternative can
+    # only match on a line holding ten T's (checked line by line from there)
+    if 'THERMOELECTRIC AND ELECTRONIC TRANSPORT' in content or 'SEEBECK COEFFICIENT DATA WRITTEN' in content:
+        return True
+    if 'BOLTZTRA' not in content:
+        return False
+    return _line_with_match(content, 'TTTTTTTTTT', _TRANSPORT_TIMING_LINE)
+
+
+def _line_with_match(content: str, needle: str, line_re) -> bool:
+    """Whether ``line_re`` (anchored at a line start) matches a line of
+    ``content`` that holds ``needle``: the lines without it are skipped."""
+    pos = content.find(needle)
+    while pos >= 0:
+        start = content.rfind('\n', 0, pos) + 1
+        if line_re.match(content, start):
+            return True
+        end = content.find('\n', pos)
+        if end < 0:
+            return False
+        pos = content.find(needle, end)
+    return False
 
 
 # --- Calculation type of a deck ----------------------------------------------
 
-# The four properties types MACE runs from a .d3 deck.
-PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL')
+# The properties types MACE runs from a .d3 deck.
+PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS')
 
 # Charge-density and electrostatic-potential records. Crystal_d3 writes ECH3 and
 # POT3 for the CHARGE+POTENTIAL step (3D cube grids) and ECHG / POTC for the
@@ -127,6 +153,9 @@ def d3_calc_type(records: Set[str]) -> Union[str, None]:
         return 'TRANSPORT'
     if records & CHARGE_POTENTIAL_RECORDS:
         return 'CHARGE+POTENTIAL'
+    # before DOSS: an ORBITALS deck starts with NEWK, as a DOSS deck does
+    if 'ORBITALS' in records:
+        return 'ORBITALS'
     if 'DOSS' in records:
         return 'DOSS'
     if 'BAND' in records:
@@ -152,13 +181,14 @@ def d12_calc_type(records: Set[str]) -> str:
 # "_opt").
 _FILENAME_TYPE_TOKEN = re.compile(
     r'_(charge[_+]potential|chargepot|charge|potential|cp|transport|transp'
-    r'|band|doss|dos|freq|sp|opt)\d*(?=_|$)')
+    r'|orbitals|orb|band|doss|dos|freq|sp|opt)\d*(?=_|$)')
 
 _FILENAME_TOKEN_TYPE = {
     'charge_potential': 'CHARGE+POTENTIAL', 'charge+potential': 'CHARGE+POTENTIAL',
     'chargepot': 'CHARGE+POTENTIAL', 'charge': 'CHARGE+POTENTIAL',
     'potential': 'CHARGE+POTENTIAL', 'cp': 'CHARGE+POTENTIAL',
     'transport': 'TRANSPORT', 'transp': 'TRANSPORT',
+    'orbitals': 'ORBITALS', 'orb': 'ORBITALS',
     'band': 'BAND', 'doss': 'DOSS', 'dos': 'DOSS',
     'freq': 'FREQ', 'sp': 'SP', 'opt': 'OPT',
 }
@@ -201,6 +231,126 @@ _CHARGE_POTENTIAL_OUTPUT_LINE = re.compile(
 )
 
 
+# An ORBITALS run prints "PRINTING OF MOLECULAR ORBITALS" (0D) or "PRINTING OF
+# CRYSTALLINE ORBITALS" (1D-3D), a "File opened : <name>.molden" line per file,
+# "FINISHED ORBITAL PRINTING" and the ORBITALS timing line (CRYSTAL23 on HPCC:
+# serial and parallel runs, 0D to 3D). None of these is in any other .out of
+# test/ or the HPCC trees.
+_ORBITALS_OUTPUT_LINE = re.compile(
+    r'^[ \t]*PRINTING OF (?:MOLECULAR|CRYSTALLINE) ORBITALS\b'
+    r'|^[ \t]*FINISHED ORBITAL PRINTING\b'
+    r'|^[ \t]*T{10,}[ \t]+ORBITALS\b',
+    re.MULTILINE,
+)
+
+
+def is_orbitals_output(content: str) -> bool:
+    """True when a properties .out is from an ORBITALS (Molden export) run."""
+    return _ORBITALS_OUTPUT_LINE.search(content) is not None
+
+
+# --- ORBITALS: the Molden files a run writes ----------------------------------
+#
+# MACE writes "<deck stem>_orb" as the ORBITALS root, so the files of a deck
+# X.d3 are X_orb.molden (a molecule) or X_orb_<nnnnn>_K<ijk>_real.molden and
+# ..._complex.molden (one per k point), next to X.out once copied back.
+ORBITALS_ROOT_SUFFIX = '_orb'
+
+
+def orbitals_root(stem: str) -> str:
+    """The ORBITALS root name MACE writes in the deck ``<stem>.d3``."""
+    return f"{stem}{ORBITALS_ROOT_SUFFIX}"
+
+
+# The part of a Molden file name after the root: nothing (a molecule) or
+# _<n>_K<ijk>_real / _complex (one per k point). Matched exactly: a prefix
+# glob <root>*.molden also caught another job whose name starts with the root
+# (job "si", root "si_orb": si_orbitals_orb_00001_K000_real.molden).
+_ORBITALS_MOLDEN_TAIL = re.compile(r'(?:_\d+_K\d+_(?:real|complex))?\.molden')
+
+
+def is_orbitals_molden_name(name: str, stem: str) -> bool:
+    """True when ``name`` is a Molden file of the ORBITALS run of ``<stem>.d3``."""
+    root = orbitals_root(stem)
+    return (name.startswith(root)
+            and _ORBITALS_MOLDEN_TAIL.fullmatch(name[len(root):]) is not None)
+
+
+def orbitals_molden_files(path: Union[str, Path]):
+    """The Molden files of the ORBITALS run of ``path`` (its .out or .d3),
+    sorted: ``<stem>_orb.molden`` or ``<stem>_orb_<n>_K<ijk>_(real|complex).molden``
+    in the same folder."""
+    import glob as _glob
+    path = Path(path)
+    pattern = _glob.escape(orbitals_root(path.stem)) + '*.molden'
+    return sorted(p for p in path.parent.glob(pattern)
+                  if p.is_file() and is_orbitals_molden_name(p.name, path.stem))
+
+
+def orbitals_missing_reason(path: Union[str, Path]) -> Union[str, None]:
+    """Why the ORBITALS run of ``path`` (its .out) is not complete, or None.
+
+    CRYSTAL can end an ORBITALS run normally without writing a file: serial
+    properties exits 0 on an input "FORMAT ERROR" (measured), so a finished
+    .out is not enough; its Molden files have to be there.
+    """
+    path = Path(path)
+    if orbitals_molden_files(path):
+        return None
+    return (f"ORBITALS wrote no Molden file: no {orbitals_root(path.stem)}*.molden next to "
+            f"{path.name} (CRYSTAL can end an ORBITALS run normally after an input error, "
+            f"e.g. FORMAT ERROR IN INPUT DECK; check the ORBITALS records in {path.stem}.d3)")
+
+
+# --- ECH3/POT3: the cube files a run writes ------------------------------------
+#
+# submit_prop.sh copies DENS_CUBE.DAT, POT_CUBE.DAT and SPIN_CUBE.DAT back as
+# <stem>_DENS.CUBE, <stem>_POT.CUBE and <stem>_SPIN.CUBE next to <stem>.out.
+CUBE_SUFFIXES = ('_DENS.CUBE', '_POT.CUBE', '_SPIN.CUBE')
+_CUBE_RAW_NAMES = {'_DENS.CUBE': 'DENS_CUBE.DAT', '_POT.CUBE': 'POT_CUBE.DAT',
+                   '_SPIN.CUBE': 'SPIN_CUBE.DAT'}
+
+
+def empty_cube_reason(path: Union[str, Path]) -> Union[str, None]:
+    """Why the ECH3/POT3 run of ``path`` (its .out) is not complete, or None.
+
+    CRYSTAL can end a properties run normally with an empty cube: from a
+    two-component molecule's fort.9, ECH3 exited 0 and wrote a 0-byte
+    DENS_CUBE.DAT (measured on HPCC). A finished .out is not enough when a
+    cube copied back next to it is empty.
+    """
+    path = Path(path)
+    stem = path.stem
+    empty = []
+    for suffix in CUBE_SUFFIXES:
+        cube = path.parent / (stem + suffix)
+        try:
+            if cube.is_file() and cube.stat().st_size == 0:
+                empty.append(suffix)
+        except OSError:
+            continue
+    if not empty:
+        return None
+    names = ', '.join(stem + s for s in empty)
+    raw = ', '.join(_CUBE_RAW_NAMES[s] for s in empty)
+    return (f"empty cube file: {names} is 0 bytes (CRYSTAL ended normally but wrote an "
+            f"empty {raw}; measured for ECH3 from a two-component molecule)")
+
+
+def set_orbitals_root(d3_text: str, stem: str) -> str:
+    """``d3_text`` with the ORBITALS root record set to ``orbitals_root(stem)``.
+
+    For a deck renamed to ``<stem>.d3``: the job script copies back
+    ``<stem>_orb*.molden``, so the root has to follow the deck's name. A deck
+    without ORBITALS is returned unchanged.
+    """
+    lines = d3_text.split('\n')
+    for i, line in enumerate(lines[:-1]):
+        if line.strip().upper() == 'ORBITALS':
+            lines[i + 1] = orbitals_root(stem)
+    return '\n'.join(lines)
+
+
 def is_band_output(content: str) -> bool:
     """True when a properties .out is from a BAND (band structure) run."""
     return _BAND_OUTPUT_LINE.search(content) is not None
@@ -214,3 +364,143 @@ def is_doss_output(content: str) -> bool:
 def is_charge_potential_output(content: str) -> bool:
     """True when a properties .out is from an ECH3/POT3 (or ECHG/POTC) run."""
     return _CHARGE_POTENTIAL_OUTPUT_LINE.search(content) is not None
+
+
+# --- Two-component (spin-orbit) runs -------------------------------------------
+#
+# A two-component SCF is not a calculation type of its own: CRYSTAL23 runs it
+# as a single point (no optimization or frequency run in 2c, manual p. 166),
+# so it is a flag beside the type.
+#
+# A deck asks for it with a TWOCOMPON block in its SCF input, closed by END
+# (manual sec. 6.2, p. 170; the p. 172 examples close it with ENDTWO), and for
+# spin-orbit coupling with SOC inside that block (p. 175).
+#
+# In the .out, a 2c-SCF prints its density per cycle as a particle-number
+# density and three magnetization components, and, when the Fermi level is
+# searched, the occupied spinors:
+#     TOTAL X-COMP MAGNETIZATION    0.00000001
+#     TOTAL Y-COMP MAGNETIZATION   -0.00000001
+#     TOTAL Z-COMP MAGNETIZATION    0.00000000
+#     - NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -    12 /     70
+# (fcc Au 2c-SCF with SOC, stock CRYSTAL23 1.0.1 on HPCC). A 1c run prints
+# "TOTAL ATOMIC CHARGES" (and "TOTAL ATOMIC SPINS") there instead, and has
+# spin-orbitals, not spinors. Only lines CRYSTAL prints are matched, each at
+# the start of a line, never the echoed title. Whether a 2c run WITHOUT SOC
+# prints the same lines was not checked (only SOC runs were read).
+_TWO_COMPONENT_OUTPUT_LINE = re.compile(
+    r'^[ \t]*(?:'
+    r'TOTAL [XY]-COMP MAGNETIZATION[ \t]'
+    r'|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t]'
+    r')',
+    re.MULTILINE,
+)
+
+
+def is_two_component_output(content: str) -> bool:
+    """True when a CRYSTAL .out is from a two-component (TWOCOMPON) SCF."""
+    return _TWO_COMPONENT_OUTPUT_LINE.search(content) is not None
+
+
+def two_component_block(content: str) -> Union[Set[str], None]:
+    """The records inside a .d12 deck's TWOCOMPON block (upper case), or None
+    when the deck has no such block. Line 1, the title, is never a record."""
+    records = None
+    for line in content.splitlines()[1:]:
+        record = line.strip().upper()
+        if records is None:
+            if record == 'TWOCOMPON':
+                records = set()
+            continue
+        if record in ('END', 'ENDTWO'):
+            return records
+        records.add(record)
+    return records
+
+
+def is_two_component_deck(content: str) -> bool:
+    """True when a .d12 deck asks for a two-component SCF (TWOCOMPON)."""
+    return two_component_block(content) is not None
+
+
+# Printed while the input is read, before the SCF: "INFORMATION **** TWOCOMPON
+# **** TWO-COMPONENT SCF: SYMMETRY DISABLED" (CRYSTAL23 on HPCC, HI and PbTe).
+_TWO_COMPONENT_INFO_LINE = re.compile(r'^[ \t]*INFORMATION \*+[ \t]*TWOCOMPON[ \t]*\*+')
+
+
+def is_two_component_run(path: Union[str, Path]) -> bool:
+    """Whether the run of ``path`` (a .out, or a .d12) is a two-component SCF.
+
+    A .out: the TWOCOMPON information line or the lines a 2c-SCF prints
+    (is_two_component_output), read up to the end of its first SCF only;
+    else the .d12 of the same name beside it, when it has a TWOCOMPON block.
+    """
+    path = Path(path)
+    if path.suffix.lower() == '.d12':
+        try:
+            return is_two_component_deck(path.read_text(errors='replace'))
+        except OSError:
+            return False
+    try:
+        with open(path, 'r', errors='replace') as fh:
+            for line in fh:
+                if _TWO_COMPONENT_INFO_LINE.match(line) or _TWO_COMPONENT_OUTPUT_LINE.match(line):
+                    return True
+                if '== SCF ENDED' in line:
+                    break
+    except OSError:
+        pass
+    deck = path.with_suffix('.d12')
+    try:
+        return deck.is_file() and is_two_component_deck(deck.read_text(errors='replace'))
+    except OSError:
+        return False
+
+
+def is_spin_orbit_deck(content: str) -> bool:
+    """True when a .d12 deck asks for a 2c-SCF with spin-orbit coupling (SOC
+    inside its TWOCOMPON block)."""
+    return 'SOC' in (two_component_block(content) or ())
+
+
+# The two-component restarts (manual p. 173), records of the TWOCOMPON block:
+# GUESSPSO starts from the density matrix of a previous 2c-SCF, GUESSPNOSO
+# from that of a previous 1c-SCF (unrestricted, without symmetry). Both read
+# fort.20; CRYSTAL stops on GUESSPSO with nothing there (measured on HPCC).
+# What CRYSTAL does on GUESSPNOSO with nothing there was not measured.
+TWO_COMPONENT_GUESSES = ('GUESSPSO', 'GUESSPNOSO')
+
+
+def missing_2c_matrix_note(record: str) -> str:
+    """What happens to a GUESSPSO or GUESSPNOSO deck run with nothing in
+    fort.20, worded for that record: only GUESSPSO was measured."""
+    if record.upper() == 'GUESSPSO':
+        return "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+    return (f"{record.upper()} would have no 1c parent matrix in fort.20 to start from "
+            f"(what CRYSTAL then does was not measured)")
+
+
+def two_component_guess(content: str) -> Union[str, None]:
+    """'GUESSPSO' or 'GUESSPNOSO' when a .d12 deck's TWOCOMPON block asks for
+    that restart, or None."""
+    block = two_component_block(content) or ()
+    for record in TWO_COMPONENT_GUESSES:
+        if record in block:
+            return record
+    return None
+
+
+def staged_2c_guess(deck_path: Union[str, Path]):
+    """(restart record, path of the .f20 it needs) for a deck asking for a
+    two-component restart, or None. The .f20 is ``<deck stem>.f20`` next to
+    the deck: the file submitcrystal23.sh stages as fort.20 for job
+    ``<deck stem>``."""
+    deck_path = Path(deck_path)
+    try:
+        content = deck_path.read_text(errors='replace')
+    except OSError:
+        return None
+    record = two_component_guess(content)
+    if record is None:
+        return None
+    return record, deck_path.with_suffix('.f20')

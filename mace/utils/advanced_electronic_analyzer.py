@@ -58,8 +58,8 @@ class AdvancedElectronicAnalyzer:
                 from mace.utils.dat_file_processor import DatFileProcessor
             except ImportError:
                 from dat_file_processor import DatFileProcessor
-            with open(doss_file, 'r') as fh:
-                dat = DatFileProcessor()._parse_doss_dat_content(fh.read())
+            from mace.utils.dat_text import read_text
+            dat = DatFileProcessor()._parse_doss_dat_content(read_text(doss_file))
         except FileNotFoundError:
             print(f"Warning: DOSS file not found: {doss_file}")
             return np.array([]), np.array([])
@@ -101,14 +101,31 @@ class AdvancedElectronicAnalyzer:
         k_points = []
         all_energies = []
         nkpt = nspin = 0
+        panel_ends = []
+        self._band_layout = None
         
         try:
-            with open(band_file, 'r') as fh:
+            import io
+            from mace.utils.dat_text import read_text
+            # one read of the file per extraction (dat_text)
+            with io.StringIO(read_text(band_file)) as fh:
                 nbnd = 0
+                npanel = 0
                 pending = []
                 for line in fh:
                     if line.startswith('#'):
                         tok = line.lstrip('#').split()
+                        # '# NPANEL n' is followed by the n+1 segment ends
+                        # (1-based k index and label)
+                        if 'NPANEL' in tok and not panel_ends:
+                            try:
+                                npanel = int(tok[tok.index('NPANEL') + 1])
+                            except (ValueError, IndexError):
+                                npanel = 0
+                            continue
+                        if npanel and len(panel_ends) < npanel + 1 and tok and tok[0].isdigit():
+                            panel_ends.append(int(tok[0]))
+                            continue
                         if 'NBND' in tok:
                             try:
                                 nbnd = int(tok[tok.index('NBND') + 1])
@@ -166,6 +183,10 @@ class AdvancedElectronicAnalyzer:
                     Ev_max = max(Ev_max, float(block[:, occupied].max()))
                 if (~occupied).any():
                     Ec_min = min(Ec_min, float(block[:, ~occupied].min()))
+            # where the spin blocks and path segments are, for the
+            # effective-mass fit (calculate_effective_mass)
+            self._band_layout = {'nkpt': nkpt, 'nspin': nspin, 'panel_ends': panel_ends,
+                                 'nrows': len(arr)}
             
         return Ev_max, Ec_min, np.array(k_points), np.array(all_energies)
     
@@ -211,12 +232,10 @@ class AdvancedElectronicAnalyzer:
         if have_band:
             gap = max(Ec_min - Ev_max, 0.0)  # bands overlapping E_F: none
             gap_source = "band_structure"
-            if gap > 0.001:  # 0.001 Ha ≈ 0.027 eV threshold for clear gap
-                if gap > 0.15:  # 0.15 Ha ≈ 4.0 eV
-                    classification = "insulator"
-                else:
-                    classification = "semiconductor"
-            elif have_dos:
+            # the database's one scheme (property_keys.classify_gap)
+            from mace.utils.property_keys import classify_gap
+            classification = classify_gap(gap * self.ha_to_ev)
+            if classification == "metal" and have_dos:
                 # metal vs semimetal needs the DOS at E_F
                 classification = "metal" if g_Ef > g_crit else "semimetal"
         
@@ -290,69 +309,104 @@ class AdvancedElectronicAnalyzer:
                 'calculation_method': 'calculation_failed'
             }
     
+    # k half-width of the effective-mass fit window (bohr^-1)
+    MASS_FIT_HALF_WIDTH = 0.05
+    # bands within this of the edge energy at its k are degenerate (Ha;
+    # BAND.DAT prints energies to 1e-5)
+    MASS_DEGENERACY_TOL = 2e-5
+
+    def _band_blocks_and_segments(self, n_rows: int):
+        """Row ranges of the spin blocks and, inside a block, the path
+        segments (inclusive 0-based ends; neighboring segments share their
+        end point) as read from the BAND.DAT header; one block / one segment
+        when the header does not describe ``n_rows`` rows."""
+        layout = getattr(self, '_band_layout', None) or {}
+        nkpt, nspin = layout.get('nkpt') or 0, layout.get('nspin') or 1
+        if layout.get('nrows') != n_rows or not nkpt or nkpt * max(nspin, 1) != n_rows:
+            return [(0, n_rows)], [(0, n_rows - 1)]
+        blocks = [(i * nkpt, (i + 1) * nkpt) for i in range(max(nspin, 1))]
+        ends = [e - 1 for e in layout.get('panel_ends') or [] if 1 <= e <= nkpt]
+        ends = sorted(set([0] + ends + [nkpt - 1]))
+        segments = list(zip(ends, ends[1:])) or [(0, nkpt - 1)]
+        return blocks, segments
+
+    def _fit_curvature(self, k: np.ndarray, E: np.ndarray, i: int, lo: int, hi: int):
+        """d2E/dk2 at k[i] from a least-squares quadratic over the points of
+        segment [lo, hi] within MASS_FIT_HALF_WIDTH of k[i]. With points on
+        both sides a free quadratic is fitted; at a segment end the one-sided
+        form E = E0 + a (k - k0)^2 with k0 = k[i]."""
+        idx = np.arange(lo, hi + 1)
+        dk = k[idx] - k[i]
+        near = idx[np.abs(dk) <= self.MASS_FIT_HALF_WIDTH + 1e-12]
+        left, right = near[near < i], near[near > i]
+        # a coarse path: at least the two nearest points each available side
+        if len(left) < 2:
+            left = idx[idx < i][-2:]
+        if len(right) < 2:
+            right = idx[idx > i][:2]
+        pts = np.concatenate([left, [i], right])
+        x = k[pts] - k[i]
+        y = E[pts]
+        if len(left) and len(right):
+            if len(pts) < 3:
+                return None
+            return 2.0 * float(np.polyfit(x, y, 2)[0])
+        if len(pts) < 2:
+            return None
+        A = np.column_stack([np.ones_like(x), x * x])
+        coef = np.linalg.lstsq(A, y, rcond=None)[0]
+        return 2.0 * float(coef[1])
+
     def _calculate_band_curvature(self, k_points: np.ndarray, energies: np.ndarray, 
                                 target_energy: float, carrier_type: str) -> Optional[float]:
         """
-        Calculate effective mass from band curvature using finite differences.
-        
-        m* = ℏ² / (d²E/dk²)
+        Effective mass at the band edge from a least-squares fit of the band.
+
+        m* = hbar^2 / (d2E/dk2); in atomic units (E in Ha, k in bohr^-1)
+        m* = 1 / |d2E/dk2| in units of m_e. The edge is located in the first
+        spin block holding it; the fit stays inside that block and inside the
+        path segment(s) the extremum lies on (an extremum on a segment end,
+        e.g. Gamma at a kink, is fitted one-sided on each neighboring
+        segment and the curvatures averaged). Of degenerate bands at the
+        edge, the one staying nearest the gap (the flattest, e.g. the heavy
+        hole) is taken.
         """
         try:
-            # Find the band and k-points closest to target energy
-            min_diff = np.inf
-            best_band_idx = 0
-            best_k_range = None
-            
-            for band_idx in range(energies.shape[1]):
-                band_energies = energies[:, band_idx]
-                
-                # Find k-points near the target energy
-                energy_diffs = np.abs(band_energies - target_energy)
-                closest_k = np.argmin(energy_diffs)
-                
-                if energy_diffs[closest_k] < min_diff:
-                    min_diff = energy_diffs[closest_k]
-                    best_band_idx = band_idx
-                    
-                    # Find a range of k-points around the minimum/maximum
-                    k_start = max(0, closest_k - 5)
-                    k_end = min(len(k_points), closest_k + 6)
-                    best_k_range = (k_start, k_end)
-            
-            if best_k_range is None or min_diff > 0.01:  # Energy difference > 0.27 eV
+            k_points = np.asarray(k_points, float)
+            energies = np.asarray(energies, float)
+            if energies.ndim != 2 or len(k_points) != energies.shape[0]:
                 return None
-            
-            # Extract the relevant k-points and energies
-            k_start, k_end = best_k_range
-            k_local = k_points[k_start:k_end]
-            E_local = energies[k_start:k_end, best_band_idx]
-            
-            if len(k_local) < 5:  # Need at least 5 points for good curvature
-                return None
-            
-            # Calculate second derivative using central differences
-            # d²E/dk² ≈ (E[i+1] - 2*E[i] + E[i-1]) / (Δk)²
-            dk = np.diff(k_local).mean()  # Average k-spacing
-            
-            if dk <= 0:
-                return None
-            
-            # Calculate curvature at the center point
-            center_idx = len(E_local) // 2
-            if center_idx >= 1 and center_idx < len(E_local) - 1:
-                d2E_dk2 = (E_local[center_idx + 1] - 2*E_local[center_idx] + E_local[center_idx - 1]) / (dk**2)
-            else:
-                return None
-            
-            # Effective mass: m* = ℏ² / |d²E/dk²|
-            # In atomic units: ℏ = 1, so m* = 1 / |d²E/dk²|
-            if abs(d2E_dk2) > 1e-10:  # Avoid division by zero
-                effective_mass = 1.0 / abs(d2E_dk2)
-                
+            blocks, segments = self._band_blocks_and_segments(len(k_points))
+            for b0, b1 in blocks:
+                block = energies[b0:b1]
+                kk = k_points[b0:b1]
+                diff = np.abs(block - target_energy)
+                i, band = np.unravel_index(np.argmin(diff), diff.shape)
+                # the edge energy comes from these arrays: the block holding it
+                # matches exactly (0.01 Ha took a block whose own edge is up to
+                # 0.27 eV away, e.g. the other spin of a magnet)
+                if diff[i, band] > 1e-6:
+                    continue
+                degenerate = np.flatnonzero(
+                    np.abs(block[i] - block[i, band]) <= self.MASS_DEGENERACY_TOL)
+                on = [(lo, hi) for lo, hi in segments if lo <= i <= hi]
+                masses = []
+                for bnd in degenerate:
+                    curv = [self._fit_curvature(kk, block[:, bnd], i, lo, hi) for lo, hi in on]
+                    curv = [c for c in curv if c is not None]
+                    if not curv:
+                        continue
+                    c = float(np.mean(curv))
+                    if abs(c) > 1e-10:
+                        masses.append(1.0 / abs(c))
+                if not masses:
+                    return None
+                # the flattest of the degenerate bands is the edge band
+                effective_mass = max(masses)
                 # Sanity check: effective mass should be reasonable (0.01 to 10 m_e)
                 if 0.01 <= effective_mass <= 10.0:
                     return effective_mass
-            
+                return None
             return None
             
         except Exception as e:
@@ -454,8 +508,22 @@ class AdvancedElectronicAnalyzer:
         classification_results = self.classify_electronic_behavior(E, g, Ev_max, Ec_min)
         results.update(classification_results)
         
-        # Effective mass calculation
-        effective_mass_results = self.calculate_effective_mass(k_points, energies, Ev_max, Ec_min)
+        # Effective mass calculation: only across a band gap. For a metal or
+        # semimetal (bands crossing E_F: CBM at or below the VBM, or no gap by
+        # the classification) a band-edge curvature means nothing, and it fed
+        # the Drude mobilities (Fe stored a hole mass of 7.18).
+        gapped = (classification_results.get('electronic_classification')
+                  in ('semiconductor', 'insulator')
+                  and Ev_max != -np.inf and Ec_min != np.inf and Ec_min > Ev_max)
+        if gapped:
+            effective_mass_results = self.calculate_effective_mass(k_points, energies, Ev_max, Ec_min)
+        else:
+            effective_mass_results = {
+                'electron_effective_mass': None,
+                'hole_effective_mass': None,
+                'average_effective_mass': None,
+                'calculation_method': 'not_applicable_no_band_gap',
+            }
         results.update(effective_mass_results)
         
         # Transport properties

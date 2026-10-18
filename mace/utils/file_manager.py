@@ -262,7 +262,7 @@ class CrystalFileManager:
         name = file_path.stem
         
         # Remove common calculation type suffixes
-        for suffix in ['_opt', '_sp', '_band', '_doss', '_freq', '_transport']:
+        for suffix in ['_opt', '_sp', '_band', '_doss', '_freq', '_transport', '_orbitals']:
             name = name.replace(suffix, '')
             
         # Remove common functional suffixes  

@@ -102,6 +102,8 @@ def classify(text: Union[str, Iterable[str]],
              classes: Iterable[ErrorClass] = ERROR_CLASSES) -> Optional[Match]:
     """The highest-priority class with a line in ``text`` (a string or its
     lines), with the pattern and the first line it matched; None if none."""
+    if isinstance(text, str) and text.isascii():
+        return _classify_ascii(text, classes)
     lines = text.splitlines() if isinstance(text, str) else list(text)
     lowered = [l.lower() for l in lines]
     for cls in classes:
@@ -109,6 +111,30 @@ def classify(text: Union[str, Iterable[str]],
             p = pattern.lower()
             for raw, low in zip(lines, lowered):
                 if p in low:
+                    return Match(cls, pattern, raw.strip())
+    return None
+
+
+# What str.splitlines splits an ASCII text at.
+_ASCII_BREAKS = frozenset('\n\r\x0b\x0c\x1c\x1d\x1e')
+
+
+def _classify_ascii(text: str, classes: Iterable[ErrorClass]) -> Optional[Match]:
+    """classify for an ASCII string, without lowering it line by line: ASCII
+    lower-casing is per character, so a pattern holding no line break is in
+    some lowered line exactly when it is in the lowered text. Only a pattern
+    that is there (or holds a break) is looked for line by line, as before."""
+    low = text.lower()
+    lines = None
+    for cls in classes:
+        for pattern in cls.patterns:
+            p = pattern.lower()
+            if p not in low and _ASCII_BREAKS.isdisjoint(p):
+                continue
+            if lines is None:
+                lines = text.splitlines()
+            for raw in lines:
+                if p in raw.lower():
                     return Match(cls, pattern, raw.strip())
     return None
 

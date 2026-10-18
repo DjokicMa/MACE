@@ -59,7 +59,7 @@ from d12_constants import (
     # Utility functions
     yes_no_prompt, get_valid_input, safe_float, safe_int,
     generate_unit_cell_line, read_basis_file, generate_k_points, slab_k_points,
-    check_basis_set_compatibility, hf3c_metal_warning,
+    check_basis_set_compatibility, hf3c_metal_warning, basis_family_name,
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
@@ -89,6 +89,9 @@ from charge_records import (ChargeCarryError, carry_charge_records, charge_from_
                             origin_shift_record)
 from basis_file_check import BasisFileError
 import basis_library
+from soc_ecp import (SocDeckBuffer, SocError, checked_smear, metal_parent_warning,
+                     parent_metal_evidence, is_spin_orbit_deck)
+import soc_ecp
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -188,6 +191,92 @@ def stdin_is_terminal() -> bool:
         return False
 
 
+# --non-interactive reads answers that are on stdin already (the workflow
+# engine pipes them in) and waits this long for each one before it takes the
+# answers as finished.
+PIPED_ANSWER_WAIT_S = 5.0
+
+
+class _PipedAnswers:
+    """A stand-in for sys.stdin that never waits for an answer for long.
+
+    readline() returns end of input ("") once nothing has arrived for
+    ``wait`` seconds, so a pipe left open with nothing on it ends the
+    answers as a closed one does. It reads the file descriptor itself
+    (unbuffered) so that answers already read never sit in a buffer that
+    select() cannot see.
+    """
+
+    def __init__(self, real, wait):
+        self._real = real
+        self._fd = real.fileno()
+        self._wait = wait
+        self._buf = b""
+        self._ended = False
+        self.encoding = getattr(real, "encoding", None) or "utf-8"
+
+    def _fill(self):
+        import select
+        while b"\n" not in self._buf and not self._ended:
+            ready, _, _ = select.select([self._fd], [], [], self._wait)
+            chunk = os.read(self._fd, 65536) if ready else b""
+            if not chunk:
+                self._ended = True
+            self._buf += chunk
+
+    def answers_waiting(self):
+        """True when an answer is there to read (the end of input is none)."""
+        self._fill()
+        return bool(self._buf)
+
+    def readline(self, size=-1):
+        self._fill()
+        line, sep, rest = self._buf.partition(b"\n")
+        self._buf = rest
+        return (line + sep).decode(self.encoding, "replace")
+
+    def isatty(self):
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def piped_answers_or_none(wait=PIPED_ANSWER_WAIT_S):
+    """A reader for the answers on stdin, or None when there are none to read.
+
+    For --non-interactive, which must never ask anyone: a terminal is not
+    read at all, and a pipe with nothing on it within ``wait`` seconds holds
+    no answers. Answers on a pipe or in a file (the workflow engine's) are
+    read as before; end of input is left for the caller's EOFError fallback.
+    """
+    global _PIPED_READER
+    if sys.stdin is None or stdin_is_terminal():
+        return None
+    # One reader for the whole run: with --directory each file takes the
+    # next answers, and a fresh reader would lose those the last one read.
+    reader = _PIPED_READER
+    if reader is None or reader._real is not sys.stdin:
+        try:
+            reader = _PipedAnswers(sys.stdin, wait)
+        except (AttributeError, ValueError, OSError):
+            # no file descriptor (answers in memory, as tests give them):
+            # nothing there can block, so it is read as it is
+            return sys.stdin
+        _PIPED_READER = reader
+    try:
+        waiting = reader.answers_waiting()
+    except (OSError, ValueError):
+        # select() cannot watch this stdin (not a pipe or file on this
+        # platform): read it as before.
+        _PIPED_READER = None
+        return sys.stdin
+    return reader if waiting else None
+
+
+_PIPED_READER = None
+
+
 # An optimization CRYSTAL never finished (killed, out of time, out of memory)
 # has no "OPT END" line; its .out still parses, but only the starting geometry
 # is there to convert.
@@ -206,6 +295,196 @@ except Exception:  # standalone run without mace importable
         return bool(re.search(r"^[ \t]*(?:\*[ \t]+OPTIMIZATION STARTS"
                               r"|[A-Z]+(?: [A-Z]+)* OPTIMIZATION - POINT[ \t]+\d)",
                               content, re.MULTILINE))
+
+
+# A SOC deck written without SMEAR from a parent whose .out looks metallic,
+# where nobody could be asked for a SMEAR width (soc_ecp, "SMEAR for metals").
+SOC_METAL_NOTE = ('SOC deck without SMEAR from a parent that looks metallic; it may '
+                  'abort as fcc Au did at SHRINK 10 10 ("smear": <hartree> in the '
+                  'template adds SMEAR)')
+
+
+def soc_parent_metal(out_file):
+    """Why the .out a SOC deck is made from looks metallic, or None
+    (soc_ecp.parent_metal_evidence). None too for a deck made from a deck
+    (opt2d12 --d12-file, no .out): there is no run to read."""
+    if not out_file:
+        return None
+    try:
+        with open(out_file, errors="replace") as f:
+            return parent_metal_evidence(f.read())
+    except OSError:
+        return None
+
+
+def ask_for_soc_smear(deck, evidence, ask=None):
+    """Before a SOC deck without SMEAR from a metallic-looking parent is
+    written: warn, then ask for a SMEAR width (Enter keeps the deck without
+    SMEAR) when someone can answer, else note it for the run's summary. The
+    deck is never given SMEAR without an answer or a "smear" setting."""
+    ui.warn(metal_parent_warning(evidence))
+    if ask is None:
+        ask = stdin_is_terminal()
+    if ask:
+        while True:
+            try:
+                answer = input("SMEAR width in hartree for this SOC deck, e.g. 0.005 "
+                               "(Enter = no SMEAR): ").strip()
+            except EOFError:
+                break
+            if not answer:
+                ui.info("  No SMEAR: the deck is written without it.")
+                return
+            try:
+                deck.set_smear(checked_smear(answer))
+                return
+            except SocError as exc:
+                ui.warn(f"  {exc}")
+    LAST_RESULT["notes"].append(SOC_METAL_NOTE)
+
+
+def print_soc_metal_summary(names):
+    """The closing lines for SOC decks noted with SOC_METAL_NOTE, if any."""
+    if names:
+        ui.warn("SOC decks written without SMEAR from a parent that looks metallic - "
+                "they may abort as fcc Au did at SHRINK 10 10; set \"smear\": <width "
+                "in hartree> in the template, or use a denser mesh:")
+        for name in names:
+            ui.warn(f"  {name}")
+
+
+# A "soc_guess" restart with nothing staged: CRYSTAL stops on GUESSPSO with
+# nothing in fort.20 (measured on HPCC), and GUESSPNOSO would have no parent
+# matrix to start from, so such a deck is never written.
+try:
+    from mace.utils.calc_detection import missing_2c_matrix_note
+except Exception:  # standalone run without mace importable
+    def missing_2c_matrix_note(record: str) -> str:
+        if record.upper() == "GUESSPSO":
+            return "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+        return (f"{record.upper()} would have no 1c parent matrix in fort.20 to start from "
+                f"(what CRYSTAL then does was not measured)")
+
+
+def soc_restart_plan(options, output_file, input_file, new_filename):
+    """For a deck asking for a 2c restart ("soc_guess", manual p. 173):
+    (problem, parent .f9, child .f20, parent deck text). problem is None when
+    the restart may be written; the frame and shell comparison with the deck
+    as written comes later (SocDeckBuffer). Nothing is written here."""
+    try:
+        guess = soc_ecp._checked_guess(options.get("soc_guess"))
+    except SocError as exc:
+        return str(exc), None, None, None
+    record = guess.upper()
+    if not options.get("soc"):
+        return (f"soc_guess ({record}) is a restart of a two-component SOC deck, and this "
+                f"deck is scalar; set \"soc\": true"), None, None, None
+    if not output_file:
+        return (f"{record} restarts from the density matrix (.f9) of the parent's run, which "
+                f"a deck does not have: set it up from the run's .out"), None, None, None
+    if not (input_file and os.path.exists(input_file)):
+        return (f"{record} needs the parent deck (.d12) to check that its density matrix "
+                f"fits this deck"), None, None, None
+    with open(input_file, errors="replace") as fh:
+        parent = fh.read()
+    if guess == "guesspso":
+        if not options.get("two_component"):
+            return (f"GUESSPSO restarts from the density matrix of a previous two-component "
+                    f"SCF (manual p. 173), and the parent is a one-component run; "
+                    f"\"guesspnoso\" starts from an unrestricted 1c run without symmetry"), \
+                None, None, None
+        ui.info("  GUESSPSO: the parent is a two-component run "
+                + ("with SOC" if is_spin_orbit_deck(parent) else
+                   "without SOC (a 2c reference run; manual p. 173 asks only for a "
+                   "previous 2c-SCF)"))
+    else:
+        problem = guesspnoso_parent_problem(options, parent, output_file)
+        if problem:
+            return problem, None, None, None
+    f9 = os.path.splitext(output_file)[0] + ".f9"
+    if not os.path.isfile(f9) or os.path.getsize(f9) == 0:
+        return (f"{record} restarts from the parent's density matrix, and "
+                f"{os.path.basename(f9)} next to {os.path.basename(output_file)} is "
+                f"{'empty' if os.path.isfile(f9) else 'missing'}; "
+                f"{missing_2c_matrix_note(record)}"), \
+            None, None, None
+    f20 = os.path.splitext(new_filename)[0] + ".f20"
+    if (os.path.realpath(os.path.dirname(os.path.abspath(f20)))
+            == os.path.realpath(os.path.dirname(os.path.abspath(f9)))
+            and os.path.splitext(os.path.basename(f20))[0]
+            == os.path.splitext(os.path.basename(f9))[0]):
+        return (f"the deck would have the parent's own name in the parent's directory, so "
+                f"its job would overwrite the parent's {os.path.basename(f9)}; write it "
+                f"elsewhere (--output-dir)"), None, None, None
+    if os.path.exists(f20):
+        import filecmp
+        if not filecmp.cmp(f20, f9, shallow=False):
+            return (f"{os.path.basename(f20)} already exists and is not "
+                    f"{os.path.basename(f9)}; not overwriting it"), None, None, None
+    return None, f9, f20, parent
+
+
+# What CRYSTAL does with a GUESSPNOSO deck whose 1c parent does not fit:
+# it aborts at once in READFG (measured on CRYSTAL23, Bi2 bilayer), never
+# runs on from a wrong matrix.
+READFG_SYMMETRY = "ERROR **** READFG **** RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY"
+READFG_SHELLS = ("ERROR **** READFG **** RESTART NOT POSSIBLE - OPEN-CLOSED SHELL "
+                 "INCOMPATIBILITY")
+
+_SYMMETRY_OPERATORS = re.compile(r"^[ \t]*NUMBER OF SYMMETRY OPERATORS[ \t]*:[ \t]*(\d+)",
+                                 re.MULTILINE)
+GUESSPNOSO_HOWTO = (
+    "Rerun the parent as an unrestricted 1c-SCF (UHF, manual p. 131, or SPIN in the "
+    "DFT block, p. 140) without symmetry (space group 1, or SYMMREMO in its geometry "
+    "block, p. 78), then make this deck from it; from a SOC deck that is the deck "
+    "without its TWOCOMPON block, with SYMMREMO and SPIN added and its INPSOC basis "
+    "kept (Crystal_d12/README.md). For the SOC energy from a scalar "
+    "matrix in one cycle the manual offers 2NDVARIAT (p. 174), which MACE does not write.")
+
+
+def guesspnoso_parent_problem(options, parent, output_file):
+    """Why a parent cannot start a GUESSPNOSO deck, or None. GUESSP[NOSO]
+    needs a previous 1c-SCF that was unrestricted (UHF, p. 131, or SPIN,
+    p. 140) and ran without space-group or point-group symmetry (SYMMREMO,
+    p. 78) - manual p. 173. Read from the parent deck, with the parent .out
+    as the fallback for each."""
+    records = {ln.strip().upper() for ln in parent.splitlines()[1:]}
+    try:
+        with open(output_file, errors="replace") as fh:
+            out = fh.read()
+    except OSError:
+        out = ""
+    if options.get("two_component") or "TWOCOMPON" in records:
+        return ("GUESSPNOSO starts from a previous one-component SCF (manual p. 173), and "
+                "the parent is a two-component run; \"guesspso\" restarts from it")
+    problems, crystal_says = [], []
+    unrestricted = ("UHF" in records or "SPIN" in records
+                    or bool(re.search(r"SPIN POLARIZED|TYPE OF CALCULATION.*UNRESTRICTED", out)))
+    if not unrestricted:
+        problems.append("the parent is restricted (no UHF, p. 131, or SPIN, p. 140)")
+        crystal_says.append(READFG_SHELLS)
+    frame = soc_ecp.geometry_frame(parent)
+    group_one = frame is not None and frame[1] and \
+        frame[1][1 if frame[0] == "CRYSTAL" else 0] == (repr(1.0),)
+    operators = _SYMMETRY_OPERATORS.findall(out)
+    if "SYMMREMO" in records:
+        if not group_one:
+            ui.warn("  Warning: GUESSPNOSO from a SYMMREMO parent with a space group other "
+                    "than 1: whether the child's expanded atom list is in the order of the "
+                    "parent's matrix was measured only for a Bi2 bilayer (layer group 72, "
+                    "where it was); CRYSTAL does not check it")
+    elif not group_one and not (operators and operators[-1] == "1"):
+        problems.append("the parent ran with symmetry (its group is not 1 and it has no "
+                        "SYMMREMO, p. 78)")
+        crystal_says.append(READFG_SYMMETRY)
+    if problems:
+        return ("GUESSPNOSO needs an unrestricted 1c-SCF run without symmetry (manual "
+                "p. 173), and " + "; ".join(problems) + ". CRYSTAL would abort at once with "
+                + " or ".join(f'"{words}"' for words in crystal_says)
+                + " (measured on CRYSTAL23). " + GUESSPNOSO_HOWTO)
+    ui.info("  GUESSPNOSO: the parent is an unrestricted one-component run without "
+            "symmetry")
+    return None
 
 
 def optimization_problem(out_file):
@@ -244,6 +523,9 @@ TEMPLATE_STRUCTURE_DATA_KEYS = (
     "primitive_coordinates", "crystallographic_coordinates",
     "optimization_content", "symmetry_operations",
     "external_basis_data", "external_basis_info",
+    # Whether this structure's parent was a two-component run (its "soc",
+    # the setting, is kept).
+    "two_component",
 )
 
 
@@ -275,8 +557,10 @@ def options_for_template(options) -> dict:
     reason; one mesh for every file is set by writing
     "k_points_for_all_files" into the config by hand.
     """
-    return {k: v for k, v in options.items()
-            if k not in TEMPLATE_STRUCTURE_DATA_KEYS and k != "k_points"}
+    from basis_library import portable_options
+    # a bundled basis library is stored by name, not by this checkout's path
+    return portable_options({k: v for k, v in options.items()
+                             if k not in TEMPLATE_STRUCTURE_DATA_KEYS and k != "k_points"})
 
 
 # The config key that sets one k-point mesh for every file. A config's plain
@@ -642,8 +926,69 @@ def conventional_atom_number(atom_number, settings) -> int:
 THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C")
 
 
+def _write_library_records(f, basis_dir, atom_numbers):
+    """Write each element's record from an EXTERNAL basis library.
+
+    For ECP elements (Z >= 37) the records are named with a +200 offset. An
+    element the library has no record for raises BasisFileError naming the
+    element and the family: a deck without its basis is one CRYSTAL always
+    rejects, so it is never written (atomic_deck discards the part written).
+
+    Ends the basis input with the "99 0" line CRYSTAL reads it up to, unless
+    the last record already ends with it (a hand-made library file may).
+    """
+    from d12_constants import missing_basis_record
+
+    last = ""
+    for atom_num in sorted(atom_numbers):
+        file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
+        if not basis_library.record_exists(basis_dir, file_num):
+            raise missing_basis_record(basis_dir, atom_num, file_num)
+        last = basis_library.read_record(basis_dir, file_num)
+        if last and not last.endswith("\n"):
+            last += "\n"
+        f.write(last)
+    tail = [line.split() for line in last.splitlines() if line.strip()]
+    if not tail or tail[-1] != ["99", "0"]:
+        f.write("99 0\n")
+
+
+def _library_basis_dir(settings, external_basis_data=None):
+    """The EXTERNAL basis library a deck's records are read from, or None
+    when its records are the parent's own (use_original_external_basis) or it
+    has no external basis. Mirrors the writers' choice of path exactly."""
+    if settings.get("basis_set_type") != "EXTERNAL":
+        return None
+    if settings.get("functional") in THREE_C_FUNCTIONALS:
+        return None  # the 3c methods always write BASISSET
+    if settings.get("use_original_external_basis") and external_basis_data:
+        return None
+    if settings.get("basis_set_path"):
+        return settings["basis_set_path"]
+    legacy_path = settings.get("basis_set")
+    if legacy_path and basis_library.path_exists(legacy_path):
+        return legacy_path
+    return None
+
+
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
-                   parent_k_points=None, ask=None):
+                   parent_k_points=None, ask=None, parent_metal=None, soc_restart_parent=None):
+    """Write new D12 file with optimized geometry and settings (see
+    _write_d12_file). A basis record that is missing, or one CRYSTAL could not
+    read, refuses the deck: nothing is written, the reason is recorded in
+    LAST_RESULT and False is returned."""
+    try:
+        return _write_d12_file(output_file, geometry_data, settings, external_basis_data,
+                               parent_k_points=parent_k_points, ask=ask,
+                               parent_metal=parent_metal,
+                               soc_restart_parent=soc_restart_parent)
+    except BasisFileError as exc:
+        _fail(str(exc), f"Not writing {os.path.basename(output_file)}: {exc}")
+        return False
+
+
+def _write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
+                    parent_k_points=None, ask=None, parent_metal=None, soc_restart_parent=None):
     """Write new D12 file with optimized geometry and settings.
 
     parent_k_points is the raw k-point value parsed from the parent .d12 this
@@ -652,12 +997,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     ``0 ISP / ka kb kc`` mesh). It is deliberately a call argument, not a
     settings key, so it never reaches --save-options JSON.
 
-    ask: whether a basis set that lacks an element may be accepted by asking
-    "continue anyway?" — None asks only at a terminal, False never asks (a
-    batch, --yes, --non-interactive) and fails the deck instead.
+    ask: kept for callers; a basis set that lacks an element is always
+    refused now (CRYSTAL rejects such a deck), so nothing is asked.
 
-    Returns True on success. Returns False when creation is aborted (basis-set
-    incompatibility declined interactively, or hit without asking, or a
+    Returns True on success. Returns False when creation is aborted (a basis
+    set without a record for one of the elements, or a
     phonon dispersion asked of a system it cannot be written for). A
     SLAB/POLYMER whose group record is not a layer/rod group is refused the
     same way, before anything is written. The deck is written beside
@@ -678,7 +1022,32 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             _fail(refusal, f"\nNot writing {os.path.basename(output_file)}: {refusal}")
             return False
 
+    # A parent that was a two-component run (its deck's TWOCOMPON block or its
+    # .out's 2c headers, read by the parsers). Its "soc" carries over to this
+    # deck unless the template says "soc": false; either way the user is told.
+    if settings.get("two_component"):
+        if settings.get("soc"):
+            ui.info("  SOC: the parent is a two-component SOC run, so this deck is one too "
+                    "(\"soc\": false in the template writes a scalar deck)")
+        else:
+            reason = ("the template sets \"soc\": false" if "soc" in settings else
+                      "no SOC could be read from a parent .d12 - none, or no SOC in its "
+                      "TWOCOMPON block; \"soc\": true in the template writes a SOC deck")
+            ui.warn(f"  Warning: the parent is a two-component run, but this deck is "
+                    f"scalar ({reason})")
+            if settings.get("use_original_external_basis") and any(
+                    str(line).strip().upper() in ("INPSOC", "STUTSC")
+                    for line in external_basis_data or []):
+                ui.warn("  Warning: its basis keeps the parent's spin-orbit ECPs (INPSOC "
+                        "or STUTSC); what a one-component SCF does with a SOREP is not "
+                        "in the CRYSTAL23 manual (untested)")
+
     with atomic_deck(output_file) as f:
+        if settings.get("soc"):
+            # Two-component SOC deck: written as usual, then rewritten by
+            # soc_ecp.soc_deck before it reaches the file.
+            f = SocDeckBuffer(f, options=settings, restart_from=soc_restart_parent)
+
         # Title
         # Title from the file NAME only: with --output-dir the path carries a
         # directory, which must not leak into the CRYSTAL title line.
@@ -780,7 +1149,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 atom_num += 200
             # For internal basis sets, do NOT add 200 - they handle ECP internally
 
-            symbol = ATOMIC_NUMBER_TO_SYMBOL.get(original_atom_num, "X")
+            # An EXTERNAL-basis parent keeps conventional numbers (282 = Pb
+            # with an ECP); the element is the number modulo 100.
+            symbol = ATOMIC_NUMBER_TO_SYMBOL.get(
+                original_atom_num % 100 if original_atom_num > 100 else original_atom_num, "X")
             
             # Handle different coordinate systems based on dimensionality
             if dimensionality == "SLAB":
@@ -892,6 +1264,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # Write BASISSET keyword for internal basis sets
             f.write("BASISSET\n")
             f.write(f"{settings['basis_set']}\n")
+            # A spin-polarized parent gives an unrestricted HF-3c run: UHF
+            # (manual p. 131), the open-shell HF that SPIN is in the DFT 3c
+            # methods. The HF-3c block keeps its own END (p. 158-159).
+            if settings.get("spin_polarized"):
+                f.write("UHF\n")
 
             # Add 3C corrections
             if functional == "HF3C":
@@ -927,15 +1304,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
                     # Read basis set files
                     # For ECP elements (Z >= 37), basis files are named with +200 offset
-                    for atom_num in sorted(unique_atoms):
-                        # Determine correct file name (add 200 for ECP elements)
-                        file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                        if basis_library.record_exists(settings["basis_set_path"], file_num):
-                            f.write(basis_library.read_record(settings["basis_set_path"], file_num))
-                        else:
-                            ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
-
-                    f.write("99 0\n")
+                    _write_library_records(f, settings["basis_set_path"], unique_atoms)
                     f.write("END\n")
                 else:
                     # Fallback: basis_set_type is EXTERNAL but no path provided
@@ -947,14 +1316,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             unique_atoms.add(int(atom["atom_number"]))
 
                         # For ECP elements (Z >= 37), basis files are named with +200 offset
-                        for atom_num in sorted(unique_atoms):
-                            file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                            if basis_library.record_exists(legacy_path, file_num):
-                                f.write(basis_library.read_record(legacy_path, file_num))
-                            else:
-                                ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
-
-                        f.write("99 0\n")
+                        _write_library_records(f, legacy_path, unique_atoms)
                         f.write("END\n")
                     else:
                         ui.err("ERROR: External basis set type selected but no valid path provided!")
@@ -1004,17 +1366,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
                     # Read basis set files
                     # For ECP elements (Z >= 37), basis files are named with +200 offset
-                    for atom_num in sorted(unique_atoms):
-                        # Determine correct file name (add 200 for ECP elements)
-                        file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                        if basis_library.record_exists(settings["basis_set_path"], file_num):
-                            f.write(basis_library.read_record(settings["basis_set_path"], file_num))
-                        else:
-                            ui.warn(
-                                f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})"
-                            )
-
-                    f.write("99 0\n")
+                    _write_library_records(f, settings["basis_set_path"], unique_atoms)
                     f.write("END\n")
                 else:
                     # Fallback: basis_set_type is EXTERNAL but no path provided
@@ -1027,14 +1379,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             unique_atoms.add(int(atom["atom_number"]))
 
                         # For ECP elements (Z >= 37), basis files are named with +200 offset
-                        for atom_num in sorted(unique_atoms):
-                            file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                            if basis_library.record_exists(legacy_path, file_num):
-                                f.write(basis_library.read_record(legacy_path, file_num))
-                            else:
-                                ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
-
-                        f.write("99 0\n")
+                        _write_library_records(f, legacy_path, unique_atoms)
                         f.write("END\n")
                     else:
                         ui.err("ERROR: External basis set type selected but no valid path provided!")
@@ -1069,16 +1414,29 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         atomic_numbers = [conventional_atom_number(atom["atom_number"], settings)
                           for atom in coords_to_write]
 
-        # Check basis set compatibility — only meaningful for internal basis
-        # sets; external basis records are carried verbatim from the source
-        # d12, so checking the (default) internal basis against them raised
-        # false alarms for elements like Pb/Ag and killed workflow SP/FREQ
-        # generation with an EOFError at the prompt below. A deck that
-        # switches an external-basis parent to an internal basis is checked
-        # like any other internal-basis deck (by its plain atomic numbers).
-        if settings.get("basis_set_type") == "EXTERNAL":
+        # Check basis set compatibility. External basis records carried
+        # verbatim from the parent (use_original_external_basis) are the
+        # parent's own and are not checked: checking the (default) internal
+        # basis against them raised false alarms for elements like Pb/Ag. A
+        # basis read from an EXTERNAL library path (basis_set_path, or the
+        # legacy path in basis_set) is checked against that library: a family
+        # can lack an element the parent's basis had (full.basis.triplezeta
+        # has no Kr). A deck that switches an external-basis parent to an
+        # internal basis is checked like any other internal-basis deck (by its
+        # plain atomic numbers).
+        library_dir = _library_basis_dir(settings, external_basis_data)
+        if (settings.get("basis_set_type") == "EXTERNAL" and library_dir is None
+                and settings.get("functional") not in THREE_C_FUNCTIONALS):
             is_compatible, missing_elements = True, []
+        elif library_dir is not None:
+            basis_label = basis_family_name(library_dir)
+            is_compatible, missing_elements = check_basis_set_compatibility(
+                library_dir,
+                [z - 200 if z > 200 else z for z in atomic_numbers],
+                "EXTERNAL",
+            )
         else:
+            basis_label = settings.get("basis_set")
             is_compatible, missing_elements = check_basis_set_compatibility(
                 settings.get("basis_set", "POB-TZVP-REV2"),
                 atomic_numbers,
@@ -1086,29 +1444,18 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             )
 
         if not is_compatible:
-            no_basis = (f"basis set '{settings.get('basis_set')}' has no basis for "
-                        + ", ".join(ATOMIC_NUMBER_TO_SYMBOL.get(z, str(z)) for z in missing_elements))
-            ui.warn(
-                f"\nWARNING: The selected basis set '{settings.get('basis_set')}' does not support all elements in your structure!"
-            )
-            ui.warn(
-                f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
-            )
-            if ask is None:
-                ask = stdin_is_terminal()
-            if not ask:
-                # Nobody to ask (a workflow callback, a batch, --yes): fail
-                # cleanly instead of crashing with EOFError at the prompt, or
-                # taking a default answer that writes a deck CRYSTAL rejects.
-                # The deck is partially written at this point — discard it so
-                # the caller can't submit a truncated d12, and signal failure.
-                _fail(no_basis, f"Not writing {os.path.basename(output_file)}: {no_basis}.")
-                f.discard()
-                return False
-            if not yes_no_prompt("\nDo you want to continue anyway?"):
-                _fail(no_basis, "Aborting D12 file creation.")
-                f.discard()
-                return False
+            # CRYSTAL rejects a deck with no basis for one of its elements, so
+            # it is never written: there is no "continue anyway?" (a workflow
+            # callback, a batch or --yes had no one to ask, and a user who
+            # said yes got a deck that could not run). The deck is partially
+            # written at this point - discard it so the caller can't submit a
+            # truncated d12, and signal failure.
+            no_basis = (f"basis set '{basis_label}' has no basis for "
+                        + ", ".join(f"{ATOMIC_NUMBER_TO_SYMBOL.get(z, str(z))} (Z={z})"
+                                    for z in missing_elements))
+            _fail(no_basis, f"Not writing {os.path.basename(output_file)}: {no_basis}.")
+            f.discard()
+            return False
 
         # Prepare k-points with same logic as d12creation.py
         k_points_info = None
@@ -1243,6 +1590,22 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Note: The single END at the very end is written by write_scf_section
 
+        if settings.get("soc"):
+            # A deck the 2c-SCF cannot run (OPT, FREQ, ...) is refused first,
+            # with no SMEAR warning or question for a deck never written.
+            refusal = f.refusal()
+            if refusal:
+                f.discard()
+            else:
+                # A parent that looks metallic (parent_metal: why) and no SMEAR:
+                # warn, and ask for one or note it (ask_for_soc_smear).
+                if parent_metal and not f.will_have_smear():
+                    ask_for_soc_smear(f, parent_metal, ask)
+                refusal = f.finish()
+            if refusal:
+                _fail(refusal, f"Not writing {os.path.basename(output_file)}: {refusal}")
+                return False
+
     return True
 
 
@@ -1308,6 +1671,93 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
     return options
 
 
+# Line-2 geometry kinds whose atoms are not in the deck (CRYSTAL23 manual
+# sec. 2.1: EXTERNAL reads fort.34, DLVINPUT the DLV file) and the one that
+# opt2d12's writer has no records for.
+DECK_GEOMETRY_ELSEWHERE = ("EXTERNAL", "DLVINPUT")
+DECK_KINDS_WRITTEN = ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE")
+
+
+def deck_parent_refusal(deck_file):
+    """Why the deck cannot be its own parent (None when it can).
+
+    A deck is its own parent when its geometry is its records: not one read
+    from another file (EXTERNAL, DLVINPUT), not one that block-1 records
+    then edit (SUPERCEL, ATOMSUBS, SLABCUT, ... - mace.preopt.deckscan's
+    table: the child, written from the records, would lose the edit).
+    GHOSTS is basis-set input and goes with the charge records."""
+    name = os.path.basename(deck_file)
+    stem = os.path.splitext(name)[0]
+    with open(deck_file, errors="replace") as f:
+        text = f.read()
+    lines = text.splitlines()
+    kind = lines[1].strip().split()[0].upper() if len(lines) > 1 and lines[1].strip() else ""
+    run_out = f"set up the new deck from its run's .out (mace opt2d12 --out-file {stem}.out)"
+    if kind in DECK_GEOMETRY_ELSEWHERE:
+        return (f"{name} has no geometry of its own: {kind} reads it from fort.34 when the job runs; "
+                + run_out)
+    if kind not in DECK_KINDS_WRITTEN:
+        return f"{name} is a {kind or 'deck with no'} geometry opt2d12 does not write; " + run_out
+    try:
+        from mace.preopt.deckscan import scan
+        # Only the records after line 2: scan() reports a line-2 kind other
+        # than CRYSTAL as an edit, and lists each keyword once, so filtering
+        # the kinds out of its list also dropped a real MOLECULE edit (the
+        # 3D-to-0D extraction) of a CRYSTAL deck. With line 2 read as CRYSTAL,
+        # every keyword it reports is an edit written after the atoms.
+        after_line2 = "\n".join(lines[:1] + ["CRYSTAL"] + lines[2:])
+        edits = [e for e in scan(after_line2)["geometry_edits"] if e != "GHOSTS"]
+    except ImportError:                     # standalone, without the mace package
+        edits = []
+    if edits:
+        return (f"{name} builds its structure with {', '.join(edits)} after the atoms it lists, so the "
+                "new deck would have the structure before that edit; " + run_out
+                + ", where CRYSTAL printed the structure it built")
+    return None
+
+
+def deck_geometry_data(in_data):
+    """The geometry_data the deck writer takes, from the deck's own records
+    (what CrystalOutputParser gives for an .out): its cell and its atoms as
+    written, in the deck's own group, so the writer prints them back byte for
+    byte (tests/test_deck_round_trip.py). An atom keeps the number it was
+    written with unless its record ends in its element symbol (the writer
+    adds 200 for an ECP element of an EXTERNAL basis itself)."""
+    cp = in_data.get("cell_parameters")
+    cell = None
+    if cp:
+        cell = [cp["a"], cp["b"] if cp["b"] is not None else cp["a"],
+                cp["c"] if cp["c"] is not None else 500.0,
+                cp["alpha"], cp["beta"], 90.0 if cp["gamma"] is None else cp["gamma"]]
+    coords = []
+    for atom, xyz, label in zip(in_data["atoms"], in_data["atom_coordinate_text"],
+                                in_data["atom_labels"]):
+        number = atom["atom_number"] if label in (None, "X") else atom["atomic_number"]
+        x, y, z = xyz
+        coords.append({"atom_number": str(number), "x": x, "y": y, "z": z})
+    group = in_data.get("spacegroup")
+    if in_data.get("dimensionality") in LOW_DIM_GROUPS:
+        group = in_data.get(LOW_DIM_GROUPS[in_data["dimensionality"]][0]) or group
+    return {"conventional_cell": cell, "coordinates": coords, "crystallographic_coordinates": list(coords),
+            "spacegroup": group, "dimensionality": in_data.get("dimensionality", "CRYSTAL"),
+            "origin_setting": in_data.get("origin_setting", "0 0 0"), "optimization_content": ""}
+
+
+def read_deck_parent(deck_file):
+    """(geometry_data, None) for a deck that is its own parent, or (None, why)."""
+    why = deck_parent_refusal(deck_file)
+    if why:
+        return None, why
+    try:
+        in_data = CrystalInputParser(deck_file).parse()
+    except Exception as e:
+        return None, f"could not read {os.path.basename(deck_file)}: {e}"
+    if in_data.get("geometry_unparsed") or not in_data.get("atoms"):
+        return None, (f"could not read the geometry records of {os.path.basename(deck_file)}"
+                      + (f": {in_data['geometry_unparsed']}" if in_data.get("geometry_unparsed") else ""))
+    return deck_geometry_data(in_data), None
+
+
 def process_files(*args, **kwargs):
     """Process CRYSTAL output and input files (see _process_files).
 
@@ -1361,16 +1811,26 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     if unattended:
         confirm_config = False
 
-    # Parse output file
-    ui.info(f"\nParsing output file: {output_file}")
-    out_parser = CrystalOutputParser(output_file)
-    try:
-        out_data = out_parser.parse()
-    except Exception as e:
-        _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
-        return False, None
+    if output_file is None:
+        # --d12-file alone: the deck is its own parent (its geometry records
+        # and its settings), as an .out's parent deck gives its settings
+        out_data, why = read_deck_parent(input_file)
+        if why:
+            _fail(why, f"Not writing a deck: {why}")
+            return False, None
+        ui.info(f"\nGeometry from the deck itself: {input_file} (its records as written, "
+                "not a geometry CRYSTAL optimized)")
+    else:
+        # Parse output file
+        ui.info(f"\nParsing output file: {output_file}")
+        out_parser = CrystalOutputParser(output_file)
+        try:
+            out_data = out_parser.parse()
+        except Exception as e:
+            _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
+            return False, None
 
-    opt_problem = optimization_problem(output_file)
+    opt_problem = optimization_problem(output_file) if output_file else None
     if opt_problem:
         ui.warn(f"Warning: {os.path.basename(output_file)}: {opt_problem}")
     has_parent_deck = bool(input_file and os.path.exists(input_file))
@@ -1400,7 +1860,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                 if key not in settings or settings[key] is None:
                     settings[key] = value
                 elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
-                           "is_3c_method", "use_smearing", "smearing_width",
+                           "is_3c_method", "smearing", "use_smearing", "smearing_width",
                            "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
                            "mulliken_analysis", "diis_history", "calculation_type",
                            "optimization_settings", "freq_settings", "origin_setting",
@@ -1787,6 +2247,22 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                         options["is_3c_method"] = True
                 if explicit_functional and "dispersion" not in config_data:
                     options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
+                    # A plan's functional switch (method_modifications
+                    # new_functional) with no "use_dispersion" keeps the
+                    # parent's D3 when the new functional has D3 parameters:
+                    # a follow-up preserves what the user did not change (the
+                    # GUI's workflow builder does the same). "use_dispersion":
+                    # false drops it; a custom_functional is written as is.
+                    new_fn = str(method_mods.get("new_functional") or "")
+                    if (new_fn and new_fn == str(explicit_functional)
+                            and "use_dispersion" not in method_mods
+                            and not options["dispersion"] and settings.get("dispersion")
+                            and new_fn.upper() in {f.upper() for f in D3_FUNCTIONALS}):
+                        options["dispersion"] = True
+                        ui.info(f"  D3 dispersion: kept from the parent ({new_fn}-D3; "
+                                f"\"use_dispersion\": false drops it)")
+                    elif new_fn and new_fn == str(explicit_functional) and method_mods.get("use_dispersion"):
+                        options["dispersion"] = new_fn.upper() in {f.upper() for f in D3_FUNCTIONALS}
                 
                 # Handle tolerance_modifications if present. The planner's
                 # FREQ steps nest their tolerances in the frequency settings
@@ -1851,9 +2327,20 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
         # run out, keep the extracted settings instead, exactly as --non-interactive
         # does without --calc-type. The engine always supplies enough answers, so
         # its output is unchanged.
+        #
+        # Nothing is ever waited for: a terminal is not asked, and a pipe left
+        # open with no answers on it (a caller that never closes stdin) counts
+        # as no answers, where it used to block on the first question forever.
+        answers = piped_answers_or_none()
         try:
-            options = get_calculation_options_from_current(
-                _with_opt_type_default(settings, opt_type), calc_type=calc_type)
+            if answers is None:
+                raise EOFError
+            real_stdin, sys.stdin = sys.stdin, answers
+            try:
+                options = get_calculation_options_from_current(
+                    _with_opt_type_default(settings, opt_type), calc_type=calc_type)
+            finally:
+                sys.stdin = real_stdin
             apply_opt_type_flag(options, opt_type)
         except EOFError:
             ui.warn("\nNo answers on stdin for the interactive settings prompts; "
@@ -1962,8 +2449,9 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             and external_basis_data):
         ui.info("  Using external basis set from original D12 file")
 
-    # Create output filename
-    base_name = os.path.splitext(output_file)[0]
+    # Create output filename (a deck's own child: named after the deck, and
+    # not "_optimized", which says the geometry came from an optimization)
+    base_name = os.path.splitext(output_file or input_file)[0]
     calc_type = options["calculation_type"]
     functional = options.get("functional", "RHF")
 
@@ -1986,7 +2474,11 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     # functional was derived. Cosmetic only — the SCF content is unaffected.
     functional = dedupe_dispersion_suffix(functional)
 
-    new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
+    # A two-component SOC deck is named apart from the scalar deck of the
+    # same parent ("_soc"), so the two never overwrite each other.
+    soc_tag = "_soc" if options.get("soc") else ""
+    new_filename = (f"{base_name}_{calc_type.lower()}_{functional}{soc_tag}"
+                    f"{'_optimized' if output_file else ''}.d12")
 
     # SCELPHONO builds the phonon supercell in the geometry input (manual
     # sec. 4.21 p.73; the geometry CRYSTAL prints after it is the supercell,
@@ -2038,6 +2530,9 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             return False, options
 
     # Write new D12 file
+    if os.path.exists(new_filename):
+        ui.warn(f"\n{os.path.basename(new_filename)} already exists; it is replaced by "
+                f"the new deck")
     ui.info(f"\nWriting new D12 file: {new_filename}")
 
     # Debug output for symmetry settings
@@ -2154,16 +2649,48 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
+    # A 2c restart ("soc_guess"): checked before the deck is written, and the
+    # parent's .f9 staged as <deck stem>.f20 once it is.
+    restart_f9 = restart_f20 = restart_parent = None
+    if converted_options.get("soc_guess") is not None:
+        problem, restart_f9, restart_f20, restart_parent = soc_restart_plan(
+            converted_options, output_file, input_file, new_filename)
+        if problem:
+            _fail(problem, f"\nNot writing {os.path.basename(new_filename)}: {problem}")
+            return False, options
+    parent_metal = soc_parent_metal(output_file) if converted_options.get("soc") else None
+    # The new deck replaces an older one of the same name as it is written,
+    # and some refusals come only after that (the charge-record checks read
+    # the written deck). A copy of the older deck is put back on a refusal.
+    old_deck = _set_aside_old_deck(new_filename)
     try:
         written = write_d12_file(new_filename, out_data, converted_options, external_basis_data,
                                  parent_k_points=parent_k_points,
-                                 ask=False if unattended else None)
+                                 ask=False if unattended else None,
+                                 parent_metal=parent_metal,
+                                 soc_restart_parent=restart_parent)
+        if written and restart_f9:
+            import shutil
+            try:
+                if not os.path.exists(restart_f20):
+                    shutil.copyfile(restart_f9, restart_f20)
+            except OSError as exc:
+                _drop_new_deck(new_filename, old_deck)
+                _fail(f"could not stage {os.path.basename(restart_f9)} as "
+                      f"{os.path.basename(restart_f20)} ({exc}); "
+                      f"{missing_2c_matrix_note(converted_options['soc_guess'])}")
+                return False, options
+            ui.info(f"  {converted_options['soc_guess'].upper()}: staged "
+                    f"{os.path.basename(restart_f9)} as {os.path.basename(restart_f20)} "
+                    f"(the job script reads it as fort.20)")
     except BasisFileError as exc:
         # A basis record CRYSTAL could not read (atomic_deck has removed the
         # part-written deck).
         _fail(str(exc), f"Not writing {os.path.basename(new_filename)}: {exc}")
         written = False
     if not written:
+        # atomic_deck left any older deck as it was
+        _drop_set_aside(old_deck)
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"
@@ -2178,7 +2705,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     try:
         with open(output_file, "r", errors="ignore") as of:
             parent_out_text = of.read()
-    except OSError:
+    except (OSError, TypeError):            # no .out: a deck is its own parent
         parent_out_text = None
     with open(new_filename, "r") as cf:
         child_text = cf.read()
@@ -2194,10 +2721,39 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                         if (options or {}).get(k) is not None}, **requested}
     recompute = any(requested.get(k) not in (None, "", "none")
                     for k in ("ion_charges", "net_charge", "site_states"))
+    # Without a charge change, a spin state given on the command line is
+    # applied on its own (as cif2d12 does; a config's "spinlock" is an SCF
+    # setting the writer already wrote); CHEMOD and the fragment bond scale
+    # have nothing to act on, so asking for them is refused rather than
+    # silently dropped.
+    flags = {k: v for k, v in (charge_options or {}).items() if v is not None}
+    spin_alone = not recompute and any(flags.get(k) is not None
+                                       for k in ("spinlock", "spinlock_cycles"))
+    idle = []
+    if not recompute:
+        if requested.get("chemod") not in (None, "", "auto"):
+            idle.append(f"chemod {requested['chemod']} (--chemod)")
+        fbs = requested.get("fragment_bond_scale")
+        if fbs not in (None, "") and abs(float(fbs) - 1.15) > 1e-9:
+            idle.append(f"fragment_bond_scale {fbs} (--fragment-bond-scale)")
+    if idle:
+        _drop_new_deck(new_filename, old_deck)
+        reason = (", ".join(idle) + " only take effect with a charge change: give "
+                  "--ion-charges auto, --net-charge Q or --site-states (ion_charges, "
+                  "net_charge, site_states in a config)")
+        _fail(f"charge state: {reason}", f"Not writing {new_filename}: {reason}")
+        return False, options
     try:
         if parent_deck_exists:
             with open(input_file, "r", errors="ignore") as pf:
                 parent_text = pf.read()
+        if recompute and "TWOCOMPON" in (ln.strip().upper() for ln in child_text.splitlines()):
+            raise ValueError(
+                "the charged-system options (ion_charges, net_charge, site_states) are not "
+                "written into a SOC deck: DOPING, CHARGED and SPINLOCK are not in the "
+                "two-component chapter of the CRYSTAL23 manual (ch. 6, p. 166), and opt2d12 "
+                "does not read a SOC deck's INPSOC records to place CHEMOD; write the SOC "
+                "deck without them")
         if recompute:
             # asked for: the charge is worked out again from the new geometry
             # and replaces whatever the parent carried
@@ -2208,12 +2764,26 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             carried, charge_notes = carry_charge_records(child_text, parent_text, parent_out_text)
         elif parent_out_text:
             carried, soft_notes = charge_from_parent_out(child_text, parent_out_text)
+        if spin_alone:
+            import ion_charges as ic
+            try:
+                carried, spin_notes = ic.set_spinlock(carried, flags.get("spinlock"),
+                                                      flags.get("spinlock_cycles"),
+                                                      parent_out_text)
+            except ic.IonChargeError as e:
+                raise ValueError(str(e))
+            charge_notes = list(charge_notes) + spin_notes
     except (ChargeCarryError, ValueError) as e:
-        try:
-            os.remove(new_filename)
-        except OSError:
-            pass
+        _drop_new_deck(new_filename, old_deck)
         _fail(f"charge state: {e}", f"Not writing {new_filename}: {e}")
+        return False, options
+    # a SOC deck: the charge records go in after soc_deck wrote it, so they are
+    # checked here as soc_deck checks a deck's own
+    soc_refusal = (soc_ecp.charge_records_refusal(carried, (options or {}).get("soc_basis"))
+                   if carried != child_text else None)
+    if soc_refusal:
+        _drop_new_deck(new_filename, old_deck)
+        _fail(f"charge state: {soc_refusal}", f"Not writing {new_filename}: {soc_refusal}")
         return False, options
     if carried != child_text:
         with atomic_deck(new_filename) as cf:
@@ -2230,6 +2800,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
         else:
             ui.info(f"Charge state: {note}")
 
+    _drop_set_aside(old_deck)
     ui.ok(f"\nSuccessfully created {new_filename}")
     if answers_piped and parent_text:
         # Answers read from a pipe: an answer file written for another MACE
@@ -2248,11 +2819,53 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                 ui.warn(f"  {name}: {before} -> {after}")
     LAST_RESULT["deck"] = new_filename
     if reserved_decks is not None:
-        reserved_decks[os.path.realpath(new_filename)] = output_file
+        reserved_decks[os.path.realpath(new_filename)] = output_file or input_file
     if opt_problem:
         LAST_RESULT["notes"].append(opt_problem)
 
     return True, options
+
+
+def _set_aside_old_deck(path):
+    """A copy of the deck at ``path`` (None when there is none), beside it.
+
+    Hidden (``.<name>.previous``) and without the .d12 ending, so nothing
+    takes it for a deck. A symlinked deck is copied from the file it names.
+    """
+    import shutil
+    if not os.path.isfile(path):
+        return None
+    real = os.path.realpath(path)
+    directory, name = os.path.split(real)
+    copy = os.path.join(directory, f".{name}.previous")
+    try:
+        shutil.copy2(real, copy)
+    except OSError as exc:
+        ui.warn(f"  Warning: could not keep a copy of the older {os.path.basename(path)} "
+                f"({exc}); a refusal would lose it")
+        return None
+    return copy
+
+
+def _drop_set_aside(copy):
+    """Remove the copy _set_aside_old_deck made (the new deck stands)."""
+    if copy:
+        try:
+            os.remove(copy)
+        except OSError:
+            pass
+
+
+def _drop_new_deck(path, copy):
+    """Remove a refused deck, putting back the older deck it replaced."""
+    try:
+        if copy:
+            os.replace(copy, os.path.realpath(path))
+            ui.info(f"  {os.path.basename(path)}: the older deck is kept")
+        else:
+            os.remove(path)
+    except OSError:
+        pass
 
 
 CHARGE_OPTION_KEYS = ("ion_charges", "net_charge", "site_states", "chemod", "fragment_bond_scale",
@@ -2271,6 +2884,14 @@ def recompute_ion_charges(child_text, parent_text, requested, interactive=False)
 
     stripped = ic.strip_charge_records(child_text)
     parent_spin = ic.deck_method(parent_text).spinlock if parent_text else None
+    # the net charge the carried SPINLOCK was set for: the parent's
+    reference_q = None
+    if parent_text:
+        try:
+            from charge_records import parent_electron_offset
+            reference_q = -parent_electron_offset(parent_text)
+        except Exception:
+            reference_q = None
     try:
         setup = ic.plan_for_deck(
             stripped, ion_charges=requested.get("ion_charges"), net_charge=requested.get("net_charge"),
@@ -2279,6 +2900,7 @@ def recompute_ion_charges(child_text, parent_text, requested, interactive=False)
             fragment_bond_scale=requested.get("fragment_bond_scale") or 1.15,
             spinlock=requested.get("spinlock") if "spinlock" in requested else None,
             spinlock_cycles=requested.get("spinlock_cycles"), parent_spinlock=parent_spin,
+            spinlock_reference_charge=reference_q,
             interactive=interactive)
     except ic.IonChargeError as e:
         raise ValueError(str(e))
@@ -2421,7 +3043,8 @@ Examples:
   %(prog)s --out-file optimized.out --calc-type SP --non-interactive
   %(prog)s --directory . --calc-type FREQ --non-interactive
   %(prog)s --directory opts --config-file sp_template.json --yes
-  %(prog)s --out-file opts/*.out --config-file sp_template.json --output-dir sp""",
+  %(prog)s --out-file opts/*.out --config-file sp_template.json --output-dir sp
+  %(prog)s --d12-file deck.d12 --calc-type OPT    # a deck as the parent""",
     )
     parser.add_argument(
         "--out-file", nargs="+", metavar="OUT",
@@ -2432,7 +3055,10 @@ Examples:
     parser.add_argument(
         "--d12-file", type=str,
         help="Original CRYSTAL input file (.d12) for a single --out-file "
-             "(default: the .d12 of the same name beside it, if there is one)",
+             "(default: the .d12 of the same name beside it, if there is one). "
+             "Without --out-file the deck is the parent: the new deck has its "
+             "geometry and its settings (not for EXTERNAL decks or decks that "
+             "edit their geometry, e.g. SUPERCEL: use their run's .out)",
     )
     parser.add_argument(
         "--directory",
@@ -2559,8 +3185,33 @@ Examples:
     if args.output_dir and not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
+    if args.d12_file and not args.out_file:
+        # A deck as its own parent: its geometry records and its settings
+        if not os.path.isfile(args.d12_file):
+            ui.err(f"Error: Deck {args.d12_file} not found")
+            sys.exit(1)
+        success, options = process_files(
+            None,
+            args.d12_file,
+            config_file=args.config_file,
+            non_interactive=args.non_interactive,
+            calc_type=args.calc_type,
+            opt_type=args.opt_type,
+            origin_setting=args.origin_setting,
+            output_dir=args.output_dir,
+            confirm_config=False if args.yes else None,
+            unattended=bool(args.yes or args.non_interactive),
+            charge_options=charge_options,
+        )
+        if success and args.save_options:
+            with open(args.options_file, "w") as f:
+                json.dump(options_for_template(options), f, indent=2)
+            ui.ok(f"Settings saved to {args.options_file}")
+        if not success:
+            sys.exit(1)
+
     # Single file processing
-    if args.out_file and len(args.out_file) == 1:
+    elif args.out_file and len(args.out_file) == 1:
         out_file = args.out_file[0]
         if not os.path.exists(out_file):
             ui.err(f"Error: Output file {out_file} not found")
@@ -2593,6 +3244,10 @@ Examples:
             unattended=bool(args.yes or args.non_interactive),
             charge_options=charge_options,
         )
+
+        if success and SOC_METAL_NOTE in LAST_RESULT["notes"]:
+            print()
+            print_soc_metal_summary([out_file])
 
         if success and args.save_options:
             with open(args.options_file, "w") as f:
@@ -2728,7 +3383,7 @@ Examples:
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
                             elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
-                                       "is_3c_method", "use_smearing", "smearing_width",
+                                       "is_3c_method", "smearing", "use_smearing", "smearing_width",
                                        "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
                                        "mulliken_analysis", "diis_history", "calculation_type",
                                        "optimization_settings", "freq_settings", "origin_setting",
@@ -2868,6 +3523,7 @@ Examples:
                     "finish or did not converge:")
             for name, note in unfinished:
                 ui.warn(f"  {name}: {'no OPT END' if note == UNFINISHED_OPT_NOTE else 'OPT END - FAILED'}")
+        print_soc_metal_summary([name for name, _, notes in written if SOC_METAL_NOTE in notes])
 
         # Save options if requested
         if args.save_options and shared_settings:

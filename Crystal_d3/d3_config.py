@@ -35,6 +35,14 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 
 
+# The keys of an ORBITALS configuration. kmesh: band_edges (default), gamma,
+# all_real or custom (with "is"; a 2D/3D IS with complex k points is refused:
+# CRYSTAL23's complex-k files there are unusable). ICAR and ILOC are not
+# settings: ICAR has no effect on the files and ILOC is always 0.
+ORBITALS_CONFIG_KEYS = ("calculation_type", "kmesh", "is")
+ORBITALS_KMESH_MODES = ("band_edges", "gamma", "all_real", "custom")
+
+
 def clean_config_for_saving(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Clean configuration for saving by preserving 'auto' settings.
@@ -110,6 +118,12 @@ def clean_config_for_saving(config: Dict[str, Any]) -> Dict[str, Any]:
             # Keep manual projections as-is
             pass
     
+    elif calc_type == "ORBITALS":
+        # The k mesh is chosen per material from the mode (band edges, Γ, all
+        # real points): only the mode and a custom IS are kept.
+        for key in [k for k in cleaned if k not in ORBITALS_CONFIG_KEYS]:
+            del cleaned[key]
+
     elif calc_type == "TRANSPORT":
         # For TRANSPORT, if using Fermi reference, save relative range
         if cleaned.get("mu_reference") == "fermi":
@@ -266,6 +280,12 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         # exited 0 with no D3 file.
         if not any(k in config for k in ("bands", "band_range", "first_band")):
             errors.append("Missing required field for BAND: bands")
+        # an edited k-path (d3_band_path): its shape and labels; whether its
+        # points exist is checked against each material's computed path
+        if config.get("band_path") is not None:
+            from d3_band_path import validate as _validate_band_path
+            path_errors, _ = _validate_band_path(config["band_path"])
+            errors += [f"band_path: {e}" for e in path_errors]
     
     elif calc_type == "DOSS":
         # energy_range is only present in energy-window mode; the default
@@ -306,6 +326,20 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         if "exchange_options" not in config:
             errors.append("Missing exchange_options for DFT_EXCHANGE")
     
+    elif calc_type == "ORBITALS":
+        kmesh = config.get("kmesh", "band_edges")
+        if kmesh not in ORBITALS_KMESH_MODES:
+            errors.append(f"ORBITALS kmesh must be one of {', '.join(ORBITALS_KMESH_MODES)} "
+                          f"(got {kmesh!r})")
+        if kmesh == "custom":
+            is_ = config.get("is")
+            if not isinstance(is_, int) or isinstance(is_, bool) or is_ < 1:
+                errors.append(f"ORBITALS kmesh custom needs a whole number is >= 1 (got {is_!r})")
+        iloc = config.get("iloc", config.get("ILOC", 0))
+        if str(iloc).strip() not in ("0", "", "None", "False") or config.get("wannier"):
+            errors.append("ORBITALS ILOC 1 (Wannier functions) is not supported: use the "
+                          "Wannier90 / lcao2wannier route")
+
     elif calc_type == "TRANSPORT":
         # configure_transport_calculation emits temperature_range/mu_range;
         # "transport_type" is not a key it ever produces
@@ -406,6 +440,10 @@ def get_default_d3_config(calc_type: str) -> Dict[str, Any]:
                 "range_separation": False
             }
         },
+        "ORBITALS": {
+            "calculation_type": "ORBITALS",
+            "kmesh": "band_edges"
+        },
         "TRANSPORT": {
             "calculation_type": "TRANSPORT",
             "transport_type": "conductivity",
@@ -496,6 +534,14 @@ def print_d3_config_summary(config: Dict[str, Any]) -> None:
             print(f"  Type: {config['potential_config'].get('type', 'N/A')}")
             print(f"  Points: {config['potential_config'].get('n_points', 'N/A')}")
     
+    elif calc_type == "ORBITALS":
+        labels = {"band_edges": "Γ and the real k points of the band edges",
+                  "gamma": "Γ only (IS 1)", "all_real": "All real k points (IS 2)",
+                  "custom": f"Custom IS {config.get('is', 'N/A')}"}
+        kmesh = config.get("kmesh", "band_edges")
+        print(f"k points: {labels.get(kmesh, kmesh)}")
+        print("Output: every orbital, as Molden files (<deck>_orb*.molden)")
+
     elif calc_type == "WANNIER":
         print(f"Functions: {config.get('wannier_functions', 'N/A')}")
         print(f"Plot bands: {config.get('plot_bands', 'N/A')}")

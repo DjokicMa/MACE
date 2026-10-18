@@ -36,6 +36,9 @@ class PropertyDistribution:
         Returns:
             Distribution analysis results
         """
+        if properties is not None:  # a 1.1.6 rename: its current name
+            from mace.utils.property_keys import canonical
+            properties = [canonical(p) for p in properties]
         # Get all properties
         all_properties = self.db.get_all_properties()
         

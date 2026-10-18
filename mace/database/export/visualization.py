@@ -245,6 +245,8 @@ class VisualizationExporter:
         Returns:
             Formatted histogram data
         """
+        from mace.utils.property_keys import canonical  # a 1.1.6 rename: its current name
+        property_name = canonical(property_name)
         # Collect values
         values = []
         

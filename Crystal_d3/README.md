@@ -1,6 +1,6 @@
 # Crystal D3 Property Calculation Scripts
 
-This directory contains Python scripts for generating CRYSTAL D3 property calculation input files. These tools support band structure, density of states (DOS), charge density, electrostatic potential, and transport property calculations with multiple usage modes: interactive, command-line interface (CLI), and JSON configuration files.
+This directory contains Python scripts for generating CRYSTAL D3 property calculation input files. These tools support band structure, density of states (DOS), charge density, electrostatic potential, transport property and orbital (Molden) calculations with multiple usage modes: interactive, command-line interface (CLI), and JSON configuration files.
 
 ## Main Scripts
 
@@ -15,6 +15,7 @@ This directory contains Python scripts for generating CRYSTAL D3 property calcul
 - **POTENTIAL**: Electrostatic potential (POT3/POTC)
 - **CHARGE+POTENTIAL**: Combined calculation
 - **TRANSPORT**: Boltzmann transport properties
+- **ORBITALS**: the parent SCF's orbitals as Molden files, for `mace plotting --orbitals` and the GUI (see [Orbitals (ORBITALS)](../docs/cli.md#orbitals-orbitals))
 
 **Usage Modes**:
 
@@ -157,6 +158,27 @@ All SHRINK values are rounded up to even numbers for cleaner k-paths.
   - Cubic: cF1 vs cF2 by space group (below 207 / from 207), as SeeK-path; one cI
 - Automatic lattice parameter extraction from CRYSTAL output files
 - Enhanced `get_extended_bravais()` function that uses cell parameters when available
+
+### `d3_band_path.py` - Editing a BAND k-path
+
+The computed path (any of the four BAND path methods) can be edited before the deck is written: reorder, reverse or leave out segments, remove points, move the parts after a jump (`|`), keep the continuous part only, or add points by fractional coordinates. The edit is the `band_path` key of the configuration:
+
+```json
+"band_path": [
+  {"from": "GAMMA", "to": "X"},
+  {"from": "GAMMA", "to": "W"},
+  {"from": "W", "to": "GAMMA"},
+  {"from": "GAMMA", "to": "P", "k_to": [0.25, 0.25, 0.25]}
+]
+```
+
+Segments are in order; two that do not meet (here `X` then `GAMMA`) are a discontinuity. Points of the computed path are named by label only, so the file carries over to other materials of the same lattice type as an automatic path does; points you add carry their coordinates (in the basis of the deck's segment records, CRYSTAL's primitive reciprocal cell). `"hidden": true` keeps a segment in the list without computing it.
+
+- `mace opt2d3` at a terminal asks "Edit the band k-path?" after the BAND settings (default No; with answers piped in it is asked only with `--edit-kpath`, so 1.1.5 answer scripts keep their order) and opens a small editor (`r N` reverse, `d N` remove, `m N P` move, `p LABEL` remove a point, `a LABEL x y z` add a point, `c` continuous only, `jf`/`jl` jumps first/last, `u` undo, `reset`); `--save-config` saves the result.
+- Calculation Setup in `mace gui` has the same editor under BAND and writes the same key, with a view of the first Brillouin zone (click a point there, or its button, to add it to the path).
+- `mace plotting --band ... --band-path FILE` draws a band structure along an edited path (the band plot's editor in `mace gui` passes its edit the same way for the publication figure), and `mace plotting --bz` draws the zone with the path (`d3_bz.py`: the Wigner-Seitz cell of the reciprocal lattice, 2D for a slab, a segment for a polymer).
+- The checks: at least one segment, at most 20 (BAND's NLINE), labels of letters, digits, `_` and `'`, no zero-length segment, coordinates for any point not on the computed path, and for a slab (polymer) a zero k_z (k_y and k_z) on every point: CRYSTAL23 manual p. 309, BAND note 3 (the opt2d3 prompt, a `band_path` and the GUI editor refuse such a point). A path that no longer visits a high-symmetry point of the computed one gets a warning.
+- The deck: a label path stays labels unless a point was added by coordinates, or unless the edit names a label CRYSTAL23 does not read for that lattice (only Tables 14.1/14.2, manual p. 309 note 6, else "K-POINTS NOT CODIFIED"): then the path is written as coordinates when MACE has the label's coordinates, and refused naming the label when it has not; otherwise the segments are written in units of 1/ISS with the ISS that makes every point exact. The title names the edited path and says `(edited)`. With no `band_path` (or one equal to the computed path) the deck is byte-for-byte the one written before.
 
 ## Legacy Scripts (removed)
 

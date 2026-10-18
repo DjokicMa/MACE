@@ -30,6 +30,17 @@ def is_linear(points: Sequence[Tuple[float, float, float]]) -> bool:
         return False
 
 
+def vibrations(freqs: List[float], molecule: bool, linear: bool) -> List[float]:
+    """The modes left after dropping the expected zero (rigid-body) modes:
+    the 3 closest to zero for a periodic system, 6 for a molecule, 5 for a
+    linear one. ``freqs`` has one entry per mode (degenerate rows
+    expanded); the result keeps their order."""
+    drop = (5 if linear else 6) if molecule else 3
+    order = sorted(range(len(freqs)), key=lambda i: abs(freqs[i]))
+    keep = set(order[drop:])
+    return [f for i, f in enumerate(freqs) if i in keep]
+
+
 def imaginary(freqs: List[float], molecule: bool, linear: bool,
               noise_cm: float = NOISE_CM) -> Optional[Dict[str, Any]]:
     """{severity, n, lowest} for the negative modes left after dropping the
@@ -39,10 +50,7 @@ def imaginary(freqs: List[float], molecule: bool, linear: bool,
     else a warning, whose ``n`` counts only the modes beyond the noise."""
     if not freqs:
         return None
-    drop = (5 if linear else 6) if molecule else 3
-    order = sorted(range(len(freqs)), key=lambda i: abs(freqs[i]))
-    rest = [freqs[i] for i in order[drop:]]
-    neg = sorted(f for f in rest if f < 0)
+    neg = sorted(f for f in vibrations(freqs, molecule, linear) if f < 0)
     if not neg:
         return None
     lowest = neg[0]

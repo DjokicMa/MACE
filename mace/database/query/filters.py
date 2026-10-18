@@ -48,6 +48,10 @@ class PropertyFilter:
         """
         if op not in self.OPERATORS:
             raise ValueError(f"Unsupported operator: {op}")
+        # a property renamed in 1.1.6 is found under its old name too (the
+        # rows read are shown under the current names: property_keys)
+        from mace.utils.property_keys import canonical
+        property_name = canonical(property_name)
             
         self.filters.append({
             'property': property_name,

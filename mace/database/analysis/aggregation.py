@@ -18,7 +18,8 @@ class PropertyAggregator:
         'space_group': 'Space group number',
         'crystal_system': 'Crystal system (cubic, hexagonal, etc.)',
         'formula_prefix': 'First element in formula',
-        'conductivity_type': 'Conductivity type (metal, semiconductor, insulator)',
+        'electronic_classification': 'Electronic classification (metal, semimetal, semiconductor, insulator)',
+        'conductivity_type': 'The same as electronic_classification (the name before 1.1.6)',
         'band_gap_range': 'Band gap ranges',
         'energy_range': 'Total energy ranges',
         'atoms_range': 'Number of atoms ranges',
@@ -141,15 +142,17 @@ class PropertyAggregator:
                 else:
                     group = 'Unknown'
                     
-            elif group_by == 'conductivity_type':
-                # Get conductivity type from properties
+            elif group_by in ('electronic_classification', 'conductivity_type'):
+                # metal / semimetal / semiconductor / insulator (1.1.6: the
+                # conductivity_type property, metallic/non_metallic, is gone;
+                # the old group name is kept)
                 props = self.db.get_material_properties(mat_id)
-                cond_type = None
+                kind = None
                 for prop in props:
-                    if prop['property_name'] == 'conductivity_type':
-                        cond_type = prop['property_value']
+                    if prop['property_name'] == 'electronic_classification':
+                        kind = prop.get('property_value_text') or prop['property_value']
                         break
-                group = cond_type or 'Unknown'
+                group = kind or 'Unknown'
                 
             elif group_by == 'band_gap_range':
                 # Get band gap and categorize

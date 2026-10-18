@@ -21,6 +21,7 @@ import tempfile
 import shutil
 
 from . import dbsafety        # the SQLite journal/lock/backup policy (stdlib only)
+from mace.utils import property_keys  # the key registry and the old-name aliases (stdlib only)
 
 # The status stored in the database for a canceled job. The value keeps its
 # original spelling because existing databases already hold it.
@@ -35,6 +36,12 @@ except ImportError:
     HAS_ASE = False
     # a warning, so stderr: stdout may be a JSON stream (--progress-json, --dry-run --json)
     print("Warning: ASE not available. Structure storage will be limited.", file=sys.stderr)
+
+
+# PRAGMA user_version of the schema this MACE writes: 1 = the 1.1.6
+# properties schema (unique (material, calculation, property) rows, an index
+# on calc_id, the property_blobs side table)
+SCHEMA_VERSION = 1
 
 
 class MaterialDatabase:
@@ -143,13 +150,34 @@ class MaterialDatabase:
                     property_value REAL,
                     property_value_text TEXT,  -- For non-numeric properties
                     property_unit TEXT,
-                    confidence REAL,  -- Quality metric for the property
+                    confidence REAL,  -- unused (always NULL); kept so MACE 1.1.5 and earlier can read the database
                     extracted_at TEXT NOT NULL,
                     extractor_script TEXT,  -- Which script extracted this property
                     
                     FOREIGN KEY (material_id) REFERENCES materials (material_id),
                     FOREIGN KEY (calc_id) REFERENCES calculations (calc_id)
                 );
+                
+                -- Large JSON properties (neighbor tables, overlap populations,
+                -- processed population analysis: property_keys.BLOB_KEYS), kept
+                -- out of the properties table so its scans stay small (1.1.6)
+                CREATE TABLE IF NOT EXISTS property_blobs (
+                    blob_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    material_id TEXT NOT NULL,
+                    calc_id TEXT,
+                    property_category TEXT NOT NULL,
+                    property_name TEXT NOT NULL,
+                    property_value_text TEXT,
+                    property_unit TEXT,
+                    extracted_at TEXT NOT NULL,
+                    extractor_script TEXT,
+
+                    FOREIGN KEY (material_id) REFERENCES materials (material_id),
+                    FOREIGN KEY (calc_id) REFERENCES calculations (calc_id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_property_blobs_key
+                    ON property_blobs (material_id, ifnull(calc_id, ''), property_name);
+                CREATE INDEX IF NOT EXISTS idx_property_blobs_calc ON property_blobs (calc_id);
                 
                 -- Files table: Track all files associated with calculations
                 CREATE TABLE IF NOT EXISTS files (
@@ -255,27 +283,159 @@ class MaterialDatabase:
             if 'workflow_scripts_json' not in workflow_columns:
                 print("Adding workflow_scripts_json column to workflow_instances table...")
                 conn.execute("ALTER TABLE workflow_instances ADD COLUMN workflow_scripts_json TEXT")
+
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version < SCHEMA_VERSION:
+            self._migrate_properties_116()
+
+    def _migrate_properties_116(self) -> bool:
+        """The 1.1.6 properties schema on a database an earlier MACE built:
+        one row per (material, calculation, property) - duplicates removed,
+        the newest row kept - enforced by a unique index, an index on
+        calc_id, and the large JSON properties (property_keys.BLOB_KEYS)
+        moved to the property_blobs table. A database with properties is
+        first backed up beside itself (<name>_pre116_backup_<time>.db, never
+        pruned); if the backup fails nothing is changed and MACE works on
+        without the new indexes, trying again next time. Idempotent (PRAGMA
+        user_version records it), and done in one transaction under the
+        write lock, as every write is. Returns whether it ran."""
+        blob_names = sorted(property_keys.BLOB_KEYS)
+        marks = ','.join('?' * len(blob_names))
+        with self._get_connection() as conn:
+            if conn.execute("PRAGMA user_version").fetchone()[0] >= SCHEMA_VERSION:
+                return False
+        # the backup is taken inside the migration's write transaction: a
+        # process opening the database at the same time waits for it here and
+        # then finds it migrated, rather than writing a full backup of its own
+        # (readers go on meanwhile; the database cannot change under the copy)
+        with self.transaction() as conn:
+            if conn.execute("PRAGMA user_version").fetchone()[0] >= SCHEMA_VERSION:
+                return False  # another process did it meanwhile
+            has_rows = conn.execute("SELECT EXISTS (SELECT 1 FROM properties)").fetchone()[0]
+            if has_rows:
+                try:
+                    backup = dbsafety.snapshot_backup(self.db_path, self.db_path.parent,
+                                                      f"{self.db_path.stem}_pre116_backup")
+                except Exception as e:
+                    print(f"⚠️  {self.db_path.name}: not updated to the MACE 1.1.6 schema, as its backup "
+                          f"failed ({e}); it is tried again the next time MACE opens it", file=sys.stderr)
+                    return False
+                print(f"💾 {self.db_path.name}: updating to the MACE 1.1.6 schema; a copy of it as it was "
+                      f"is {backup}", file=sys.stderr)
+            # one row per (material, calculation, property): the newest
+            # (extracted_at, then the higher row id) of a duplicate set. One
+            # pass over the table: a correlated EXISTS was quadratic in the
+            # rows of each property name (90 s for 215 k rows).
+            dropped = conn.execute("""
+                DELETE FROM properties WHERE property_id IN (
+                    SELECT property_id FROM (
+                        SELECT property_id, ROW_NUMBER() OVER (
+                            PARTITION BY material_id, ifnull(calc_id, ''), property_name
+                            ORDER BY ifnull(extracted_at, '') DESC, property_id DESC) AS rn
+                        FROM properties)
+                    WHERE rn > 1)""").rowcount
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_properties_key "
+                         "ON properties (material_id, ifnull(calc_id, ''), property_name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_properties_calc ON properties (calc_id)")
+            moved = conn.execute(f"""
+                INSERT OR REPLACE INTO property_blobs
+                    (material_id, calc_id, property_category, property_name, property_value_text,
+                     property_unit, extracted_at, extractor_script)
+                SELECT material_id, calc_id, property_category, property_name, property_value_text,
+                       property_unit, extracted_at, extractor_script
+                FROM properties WHERE property_name IN ({marks})""", blob_names).rowcount
+            conn.execute(f"DELETE FROM properties WHERE property_name IN ({marks})", blob_names)
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        if has_rows:
+            print(f"   {dropped} duplicate property rows removed, {moved} large JSON values moved to "
+                  f"property_blobs", file=sys.stderr)
+        return True
             
+    def _open_connection(self) -> sqlite3.Connection:
+        """A configured connection (the caller holds self.lock and the write guard)."""
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=30.0,  # 30 second timeout for database locks
+            check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row  # Enable column access by name
+
+        # Journal mode by file system (dbsafety): WAL on a local disk as
+        # before, the rollback journal on a network/cluster file system
+        # (WAL is not safe across nodes); busy_timeout 30 s either way
+        dbsafety.configure(conn, self.db_path)
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        return conn
+
+    def _shared_connection(self):
+        """The connection of the transaction() this thread is inside, or None."""
+        local = getattr(self, '_tx_local', None)
+        return getattr(local, 'conn', None) if local is not None else None
+
+    @contextmanager
+    def transaction(self):
+        """One connection and one transaction (BEGIN IMMEDIATE ... COMMIT)
+        for a block of writes, e.g. all the property rows of one output.
+
+        Every ``_get_connection()`` this thread opens inside the block uses
+        the same connection, as a SAVEPOINT: what it wrote is undone alone
+        when it raises, as its own connection's rollback did, and the block
+        commits once, under the same lock, write guard and lock retries as
+        ``_get_connection``. An error leaving the block rolls all of it back.
+        A transaction() inside another one joins it."""
+        if self._shared_connection() is not None:
+            with self._get_connection() as conn:
+                yield conn
+            return
+        self._ensure_initialized()
+        if getattr(self, '_tx_local', None) is None:
+            self._tx_local = threading.local()
+        with self.lock, dbsafety.write_guard(self.db_path):
+            conn = self._open_connection()
+            try:
+                # nothing is done yet, so taking the write lock may be retried
+                dbsafety.retry_locked(lambda: conn.execute("BEGIN IMMEDIATE"))
+                self._tx_local.conn = conn
+                self._tx_local.depth = 0
+                yield conn
+                if conn.in_transaction:
+                    dbsafety.retry_locked(conn.commit)
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                self._tx_local.conn = None
+                conn.close()
+
     @contextmanager
     def _get_connection(self):
         """Thread-safe database connection context manager with WAL mode for concurrency."""
+        shared = self._shared_connection()
+        if shared is not None:
+            # inside transaction(): a savepoint on its connection
+            self._tx_local.depth += 1
+            name = f"mace_sp_{self._tx_local.depth}"
+            shared.execute(f"SAVEPOINT {name}")
+            try:
+                yield shared
+            except BaseException:
+                if shared.in_transaction:
+                    shared.execute(f"ROLLBACK TO {name}")
+                    shared.execute(f"RELEASE {name}")
+                raise
+            else:
+                if shared.in_transaction:      # an explicit commit() inside already ended it
+                    shared.execute(f"RELEASE {name}")
+            finally:
+                self._tx_local.depth -= 1
+            return
+
         # Ensure database is initialized before connecting
         self._ensure_initialized()
-        
+
         with self.lock, dbsafety.write_guard(self.db_path):
-            conn = sqlite3.connect(
-                str(self.db_path),
-                timeout=30.0,  # 30 second timeout for database locks
-                check_same_thread=False
-            )
-            conn.row_factory = sqlite3.Row  # Enable column access by name
-            
-            # Journal mode by file system (dbsafety): WAL on a local disk as
-            # before, the rollback journal on a network/cluster file system
-            # (WAL is not safe across nodes); busy_timeout 30 s either way
-            dbsafety.configure(conn, self.db_path)
-            conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
-            
+            conn = self._open_connection()
+
             try:
                 yield conn
                 # a commit is idempotent (the transaction already holds its
@@ -1182,6 +1342,12 @@ class MaterialDatabase:
             except (ValueError, TypeError):
                 property_value_text = str(property_value)
 
+            # one row per (material, calculation, property) (the unique
+            # index of the 1.1.6 schema): a stored one is replaced
+            conn.execute(
+                "DELETE FROM properties WHERE material_id = ? AND property_name = ? "
+                "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))",
+                (material_id, property_name, calc_id, calc_id))
             cursor = conn.execute("""
                 INSERT INTO properties (
                     material_id, calc_id, property_category,
@@ -1201,32 +1367,47 @@ class MaterialDatabase:
             conn.commit()
             return cursor.lastrowid
             
-    def get_material_properties(self, material_id: str) -> List[Dict]:
-        """Get all properties for a specific material."""
+    def get_material_properties(self, material_id: str, include_blobs: bool = True) -> List[Dict]:
+        """Get all properties for a specific material: the large JSON values
+        of the property_blobs table too, unless ``include_blobs`` is False
+        (their property_id is None)."""
         with self._get_connection() as conn:
-            cursor = conn.execute("""
+            blobs = ""
+            if include_blobs and conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'property_blobs'").fetchone():
+                blobs = """
+                UNION ALL
+                SELECT NULL, material_id, calc_id, property_category,
+                       property_name, NULL, property_value_text,
+                       property_unit, NULL, extractor_script,
+                       extracted_at
+                FROM property_blobs
+                WHERE material_id = ?"""
+            cursor = conn.execute(f"""
                 SELECT property_id, material_id, calc_id, property_category,
                        property_name, property_value, property_value_text,
                        property_unit, confidence, extractor_script,
                        extracted_at
                 FROM properties
-                WHERE material_id = ?
+                WHERE material_id = ?{blobs}
                 ORDER BY property_category, property_name
-            """, (material_id,))
+            """, (material_id, material_id) if blobs else (material_id,))
             
             columns = [desc[0] for desc in cursor.description]
-            results = []
-            for row in cursor.fetchall():
-                prop = dict(zip(columns, row))
+            # names renamed in 1.1.6 shown under their current names
+            # (a database built earlier: property_keys.normalize_rows)
+            results = property_keys.normalize_rows(dict(zip(columns, row)) for row in cursor.fetchall())
+            for prop in results:
                 # Use text value if numeric value is null
                 if prop['property_value'] is None and prop['property_value_text']:
                     prop['property_value'] = prop['property_value_text']
-                results.append(prop)
                 
             return results
             
     def get_all_properties(self) -> List[Dict]:
-        """Get all properties from the database."""
+        """Get all properties from the database, without the large JSON
+        values of the property_blobs table (get_material_properties has
+        them)."""
         with self._get_connection() as conn:
             cursor = conn.execute("""
                 SELECT property_id, material_id, calc_id, property_category,
@@ -1238,37 +1419,39 @@ class MaterialDatabase:
             """)
             
             columns = [desc[0] for desc in cursor.description]
-            results = []
-            for row in cursor.fetchall():
-                prop = dict(zip(columns, row))
+            # names renamed in 1.1.6 shown under their current names
+            # (a database built earlier: property_keys.normalize_rows)
+            results = property_keys.normalize_rows(dict(zip(columns, row)) for row in cursor.fetchall())
+            for prop in results:
                 # Use text value if numeric value is null
                 if prop['property_value'] is None and prop['property_value_text']:
                     prop['property_value'] = prop['property_value_text']
-                results.append(prop)
                 
             return results
             
     def get_properties_by_name(self, property_name: str) -> List[Dict]:
-        """Get all values of a specific property across materials."""
+        """Get all values of a specific property across materials (a name
+        renamed in 1.1.6 also finds the rows of its old names)."""
+        names = property_keys.query_names(property_name)
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT m.material_id, m.formula, p.property_value, 
+                SELECT m.material_id, m.formula, p.property_name, p.property_value,
                        p.property_value_text, p.property_unit, p.calc_id,
                        p.extracted_at
                 FROM properties p
                 JOIN materials m ON p.material_id = m.material_id
-                WHERE p.property_name = ?
+                WHERE p.property_name IN ({})
                 ORDER BY p.property_value
-            """, (property_name,))
+            """.format(','.join('?' * len(names))), names)
             
             columns = [desc[0] for desc in cursor.description]
-            results = []
-            for row in cursor.fetchall():
-                prop = dict(zip(columns, row))
+            # names renamed in 1.1.6 shown under their current names
+            # (a database built earlier: property_keys.normalize_rows)
+            results = property_keys.normalize_rows(dict(zip(columns, row)) for row in cursor.fetchall())
+            for prop in results:
                 # Use text value if numeric value is null
                 if prop['property_value'] is None and prop['property_value_text']:
                     prop['property_value'] = prop['property_value_text']
-                results.append(prop)
                 
             return results
         
@@ -1413,10 +1596,10 @@ def create_material_id_from_file(file_path: str) -> str:
             # This looks like "test1_opt" - the opt is a calc type, not part of material name
             break
         # Check if this part matches a calculation type with optional number (opt, opt2, opt10, etc.)
-        # transport/charge/potential/charge+potential are calc types too — without them,
+        # transport/charge/potential/charge+potential/orbitals are calc types too — without them,
         # simple-named TRANSPORT / CHARGE+POTENTIAL outputs registered as brand-new
         # (duplicate) materials, the exact bug the canonical-ID routing exists to fix.
-        if re.match(r'^(opt|sp|band|doss|freq|transport|charge\+potential|charge|potential)\d*$', part.lower()):
+        if re.match(r'^(opt|sp|band|doss|freq|transport|charge\+potential|charge|potential|orbitals)\d*$', part.lower()):
             # This looks like opt, opt2, sp10, band3, transport2, etc. - stop here
             break
         # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)

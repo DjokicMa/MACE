@@ -104,11 +104,9 @@ def element_symbol(label: str) -> str:
 
 
 def formula_string(counts: Dict[str, int]) -> str:
-    """Hill order: C, H, then alphabetical; e.g. F2NO4S2."""
-    keys = sorted(counts)
-    if "C" in counts:
-        keys = ["C"] + (["H"] if "H" in counts else []) + [k for k in keys if k not in ("C", "H")]
-    return "".join(f"{k}{counts[k] if counts[k] > 1 else ''}" for k in keys)
+    """Hill order: C, H, then alphabetical; e.g. F2NO4S2 (mace.utils.formula)."""
+    from mace.utils.formula import format_formula
+    return format_formula(counts, "hill")
 
 
 # ----------------------------------------------------------------- geometry
@@ -452,7 +450,7 @@ def mulliken_electron_count(text: str) -> Optional[float]:
     spin (nalpha - nbeta), never the count, so it is skipped.
     """
     count = None
-    for match in _MULLIKEN_COUNT.finditer(text):
+    for match in _mulliken_matches(text):
         if match.group(1) == "ALPHA-BETA":
             continue
         try:
@@ -460,6 +458,36 @@ def mulliken_electron_count(text: str) -> Optional[float]:
         except ValueError:
             continue
     return count
+
+
+def _mulliken_matches(text: str):
+    """The matches ``_MULLIKEN_COUNT.finditer(text)`` gives, found without a
+    regex scan of the whole text.
+
+    Every match holds "MULLIKEN POPULATION ANALYSIS", starts no earlier than
+    the line before that phrase's line and ends on its line. So the next
+    match after ``pos`` is the first match in the window from the line
+    before the next occurrence of the phrase (or from ``pos``, if later) to
+    the end of the phrase's line; a window without one holds no match of the
+    unbounded search either, and the occurrence after it is tried."""
+    key = "MULLIKEN POPULATION ANALYSIS"
+    pos = 0
+    occ = text.find(key)
+    while occ >= 0:
+        line_start = text.rfind("\n", 0, occ) + 1
+        start = text.rfind("\n", 0, max(line_start - 1, 0)) + 1 if line_start else 0
+        start = max(start, pos)
+        eol = text.find("\n", occ)
+        end = len(text) if eol < 0 else eol
+        match = _MULLIKEN_COUNT.search(text, start, end)
+        if match:
+            yield match
+            pos = match.end()              # the phrase may follow on the same line
+            occ = text.find(key, pos)
+        elif eol < 0:
+            return
+        else:
+            occ = text.find(key, eol)      # this line's occurrences were all in the window
 
 
 _PP_VALENCE = re.compile(r"ATOMIC NUMBER\s+(\d+)\s*,\s*NUCLEAR CHARGE\s+([-\d.]+)")

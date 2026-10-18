@@ -296,9 +296,10 @@ def output_dimensionality(out_text: str) -> Optional[int]:
     for marker, dim in ((" CRYSTAL CALCULATION", 3), (" SLAB CALCULATION", 2),
                         (" POLYMER CALCULATION", 1), (" MOLECULAR CALCULATION", 0),
                         (" HELIX CALCULATION", 1)):
-        if re.search(r"^" + marker + r"\s*$", out_text, re.M):
+        # the literal first: a scan of the whole text per marker otherwise
+        if marker in out_text and re.search(r"^" + marker + r"\s*$", out_text, re.M):
             return dim
-    m = re.search(r"^\s*([0-3])D - ", out_text, re.M)
+    m = re.search(r"^\s*([0-3])D - ", out_text, re.M) if "D - " in out_text else None
     if m:
         return int(m.group(1))
     return None

@@ -12,6 +12,7 @@ Institution: Michigan State University, Mendoza Group
 
 import os
 import sys
+import glob
 import re
 import shutil
 import argparse
@@ -24,12 +25,14 @@ try:
     from mace.utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_transport_output)
+        is_frequency_output, is_optimization_output, is_orbitals_output,
+        is_transport_output, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
 except ImportError:  # pragma: no cover - run as a script from mace/
     from utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_transport_output)
+        is_frequency_output, is_optimization_output, is_orbitals_output,
+        is_transport_output, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
 
 # === Define known error and completion message patterns === #
 # The error lines and their priority are mace.utils.crystal_errors' table,
@@ -50,6 +53,11 @@ ERROR_PATTERNS = crystal_errors.bucket_patterns(
     ['too_many_scf', 'memory', 'quota', 'time', 'geometry_small_dist', 'shrink_error',
      'linear_basis', 'scratch', 'opt_unconverged', 'stopped', 'potential'])
 ERROR_PATTERNS['stopped'] = list(_STOPPED.patterns)
+# An ORBITALS run that ended normally but left no Molden file: decided from
+# the files next to the .out, not from a line of it (no patterns).
+ERROR_PATTERNS['orbitals_no_files'] = []
+# An ECH3/POT3 run that ended normally with an empty (0-byte) cube file.
+ERROR_PATTERNS['cube_empty'] = []
 
 # Error descriptions for better reporting
 ERROR_DESCRIPTIONS = {
@@ -64,6 +72,8 @@ ERROR_DESCRIPTIONS = {
     'potential': "Segmentation fault/runtime error",
     'scratch': "No writable scratch directory (CRYSTAL not run)",
     'stopped': "Stopped by mace run before it finished",
+    'orbitals_no_files': "ORBITALS run wrote no Molden file (<deck>_orb*.molden missing)",
+    'cube_empty': "Charge/potential run wrote an empty (0-byte) cube file",
 }
 
 # The line `mace run` appends to the .out of a deck it stopped. It says why the
@@ -81,6 +91,7 @@ CALC_TYPE_TO_BUCKET = {
     'DOSS': 'completedoss',
     'TRANSPORT': 'completetransport',
     'CHARGE+POTENTIAL': 'completecharge_potential',
+    'ORBITALS': 'completeorbitals',
     # A properties run whose .d3 drives none of the types above (a matrix
     # dump - BASISSET with print codes 60/64 - for one)
     'PROPERTIES': 'completeproperties',
@@ -96,6 +107,7 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
     'completedoss': "Density of states (D3 DOSS)",
     'completetransport': "Transport properties (D3 TRANSPORT)",
     'completecharge_potential': "Charge density + potential (D3)",
+    'completeorbitals': "Orbitals, Molden files (D3 ORBITALS)",
     'completeproperties': "Other properties (D3)",
 }
 
@@ -103,6 +115,7 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
 # Includes all files produced/copied back by submit_prop.sh for d3 calcs
 # (BAND.DAT, DOSS.DAT, fort.25 → .f25, transport .DAT files, cube files)
 # plus standard inputs/outputs.
+ORBITALS_MOLDEN_PATTERN = '_orb*.molden'
 DEFAULT_EXTENSIONS = [
     # Inputs and submission artifacts
     '.sh', '.out', '.d12', '.d3',
@@ -114,6 +127,10 @@ DEFAULT_EXTENSIONS = [
     '.SIGMA.DAT', '.SEEBECK.DAT', '.SIGMAS.DAT', '.KAPPA.DAT', '.TDF.DAT',
     # 3D cube outputs (CHARGE+POTENTIAL)
     '_DENS.CUBE', '_POT.CUBE', '_SPIN.CUBE',
+    # ORBITALS Molden files, <name>_orb.molden or <name>_orb_<n>_K<ijk>_real.molden
+    # and _complex.molden (only these exact names are moved, see
+    # calc_detection.is_orbitals_molden_name)
+    ORBITALS_MOLDEN_PATTERN,
     # FREQ-related outputs (when the user copies them back from scratch)
     '.FREQINFO.DAT', '.BORN.DAT', '.IRSPEC.DAT', '.RAMSPEC.DAT',
     '.HESSOPT.DAT', '.IRREFR.DAT',
@@ -175,6 +192,9 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
         return 'OPT'
     if is_charge_potential_output(content):
         return 'CHARGE+POTENTIAL'
+    # before DOSS and BAND: an ORBITALS run starts with NEWK too
+    if is_orbitals_output(content):
+        return 'ORBITALS'
     if is_doss_output(content):
         return 'DOSS'
     if is_band_output(content):
@@ -240,6 +260,14 @@ def categorize_output_file(file_path):
         return CALC_TYPE_TO_BUCKET.get(subtype, 'complete'), base_name
     elif has_cpu_time:
         subtype = determine_completed_subtype(Path(file_path), lines, has_opt_end=False)
+        # A finished ORBITALS run is complete only with its Molden files:
+        # CRYSTAL can end normally after an ORBITALS input error.
+        if subtype == 'ORBITALS' and orbitals_missing_reason(file_path):
+            return 'orbitals_no_files', base_name
+        # ... and an ECH3/POT3 run only with non-empty cubes (from a 2c
+        # molecule CRYSTAL wrote a 0-byte DENS_CUBE.DAT and ended normally).
+        if subtype == 'CHARGE+POTENTIAL' and empty_cube_reason(file_path):
+            return 'cube_empty', base_name
         return CALC_TYPE_TO_BUCKET.get(subtype, 'completesp'), base_name
 
     # === Fallback: Check for generic 'error' === #
@@ -383,6 +411,20 @@ def organize_files(result_buckets, target_dir='sorted', extensions=None):
             moved_files = []
 
             for ext in extensions:
+                if '*' in ext:
+                    # a pattern (the ORBITALS Molden files): every match,
+                    # and for the Molden files only this job's exact names
+                    matches = sorted(base_dir.glob(glob.escape(base_name) + ext))
+                    if ext == ORBITALS_MOLDEN_PATTERN:
+                        matches = orbitals_molden_files(base_dir / f"{base_name}.out")
+                    for src in matches:
+                        try:
+                            shutil.move(str(src), str(category_dir / src.name))
+                            moved_files.append(src.name[len(base_name):])
+                            moved_count += 1
+                        except Exception as e:
+                            print(f"  ✗ Error moving {src.name}: {e}")
+                    continue
                 src = base_dir / f"{base_name}{ext}"
                 dest = category_dir / f"{base_name}{ext}"
 
@@ -836,7 +878,8 @@ Examples:
 
 Status categories:
   Complete   finished (OPT END or TOTAL CPU TIME), sorted by calculation type
-             (OPT, SP, FREQ, BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL)
+             (OPT, SP, FREQ, BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL, ORBITALS;
+             an ORBITALS run also needs its <name>_orb*.molden files)
   Errors     failed, sorted by the error found (time limit, SCF, memory, ...)
   Ongoing    no completion line and no error yet: still running or pending
   Unknown    an error line that matches no known pattern

@@ -108,6 +108,7 @@ from d12_constants import (
     read_basis_file,
     generate_k_points,
     check_basis_set_compatibility,
+    basis_family_name,
     hf3c_metal_warning,
     get_user_input,
     # Configuration functions (from merged d12_config_common)
@@ -174,6 +175,8 @@ except ImportError:
 
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
+from soc_ecp import SocDeckBuffer, cif_metal_warning_once, deck_has_smear
+from soc_ecp import charge_records_refusal as soc_charge_records_refusal
 
 # MACE visual layer (ui facade). This script also runs standalone via
 # `python NewCifToD12.py`, where `mace` may NOT be importable, so the import is
@@ -357,6 +360,25 @@ def parse_cif(cif_file, interactive=None):
             except Exception:
                 cif_symops = None
 
+        # A space group with two origins: which one the CIF's coordinates
+        # use (its operators, its tags, else its atoms), and ASE's expansion
+        # redone in that origin when ASE took the other (it takes origin
+        # choice 1 whenever the CIF lists no operators).
+        lists_symops = _cif_lists_symops(cif_file)
+        origin_choice, origin_source = resolve_cif_origin(
+            cif_file, spacegroup, raw_records, (a, b, c, alpha, beta, gamma),
+            cif_symops, lists_symops)
+        if origin_choice is not None:
+            ase_setting = getattr(atoms.info.get("spacegroup"), "setting", 1)
+            if not lists_symops and raw_records and origin_choice != ase_setting:
+                expanded = _expand_in_origin(raw_records[0], raw_records[1], spacegroup,
+                                             (a, b, c, alpha, beta, gamma), origin_choice)
+                symbols = expanded.get_chemical_symbols()
+                positions = expanded.get_scaled_positions()
+                atomic_numbers = [SYMBOL_TO_NUMBER[s] for s in symbols]
+            ui.print(f"Origin choice {origin_choice} of space group {spacegroup} "
+                     f"(from {origin_source})")
+
         return {
             "a": a,
             "b": b,
@@ -365,6 +387,8 @@ def parse_cif(cif_file, interactive=None):
             "beta": beta,
             "gamma": gamma,
             "spacegroup": spacegroup,
+            "cif_origin_choice": origin_choice,
+            "cif_origin_source": origin_source,
             "cif_symmetry_name": cif_symmetry_name,
             "atomic_numbers": atomic_numbers,
             "symbols": symbols,
@@ -372,11 +396,11 @@ def parse_cif(cif_file, interactive=None):
             "cif_atom_symbols": raw_records[0] if raw_records else None,
             "cif_atom_positions": raw_records[1] if raw_records else None,
             "cif_symops": cif_symops,
-            "cif_lists_symops": _cif_lists_symops(cif_file),
+            "cif_lists_symops": lists_symops,
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
-    except _MissingSpaceGroup:
+    except (_MissingSpaceGroup, AmbiguousOriginError):
         raise
     except Exception as e:
         # If ASE fails, use manual parsing
@@ -647,23 +671,272 @@ def _cif_lists_symops(cif_file):
     except OSError:
         return False
     return ("_symmetry_equiv_pos_as_xyz" in text
-            or "_space_group_symop_operation_xyz" in text)
+            or "_space_group_symop_operation_xyz" in text
+            or "_space_group_symop.operation_xyz" in text)
 
 
-def deck_origin_choice(spacegroup, positions, origin_setting="AUTO"):
+class AmbiguousOriginError(ValueError):
+    """A CIF in a two-origin space group whose origin choice cannot be told."""
+
+
+_HM_TAGS = ("_symmetry_space_group_name_h-m", "_space_group_name_h-m_alt",
+            "_space_group.name_h-m_alt")
+
+
+def _cif_tag_value(text, tag):
+    """The value of a one-line CIF tag (quotes stripped), or None."""
+    m = re.search(rf"^[ \t]*{re.escape(tag)}[ \t]+(.+?)[ \t]*$", text,
+                  re.MULTILINE | re.IGNORECASE)
+    if not m:
+        return None
+    value = m.group(1).strip()
+    if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
+        value = value[1:-1]
+    return value.strip()
+
+
+def cif_origin_tag(text):
+    """(origin choice, tag) the CIF text itself declares, or (None, None).
+
+    Read from _space_group.IT_coordinate_system_code ('1' / '2'), ASE's
+    _symmetry_space_group_setting, or an H-M symbol's origin suffix
+    (':1' / ':2', or ICSD's 'S' / 'Z' for origin choice 1 / 2).
+    """
+    for tag in ("_space_group.it_coordinate_system_code",
+                "_space_group_it_coordinate_system_code",
+                "_symmetry_space_group_setting"):
+        value = _cif_tag_value(text, tag)
+        if value in ("1", "2"):
+            return int(value), tag
+    for tag in _HM_TAGS:
+        value = _cif_tag_value(text, tag)
+        if not value:
+            continue
+        m = re.search(r":\s*([12SZsz])$", value) or re.search(r"\s([SZsz])$", value)
+        if m:
+            code = m.group(1).upper()
+            return {"1": 1, "S": 1, "2": 2, "Z": 2}[code], f"{tag} '{value}'"
+        m = re.search(r"origin\s*(?:choice\s*)?([12])", value, re.IGNORECASE)
+        if m:
+            return int(m.group(1)), f"{tag} '{value}'"
+    return None, None
+
+
+_HALL_CACHE = {}
+
+
+def _symops_origin_choice(symops, spacegroup):
+    """1 or 2 when the CIF's listed operators are exactly that origin
+    choice's operators of the space group (spglib's tables), else None."""
+    if not SPGLIB_AVAILABLE or not symops:
+        return None
+
+    def norm(ops):
+        out = set()
+        for rot, trans in ops:
+            t = np.round(np.mod(np.asarray(trans, float), 1.0), 4) % 1.0
+            out.add((tuple(np.rint(np.asarray(rot)).astype(int).ravel()),
+                     tuple(float(v) for v in t)))
+        return out
+
+    have = norm(symops)
+    found = []
+    try:
+        if spacegroup not in _HALL_CACHE:
+            _HALL_CACHE[spacegroup] = _hall_numbers(spacegroup)
+        for hall, choice in _HALL_CACHE[spacegroup]:
+            if choice not in ("1", "2"):
+                continue
+            db = spglib.get_symmetry_from_database(hall)
+            if norm(zip(db["rotations"], db["translations"])) == have:
+                found.append(int(choice))
+    except Exception:
+        return None
+    return found[0] if len(found) == 1 else None
+
+
+def _expand_in_origin(symbols, positions, spacegroup, cellpar, setting):
+    """ASE's expansion of the CIF records in ITA origin choice SETTING."""
+    import warnings
+    from ase.spacegroup import crystal
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return crystal(list(symbols), [list(p) for p in positions],
+                       spacegroup=spacegroup, setting=setting,
+                       cellpar=list(cellpar), onduplicates="keep")
+
+
+def _structure_fingerprint(atoms, cutoff=5.0):
+    """A translation-invariant summary: per atom, its element and sorted
+    neighbor distances. Two origin readings that build the same structure,
+    only shifted, give the same fingerprint."""
+    from ase.neighborlist import neighbor_list
+
+    i, d = neighbor_list("id", atoms, cutoff)
+    per = [[] for _ in range(len(atoms))]
+    for a, dist in zip(i, d):
+        per[a].append(round(float(dist), 2))
+    return sorted((int(z), tuple(sorted(p)[:24])) for z, p in zip(atoms.numbers, per))
+
+
+def _origin_from_expansion(symbols, positions, spacegroup, cellpar):
+    """(choice, note) from expanding the records in both origin choices.
+
+    A reading is valid when its atoms do not overlap (no pair under 0.5 A)
+    and spglib finds the CIF's own space group in it. One valid reading is
+    taken. Two valid readings that build the same structure (only shifted)
+    take origin choice 2, CRYSTAL's default; two that build different
+    structures take the one with fewer atoms (the other turns special
+    positions into general ones, as diamond at (1/8, 1/8, 1/8) does in
+    origin choice 1), and two of the same size cannot be told apart:
+    AmbiguousOriginError.
+    """
+    from ase.neighborlist import neighbor_list
+
+    readings = {}
+    for setting in (1, 2):
+        try:
+            atoms = _expand_in_origin(symbols, positions, spacegroup, cellpar, setting)
+        except Exception:
+            continue
+        overlap = len(neighbor_list("i", atoms, 0.5)) > 0
+        group = None
+        if SPGLIB_AVAILABLE:
+            try:
+                ds = attribute_dataset(spglib.get_symmetry_dataset(
+                    (atoms.cell.array, atoms.get_scaled_positions(), atoms.numbers),
+                    symprec=1e-2))
+                group = ds.number if ds is not None else None
+            except Exception:
+                group = None
+        valid = not overlap and (group is None or group == spacegroup)
+        readings[setting] = dict(atoms=atoms, n=len(atoms), valid=valid,
+                                 overlap=overlap, group=group)
+    if not readings:
+        return None, None
+    valid = [s for s in (1, 2) if s in readings and readings[s]["valid"]]
+    if len(valid) == 1:
+        s = valid[0]
+        other = readings.get(3 - s)
+        why = ""
+        if other is not None:
+            why = (f"; origin choice {3 - s} would build "
+                   f"{other['n']} atoms"
+                   + (" with overlapping atoms" if other["overlap"] else "")
+                   + (f" in space group {other['group']}"
+                      if other["group"] not in (None, spacegroup) else ""))
+        return s, f"the atom positions{why}"
+    pool = valid or [s for s in (1, 2) if s in readings]
+    if len(pool) == 1:
+        return pool[0], "the only origin choice ASE could expand"
+    r1, r2 = readings[1], readings[2]
+    if r1["n"] != r2["n"]:
+        s = 1 if r1["n"] < r2["n"] else 2
+        return s, (f"the atom positions: origin choice {s} builds "
+                   f"{readings[s]['n']} atoms, origin choice {3 - s} "
+                   f"{readings[3 - s]['n']}")
+    if _structure_fingerprint(r1["atoms"]) == _structure_fingerprint(r2["atoms"]):
+        return 2, "both origin choices build the same structure"
+    if not valid:
+        return 2, "neither origin choice reproduces the space group; CRYSTAL's default taken"
+    raise AmbiguousOriginError(
+        f"space group {spacegroup} has two origin choices and this CIF's atoms "
+        f"fit both (two different {r1['n']}-atom structures). Say which one "
+        f"the coordinates use: add `_space_group.IT_coordinate_system_code '1'` "
+        f"(or '2') to the CIF, or set origin_setting ALTERNATE (origin choice 1) "
+        f"or STANDARD (origin choice 2)."
+    )
+
+
+def resolve_cif_origin(cif_file, spacegroup, records, cellpar, symops, lists_symops):
+    """(choice, source) for a CIF in a space group with two origins.
+
+    The CIF's listed operators decide when they match one choice; then its
+    origin tags; then the atoms themselves (_origin_from_expansion). None
+    for a group with one origin. Raises AmbiguousOriginError.
+    """
+    if spacegroup not in MULTI_ORIGIN_SPACEGROUPS:
+        return None, None
+    try:
+        with open(cif_file, "r", errors="ignore") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    tag_choice, tag = cif_origin_tag(text)
+    if lists_symops:
+        op_choice = _symops_origin_choice(symops, spacegroup)
+        if op_choice is not None:
+            if tag_choice is not None and tag_choice != op_choice:
+                ui.warn(f"Warning: {os.path.basename(str(cif_file))}: {tag} says origin "
+                        f"choice {tag_choice} but its symmetry operators are origin "
+                        f"choice {op_choice}; following the operators.")
+            return op_choice, "the CIF's symmetry operators"
+        if tag_choice is not None:
+            return tag_choice, tag
+        return None, None
+    if tag_choice is not None:
+        return tag_choice, tag
+    if not records:
+        return None, None
+    return _origin_from_expansion(records[0], records[1], spacegroup, cellpar)
+
+
+def apply_origin_setting(cif_data, options):
+    """cif_data expanded in the origin choice the deck will declare.
+
+    origin_setting STANDARD (origin choice 2) or ALTERNATE (origin choice 1)
+    states which origin the CIF's coordinates use and overrides what was read
+    from the CIF; AUTO keeps the choice parse_cif read. A CIF that lists its
+    operators is already expanded by them and is left as it is.
+    """
+    spacegroup = cif_data.get("spacegroup")
+    if spacegroup not in MULTI_ORIGIN_SPACEGROUPS:
+        return cif_data
+    setting = (options or {}).get("origin_setting", "AUTO")
+    wanted = {"STANDARD": 2, "ALTERNATE": 1}.get(setting)
+    if wanted is None or wanted == cif_data.get("cif_origin_choice"):
+        return cif_data
+    have = cif_data.get("cif_origin_choice")
+    if have is not None:
+        ui.warn(f"Warning: origin_setting {setting} (origin choice {wanted}) overrides "
+                f"origin choice {have} read from {cif_data.get('cif_origin_source')}.")
+    out = dict(cif_data)
+    out["cif_origin_choice"] = wanted
+    out["cif_origin_source"] = f"origin_setting {setting}"
+    raw_syms = cif_data.get("cif_atom_symbols")
+    raw_pos = cif_data.get("cif_atom_positions")
+    if cif_data.get("cif_lists_symops", True) or not raw_syms or not raw_pos:
+        return out
+    atoms = _expand_in_origin(raw_syms, raw_pos, spacegroup,
+                              [cif_data[k] for k in ("a", "b", "c", "alpha", "beta", "gamma")],
+                              wanted)
+    out["symbols"] = atoms.get_chemical_symbols()
+    out["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in out["symbols"]]
+    out["positions"] = atoms.get_scaled_positions()
+    return out
+
+
+def deck_origin_choice(spacegroup, positions, origin_setting="AUTO", cif_origin=None):
     """The ITA origin choice (1 or 2) a deck for these atoms declares.
 
     Only the space groups with two origins have a choice; None otherwise.
     CRYSTAL's IFSO = 0 ("0 0 0") takes origin choice 2 and IFSO = 1 ("0 0 1")
-    origin choice 1 (manual p. 20, and the two diamond decks on p. 373).
-    With origin_setting AUTO, Fd-3m atoms at (0, 0, 0) but none at
-    (1/8, 1/8, 1/8) are read as origin choice 1; everything else as 2.
+    origin choice 1 (manual p. 19-20, and the two diamond decks on p. 373).
+    origin_setting STANDARD / ALTERNATE force choice 2 / 1. With AUTO, the
+    choice read from the CIF (cif_origin, see resolve_cif_origin) is taken;
+    without one, Fd-3m atoms at (0, 0, 0) but none at (1/8, 1/8, 1/8) are
+    read as origin choice 1, and everything else as 2.
     """
     if spacegroup not in MULTI_ORIGIN_SPACEGROUPS:
         return None
     spg_info = MULTI_ORIGIN_SPACEGROUPS[spacegroup]
     if origin_setting == "ALTERNATE" and "alt_crystal_code" in spg_info:
         return 1
+    if origin_setting == "STANDARD":
+        return 2
+    if cif_origin in (1, 2):
+        return cif_origin
     if origin_setting == "AUTO" and spacegroup == 227:
         std_pos = spg_info.get("default_pos", (0.125, 0.125, 0.125))
         alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
@@ -683,38 +956,14 @@ def expand_to_p1(cif_data, options):
 
     ASE expands the CIF's atom records with the CIF's own operators when it
     lists them, and otherwise with origin choice 1 of the space group. For a
-    group with two origins whose deck is written in origin choice 2 (diamond
-    at (1/8, 1/8, 1/8) in Fd-3m, CRYSTAL's own example) that is a different
-    structure: 16 atoms at Fd-3m 16c instead of diamond's 8. Re-expand the
-    CIF's records in the origin the deck declares - where that origin is
-    known: origin_setting STANDARD, or Fd-3m, whose origin AUTO reads from
-    the atoms. For the other groups AUTO is a bare default, and ASE's
-    expansion is left as it was.
+    group with two origins parse_cif already re-expanded the records in the
+    origin the CIF uses (resolve_cif_origin): diamond at (1/8, 1/8, 1/8)
+    read in origin choice 1 is 16 atoms at Fd-3m 16c instead of diamond's 8,
+    and FeSe P4/nmm in origin choice 2 read as choice 1 is 12 atoms instead
+    of 4. Here only an explicit origin_setting (STANDARD / ALTERNATE) can
+    still change the origin (apply_origin_setting).
     """
-    if cif_data.get("cif_lists_symops", True):
-        return cif_data
-    raw_syms = cif_data.get("cif_atom_symbols")
-    raw_pos = cif_data.get("cif_atom_positions")
-    spacegroup = cif_data.get("spacegroup")
-    if not raw_syms or not raw_pos:
-        return cif_data
-    origin_setting = options.get("origin_setting", "AUTO")
-    if not (origin_setting == "STANDARD"
-            or (origin_setting == "AUTO" and spacegroup == 227)):
-        return cif_data
-    if deck_origin_choice(spacegroup, raw_pos, origin_setting) != 2:
-        return cif_data
-    from ase.spacegroup import crystal
-
-    atoms = crystal(
-        raw_syms, raw_pos, spacegroup=spacegroup, setting=2,
-        cellpar=[cif_data[k] for k in ("a", "b", "c", "alpha", "beta", "gamma")],
-    )
-    expanded = dict(cif_data)
-    expanded["symbols"] = atoms.get_chemical_symbols()
-    expanded["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in expanded["symbols"]]
-    expanded["positions"] = atoms.get_scaled_positions()
-    return expanded
+    return apply_origin_setting(cif_data, options)
 
 
 def _hall_numbers(number):
@@ -747,6 +996,7 @@ def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
         candidates = [by_choice["2"], by_choice["1"]]
 
     chosen = None
+    chosen_origin = None
     for origin, hall in zip((2, 1), candidates):
         dataset = attribute_dataset(
             spglib.get_symmetry_dataset(cell, symprec=tolerance, hall_number=hall)
@@ -760,8 +1010,10 @@ def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
         numbers = [int(std[2][i]) for i in unique]
         if chosen is None:
             chosen = (std[0], positions, numbers)
+            chosen_origin = origin if len(candidates) > 1 else None
         if len(candidates) == 1 or deck_origin_choice(number, positions) == origin:
             chosen = (std[0], positions, numbers)
+            chosen_origin = origin if len(candidates) > 1 else None
             break
 
     lattice, positions, numbers = chosen
@@ -777,6 +1029,8 @@ def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
         a=float(lengths[0]), b=float(lengths[1]), c=float(lengths[2]),
         alpha=angle(1, 2), beta=angle(0, 2), gamma=angle(0, 1),
         spacegroup=number,
+        cif_origin_choice=chosen_origin,
+        cif_origin_source="spglib's standard cell" if chosen_origin else None,
         atomic_numbers=numbers,
         symbols=[ATOMIC_NUMBER_TO_SYMBOL[z] for z in numbers],
         positions=positions,
@@ -1414,32 +1668,16 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         return False
 
     if not is_compatible:
-        ui.warn(
-            f"WARNING: The selected basis set '{options['basis_set']}' does not support all elements in your structure!"
-        )
-        ui.print(
-            f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
-        )
-        # Non-interactive (batch/workflow callback): fail cleanly instead of
-        # raising EOFError at the prompt. Nothing is on disk yet - the deck is
-        # only opened further down - so there is no partial file to remove;
-        # just signal failure so the caller does not report success.
-        if interactive is None:
-            interactive = sys.stdin.isatty()
-        if not interactive:
-            ui.err(
-                "Aborting D12 file creation (unsupported elements, no terminal to confirm)."
-            )
-            return False
-        try:
-            go_on = yes_no_prompt("Continue anyway?", "no")
-        except EOFError:
-            ui.err("Aborting D12 file creation (unsupported elements, no "
-                   "answer left on stdin to confirm).")
-            return False
-        if not go_on:
-            ui.err("Aborting D12 file creation.")
-            return False
+        # CRYSTAL rejects a deck with no basis for one of its elements, so it
+        # is never written - there is no "continue anyway?". Nothing is on
+        # disk yet (the deck is only opened further down), so the refusal
+        # just has to be reported and the caller told.
+        label = (basis_family_name(options["basis_set"])
+                 if options["basis_set_type"] == "EXTERNAL" else options["basis_set"])
+        missing = ", ".join(f"{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})" for z in missing_elements)
+        ui.err(f"Not writing {os.path.basename(output_file)}: the basis set '{label}' "
+               f"has no basis for {missing}.")
+        return False
 
     # Extract options
     dimensionality = options["dimensionality"]
@@ -1504,30 +1742,25 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             )
             ui.print(f"CRYSTAL directive: {origin_directive}")
 
-        elif (
-            origin_setting == "AUTO" and spacegroup == 227
-        ):  # Special handling for Fd-3m
-            # Try to detect based on atom positions (shared with the P1
-            # expansion, which must describe the same structure)
-            alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
-            alt_origin = deck_origin_choice(spacegroup, positions, origin_setting) == 1
-
-            if alt_origin:
-                # If only alternate position atoms found, use alternate origin
+        elif origin_setting == "AUTO":
+            # The origin the coordinates use: read from the CIF by parse_cif
+            # (operators, tags or atoms - resolve_cif_origin), the same one
+            # the P1 expansion and the GUI viewer use. Without it (data not
+            # from parse_cif) Fd-3m is read from its atoms, the rest as 2.
+            choice = deck_origin_choice(spacegroup, positions, origin_setting,
+                                        cif_data.get("cif_origin_choice"))
+            if choice == 1:
                 origin_directive = spg_info["alt_crystal_code"]
                 ui.print(
-                    f"Detected alternate origin ({spg_info['alt']}) for space group 227 (atoms at {alt_pos})"
-                )
-                ui.print(
-                    f"Using CRYSTAL directive: {origin_directive} (fewer symmetry operators with translational components)"
+                    f"Origin choice 1 ({spg_info['alt']}) for space group {spacegroup} "
+                    f"({spg_info['name']}): CRYSTAL directive {origin_directive} (IFSO 1)"
                 )
             else:
-                # Default to standard origin
                 origin_directive = spg_info["crystal_code"]
                 ui.print(
-                    f"Using standard origin ({spg_info['default']}) for space group 227"
+                    f"Origin choice 2 ({spg_info['default']}) for space group {spacegroup} "
+                    f"({spg_info['name']}): CRYSTAL directive {origin_directive}"
                 )
-                ui.print(f"CRYSTAL directive: {origin_directive}")
 
     # Handle trigonal space groups for rhombohedral axes directive
     use_rhombohedral_axes = False
@@ -1878,7 +2111,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                     options, dimensionality, atomic_numbers, symbols, positions,
                     (a, b, c, alpha, beta, gamma), spacegroup, layer_group, rod_group,
                     slabcut, is_spin_polarized, False)
-        except ic.IonChargeError as e:
+        except (ic.IonChargeError, BasisFileError) as e:
             ui.err(f"Not writing {os.path.basename(output_file)}: {e}")
             return False
         if charge_setup is not None and charge_setup.spinlock:
@@ -1888,6 +2121,11 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
 
     # Open output file (renamed into place only once the deck is complete)
     with atomic_deck(output_file) as f:
+        if options.get("soc"):
+            # Two-component SOC deck: written as usual, then rewritten by
+            # soc_ecp.soc_deck before it reaches the file.
+            f = SocDeckBuffer(f, options=options)
+
         # Write title
         print(os.path.basename(output_file).replace(".d12", ""), file=f)
 
@@ -2062,8 +2300,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                             ui.err(f"Not writing {os.path.basename(output_file)}: {exc}")
                             f.discard()
                             return False
-                        if basis_content:
-                            print(basis_content, file=f, end="")
+                        print(basis_content, file=f, end="")
                     print("99 0", file=f)
                     print("END", file=f)
 
@@ -2111,8 +2348,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                         ui.err(f"Not writing {os.path.basename(output_file)}: {exc}")
                         f.discard()
                         return False
-                    if basis_content:
-                        print(basis_content, file=f, end="")
+                    print(basis_content, file=f, end="")
                 print("99 0", file=f)
                 print("END", file=f)
 
@@ -2166,13 +2402,33 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
 
         # Note: The single END at the very end is written by write_scf_section
 
+        if options.get("soc"):
+            refusal = f.finish()
+            if refusal:
+                ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")
+                return False
+            # No parent to tell a metal by: one warning per run for SOC decks
+            # without SMEAR ("smear" in the options file adds it).
+            if not deck_has_smear(f.written):
+                cif_metal_warning_once(ui.warn)
+
     if charge_setup is not None:
         import ion_charges as ic
 
         with open(output_file) as fh:
             written = fh.read()
+        charged = ic.apply_charge_setup(written, charge_setup)
+        # the records go in after the SOC deck was written: checked as it checks its own
+        refusal = soc_charge_records_refusal(charged, options.get("soc_basis")) if options.get("soc") else None
+        if refusal:
+            try:
+                os.remove(output_file)
+            except OSError:
+                pass
+            ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")
+            return False
         with atomic_deck(output_file) as f:
-            f.write(ic.apply_charge_setup(written, charge_setup))
+            f.write(charged)
         for line in charge_setup.report:
             ui.print(f"  Charge: {line}")
         for line in charge_setup.warnings:
@@ -2271,14 +2527,22 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
         else:
             basis_name = options["basis_set"]
 
-        output_name = f"{base_name}_{dimensionality}_{calc_type}_{symmetry_tag}_{method_name}_{basis_name}.d12"
+        # a two-component SOC deck is named apart from the scalar one
+        soc_tag = "_SOC" if options.get("soc") else ""
+        output_name = (f"{base_name}_{dimensionality}_{calc_type}_{symmetry_tag}_"
+                       f"{method_name}{soc_tag}_{basis_name}.d12")
         output_file = os.path.join(output_directory, output_name)
+        if os.path.exists(output_file):
+            ui.warn(f"{output_name} already exists; it is replaced by the new deck")
 
         try:
             ui.print(f"Processing {cif_file}...")
 
             # Parse CIF file
             cif_data = parse_cif(cif_file, interactive=interactive)
+
+            # An explicit origin_setting says which origin the CIF uses
+            cif_data = apply_origin_setting(cif_data, options)
 
             # Apply symmetry handling
             if options["symmetry_handling"] == "P1":
@@ -2538,8 +2802,11 @@ Running with no arguments starts the interactive converter.""",
         )
         if save_options or args.save_options:
             try:
+                from basis_library import portable_options
                 with open(args.options_file, "w") as f:
-                    json.dump(options, f, indent=2)
+                    # a bundled library is stored by name, not by this
+                    # checkout's path, so the file works on another machine
+                    json.dump(portable_options(options), f, indent=2)
                 ui.ok(f"Saved options to {args.options_file}")
             except Exception as e:
                 ui.err(f"Error saving options to {args.options_file}: {e}")

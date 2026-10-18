@@ -459,6 +459,7 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
                       spinlock: Optional[int] = None, spinlock_cycles: Optional[int] = None,
                       parent_spinlock: Optional[Tuple[int, int]] = None,
                       parent_out_text: Optional[str] = None,
+                      spinlock_reference_charge=None,
                       interactive: bool = False,
                       ask: Optional[Callable[[str], str]] = None,
                       electron_count_known: bool = True) -> Optional[ChargeSetup]:
@@ -467,7 +468,10 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
     Returns None when nothing was asked for. Raises IonChargeError with the
     reason for anything MACE will not write. electron_count_known=False (a
     deck with symmetry lists only its asymmetric unit) skips the parity check
-    and its spin state, with a warning.
+    and its spin state, with a warning - except that a SPINLOCK the deck or
+    its parent carries, set for the net charge spinlock_reference_charge
+    (0 for a neutral parent), is checked against the parity change the new
+    net charge makes.
     """
     if not ion_charges and net_charge is None and not site_states:
         return None
@@ -620,9 +624,33 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
         setup.warnings.append("WARNING: the deck has symmetry, so its listed atoms are not the whole "
                               "cell and the electron-count parity was not checked; if the count is "
                               "odd, set SPIN + SPINLOCK and check the count in the output")
+        carried = method.spinlock if method.spinlock else parent_spinlock
+        shift = q - Decimal(str(spinlock_reference_charge)) \
+            if spinlock_reference_charge is not None else None
+        if carried and shift is not None and shift == shift.to_integral_value():
+            # the carried SPINLOCK fit the reference electron count, so its
+            # parity is that count's; the new net charge moves the count by
+            # -shift electrons
+            want_odd = (int(carried[0]) + int(shift)) % 2 == 1
+            if spinlock:
+                if (int(spinlock) % 2 == 1) != want_odd:
+                    raise IonChargeError(
+                        f"SPINLOCK {spinlock} does not fit: the carried SPINLOCK {carried[0]} "
+                        f"fit the parent's electron count, and net charge {fmt_q(q)} makes "
+                        f"nalpha-nbeta {'odd' if want_odd else 'even'}")
+            elif int(shift) % 2:
+                raise IonChargeError(
+                    f"the deck carries SPINLOCK {carried[0]} {carried[1]}, set for the parent's "
+                    f"electron count; net charge {fmt_q(q)} changes that count by "
+                    f"{abs(int(shift))}, so nalpha-nbeta must be "
+                    f"{'odd' if want_odd else 'even'} and CRYSTAL would stop (\"NALPHA-NBETA "
+                    f"NOT COMPATIBLE\"). Give the spin state: --spinlock "
+                    f"{abs(int(carried[0]) + 1) if want_odd else max(int(carried[0]) - 1, 0)} "
+                    f"(spinlock in a config)")
         if spinlock:
             setup.spinlock = (int(spinlock), int(spinlock_cycles or DEFAULT_SPINLOCK_CYCLES))
             setup.spin = method.method == "DFT"
+            setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} (given)")
         if setup.doping is not None:
             setup.report.append(f"net charge {fmt_q(q)}: DOPING {setup.doping_lines()[1]}")
         return setup
@@ -681,6 +709,15 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
     elif spinlock and integral and int(spinlock) % 2 != int(electrons) % 2:
         raise IonChargeError(f"SPINLOCK {spinlock} does not fit {fmt_n(electrons)} electrons "
                              "(nalpha-nbeta must have the parity of the electron count)")
+    elif spinlock and integral:
+        setup.spinlock = (int(spinlock), int(spinlock_cycles or DEFAULT_SPINLOCK_CYCLES))
+        setup.spin = method.method == "DFT"
+        setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} (given)")
+    elif integral and method.spinlock and int(method.spinlock[0]) % 2 != int(electrons) % 2:
+        raise IonChargeError(
+            f"the deck carries SPINLOCK {method.spinlock[0]} {method.spinlock[1]}, which does "
+            f"not fit {fmt_n(electrons)} electrons (nalpha-nbeta must have the parity of the "
+            f"electron count); give the spin state with --spinlock (spinlock in a config)")
 
     # 7. the CHEMOD sums are exact
     for label, vec in setup.chemod:
@@ -705,8 +742,8 @@ def apply_charge_setup(text: str, setup: ChargeSetup) -> str:
     """The deck with the set-up's records added.
 
     Refuses a deck that already has CHEMOD, DOPING or CHARGED (strip them
-    first, or leave the deck alone). SPIN goes before ENDDFT and SPINLOCK
-    before the final END, each only when the deck lacks it.
+    first, or leave the deck alone). SPIN goes before ENDDFT when the deck
+    lacks it, and SPINLOCK before the final END, replacing one the deck has.
     """
     have = extract_charge_records(text)
     if any(have.values()):
@@ -728,7 +765,13 @@ def apply_charge_setup(text: str, setup: ChargeSetup) -> str:
             raise IonChargeError("an odd electron count needs SPIN, but the deck has no DFT block")
         lines.insert(upper.index("ENDDFT"), "SPIN")
     tail = setup.doping_lines()
-    if setup.spinlock and "SPINLOCK" not in [l.strip().upper() for l in lines]:
+    if setup.spinlock:
+        # a SPINLOCK the deck already carries (from its parent) is replaced:
+        # the set-up's value was worked out, or given, for this electron count
+        upper = [l.strip().upper() for l in lines]
+        if "SPINLOCK" in upper[1:]:
+            k = upper.index("SPINLOCK", 1)
+            del lines[k:k + 2]
         tail = tail + ["SPINLOCK", f"{setup.spinlock[0]} {setup.spinlock[1]}"]
     if tail:
         end = _final_end(lines)
@@ -736,6 +779,56 @@ def apply_charge_setup(text: str, setup: ChargeSetup) -> str:
             raise IonChargeError("no final END to put DOPING/SPINLOCK before")
         lines[end:end] = tail
     return "\n".join(lines) + ("\n" if trailing else "")
+
+
+def set_spinlock(text: str, value: Optional[int], cycles: Optional[int],
+                 parent_out_text: Optional[str] = None) -> Tuple[str, List[str]]:
+    """The deck with SPINLOCK VALUE CYCLES, replacing one it has: a spin state
+    asked for on its own, without a charge change (opt2d12 --spinlock).
+
+    value None keeps the deck's own nalpha-nbeta and changes only its cycles.
+    Raises IonChargeError for a deck without a spin-polarized Hamiltonian, or
+    a value whose parity does not fit the deck's electron count (when the
+    count is known: a deck without symmetry, or else the parent run's
+    Mulliken electron count, which the deck keeps with its carried charge).
+    """
+    method = deck_method(text)
+    if value is None:
+        if not method.spinlock:
+            raise IonChargeError("spinlock_cycles changes the cycles of a SPINLOCK, but the deck "
+                                 "has none; give the spin state too (--spinlock N)")
+        value = method.spinlock[0]
+    cycles = int(cycles or (method.spinlock[1] if method.spinlock else DEFAULT_SPINLOCK_CYCLES))
+    if not method.spin:
+        raise IonChargeError(
+            "SPINLOCK fixes nalpha-nbeta of a spin-polarized run, but the deck is closed shell "
+            "(no SPIN in its DFT block, or RHF); make it spin-polarized first")
+    notes = []
+    from charge_records import _child_electrons
+    electrons, _ = _child_electrons(text)
+    if electrons is None and parent_out_text:
+        count = frag.mulliken_electron_count(parent_out_text)
+        if count is not None and abs(count - round(count)) < 1e-3:
+            electrons = Decimal(int(round(count)))
+    if electrons is not None and electrons == electrons.to_integral_value():
+        if int(value) % 2 != int(electrons) % 2:
+            raise IonChargeError(f"SPINLOCK {value} does not fit {fmt_n(electrons)} electrons "
+                                 "(nalpha-nbeta must have the parity of the electron count)")
+    else:
+        notes.append("WARNING: the deck has symmetry, so the electron-count parity of "
+                     f"SPINLOCK {value} was not checked; check NALPHA-NBETA in the output")
+    lines = text.splitlines()
+    trailing = text.endswith("\n")
+    upper = [l.strip().upper() for l in lines]
+    if "SPINLOCK" in upper[1:]:
+        k = upper.index("SPINLOCK", 1)
+        del lines[k:k + 2]
+    end = _final_end(lines)
+    if end is None:
+        raise IonChargeError("no final END to put SPINLOCK before")
+    lines[end:end] = ["SPINLOCK", f"{int(value)} {cycles}"]
+    notes.insert(0, f"SPINLOCK {int(value)} {cycles} (given)")
+    return "\n".join(lines) + ("\n" if trailing else ""), notes
 
 
 def strip_charge_records(text: str) -> str:
@@ -1020,13 +1113,16 @@ clusters".""")
         try:
             with open(path) as f:
                 text = f.read()
+            from charge_records import parent_electron_offset
+            reference_q = -parent_electron_offset(text)
             if args.replace:
                 text = strip_charge_records(text)
             setup = plan_for_deck(text, ion_charges=args.ion_charges, net_charge=args.net_charge,
                                   site_states=site_states, chemod=args.chemod,
                                   fragment_bond_scale=args.fragment_bond_scale,
                                   spinlock=args.spinlock, spinlock_cycles=args.spinlock_cycles,
-                                  parent_out_text=parent_text, interactive=interactive)
+                                  parent_out_text=parent_text, interactive=interactive,
+                                  spinlock_reference_charge=reference_q)
             new = apply_charge_setup(text, setup)
         except (IonChargeError, OSError, ValueError) as e:
             print(f"{name}: NOT written - {e}", file=sys.stderr)

@@ -24,11 +24,11 @@ class MissingDataAnalyzer:
         'OPT': {
             'required': ['total_energy_au', 'optimization_cycles'],
             'optional': ['total_energy_ev', 'total_energy_plus_d3_au', 'optimization_converged',
-                         'final_gradient_norm', 'final_primitive_a', 'final_primitive_b',
-                         'final_primitive_c', 'final_primitive_alpha', 'final_primitive_beta',
-                         'final_primitive_gamma', 'final_primitive_cell_volume',
-                         'final_primitive_cell_area', 'final_primitive_cell_length',
-                         'final_density', 'atoms_in_unit_cell']
+                         'final_gradient_norm', 'primitive_a', 'primitive_b',
+                         'primitive_c', 'primitive_alpha', 'primitive_beta',
+                         'primitive_gamma', 'primitive_cell_volume',
+                         'primitive_cell_area', 'primitive_cell_length',
+                         'density', 'atoms_in_unit_cell']
         },
         'SP': {
             # electronic_classification is only emitted when a band gap is found, so it
@@ -39,8 +39,7 @@ class MissingDataAnalyzer:
             'required': ['total_energy_au'],
             'optional': ['total_energy_ev', 'electronic_classification', 'band_gap',
                          'direct_band_gap', 'indirect_band_gap',
-                         'fermi_energy', 'vbm_energy', 'cbm_energy', 'is_spin_polarized',
-                         'conductivity_type']
+                         'fermi_energy_au', 'spin_polarized']
         },
         'FREQ': {
             'required': ['has_frequency_data'],
@@ -51,16 +50,15 @@ class MissingDataAnalyzer:
         },
         'BAND': {
             'required': ['has_band_structure'],
-            'optional': ['total_bands', 'total_kpoints', 'fermi_energy_band',
-                         'band_gap_advanced_ev', 'band_structure_k_points', 'band_dat_num_bands',
+            'optional': ['total_bands', 'total_kpoints', 'fermi_energy_au',
+                         'band_fundamental_gap_ev', 'band_structure_k_points', 'band_dat_num_bands',
                          'band_dat_num_kpoints', 'band_dat_metallic',
-                         'electronic_classification_advanced', 'is_semimetal_advanced']
+                         'electronic_classification']
         },
         'DOSS': {
             'required': ['has_dos'],
-            'optional': ['doss_dat_metallic', 'doss_dat_band_gap_ev', 'doss_dat_at_fermi',
-                         'doss_dat_num_energy_points', 'fermi_energy_dos', 'dos_at_fermi_level',
-                         'band_gap', 'vbm_energy']
+            'optional': ['dos_is_metallic', 'dos_band_gap_from_dos_ev', 'dos_at_fermi_total',
+                         'doss_dat_num_energy_points', 'fermi_energy_au', 'band_gap']
         },
         # v1.1.0: the extractor parses BoltzTraP transport summaries and ECH3/
         # POT3 grid statistics. Required keys are the unconditionally-emitted
@@ -69,17 +67,30 @@ class MissingDataAnalyzer:
         'TRANSPORT': {
             'required': ['transport_data_available'],
             'optional': ['transport_n_temperatures', 'transport_n_data_points',
-                         'transport_seebeck_max_uv_per_k', 'transport_power_factor_max',
-                         'transport_zt_electronic_max', 'transport_zt_max', 'transport_carrier_type',
+                         'transport_seebeck_max_uv_per_k', 'transport_power_factor_max_avg',
+                         'transport_zt_electronic_max_avg', 'transport_zt_electronic_best_axis',
+                         'transport_carrier_type',
                          'transport_kappa0_at_zt_max', 'transport_kappa_electronic_at_zt_max',
-                         'band_gap', 'electronic_classification', 'conductivity_type']
+                         'transport_zt_total_max_avg',   # only with --kappa-lattice
+                         'band_gap', 'electronic_classification']
         },
         'CHARGE+POTENTIAL': {
             'required': ['chargepot_has_ech3', 'chargepot_has_pot3'],
             'optional': ['chargepot_grid_dims', 'chargepot_grid_points',
                          'chargepot_computed_properties', 'chargepot_grid_files',
                          'chargepot_num_grid_files', 'chargepot_scf_total_energy_au',
-                         'chargepot_spin_polarized']
+                         'spin_polarized']
+        },
+        # 1.1.6: the extractor indexes the ORBITALS Molden files (a run that
+        # wrote none is not complete, so the file count is always there)
+        'ORBITALS': {
+            'required': ['orbitals_num_files'],
+            'optional': ['orbitals_num_kpoints', 'orbitals_usable_kpoints', 'orbitals_files',
+                         'orbitals_total_bytes', 'orbitals_nbf', 'orbitals_dimensionality',
+                         'orbitals_kpoints', 'orbitals_self_check', 'orbitals_homo_band',
+                         'orbitals_lumo_band', 'orbitals_homo_energy_au',
+                         'orbitals_lumo_energy_au', 'orbitals_gap_ev',
+                         'orbitals_spin_polarized']
         }
     }
 
@@ -92,6 +103,7 @@ class MissingDataAnalyzer:
         'vibrational': ['FREQ'],
         'doss_dat': ['DOSS'],
         'band_structure': ['BAND'],
+        'orbitals': ['ORBITALS'],
     }
     
     def __init__(self, db):

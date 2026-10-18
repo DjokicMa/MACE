@@ -20,6 +20,8 @@ import os
 import sys
 import re
 import math
+import sqlite3
+import time
 import argparse
 import json
 from pathlib import Path
@@ -28,8 +30,10 @@ from datetime import datetime
 
 from mace.constants import HARTREE_TO_EV
 from mace.utils import db_build
+from mace.utils.fast_text import ci_findall, ci_search
 from mace.utils.calc_detection import (
-    is_band_output, is_optimization_output, is_transport_output)
+    is_band_output, is_optimization_output, is_transport_output,
+    is_two_component_output)
 
 # Import MACE components
 try:
@@ -41,6 +45,57 @@ except ImportError as e:
 
 # The real electron count of a run (DOPING does not change the header's count)
 from mace.utils.ion_fragments import mulliken_electron_count  # noqa: E402
+
+from mace.utils import property_keys  # noqa: E402
+
+_DIR_NAMES: Dict[str, Tuple[int, List[str]]] = {}
+
+
+def _atom_population(atom: Dict[str, Any]):
+    """A Mulliken atom row's population (named mulliken_charge before 1.1.6)."""
+    value = atom.get('mulliken_population')
+    return atom.get('mulliken_charge') if value is None else value
+
+
+def _sorted_names(directory: Path) -> List[str]:
+    """The entry names of ``directory`` in ``sorted(directory.iterdir())``
+    order (entries of one directory sort by name), cached while the
+    directory's mtime stays the same: every BAND/DOSS output of a folder
+    looks for its .DAT file in the same listing. An entry added or removed
+    changes the mtime, so a long-lived process never sees a stale list."""
+    key = str(directory)
+    try:
+        mtime = os.stat(directory).st_mtime_ns
+    except OSError:
+        mtime = None
+    hit = _DIR_NAMES.get(key)
+    if mtime is not None and hit is not None and hit[0] == mtime:
+        return hit[1]
+    names = [p.name for p in sorted(directory.iterdir())]
+    # a listing whose mtime is recent is not kept: on a file system with a
+    # coarse mtime a file could still be added within the same tick
+    if mtime is not None and time.time_ns() - mtime > 2_000_000_000:
+        if len(_DIR_NAMES) > 64:
+            _DIR_NAMES.clear()
+        _DIR_NAMES[key] = (mtime, names)
+    return names
+
+
+# Lower-case literals each INFORMATION pattern of _extract_scf_settings holds
+# verbatim: a file lacking one cannot match, so the search is skipped there
+# (fast_text.ci_search).
+_SCF_INFO_LITERALS = {
+    'scf_biposize': ('information ', 'biposize', 'coulomb bipolar buffer set to'),
+    'scf_exchsize': ('information ', 'exchsize', 'exchange bipolar buffer size set to'),
+    'scf_maxcycle': ('information ', 'maxcycle', 'max number of scf cycles set to'),
+    'scf_ppan': ('information ', 'ppan', 'mulliken population analysis'),
+    'scf_toldee': ('information ', 'toldee', 'scf tol on total energy set to'),
+    'scf_tolinteg': ('information ', 'tolinteg', 'coulomb and exchange series tolerances'),
+    'scf_diis': ('information ', 'diis', 'diis for scf active'),
+    'scf_scfdir': ('information ', 'scfdir', 'direct scf'),
+    'scf_savewf': ('information ', 'savewf'),
+    'scf_savepred': ('information ', 'savepred'),
+}
 
 
 def _scf_parent_of_band_output(output_file: Path) -> Optional[Path]:
@@ -79,6 +134,13 @@ def band_occupied_count(content: str, output_file: Optional[Path] = None) -> Opt
     if abs(count - nearest) > 1e-3 or nearest % 2:
         return None
     return nearest // 2
+
+
+def _property_tables(conn) -> List[str]:
+    """The tables property rows live in: properties, and property_blobs (the
+    large JSON values) where the database has it (1.1.6 on)."""
+    has = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'property_blobs'").fetchone()
+    return ['properties', 'property_blobs'] if has else ['properties']
 
 
 class CrystalPropertyExtractor:
@@ -146,7 +208,7 @@ class CrystalPropertyExtractor:
             # number: the formula extractor's validated symbol table gives it
             try:
                 from mace.utils.formula_extractor import extract_space_group_from_output
-                sg = extract_space_group_from_output(Path(output_file)) if 'SPACE GROUP' in content else None
+                sg = extract_space_group_from_output(Path(output_file), content) if 'SPACE GROUP' in content else None
                 if sg:
                     properties['space_group_number'] = int(sg)
             except Exception:
@@ -161,16 +223,48 @@ class CrystalPropertyExtractor:
         # CHARGE+POTENTIAL (CRYSTAL ECH3/POT3): grid metadata + references to the
         # generated .CUBE grid files. Additive and self-skipping -- returns {} when
         # the .out has no ECH3/POT3 markers, so non-charge calcs are untouched.
-        properties.update(self._extract_charge_potential_properties(content, output_file))
+        charge_potential = self._extract_charge_potential_properties(content, output_file)
+        properties.update(charge_potential)
+        if charge_potential and properties.get('calculation_type') in (None, 'SP'):
+            # the database's calculation type of an ECH3/POT3 run
+            properties['calculation_type'] = 'CHARGE+POTENTIAL'
+        # ORBITALS (Molden orbital export): an index of the .molden files, k points,
+        # levels and HOMO/LUMO; no grids and no coefficients. Self-skipping.
+        orbitals = self._extract_orbitals_properties(content, output_file)
+        properties.update(orbitals)
+        if orbitals:
+            properties['calculation_type'] = 'ORBITALS'
 
         # Extract SCF settings from output
         properties.update(self._extract_scf_settings(content))
-        
-        # Add electronic classification based on band gap
-        properties.update(self._classify_electronic_properties(properties))
-        
+
+        # A molecule has no space group (CRYSTAL prints P 1 for one)
+        if self._dimensionality(content) == 0:
+            properties.pop('space_group_number', None)
+
+        # One Fermi energy: the last SCF's (EFERMI, full precision), else the
+        # FERMI ENERGY a BAND or DOSS output prints (3 decimals)
+        band_fermi = properties.pop('_fermi_band', None)
+        dos_fermi = properties.pop('_fermi_dos', None)
+        if 'fermi_energy_au' not in properties:
+            fermi = band_fermi if band_fermi is not None else dos_fermi
+            if fermi is not None:
+                properties['fermi_energy_au'] = fermi
+
         # Advanced electronic analysis using BAND/DOSS data if available
         properties.update(self._extract_advanced_band_dos_analysis(output_file, properties))
+
+        # One spin flag: an unrestricted run by any sign of one (spin-channel
+        # gaps or band edges, the alpha-beta Mulliken table, the SPIN cube of
+        # an ECH3 run, CRYSTAL's UNRESTRICTED OPEN SHELL line)
+        properties['spin_polarized'] = bool(
+            properties.get('spin_polarized') or properties.get('_mulliken_spin')
+            or properties.pop('_chargepot_spin', False) or 'UNRESTRICTED OPEN SHELL' in content)
+
+        # Add electronic classification based on band gap
+        properties.update(self._classify_electronic_properties(properties, content))
+        for internal in ('_mulliken_spin', '_band_dos_classification'):
+            properties.pop(internal, None)
         
         # Add metadata
         properties['_metadata'] = {
@@ -225,14 +319,47 @@ class CrystalPropertyExtractor:
     # MACE_FRAGMENT_CHARGES=1 or `mace analyze --extract-properties DIR --fragments`).
     extract_fragments = False
 
+    # Total ZT of TRANSPORT runs (opt-in: `--kappa-lattice VALUE|FILE`
+    # [--tau-fs FS]): a transport_zt.KappaLattice and an optional relaxation
+    # time in fs (None: the run's RELAXTIM). Without kappa_lattice no
+    # transport_zt_total* key is written.
+    kappa_lattice = None
+    tau_fs = None
+
+    # names written that the key registry does not know (warned once)
+    _unregistered: set = set()
+
     def _extract_fragment_charges(self, content: str) -> Dict[str, Any]:
         """electron_count and fragment_charges of a charged run (ion_fragments.fragment_charges)."""
         from mace.utils.ion_fragments import fragment_charges
         force = self.extract_fragments or os.environ.get("MACE_FRAGMENT_CHARGES") == "1"
         return fragment_charges(content, force=force)
 
+    # non-periodic directions of a slab (c) and a polymer (b, c): CRYSTAL
+    # prints a formal 500 A there, which is no lattice parameter
+    _NON_PERIODIC = {2: ('c',), 1: ('b', 'c')}
+
+    _PROPERTIES_CELL = re.compile(r'LATTICE PARAMETERS\s+\(ANGSTROMS? AND DEGREES\)\s+-\s+PRIMITIVE CELL\s*\n'
+                                  r'\s*A\s+B\s+C[^\n]*\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)')
+
+    @staticmethod
+    def _dimensionality(content: str) -> Optional[int]:
+        """The run's dimensionality: CRYSTAL's DIMENSIONALITY line, else (a
+        properties run - BAND, DOSS, TRANSPORT - prints none) its primitive
+        cell, where a non-periodic direction is the formal 500 A."""
+        dim = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', content)
+        if dim:
+            return int(dim.group(1))
+        cell = CrystalPropertyExtractor._PROPERTIES_CELL.search(content)
+        if not cell:
+            return None
+        b, c = (float(cell.group(i)) for i in (2, 3))
+        return 1 if b == 500.0 and c == 500.0 else 2 if c == 500.0 else 3
+
     def _extract_structural_properties(self, content: str) -> Dict[str, Any]:
-        """Extract structural properties."""
+        """Lattice and geometry. The plain names are the final geometry's (an
+        OPT's optimized one, else the input geometry), initial_* the input
+        geometry's."""
         props = {}
         
         # Extract both initial and final geometries
@@ -244,36 +371,33 @@ class CrystalPropertyExtractor:
         
         final_geometry = self._extract_final_geometry(content)
         if final_geometry:
-            for key, value in final_geometry.items():
-                props[key if key.startswith('final_') else f'final_{key}'] = value
-        
-        # Use final geometry as default if no prefix specified
-        if final_geometry:
             props.update(final_geometry)
         elif initial_geometry:
-            props.update(initial_geometry)
+            props.update({k: v for k, v in initial_geometry.items() if not k.startswith('initial_')})
 
         # CRYSTAL heads the cell measure VOLUME whatever the dimensionality:
         # for a slab it is the area of the 2D cell (A^2), for a polymer the
         # length of its 1D cell (A). primitive_cell_volume is kept for 3D.
-        dim = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', content)
-        measure = {'2': 'area', '1': 'length'}.get(dim.group(1)) if dim else None
+        dim = self._dimensionality(content)
+        measure = {2: 'area', 1: 'length'}.get(dim)
         if measure:
             for key in [k for k in props if k.endswith('primitive_cell_volume')]:
                 props[key[:-len('volume')] + measure] = props.pop(key)
             # the final cell prints no measure: from its parameters (area
-            # a*b*sin(gamma) of a slab, length a of a polymer), and the plain
-            # name is the final one, as for the other primitive_* values
-            if 'final_primitive_a' in props and f'final_primitive_cell_{measure}' not in props:
+            # a*b*sin(gamma) of a slab, length a of a polymer)
+            if final_geometry and 'primitive_a' in final_geometry and f'primitive_cell_{measure}' not in props:
                 import math
-                if measure == 'area' and {'final_primitive_b', 'final_primitive_gamma'} <= set(props):
-                    final = (props['final_primitive_a'] * props['final_primitive_b']
-                             * math.sin(math.radians(props['final_primitive_gamma'])))
+                if measure == 'area' and {'primitive_b', 'primitive_gamma'} <= set(final_geometry):
+                    final = (final_geometry['primitive_a'] * final_geometry['primitive_b']
+                             * math.sin(math.radians(final_geometry['primitive_gamma'])))
                 else:
-                    final = props['final_primitive_a'] if measure == 'length' else None
+                    final = final_geometry['primitive_a'] if measure == 'length' else None
                 if final is not None:
-                    props[f'final_primitive_cell_{measure}'] = round(final, 6)
                     props[f'primitive_cell_{measure}'] = round(final, 6)
+        for axis in self._NON_PERIODIC.get(dim, ()):
+            for pre in ('', 'initial_'):
+                for cell in ('primitive', 'crystallographic'):
+                    props.pop(f'{pre}{cell}_{axis}', None)
         
         # Number of atoms
         atoms_match = re.search(r'ATOMS IN THE UNIT CELL:\s*(\d+)', content)
@@ -417,17 +541,13 @@ class CrystalPropertyExtractor:
             # Extract final atomic positions
             final_positions = self._extract_atomic_positions(content, search_final=True)
             if final_positions:
-                props['final_atomic_positions'] = final_positions
-                props['final_atoms_count'] = len(final_positions)
                 # x/y/z are fractional (X/A Y/B Z/C) for a 3D cell; a slab,
                 # polymer or molecule has Cartesian columns, named here as
                 # CRYSTAL prints them (e.g. "X/A Y/B Z(ANGSTROM)")
                 axes = re.search(r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+(X\S*)\s+(Y\S*)\s+(Z\S*)\s*\n',
                                  content, re.DOTALL)
                 if axes and any('ANGSTROM' in g for g in axes.groups()):
-                    props['final_atomic_position_axes'] = ' '.join(axes.groups())
-
-                # Set default atomic positions to final (for backward compatibility)
+                    props['atomic_position_axes'] = ' '.join(axes.groups())
                 props['atomic_positions'] = final_positions
         
         return props
@@ -552,10 +672,7 @@ class CrystalPropertyExtractor:
 
     def _extract_electronic_properties(self, content: str) -> Dict[str, Any]:
         """Extract electronic properties."""
-        props = self._band_gap_properties(content)
-        # Add advanced electronic properties
-        props.update(self._extract_advanced_electronic_properties(content))
-        return props
+        return self._band_gap_properties(content)
 
     def _band_gap_properties(self, content: str) -> Dict[str, Any]:
         """band_gap, direct/indirect_band_gap, band_gap_type, alpha/beta_band_gap
@@ -592,11 +709,21 @@ class CrystalPropertyExtractor:
             elif final and self._GAP_LINE.search(content):
                 # the last SCF: its fundamental gap (spin-polarized), else the
                 # smaller gap of its spin channels (0 when it ended conducting
-                # after gapped cycles), not the last line of an earlier cycle;
-                # a run conducting throughout stores none
+                # after gapped cycles), not the last line of an earlier cycle
                 props['band_gap'] = (fundamental[1] if fundamental is not None
                                      else min(v for _, v in final.values()))
-                props['spin_polarized'] = {'ALPHA', 'BETA'} <= set(blocks)
+                # an unrestricted run whose last cycle is conducting prints one
+                # common-EFERMI block, not ALPHA and BETA ones
+                props['spin_polarized'] = ({'ALPHA', 'BETA'} <= set(blocks)
+                                           or 'UNRESTRICTED OPEN SHELL' in content)
+            elif final and all(kind == 'conducting' for kind, _ in final.values()):
+                # conducting in every cycle (no gap line at all): 0, as for
+                # a run that ended conducting and a multi-point OPT ending
+                # conducting. One record serves both spin channels of an
+                # unrestricted run here (a common Fermi level).
+                props['band_gap'] = 0.0
+                props['spin_polarized'] = ({'ALPHA', 'BETA'} <= set(blocks)
+                                           or 'UNRESTRICTED OPEN SHELL' in content)
             elif (not final and self._GAP_LINE.search(content)
                   and re.search(r'OPT END\b.*?^\s*FERMI ENERGY:', content, re.S | re.M)):
                 # a multi-point OPT (its SCF blocks are point 1's) whose final
@@ -605,7 +732,8 @@ class CrystalPropertyExtractor:
                 # ended conducting after gapped cycles.
                 props['band_gap'] = 0.0
                 props['spin_polarized'] = bool(
-                    re.search(r'^\s*BETA\s+ELECTRONS\s*$', content, re.M))
+                    re.search(r'^\s*BETA\s+ELECTRONS\s*$', content, re.M)
+                    or 'UNRESTRICTED OPEN SHELL' in content)
 
         # Direct vs indirect: the kind of the last SCF's gap (the fundamental
         # gap of a spin-polarized run, by the k points of its VBM and CBM, else
@@ -637,71 +765,6 @@ class CrystalPropertyExtractor:
         gaps = [p[k] for k in ('alpha_band_gap', 'beta_band_gap') if k in p]
         return min(gaps) if gaps else None
 
-    def _extract_advanced_electronic_properties(self, content: str) -> Dict[str, Any]:
-        """Extract advanced electronic properties like effective mass and transport properties."""
-        props = {}
-        
-        # Effective mass estimation from band gaps
-        # This is a simplified estimation - real effective mass requires band structure data
-        if 'band_gap' in content.lower():
-            band_gap = self._final_gap_value(content)
-            if band_gap is not None:
-
-                # Simplified effective mass estimation (placeholder for now)
-                # Real implementation would analyze band curvature from BAND calculations
-                if band_gap > 0:
-                    # Rough estimation: smaller gaps often correlate with lighter masses
-                    # This is very approximate and should be replaced with real band structure analysis
-                    estimated_electron_mass = 0.1 + (band_gap / 10.0)  # in m_e units
-                    estimated_hole_mass = 0.2 + (band_gap / 8.0)       # in m_e units
-                    
-                    props.update({
-                        'estimated_electron_effective_mass': estimated_electron_mass,
-                        'estimated_hole_effective_mass': estimated_hole_mass,
-                        'effective_mass_method': 'gap_based_estimation'
-                    })
-        
-        # Carrier mobility estimation (very simplified)
-        if 'estimated_electron_effective_mass' in props:
-            # Simple mobility estimation using μ = qτ/m* with assumed scattering time
-            # This is a placeholder - real mobility requires detailed scattering analysis
-            assumed_scattering_time = 1e-14  # seconds (rough assumption)
-            electron_charge = 1.602e-19      # Coulombs
-            electron_mass_kg = 9.109e-31     # kg
-            
-            m_star_electron = props['estimated_electron_effective_mass'] * electron_mass_kg
-            m_star_hole = props['estimated_hole_effective_mass'] * electron_mass_kg
-            
-            # Mobility in cm²/(V·s)
-            electron_mobility = (electron_charge * assumed_scattering_time / m_star_electron) * 1e4
-            hole_mobility = (electron_charge * assumed_scattering_time / m_star_hole) * 1e4
-            
-            props.update({
-                'estimated_electron_mobility': electron_mobility,
-                'estimated_hole_mobility': hole_mobility,
-                'mobility_method': 'effective_mass_estimation'
-            })
-        
-        # Conductivity type from band gap
-        if 'band_gap' in content.lower():
-            band_gap = self._final_gap_value(content)
-            if band_gap is not None:
-                if band_gap < 0.1:
-                    props['conductivity_classification'] = 'metallic'
-                elif band_gap < 3.0:
-                    props['conductivity_classification'] = 'semiconducting'
-                else:
-                    props['conductivity_classification'] = 'insulating'
-        
-        # Dielectric properties (placeholder - would need specific CRYSTAL output)
-        # This would be extracted from frequency calculations or dielectric tensor output
-        props.update({
-            'has_dielectric_data': False,
-            'dielectric_extraction_note': 'requires_frequency_calculation'
-        })
-        
-        return props
-    
     def _extract_energy_properties(self, content: str) -> Dict[str, Any]:
         """Extract energy-related properties."""
         props = {}
@@ -767,11 +830,25 @@ class CrystalPropertyExtractor:
         # total and the plain DFT energy is it minus the final corrections. A
         # one-point OPT's DFT line is the plain energy (OPT END = it + D3 +
         # gCP), and is left as is.
+        #
+        # An OPT stopped before OPT END (wall time, killed) after its second
+        # point: its last DFT line is the corrected total in the same way.
+        # The plain DFT energy is then that minus the last D3/gCP printed
+        # (point 1's: none is printed for the later points). Stopped inside
+        # point 2's SCF, the last DFT line is point 1's plain energy.
         opt_end = re.findall(r'OPT END\b[^\n]*?E\(AU\):\s*([-\d.E+]+)', content)
         corrections = (d3_energy or 0.0) + (gcp_energy or 0.0)
-        if (opt_end and energy_matches and abs(corrections) > 1e-6
-                and abs(float(opt_end[-1]) - float(energy_matches[-1])) < 1e-6):
-            end = float(opt_end[-1])
+        unfinished_opt = False
+        if not opt_end and energy_matches and 'OPT END' not in content:
+            points = [m.start() for m in self._OPT_POINT.finditer(content)]
+            last_dft = content.rfind('TOTAL ENERGY(DFT)(AU)')
+            # the last DFT line is of point 2 or later (not point 1's, as
+            # when the run was stopped inside point 2's SCF)
+            unfinished_opt = len(points) >= 2 and last_dft > points[1]
+        if energy_matches and abs(corrections) > 1e-6 and (
+                (opt_end and abs(float(opt_end[-1]) - float(energy_matches[-1])) < 1e-6)
+                or unfinished_opt):
+            end = float(opt_end[-1]) if opt_end else float(energy_matches[-1])
             props['total_energy_au'] = end - corrections
             props['total_energy_ev'] = props['total_energy_au'] * HARTREE_TO_EV
             if d3_energy is not None:
@@ -798,6 +875,16 @@ class CrystalPropertyExtractor:
             if corrected_line:
                 props['total_energy_corrected_au'] = float(corrected_line[-1])
                 props['total_energy_corrected_ev'] = float(corrected_line[-1]) * HARTREE_TO_EV
+
+        # A FREQ run restarted from a wavefunction prints no SCF energy: its
+        # displacement table's CENTRAL POINT energy is the corrected total
+        # (equal to the corrected total, D3/gCP included, wherever both are
+        # printed). The plain DFT energy and the corrections are not printed.
+        if 'total_energy_au' not in props and 'total_energy_corrected_au' not in props:
+            central = re.search(r'^\s*CENTRAL POINT\s+(-?\d+\.\d+E[+-]\d+)', content, re.M)
+            if central:
+                props['total_energy_corrected_au'] = float(central.group(1))
+                props['total_energy_corrected_ev'] = float(central.group(1)) * HARTREE_TO_EV
 
         # Extract energy components if available
         energy_components = self._extract_energy_components(content)
@@ -873,7 +960,9 @@ class CrystalPropertyExtractor:
         if general_overlap and not has_alpha_beta:  # Only use general if no alpha+beta
             props['overlap_population'] = general_overlap
         
-        props['is_spin_polarized'] = is_spin_polarized
+        # both spin tables printed: one sign of an unrestricted run, merged
+        # into spin_polarized by extract_all_properties (not stored itself)
+        props['_mulliken_spin'] = is_spin_polarized
 
         # Valence charges of pseudopotential atoms: their Mulliken populations
         # count valence electrons only (see population_analysis_processor).
@@ -896,7 +985,7 @@ class CrystalPropertyExtractor:
         # bare 'OPTGEOM' search: the echoed title of an SP/FREQ/BAND/DOSS run
         # named "..._BULK_OPTGEOM_..." holds that word too.
         if is_optimization_output(content):
-            props['calculation_type'] = 'geometry_optimization'
+            props['calculation_type'] = 'OPT'
             
             # Convergence information. Runs that converge at the first point
             # print "OPT END - CONVERGED" without the convergence-tests line,
@@ -918,9 +1007,12 @@ class CrystalPropertyExtractor:
             if grad_norm_matches:
                 props['final_gradient_norm'] = float(grad_norm_matches[-1])
         
-        # Check for single point calculation
-        elif 'SINGLE POINT CALCULATION' in content or 'SCFDIR' in content:
-            props['calculation_type'] = 'single_point'
+        # Check for single point calculation: CRYSTAL23 prints neither
+        # phrase for an SP, but its SCF header (a FREQ run's is overridden
+        # by the frequency extraction)
+        elif ('SINGLE POINT CALCULATION' in content or 'SCFDIR' in content
+              or 'CRYSTAL - SCF - TYPE OF CALCULATION' in content):
+            props['calculation_type'] = 'SP'
         
         return props
     
@@ -953,6 +1045,13 @@ class CrystalPropertyExtractor:
         centering_match = re.search(r'CENTRING CODE\s+([\d/]+)', content)
         if centering_match:
             props['centering_code'] = centering_match.group(1)
+
+        # A slab's layer group: CRYSTAL prints it as the two-sided plane
+        # group ("TWO-SIDED PLANE GROUP N.  1          :  P 1")
+        layer = re.search(r'^\s*TWO-SIDED PLANE GROUP N\.\s*(\d+)\s*:\s*(\S.*?)\s*$', content, re.M)
+        if layer:
+            props['layer_group_number'] = int(layer.group(1))
+            props['layer_group_symbol'] = layer.group(2)
         
         return props
     
@@ -1118,7 +1217,7 @@ class CrystalPropertyExtractor:
             else:
                 # A slab (X/A Y/B Z(ANGSTROM)), polymer (X/A Y(ANGSTROM)
                 # Z(ANGSTROM)) or molecule (all in ANGSTROM): the table's
-                # header names each column's unit (final_atomic_position_axes)
+                # header names each column's unit (atomic_position_axes)
                 final_geom_match = re.search(
                     r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+(?:X/A|X\(ANGSTROM\))\s+(?:Y/B|Y\(ANGSTROM\))'
                     r'\s+(?:Z/C|Z\(ANGSTROM\))\s*\n\s*\*+\s*\n(.*?)\n\s*(?:T = ATOM|TRANSFORMATION)',
@@ -1213,33 +1312,43 @@ class CrystalPropertyExtractor:
         # so atoms aren't double-counted
         section_content = re.split(r'ATOM\s+Z\s+CHARGE\s+SHELL\s+POPULATION', section_content)[0]
 
-        # Extract atomic charges and populations
-        atoms = []
-        atom_matches = re.finditer(r'(\d+)\s+(\w+)\s+(\d+)\s+([\d.-]+)(.*?)(?=\n\s*\d+|\n\s*ATOM|\n\s*OVERLAP|$)', section_content, re.DOTALL)
-        
-        for atom_match in atom_matches:
-            atom_num = int(atom_match.group(1))
-            element = atom_match.group(2)
-            atomic_num = int(atom_match.group(3))
-            charge = float(atom_match.group(4))
-            
-            # Extract orbital populations
-            orbital_text = atom_match.group(5)
-            orbitals = [float(x) for x in re.findall(r'[\d.-]+', orbital_text) if x.replace('.', '').replace('-', '').isdigit()]
-            
-            atoms.append({
-                'atom_number': atom_num,
-                'element': element,
-                'atomic_number': atomic_num,
-                'mulliken_charge': charge,
-                'orbital_populations': orbitals
-            })
+        atoms = self._mulliken_ao_rows(section_content)
         
         return {
             'total_electrons': total_electrons,
             'atoms': atoms
         }
     
+    # An A.O. population row ("   1 O    8  8.632  1.242 ...") and the
+    # indented lines continuing it (8 populations per line)
+    _MULLIKEN_ROW = re.compile(r'^\s*(\d+)\s+([A-Za-z]{1,2})\s+(\d+)\s+(-?\d+\.\d+)(.*)$')
+    _MULLIKEN_CONT = re.compile(r'^\s+-?\d+\.\d+(?:\s*-?\d+\.\d+)*\s*$')
+    _POPULATION = re.compile(r'-?\d+\.\d+')
+
+    @classmethod
+    def _mulliken_ao_rows(cls, table: str) -> List[Dict[str, Any]]:
+        """The atom rows of a Mulliken A.O. POPULATION table, each with all
+        its populations (continuation lines appended)."""
+        atoms = []
+        for line in table.splitlines():
+            row = cls._MULLIKEN_ROW.match(line)
+            if row:
+                atoms.append({
+                    'atom_number': int(row.group(1)),
+                    'element': row.group(2),
+                    'atomic_number': int(row.group(3)),
+                    # the atom's electron population (CRYSTAL's CHARGE
+                    # column), not its net charge
+                    'mulliken_population': float(row.group(4)),
+                    'orbital_populations': [float(x) for x in cls._POPULATION.findall(row.group(5))],
+                })
+            elif atoms and cls._MULLIKEN_CONT.match(line):
+                atoms[-1]['orbital_populations'].extend(
+                    float(x) for x in cls._POPULATION.findall(line))
+            elif atoms and line.strip():
+                break  # end of the table
+        return atoms
+
     def _extract_overlap_populations(self, content: str, section_type: str) -> List[Dict]:
         """Extract overlap population data for spin-resolved sections."""
         # First, check if we're in a spin-resolved section
@@ -1335,51 +1444,30 @@ class CrystalPropertyExtractor:
         return overlaps
     
     def _extract_general_mulliken_section(self, content: str) -> Dict[str, Any]:
-        """Extract general Mulliken population analysis for non-spin-polarized calculations."""
-        # Look for the general Mulliken section
+        """Extract general Mulliken population analysis for non-spin-polarized calculations.
+
+        The LAST PPAN print is used (earlier ones belong to earlier SCF runs or
+        geometries), and each atom keeps all its A.O. populations: CRYSTAL
+        prints them 8 per line and continues on indented lines, which a
+        stripped line-by-line parse dropped (as _extract_mulliken_section).
+        """
         pattern = r'MULLIKEN POPULATION ANALYSIS - NO\. OF ELECTRONS\s+([\d.-]+)(.*?)(?=OVERLAP POPULATION|EIGENVECTORS|$)'
-        match = re.search(pattern, content, re.DOTALL)
-        
-        if not match:
+        matches = list(re.finditer(pattern, content, re.DOTALL))
+        if not matches:
             return None
-        
+        match = matches[-1]
+
         total_electrons = float(match.group(1))
         section_content = match.group(2)
-        
-        # Extract atomic charges and populations
+
+        # The A.O. POPULATION table only (the SHELL POPULATION table that
+        # follows repeats the atom rows)
         atoms = []
-        
-        # Look for ATOM Z CHARGE A.O. POPULATION section
-        ao_pattern = r'ATOM\s+Z\s+CHARGE\s+A\.O\.\s+POPULATION(.*?)(?=ATOM\s+Z\s+CHARGE\s+SHELL|$)'
-        ao_match = re.search(ao_pattern, section_content, re.DOTALL)
-        
+        ao_match = re.search(r'ATOM\s+Z\s+CHARGE\s+A\.O\.\s+POPULATION(.*?)(?=ATOM\s+Z\s+CHARGE\s+SHELL|$)',
+                             section_content, re.DOTALL)
         if ao_match:
-            ao_content = ao_match.group(1)
-            # Parse individual atoms
-            atom_lines = [line.strip() for line in ao_content.split('\n') if line.strip()]
-            
-            for line in atom_lines:
-                parts = line.split()
-                if len(parts) >= 4 and parts[0].isdigit():
-                    try:
-                        atom_num = int(parts[0])
-                        element = parts[1]
-                        atomic_num = int(parts[2])
-                        charge = float(parts[3])
-                        
-                        # Extract orbital populations (remaining numbers)
-                        orbitals = [float(x) for x in parts[4:] if x.replace('.', '').replace('-', '').isdigit()]
-                        
-                        atoms.append({
-                            'atom_number': atom_num,
-                            'element': element,
-                            'atomic_number': atomic_num,
-                            'mulliken_charge': charge,
-                            'orbital_populations': orbitals
-                        })
-                    except (ValueError, IndexError):
-                        continue
-        
+            atoms = self._mulliken_ao_rows(ao_match.group(1))
+
         return {
             'total_electrons': total_electrons,
             'atoms': atoms
@@ -1472,11 +1560,15 @@ class CrystalPropertyExtractor:
                 rows = conn.execute(
                     "SELECT DISTINCT material_id FROM properties WHERE calc_id = ? AND material_id != ? "
                     "AND extractor_script = 'crystal_property_extractor.py'", (calc_id, material_id)).fetchall()
-                moved = conn.execute(
-                    "UPDATE properties SET material_id = ? WHERE calc_id = ? AND material_id != ? "
-                    "AND extractor_script = 'crystal_property_extractor.py' AND property_name NOT IN "
-                    "(SELECT property_name FROM properties WHERE material_id = ? AND calc_id = ?)",
-                    (material_id, calc_id, material_id, material_id, calc_id)).rowcount
+                moved = 0
+                for table in _property_tables(conn):
+                    # OR IGNORE: a name two earlier ids both hold moves once
+                    # (the unique index of the 1.1.6 schema)
+                    moved += conn.execute(
+                        f"UPDATE OR IGNORE {table} SET material_id = ? WHERE calc_id = ? AND material_id != ? "
+                        "AND extractor_script = 'crystal_property_extractor.py' AND property_name NOT IN "
+                        f"(SELECT property_name FROM {table} WHERE material_id = ? AND calc_id = ?)",
+                        (material_id, calc_id, material_id, material_id, calc_id)).rowcount
         except Exception as e:
             print(f"⚠️  Error moving earlier properties of {calc_id}: {e}")
             return 0
@@ -1593,7 +1685,26 @@ class CrystalPropertyExtractor:
             return 0  # tracking disabled: nothing to persist
         if not properties or '_metadata' not in properties:
             return 0
-        
+        # One connection and one commit for the whole output: every
+        # _get_connection below is a savepoint of this transaction (a row
+        # that fails is undone alone, as before), not a connect/commit/close
+        # per row, which left the build waiting on fsync.
+        transaction = getattr(self.db, 'transaction', None)
+        if transaction is None:
+            return self._save_properties(properties)
+        try:
+            with transaction():
+                return self._save_properties(properties)
+        except sqlite3.Error as e:
+            # the database stayed locked or failed at BEGIN/COMMIT (row errors
+            # are reported row by row inside); any other error propagates as
+            # before, and in either case none of the output's rows are kept
+            name = Path(str(properties['_metadata'].get('output_file') or '')).name
+            print(f"⚠️  Error saving the properties of {name}: {e}; none of them were written")
+            return 0
+
+    def _save_properties(self, properties: Dict[str, Any]) -> int:
+        """save_properties_to_database, inside its transaction."""
         metadata = properties['_metadata']
         material_id = metadata['material_id']
         calc_id = metadata['calc_id']
@@ -1610,15 +1721,25 @@ class CrystalPropertyExtractor:
             # calculation's material (UPDATE, never DELETE)
             self._migrate_calc_rows(material_id, calc_id)
             produced = [name for name in properties if not name.startswith('_')]
+            # a TRANSPORT run's total ZT came from a kappa_L the user gave an
+            # earlier extraction (--kappa-lattice): one without it keeps those
+            # rows while the run is unchanged (_settle_earlier_total)
+            keep_total = self._settle_earlier_total(properties, material_id, calc_id)
             try:
                 with self.db._get_connection() as conn:
-                    conn.execute(
-                        "DELETE FROM properties WHERE material_id = ? AND calc_id = ? "
-                        "AND extractor_script = 'crystal_property_extractor.py' "
-                        f"AND property_name NOT IN ({','.join('?' * len(produced))})",
-                        (material_id, calc_id, *produced))
+                    for table in _property_tables(conn):
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE material_id = ? AND calc_id = ? "
+                            "AND extractor_script = 'crystal_property_extractor.py' "
+                            f"AND property_name NOT IN ({','.join('?' * len(produced))})"
+                            + (" AND property_name NOT GLOB 'transport_zt_total*'" if keep_total else ""),
+                            (material_id, calc_id, *produced))
             except Exception as e:
                 print(f"⚠️  Error removing stale properties for {calc_id}: {e}")
+        else:
+            # untracked rows are upserted, so an earlier total this extraction
+            # does not write again is settled here
+            self._settle_earlier_total(properties, material_id, calc_id)
 
         # Save each property
         for prop_name, prop_value in properties.items():
@@ -1627,6 +1748,10 @@ class CrystalPropertyExtractor:
             
             # Determine property category
             category = self._categorize_property(prop_name)
+            if prop_name not in property_keys.KEYS and prop_name not in self._unregistered:
+                # every name written is in the registry (tests/test_property_keys.py)
+                self._unregistered.add(prop_name)
+                print(f"⚠️  {prop_name} is not in mace/utils/property_keys.py: stored under 'other'")
             
             # Handle complex values (convert to JSON)
             if isinstance(prop_value, (dict, list)):
@@ -1648,21 +1773,45 @@ class CrystalPropertyExtractor:
                 # never matches NULL, so every re-extraction inserted a full
                 # duplicate set of property rows.
                 with self.db._get_connection() as conn:
-                    cursor = conn.execute(
-                        "SELECT property_id FROM properties WHERE material_id = ? AND property_name = ? "
-                        "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))",
-                        (material_id, prop_name, calc_id, calc_id)
-                    )
+                    key = (material_id, prop_name, calc_id, calc_id)
+                    where = ("material_id = ? AND property_name = ? "
+                             "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))")
+                    if prop_name in property_keys.BLOB_KEYS and 'property_blobs' in _property_tables(conn):
+                        # a large JSON value: the property_blobs table (a
+                        # copy an earlier version left in properties goes)
+                        conn.execute(f"DELETE FROM properties WHERE {where}", key)
+                        existing = conn.execute(f"SELECT blob_id FROM property_blobs WHERE {where}", key).fetchone()
+                        if existing:
+                            conn.execute("""
+                                UPDATE property_blobs
+                                SET property_value_text = ?, property_unit = ?, property_category = ?,
+                                    extracted_at = ?, extractor_script = ?
+                                WHERE blob_id = ?
+                            """, (value_text, unit, category, metadata['extracted_at'],
+                                  'crystal_property_extractor.py', existing[0]))
+                        else:
+                            conn.execute("""
+                                INSERT INTO property_blobs
+                                (material_id, calc_id, property_category, property_name,
+                                 property_value_text, property_unit, extracted_at, extractor_script)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (material_id, calc_id, category, prop_name, value_text, unit,
+                                  metadata['extracted_at'], 'crystal_property_extractor.py'))
+                        saved_count += 1
+                        continue
+                    cursor = conn.execute(f"SELECT property_id FROM properties WHERE {where}", key)
                     existing = cursor.fetchone()
                     
                     if existing:
-                        # Update existing property
+                        # Update existing property (unit and category too:
+                        # a database built by an earlier version gets this
+                        # version's labels)
                         conn.execute("""
                             UPDATE properties 
                             SET property_value = ?, property_value_text = ?, property_unit = ?,
-                                extracted_at = ?, extractor_script = ?
+                                property_category = ?, extracted_at = ?, extractor_script = ?
                             WHERE property_id = ?
-                        """, (value_numeric, value_text, unit, 
+                        """, (value_numeric, value_text, unit, category,
                               metadata['extracted_at'], 'crystal_property_extractor.py',
                               existing[0]))
                     else:
@@ -1687,6 +1836,52 @@ class CrystalPropertyExtractor:
         
         return saved_count
     
+    def _settle_earlier_total(self, properties: Dict[str, Any], material_id: str, calc_id) -> bool:
+        """Whether a TRANSPORT run's earlier ``transport_zt_total*`` rows stay.
+
+        This extraction wrote a total: the earlier rows are replaced (False,
+        the tracked DELETE removes any it does not write again). It was given
+        a kappa_L and refused it (a table that misses a run temperature, no
+        RELAXTIM): the earlier rows are removed - "no total ZT stored" is
+        then true. It had no kappa_L: the rows stay only while the run's .out
+        and .dat files are the ones they were computed from (their
+        fingerprint, ``transport_zt_total_inputs``); otherwise they are
+        removed, and the user told. Not a TRANSPORT run: nothing to settle."""
+        state = properties.get('_transport_zt')
+        if state is None:
+            return False
+        if any(n.startswith('transport_zt_total') for n in properties):
+            return False
+        where = ("material_id = ? AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL)) "
+                 "AND extractor_script = 'crystal_property_extractor.py' "
+                 "AND property_name GLOB 'transport_zt_total*'")
+        args = (material_id, calc_id, calc_id)
+        try:
+            with self.db._get_connection() as conn:
+                old = {n: (v, t) for n, v, t in conn.execute(
+                    f"SELECT property_name, property_value, property_value_text FROM properties WHERE {where}",
+                    args)}
+                if not old:
+                    return True
+                inputs = (old.get('transport_zt_total_inputs') or (None, None))[1]
+                if not state.get('refused') and state.get('inputs') and inputs == state['inputs']:
+                    return True
+                conn.execute(f"DELETE FROM properties WHERE {where}", args)
+        except Exception as e:
+            print(f"⚠️  Error settling the earlier total ZT rows of {material_id}: {e}")
+            return True
+        name = Path((properties.get('_metadata') or {}).get('output_file') or material_id).name
+        value = (old.get('transport_zt_total_max_avg') or old.get('transport_zt_total_max') or (None, None))[0]
+        source = (old.get('transport_zt_total_lattice_source') or (None, None))[1]
+        earlier = (f"the earlier total ZT ({value:.4g}, κL {source})" if value is not None and source
+                   else "the earlier total ZT")
+        if state.get('refused'):
+            print(f"❌ {name}: {earlier} is removed from the database, as this extraction stores none")
+        else:
+            print(f"⚠️  {name}: {earlier} is removed from the database: the run's output has changed since "
+                  "it was computed (or MACE cannot tell); extract again with --kappa-lattice for a new one")
+        return False
+
     def remove_stale_untracked_rows(self, material_id: str, before: str) -> int:
         """Delete this extractor's untracked (calc_id NULL) rows of a material
         written before ``before`` (an ISO timestamp): rows a re-extraction of
@@ -1696,10 +1891,21 @@ class CrystalPropertyExtractor:
             return 0
         try:
             with self.db._get_connection() as conn:
-                return conn.execute(
+                # the total ZT rows of a TRANSPORT run extracted again in this
+                # run without --kappa-lattice stay (see save_properties_to_database)
+                removed = conn.execute(
                     "DELETE FROM properties WHERE material_id = ? AND calc_id IS NULL "
-                    "AND extractor_script = 'crystal_property_extractor.py' AND extracted_at < ?",
-                    (material_id, before)).rowcount
+                    "AND extractor_script = 'crystal_property_extractor.py' AND extracted_at < ? "
+                    "AND NOT (property_name GLOB 'transport_zt_total*' AND EXISTS ("
+                    "SELECT 1 FROM properties p2 WHERE p2.material_id = ? AND p2.calc_id IS NULL "
+                    "AND p2.property_name = 'transport_data_available' AND p2.extracted_at >= ?))",
+                    (material_id, before, material_id, before)).rowcount
+                if 'property_blobs' in _property_tables(conn):
+                    removed += conn.execute(
+                        "DELETE FROM property_blobs WHERE material_id = ? AND calc_id IS NULL "
+                        "AND extractor_script = 'crystal_property_extractor.py' AND extracted_at < ?",
+                        (material_id, before)).rowcount
+                return removed
         except Exception as e:
             print(f"⚠️  Error removing stale properties for {material_id}: {e}")
             return 0
@@ -1708,61 +1914,51 @@ class CrystalPropertyExtractor:
         """Extract computational performance and timing properties."""
         props = {}
         
-        # CPU time extraction
-        cpu_time_match = re.search(r'TOTAL CPU TIME\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
+        # CPU time of all processes (TOTAL CPU TIME), and the wall time:
+        # the last TELAPSE CRYSTAL prints (its END line in a finished run)
+        cpu_time_match = ci_search(r'TOTAL CPU TIME\s*[=:]\s*([\d.]+)', content, ('total cpu time',))
         if cpu_time_match:
-            props['total_cpu_time'] = float(cpu_time_match.group(1))
-        
-        # Alternative CPU time patterns
-        cpu_patterns = [
-            r'CPU TIME\s*[=:]\s*([\d.]+)',
-            r'ELAPSED TIME\s*[=:]\s*([\d.]+)', 
-            r'WALL TIME\s*[=:]\s*([\d.]+)'
-        ]
-        
-        for pattern in cpu_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match and 'total_cpu_time' not in props:
-                props['cpu_time'] = float(match.group(1))
-                break
+            props['cpu_time_total_s'] = float(cpu_time_match.group(1))
+        telapse = content.rfind('TELAPSE')
+        if telapse >= 0:
+            wall = re.match(r'TELAPSE\s+([\d.]+)', content[telapse:])
+            if wall:
+                props['wall_time_s'] = float(wall.group(1))
         
         # Fermi energy extraction - including SP calculation conducting state format
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'CHEMICAL POTENTIAL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'EFERMI\(AU\)\s+([-\d.E+\-]+)',  # SP calculation conducting state: "EFERMI(AU) -9.9423732E-02"
-            r'POSSIBLY CONDUCTING STATE.*?EFERMI\(AU\)\s+([-\d.E+\-]+)'  # Full conducting state pattern
+            (r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi energy',)),
+            (r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi level',)),
+            (r'CHEMICAL POTENTIAL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('chemical potential',)),
+            (r'EFERMI\(AU\)\s+([-\d.E+\-]+)', ('efermi(au)',)),  # SP calculation conducting state: "EFERMI(AU) -9.9423732E-02"
+            (r'POSSIBLY CONDUCTING STATE.*?EFERMI\(AU\)\s+([-\d.E+\-]+)',  # Full conducting state pattern
+             ('possibly conducting state', 'efermi(au)')),
         ]
         
         # A multi-point OPT prints EFERMI lines at point 1 only; its final
         # Fermi energy is the FERMI ENERGY line after OPT END, if any
         final_part = self._after_last_opt_point(content)
-        for pattern in fermi_patterns:
+        for pattern, literals in fermi_patterns:
             # Last occurrence: conducting-state EFERMI lines are printed per
             # SCF iteration and only the final one is converged
-            fermi_matches = re.findall(pattern, final_part, re.IGNORECASE)
+            fermi_matches = ci_findall(pattern, final_part, literals)
             if fermi_matches:
-                props['fermi_energy'] = float(fermi_matches[-1])
+                props['fermi_energy_au'] = float(fermi_matches[-1])
                 break
         
-        # SCF cycles
-        scf_match = re.search(r'SCF FIELD CONVERGENCE IN\s*(\d+)\s*CYCLES', content, re.IGNORECASE)
-        if scf_match:
-            props['scf_cycles'] = int(scf_match.group(1))
-        
-        # Memory usage (if available)
-        memory_patterns = [
-            r'MEMORY USAGE\s*[=:]\s*([\d.]+)\s*MB',
-            r'MAX MEMORY\s*[=:]\s*([\d.]+)',
-            r'TOTAL MEMORY\s*[=:]\s*([\d.]+)'
-        ]
-        
-        for pattern in memory_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                props['memory_usage'] = float(match.group(1))
-                break
+        # SCF cycles of the last SCF: CRYSTAL23 prints '== SCF ENDED ...
+        # CYCLES n' after an SP's SCF (and an OPT's first point), and the
+        # cycles in 'TOTAL ENERGY(DFT)(AU)( n)' for every SCF, the only
+        # record of an OPT's later points ('***' above 999: none)
+        cycle_lines = list(re.finditer(
+            r'== SCF ENDED[^\n]*?CYCLES\s+(\d+)|TOTAL ENERGY\((?:DFT|HF)\)\(AU\)\(\s*(\d+)\)', content))
+        if cycle_lines:
+            last = cycle_lines[-1]
+            props['scf_cycles'] = int(last.group(1) or last.group(2))
+        else:
+            scf_match = ci_search(r'SCF FIELD CONVERGENCE IN\s*(\d+)\s*CYCLES', content, ('scf field convergence in', 'cycles'))
+            if scf_match:
+                props['scf_cycles'] = int(scf_match.group(1))
         
         return props
     
@@ -1784,7 +1980,9 @@ class CrystalPropertyExtractor:
         node_labels = []
         efermi_ha = None
         try:
-            with open(band_dat_file, 'r') as f:
+            import io
+            from mace.utils.dat_text import read_text
+            with io.StringIO(read_text(band_dat_file)) as f:
                 for raw in f:
                     line = raw.strip()
                     if not line:
@@ -1869,7 +2067,7 @@ class CrystalPropertyExtractor:
         return labels  # best-effort even on count mismatch (caller may zip-truncate)
 
     def _build_band_structure_summary(self, dat_info, content, output_file,
-                                      band_dat_file, num_occ):
+                                      band_dat_file, num_occ, band_start=1):
         """Build a compact, JSON-serializable band-structure summary.
 
         Per the storage analysis this stores the scientifically useful structure
@@ -1951,11 +2149,14 @@ class CrystalPropertyExtractor:
         #   (2) The fundamental gap considers ALL spin channels (VBM = max
         #       occupied over every k AND every spin; CBM = min virtual over
         #       every k AND every spin), so it agrees with the legacy
-        #       band_dat_band_gap_ev for spin-polarized systems too — not just
+        #       BAND.DAT gap for spin-polarized systems too — not just
         #       the first spin block.
         extra_scalars = {}
-        if num_occ and num_occ >= 1 and eigenvalues:
-            n = num_occ
+        # BAND.DAT column n holds band band_start + n - 1: the HOMO column is
+        # the absolute occupied-band count less the bands not written
+        shift = max(int(band_start or 1), 1) - 1
+        if num_occ and num_occ - shift >= 1 and eigenvalues:
+            n = num_occ - shift
             kdiv = nk if nk else len(eigenvalues)
 
             def _label_for(kidx):
@@ -2008,21 +2209,20 @@ class CrystalPropertyExtractor:
                     'energy_ev': float(vbm_e * H),
                     'kpoint_index': int(vbm_k),
                     'kpath_distance': (float(k_abscissa[vbm_k]) if vbm_k < len(k_abscissa) else None),
-                    'band_index': int(n),
+                    'band_index': int(n + shift),
                     'kpoint_label': _label_for(vbm_k),
                 }
                 summary['cbm'] = {
                     'energy_ev': float(cbm_e * H),
                     'kpoint_index': int(cbm_k),
                     'kpath_distance': (float(k_abscissa[cbm_k]) if cbm_k < len(k_abscissa) else None),
-                    'band_index': int(n + 1),
+                    'band_index': int(n + shift + 1),
                     'kpoint_label': _label_for(cbm_k),
                 }
-                summary['occupied_bands'] = int(n)
+                summary['occupied_bands'] = int(n + shift)
 
                 # Queryable scalar rows (numeric/bool) — distinct from the JSON blob.
                 extra_scalars['band_direct_gap_ev'] = float(direct_ev)
-                extra_scalars['band_indirect_gap_ev'] = float(indirect)
                 extra_scalars['band_fundamental_gap_ev'] = float(indirect)
                 extra_scalars['band_gap_is_direct'] = is_direct
                 extra_scalars['band_vbm_kpoint_index'] = int(vbm_k)
@@ -2045,29 +2245,33 @@ class CrystalPropertyExtractor:
             return props
             
         # Extract k-point information
-        kpoint_match = re.search(r'TOTAL OF\s*(\d+)\s*K-POINTS ALONG THE PATH', content, re.IGNORECASE)
+        kpoint_match = ci_search(r'TOTAL OF\s*(\d+)\s*K-POINTS ALONG THE PATH', content, ('total of', 'k-points along the path'))
         if kpoint_match:
             props['total_kpoints'] = int(kpoint_match.group(1))
         
         # Extract band range information
-        band_range_match = re.search(r'FROM BAND\s*(\d+)\s*TO BAND\s*(\d+)', content, re.IGNORECASE)
+        band_range_match = ci_search(r'FROM BAND\s*(\d+)\s*TO BAND\s*(\d+)', content, ('from band', 'to band'))
+        band_start = 1
         if band_range_match:
-            props['band_start'] = int(band_range_match.group(1))
+            band_start = int(band_range_match.group(1))
+            if band_start != 1:  # stored only when it is not the first band
+                props['band_start'] = band_start
             props['band_end'] = int(band_range_match.group(2))
             props['total_bands'] = int(band_range_match.group(2)) - int(band_range_match.group(1)) + 1
             
         # Extract Fermi energy from BAND calculation
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
+            (r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi energy',)),
+            (r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi level',)),
+            (r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('ef',)),
+            (r'FERMI ENERGY\s+([-\d.E+\-]+)', ('fermi energy',)),  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
         ]
         
-        for pattern in fermi_patterns:
-            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+        for pattern, literals in fermi_patterns:
+            fermi_matches = ci_findall(pattern, content, literals)
             if fermi_matches:
-                props['fermi_energy_band'] = float(fermi_matches[-1])
+                # the run's fermi_energy_au when its SCF prints none
+                props['_fermi_band'] = float(fermi_matches[-1])
                 break
                 
         # Check for BAND.DAT file and extract information. CRYSTAL/the workflow
@@ -2107,9 +2311,13 @@ class CrystalPropertyExtractor:
                     num_occ = int(nocc_match[-1])
                 else:
                     num_occ = band_occupied_count(content, output_file)
+                # the BAND.DAT's columns start at band_start: its HOMO column
+                # is num_occ less the bands below it (none left: unknown)
+                num_occ_dat = (num_occ - (band_start - 1)
+                               if num_occ and num_occ - (band_start - 1) >= 1 else None)
                 dat_info = processor.process_band_dat_file(
-                    band_dat_file, fermi_energy=props.get('fermi_energy_band'),
-                    num_occupied_bands=num_occ)
+                    band_dat_file, fermi_energy=props.get('_fermi_band'),
+                    num_occupied_bands=num_occ_dat)
                 if dat_info and 'error' not in dat_info:
                     # Merge only compact scalars — never the raw eigenvalue/k-point
                     # arrays, which would be JSON-dumped into the properties table.
@@ -2122,8 +2330,6 @@ class CrystalPropertyExtractor:
                     bep = dat_info.get('electronic_properties', {})
                     if bep.get('metallic') is not None:
                         props['band_dat_metallic'] = bep['metallic']
-                    if bep.get('band_gap_ev') is not None:
-                        props['band_dat_band_gap_ev'] = bep['band_gap_ev']
                     if bep.get('valence_band_maximum_ev') is not None:
                         props['band_dat_vbm_ev'] = bep['valence_band_maximum_ev']
                     if bep.get('conduction_band_minimum_ev') is not None:
@@ -2138,7 +2344,7 @@ class CrystalPropertyExtractor:
                     # scalars above.
                     try:
                         summary, extra_scalars = self._build_band_structure_summary(
-                            dat_info, content, output_file, band_dat_file, num_occ)
+                            dat_info, content, output_file, band_dat_file, num_occ, band_start)
                         if summary:
                             props['band_structure'] = summary
                         for k, v in (extra_scalars or {}).items():
@@ -2150,17 +2356,6 @@ class CrystalPropertyExtractor:
                 pass  # DAT file processor not available
             except Exception as e:
                 print(f"Warning: Could not process BAND.DAT file: {e}")
-        
-        # Extract band gap information specific to BAND calculations
-        if 'BAND GAP' in content:
-            # Look for VBM/CBM information
-            vbm_match = re.search(r'TOP OF VALENCE BANDS\s*[^\d]*(-?[\d.]+)', content, re.IGNORECASE)
-            if vbm_match:
-                props['vbm_energy'] = float(vbm_match.group(1))
-                
-            cbm_match = re.search(r'BOTTOM OF CONDUCTION BANDS\s*[^\d]*(-?[\d.]+)', content, re.IGNORECASE)
-            if cbm_match:
-                props['cbm_energy'] = float(cbm_match.group(1))
         
         # Mark this as a band structure calculation
         if props:
@@ -2193,13 +2388,12 @@ class CrystalPropertyExtractor:
         We convert the energy axis to eV (``* H``) AND the DOS magnitudes to
         per-eV (``/ H``) so the stored curve, the DOS@Fermi values and the
         projection weights are all self-consistent with the ``states/eV/cell``
-        label. The legacy ``DatFileProcessor`` analyzer (``dos_at_fermi`` /
-        ``total_states``) leaves DOS in states/HARTREE/cell, so the documented
-        relationship between the eV values here and the legacy scalars is a
-        single factor of ``H = HARTREE_TO_EV``:
-
-            dos_at_fermi_<spin>_ev (states/eV) * H == legacy doss_dat_at_fermi
-                                                      (states/Ha, single channel)
+        label. ``dos_at_fermi_total`` (the database row) is the TOTAL DOS(E_F):
+        the sum of the spin channels of a spin-polarized DOSS.DAT (each block
+        holds one spin) and the single block of a closed-shell one;
+        ``dos_at_fermi_<spin>`` keep the channels. (Before 1.1.6 the same
+        value was also stored per Hartree, as doss_dat_at_fermi and
+        dos_at_fermi_level.)
 
         For spin-polarized runs the energy grid is written once per spin block
         (concatenated in ``energy_points``); the beta block's DOS values are
@@ -2275,7 +2469,8 @@ class CrystalPropertyExtractor:
         # energy axis, which is already Fermi-shifted). Best-effort only.
         efermi_ha = None
         try:
-            dat_text = Path(doss_dat_file).read_text(errors='ignore')
+            from mace.utils.dat_text import read_text
+            dat_text = read_text(doss_dat_file)
             ef_matches = re.findall(
                 r'EFERMI\s*\(HARTREE\)\s*(-?\d+\.?\d*(?:[Ee][+-]?\d+)?)', dat_text)
             if ef_matches:
@@ -2317,10 +2512,8 @@ class CrystalPropertyExtractor:
             daf = _dos_at_fermi(es_ha, ds_block)  # already per-eV
             daf_val = float(daf) if daf is not None else None
             dos_at_fermi_by_spin[label] = daf_val
-            # The legacy analyzer reports a SINGLE channel (first block); keep an
-            # explicit per-channel value so the relationship to doss_dat_at_fermi
-            # is defined (per_channel_ev * H == legacy states/Ha value), with no
-            # silent factor-of-2 vs the both-spins sum below.
+            # The first block's channel, kept in the JSON summary as
+            # dos_at_fermi_per_channel_ev beside the both-spins sum below.
             if s == 0:
                 dos_at_fermi_per_channel = daf_val
             # Downsample the (E in eV, DOS in states/eV) curve to <= 200 points.
@@ -2334,18 +2527,18 @@ class CrystalPropertyExtractor:
         summary['dos_at_fermi_by_spin'] = dos_at_fermi_by_spin
         summary['total_dos_curve_ev'] = downsampled
 
-        # Two clearly-named Fermi-level DOS aggregates so there is NO silent 2x
-        # disagreement with the single-channel legacy ``doss_dat_at_fermi``:
-        #   * dos_at_fermi_per_channel_ev: single channel (matches legacy/H),
+        # Two clearly-named Fermi-level DOS aggregates in the JSON summary:
+        #   * dos_at_fermi_per_channel_ev: the first block's channel,
         #   * dos_at_fermi_both_spins_ev:  alpha + beta (the spin-summed total).
         finite_daf = [v for v in dos_at_fermi_by_spin.values() if v is not None]
         both_spins = float(sum(finite_daf)) if finite_daf else None
         summary['dos_at_fermi_per_channel_ev'] = dos_at_fermi_per_channel
         summary['dos_at_fermi_both_spins_ev'] = both_spins
-        # Back-compat key: keep ``total_dos_at_fermi`` but make it the SINGLE
-        # channel value (states/eV), matching the legacy convention (legacy/H),
-        # NOT the doubled sum, so the headline no longer disagrees by 2x.
-        total_dos_at_fermi = dos_at_fermi_per_channel
+        # ``total_dos_at_fermi`` is the TOTAL: both spin channels of a
+        # spin-polarized DOSS (each block of an unrestricted DOSS.DAT holds one
+        # spin), the single block of a closed-shell one. It held the alpha
+        # channel only, about 2/3 of Fe's DOS(E_F).
+        total_dos_at_fermi = both_spins
         summary['total_dos_at_fermi'] = total_dos_at_fermi
 
         # Gap-from-DOS / band edges: the zero-DOS window straddling E_F. Recompute
@@ -2465,11 +2658,9 @@ class CrystalPropertyExtractor:
 
         # --- Queryable scalar rows (numeric/bool) — distinct from the JSON blob.
         extra_scalars = {}
-        # Single-channel DOS@Fermi (states/eV); equals legacy doss_dat_at_fermi/H.
+        # DOS@Fermi of both spins (states/eV); the per-spin values follow.
         if total_dos_at_fermi is not None:
-            extra_scalars['dos_total_at_fermi'] = total_dos_at_fermi
-        if both_spins is not None:
-            extra_scalars['dos_at_fermi_both_spins_ev'] = both_spins
+            extra_scalars['dos_at_fermi_total'] = total_dos_at_fermi
         for label, val in dos_at_fermi_by_spin.items():
             if val is not None and label in ('alpha', 'beta'):
                 extra_scalars[f'dos_at_fermi_{label}'] = float(val)
@@ -2496,35 +2687,19 @@ class CrystalPropertyExtractor:
         if 'DENSITY OF STATES' not in content.upper() and 'DOSS' not in content.upper():
             return props
             
-        # Extract DOS energy range
-        dos_range_match = re.search(r'ENERGY RANGE\s*FROM\s*([-\d.]+)\s*TO\s*([-\d.]+)', content, re.IGNORECASE)
-        if dos_range_match:
-            props['dos_energy_min'] = float(dos_range_match.group(1))
-            props['dos_energy_max'] = float(dos_range_match.group(2))
-            props['dos_energy_range'] = float(dos_range_match.group(2)) - float(dos_range_match.group(1))
-        
-        # Extract number of energy points
-        points_match = re.search(r'NUMBER OF ENERGY POINTS\s*[=:]\s*(\d+)', content, re.IGNORECASE)
-        if points_match:
-            props['dos_energy_points'] = int(points_match.group(1))
-            
-        # Extract DOS broadening
-        broadening_match = re.search(r'BROADENING\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
-        if broadening_match:
-            props['dos_broadening'] = float(broadening_match.group(1))
-        
         # Extract Fermi energy from DOSS calculation
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
-            r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
+            (r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi energy',)),
+            (r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('fermi level',)),
+            (r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)', ('ef',)),
+            (r'FERMI ENERGY\s+([-\d.E+\-]+)', ('fermi energy',)),  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
         ]
         
-        for pattern in fermi_patterns:
-            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+        for pattern, literals in fermi_patterns:
+            fermi_matches = ci_findall(pattern, content, literals)
             if fermi_matches:
-                props['fermi_energy_dos'] = float(fermi_matches[-1])
+                # the run's fermi_energy_au when its SCF prints none
+                props['_fermi_dos'] = float(fermi_matches[-1])
                 break
                 
         # Check for DOSS.DAT file and extract information
@@ -2557,13 +2732,6 @@ class CrystalPropertyExtractor:
                     if erange:
                         props['doss_dat_energy_min'] = erange[0]
                         props['doss_dat_energy_max'] = erange[1]
-                    da = dat_info.get('dos_analysis', {})
-                    if da.get('metallic') is not None:
-                        props['doss_dat_metallic'] = da['metallic']
-                    if da.get('band_gap_ev') is not None:
-                        props['doss_dat_band_gap_ev'] = da['band_gap_ev']
-                    if da.get('dos_at_fermi') is not None:
-                        props['doss_dat_at_fermi'] = da['dos_at_fermi']
 
                     # LAYERED ADDITION: store the actual DENSITY OF STATES (the
                     # per-spin DOS @ Fermi, gap/band edges from the DOS, integrated
@@ -2592,11 +2760,6 @@ class CrystalPropertyExtractor:
             except Exception as e:
                 print(f"Warning: Could not process DOSS.DAT file: {e}")
         
-        # Extract total DOS at Fermi level
-        dos_fermi_match = re.search(r'DOS AT FERMI LEVEL\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
-        if dos_fermi_match:
-            props['dos_at_fermi'] = float(dos_fermi_match.group(1))
-        
         # Mark this as a DOS calculation
         if props:
             props['calculation_type'] = 'DOSS'
@@ -2604,108 +2767,86 @@ class CrystalPropertyExtractor:
             
         return props
     
-    def _classify_electronic_properties(self, properties: Dict[str, Any]) -> Dict[str, Any]:
-        """Classify electronic properties based on band gap values."""
+    _NUM_INTEGRATED = re.compile(r'NUMERICALLY INTEGRATED DENSITY\s+(-?[\d.]+)\s+(-?[\d.]+)')
+    _SUMMED_SPIN = re.compile(r'SUMMED SPIN DENSITY\s+(-?[\d.]+)')
+    # |alpha - beta| electrons above this is a net spin (smeared metals and
+    # SCF noise leave ~1e-2 and less)
+    NET_SPIN_TOL = 0.05
+
+    def _is_magnetic(self, properties: Dict[str, Any], content: Optional[str]) -> bool:
+        """Whether the run is spin-polarized with a spin: unrestricted
+        (UNRESTRICTED OPEN SHELL / spin_polarized) and with a net spin (alpha
+        - beta electrons of the last SCF: SUMMED SPIN DENSITY, or the
+        alpha/beta columns of NUMERICALLY INTEGRATED DENSITY, or the alpha-beta
+        Mulliken total) or atomic spin populations (antiferromagnetic). An
+        unrestricted run that prints no spin at all (a FREQ restarted from a
+        wavefunction, no SCF printed) keeps the earlier rule, the Mulliken
+        spin tables."""
+        mulliken_spin = bool(properties.get('_mulliken_spin', False))
+        if content is None:  # no output text: as before, by the Mulliken print
+            return mulliken_spin
+        unrestricted = ('UNRESTRICTED OPEN SHELL' in content
+                        or bool(properties.get('spin_polarized'))
+                        or mulliken_spin)
+        if not unrestricted:
+            return False
+        net = None
+        summed = self._SUMMED_SPIN.findall(content)
+        if summed:
+            net = float(summed[-1])
+        else:
+            integrated = self._NUM_INTEGRATED.findall(content)
+            if integrated:
+                net = float(integrated[-1][0]) - float(integrated[-1][1])
+        spin_table = properties.get('mulliken_alpha_minus_beta')
+        if isinstance(spin_table, dict):
+            if net is None and spin_table.get('total_electrons') is not None:
+                net = float(spin_table['total_electrons'])
+            atoms = spin_table.get('atoms') or []
+            if any(abs(_atom_population(a) or 0.0) >= self.NET_SPIN_TOL for a in atoms):
+                return True
+        if net is None:
+            return mulliken_spin
+        return abs(net) >= self.NET_SPIN_TOL
+
+    def _classify_electronic_properties(self, properties: Dict[str, Any],
+                                        content: Optional[str] = None) -> Dict[str, Any]:
+        """electronic_classification (one scheme, property_keys.classify_gap:
+        metal below 0.01 eV, semiconductor up to 4 eV, insulator above) from
+        band_gap, else from the band structure's gap; and
+        magnetic_classification."""
         classification = {}
-        
-        # Find the primary band gap value
-        band_gap = None
-        gap_source = None
-        
-        # Priority order for band gap sources
-        gap_sources = [
-            ('band_gap', 'general'),
-            ('indirect_band_gap', 'indirect'),
-            ('direct_band_gap', 'direct'),
-            ('band_gap_from_dos', 'dos_analysis'),
-            ('alpha_band_gap', 'alpha_spin'),
-            ('beta_band_gap', 'beta_spin')
-        ]
-        # both spin channels without a band_gap: the smaller one, as
-        # _final_gap_value takes it (alpha alone was taken before)
-        if all(properties.get(k) is not None for k in ('alpha_band_gap', 'beta_band_gap')):
+        candidates = dict(properties)
+        if candidates.get('band_gap') is None:
+            # both spin channels without a band_gap: the smaller one, as
+            # _final_gap_value takes it
             try:
-                if float(properties['beta_band_gap']) < float(properties['alpha_band_gap']):
-                    gap_sources[-2:] = gap_sources[-1:-3:-1]
-            except (ValueError, TypeError):
+                candidates['band_gap'] = min(float(properties[k]) for k in ('alpha_band_gap', 'beta_band_gap'))
+            except (KeyError, TypeError, ValueError):
                 pass
-        
-        for gap_prop, source in gap_sources:
-            if gap_prop in properties and properties[gap_prop] is not None:
-                try:
-                    gap_value = float(properties[gap_prop])
-                    if gap_value >= 0:  # Valid band gap
-                        band_gap = gap_value
-                        gap_source = source
-                        break
-                except (ValueError, TypeError):
-                    continue
-        
-        if band_gap is not None:
-            # Electronic classification based on band gap
-            if band_gap > 2.0:
-                electronic_type = 'insulator'
-            elif band_gap > 0.0:
-                electronic_type = 'semiconductor'
-            else:
-                electronic_type = 'conductor'
-            
-            classification.update({
-                'electronic_classification': electronic_type,
-                'classification_band_gap': band_gap,
-                'classification_gap_source': gap_source
-            })
-            
-            # Additional detailed classification
-            if electronic_type == 'insulator':
-                if band_gap > 5.0:
-                    classification['insulator_type'] = 'wide_band_gap'
-                elif band_gap > 3.0:
-                    classification['insulator_type'] = 'medium_band_gap'
-                else:
-                    classification['insulator_type'] = 'narrow_band_gap'
-            
-            elif electronic_type == 'semiconductor':
-                if band_gap > 1.5:
-                    classification['semiconductor_type'] = 'wide_band_gap'
-                elif band_gap > 1.0:
-                    classification['semiconductor_type'] = 'medium_band_gap'
-                else:
-                    classification['semiconductor_type'] = 'narrow_band_gap'
-        
-        # Magnetic classification for spin-polarized systems
-        if properties.get('is_spin_polarized', False):
+        for gap_prop, source in (('band_gap', 'scf'), ('band_fundamental_gap_ev', 'band_structure')):
+            try:
+                gap = float(candidates[gap_prop])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if gap < 0:
+                continue
+            kind = property_keys.classify_gap(gap)
+            # a gapless band structure with a DOS beside it: metal or
+            # semimetal by the DOS at E_F (the band analysis)
+            hint = properties.get('_band_dos_classification')
+            if source == 'band_structure' and kind == 'metal' and hint in ('metal', 'semimetal'):
+                kind = hint
+            classification.update({'electronic_classification': kind,
+                                   'classification_gap_source': source})
+            break
+
+        # Magnetic classification: 'spin_polarized' for an unrestricted run
+        # with a spin (_is_magnetic), else 'non_magnetic'
+        if self._is_magnetic(properties, content):
             classification['magnetic_classification'] = 'spin_polarized'
-            
-            # Check for magnetic moment if available
-            alpha_gap = properties.get('alpha_band_gap')
-            beta_gap = properties.get('beta_band_gap')
-            
-            if alpha_gap is not None and beta_gap is not None:
-                try:
-                    alpha_val = float(alpha_gap)
-                    beta_val = float(beta_gap)
-                    gap_difference = abs(alpha_val - beta_val)
-                    
-                    if gap_difference > 0.5:
-                        classification['magnetic_type'] = 'strong_magnetic'
-                    elif gap_difference > 0.1:
-                        classification['magnetic_type'] = 'weak_magnetic'
-                    else:
-                        classification['magnetic_type'] = 'non_magnetic'
-                        
-                except (ValueError, TypeError):
-                    pass
         else:
             classification['magnetic_classification'] = 'non_magnetic'
-        
-        # Metallic vs non-metallic classification
-        if band_gap is not None:
-            if band_gap <= 0.0:
-                classification['conductivity_type'] = 'metallic'
-            else:
-                classification['conductivity_type'] = 'non_metallic'
-        
         return classification
     
     def _extract_raman_intensities(self, content: str) -> Dict[str, Any]:
@@ -2853,11 +2994,19 @@ class CrystalPropertyExtractor:
                      for _ in range(f['mode_end'] - f['mode_start'] + 1)],
                     molecule, linear)
 
-                # Highest / lowest among the genuine (non-translational) modes.
-                non_zero_freqs = [f['frequency_cm'] for f in freq_data if f['frequency_cm'] > 0.1]
-                if non_zero_freqs:
-                    props['lowest_frequency_cm'] = min(non_zero_freqs)
-                    props['highest_frequency_cm'] = max(non_zero_freqs)
+                # Lowest / highest vibration, without the rigid-body modes:
+                # the 3 (molecule 6, linear molecule 5) modes closest to zero,
+                # as num_imaginary_frequencies leaves them out. The lowest is
+                # negative for an imaginary mode. (Before 1.1.6 the lowest
+                # positive mode above 0.1 cm-1 was stored, usually a
+                # rigid-body mode of a few cm-1.)
+                from mace.utils.imaginary_modes import vibrations
+                modes = vibrations([f['frequency_cm'] for f in freq_data
+                                    for _ in range(f['mode_end'] - f['mode_start'] + 1)],
+                                   molecule, linear)
+                if modes:
+                    props['lowest_frequency_cm'] = min(modes)
+                    props['highest_frequency_cm'] = max(modes)
         
         # Extract vibrational temperatures
         vib_temp_match = re.search(r'VIBRATIONAL TEMPERATURES \(K\).*?\n\s*TO MODES\s*\n(.*?)(?=\*{5,}|\n\n)', content, re.DOTALL)
@@ -2918,7 +3067,7 @@ class CrystalPropertyExtractor:
     # Thermoelectric / electronic transport (CRYSTAL BOLTZTRA / BoltzTraP)
     # ------------------------------------------------------------------
     @staticmethod
-    def _parse_transport_dat(dat_file: Path):
+    def _parse_transport_dat(dat_file: Path, axes=None):
         """Parse one CRYSTAL/BoltzTraP transport ``.dat`` file.
 
         These files store a tensor property as a function of chemical potential
@@ -2932,6 +3081,11 @@ class CrystalPropertyExtractor:
             # T(K) = 300.000 Npoints = 711 V(cm^3) = 1.123E-21
               -3.400  300.000  1.351E+00  <xx> <xy> ... <zz>
 
+        An open-shell run (CRYSTAL23 manual, BOLTZTRA, p. 315) writes SIGMA,
+        SIGMAS and KAPPA as an alpha block and then a beta block (``# 1
+        [Alpha ...]`` / ``# 1 [Beta ...]``); the rows returned are the
+        totals, alpha + beta (see ``_parse_transport_dat_tensor``).
+
         The off-diagonal components are ~0 for these cubic-ish cells; we keep the
         isotropic average of the diagonal (xx+yy+zz)/3 as the scalar property.
 
@@ -2939,20 +3093,87 @@ class CrystalPropertyExtractor:
         ``(T, mu, n_carriers, diag_avg)``.  Never raises: returns ``(None, [])``
         on a missing/unreadable/malformed file.
         """
+        unit, rows, file_axes = CrystalPropertyExtractor._transport_tensor_rows(dat_file)
+        return unit, CrystalPropertyExtractor._average_rows(rows, file_axes, axes)
+
+    @staticmethod
+    def periodic_axes(content: Optional[str]) -> Tuple[str, ...]:
+        """The tensor axes along which a run is periodic: xx, yy (a slab),
+        xx (a polymer), all three otherwise."""
+        dim = CrystalPropertyExtractor._dimensionality(content or '')
+        return ('xx', 'yy', 'zz')[:dim] if dim in (1, 2) else ('xx', 'yy', 'zz')
+
+    @staticmethod
+    def _average_rows(rows, file_axes, axes=None):
+        """Rows ``(T, mu, n, value)``: the diagonal averaged over ``axes``
+        (None: every diagonal element of the file)."""
+        idx = [i for i, a in enumerate(file_axes) if axes is None or a in axes]
+        if not idx:
+            idx = list(range(len(file_axes))) or [0]
+        return [(T, mu, n, sum(diag[i] for i in idx) / len(idx)) for (T, mu, n, diag) in rows
+                if len(diag) > max(idx)]
+
+    @staticmethod
+    def _axis_rows(rows, file_axes, axis):
+        """Rows ``(T, mu, n, value)`` of one diagonal element."""
+        i = list(file_axes).index(axis)
+        return [(T, mu, n, diag[i]) for (T, mu, n, diag) in rows if len(diag) > i]
+
+    @staticmethod
+    def _pf_peak(s_rows, sig_rows):
+        """``(peak PF = S^2 |sigma|, (T, mu))`` over the points whose |sigma|
+        is at least 1e-3 of the peak |sigma| (the extractor's rule)."""
+        sig_lut = {(round(T, 3), round(mu, 4)): v for (T, mu, _nc, v) in sig_rows}
+        sig_abs = [abs(v) for v in sig_lut.values() if v != 0.0]
+        floor = (max(sig_abs) if sig_abs else 0.0) * 1e-3
+        peak, loc = 0.0, None
+        for (T, mu, _nc, s_val) in s_rows:
+            g = sig_lut.get((round(T, 3), round(mu, 4)))
+            if floor <= 0.0 or g is None or abs(g) < floor:
+                continue
+            pf = s_val * s_val * abs(g)
+            if pf > peak:
+                peak, loc = pf, (T, mu)
+        return peak, loc
+
+    # "# 0 [...]" closed shell; "# 1 [Alpha ...]" / "# 1 [Beta ...]" open shell
+    _TRANSPORT_HEAD_RE = re.compile(r'^#\s*([01])\s*\[\s*(.*?)\]?\s*$')
+
+    @staticmethod
+    def _read_transport_blocks(dat_file: Path):
+        """``(unit, descriptor, {spin: rows})`` of a transport ``.dat`` file,
+        each row ``(T, mu, n_carriers, diag)`` with ``diag`` the tensor's
+        diagonal; ``spin`` is None for a closed-shell (or spin-independent)
+        block, else "alpha" / "beta" from the block's header."""
         try:
             if dat_file is None or not dat_file.exists():
-                return None, []
+                return None, None, {}, ()
             text = dat_file.read_text(errors="ignore")
         except OSError:
-            return None, []
+            return None, None, {}, ()
 
         unit = None
-        rows = []
+        descriptor = None
+        spin = None
+        columns = None   # the tensor columns of the "# Mu(eV) T(K) N(#carriers) ..." header
+        layout = None    # (diagonal indices, their axes), from the first data row
+        blocks: Dict[Any, List] = {}
         for line in text.splitlines():
             s = line.strip()
             if not s:
                 continue
             if s.startswith('#'):
+                if columns is None and 'mu(ev)' in s.lower():
+                    columns = s.lstrip('#').split()[3:]
+                head = CrystalPropertyExtractor._TRANSPORT_HEAD_RE.match(s)
+                if head and 'mu(ev)' not in s.lower() and not s.lower().startswith('# t(k)'):
+                    desc = head.group(2).strip()
+                    word = desc.split()[0].lower() if desc.split() else ""
+                    spin = word if head.group(1) == '1' and word in ('alpha', 'beta') else None
+                    if spin:
+                        desc = desc.split(None, 1)[1] if len(desc.split()) > 1 else ""
+                    if descriptor is None:
+                        descriptor = desc
                 # Units descriptor: "# 0 [Seebeck coefficient ... i.e. in V/K]".
                 # Skip the column-header comment ("# Mu(eV) T(K) ...").
                 if unit is None and 'units' in s.lower() and 'mu(ev)' not in s.lower():
@@ -2977,20 +3198,115 @@ class CrystalPropertyExtractor:
                 continue
             mu, T, n_carr = vals[0], vals[1], vals[2]
             tensor = vals[3:]
-            n = len(tensor)
-            # Diagonal of the property tensor depends on the column layout:
-            #   9 cols -> full 3x3 (SEEBECK): xx,xy,xz,yx,yy,yz,zx,zy,zz
-            #   6 cols -> symmetric (SIGMA/KAPPA): xx,xy,xz,yy,yz,zz
-            if n == 9:
-                diag = (tensor[0], tensor[4], tensor[8])
-            elif n == 6:
-                diag = (tensor[0], tensor[3], tensor[5])
-            elif n >= 3:
-                diag = (tensor[0], tensor[1], tensor[2])
-            else:
-                diag = (tensor[0],)
-            rows.append((T, mu, n_carr, sum(diag) / len(diag)))
-        return unit, rows
+            if layout is None or len(tensor) != layout[2]:
+                layout = CrystalPropertyExtractor._diagonal_layout(columns, len(tensor)) + (len(tensor),)
+            diag = tuple(tensor[i] for i in layout[0])
+            blocks.setdefault(spin, []).append((T, mu, n_carr, diag))
+        return unit, descriptor, blocks, (layout[1] if layout else ())
+
+    @staticmethod
+    def _diagonal_layout(columns, n: int):
+        """``(indices, axes)`` of a transport tensor's diagonal among its
+        ``n`` columns: by the column names of the file's header (S_xx ...
+        S_zz, sigma_xx ... sigma_zz), else by the count - 9 a full 3x3
+        (SEEBECK), 6 a symmetric one (SIGMA, KAPPA), and for a slab (2D) 4
+        (S_xx S_xy S_yx S_yy) or 3 (sigma_xx sigma_xy sigma_yy, the manual's
+        example, p. 315)."""
+        if columns and len(columns) == n:
+            found = [(i, c.rsplit('_', 1)[-1].lower()) for i, c in enumerate(columns)]
+            diag = [(i, a) for i, a in found if a in ('xx', 'yy', 'zz')]
+            if diag:
+                return tuple(i for i, _ in diag), tuple(a for _, a in diag)
+        by_count = {9: ((0, 4, 8), ('xx', 'yy', 'zz')), 6: ((0, 3, 5), ('xx', 'yy', 'zz')),
+                    4: ((0, 3), ('xx', 'yy')), 3: ((0, 2), ('xx', 'yy'))}
+        return by_count.get(n, ((0,), ('xx',)))
+
+    @staticmethod
+    def _parse_transport_dat_tensor(dat_file: Path, with_axes: bool = False):
+        """``(unit, rows)`` of a transport ``.dat`` file, each row
+        ``(T, mu, n_carriers, diag)``: the spin total of an open-shell file.
+
+        CRYSTAL23 manual, BOLTZTRA (p. 315): an open-shell run writes SIGMA,
+        SIGMAS and KAPPA as an alpha block then a beta block, and "the Seebeck
+        coefficient, SEEBECK.DAT file, is not spin dependent" (one block).
+        The two spin channels conduct in parallel and Eqs. 14.1-14.3 are sums
+        over bands, so sigma, sigma*S, kappa0 and the carrier count of the
+        run are alpha + beta. The rows used to be keyed on (T, mu) alone, so
+        the beta block overwrote the alpha one.
+
+        A SEEBECK file with per-spin blocks (not the documented layout) is
+        combined the only consistent way, S = (sigma_a S_a + sigma_b S_b) /
+        (sigma_a + sigma_b) per diagonal component, with the per-spin sigma of
+        the SIGMA.dat beside it; without one it gives no rows (with a
+        warning) rather than a guess.
+        """
+        unit, rows, axes = CrystalPropertyExtractor._transport_tensor_rows(dat_file)
+        return (unit, rows, axes) if with_axes else (unit, rows)
+
+    @staticmethod
+    def _transport_tensor_rows(dat_file: Path):
+        """``(unit, rows, axes)``: _parse_transport_dat_tensor's rows and the
+        axes of their diagonal (('xx', 'yy', 'zz'); ('xx', 'yy') for a slab's
+        file)."""
+        unit, descriptor, blocks, axes = CrystalPropertyExtractor._read_transport_blocks(dat_file)
+        spins = [k for k in blocks if k is not None]
+        if not spins:
+            return unit, blocks.get(None, []), axes
+        if set(spins) != {'alpha', 'beta'} or None in blocks:
+            print(f"Warning: {dat_file.name}: spin blocks {sorted(map(str, blocks))} are not one alpha "
+                  f"and one beta block; its data are not used")
+            return unit, [], axes
+        alpha, beta = blocks['alpha'], blocks['beta']
+
+        def key(r):
+            return (round(r[0], 3), round(r[1], 4))
+
+        seebeck = ('seebeck' in (descriptor or '').lower()
+                   or '.seebeck.' in dat_file.name.lower())
+        if not seebeck:
+            # additive: alpha + beta, component by component
+            b_lut = {key(r): r for r in beta}
+            rows = []
+            for r in alpha:
+                b = b_lut.pop(key(r), None)
+                if b is None:
+                    rows.append(r)
+                    continue
+                rows.append((r[0], r[1], r[2] + b[2],
+                             tuple(x + y for x, y in zip(r[3], b[3]))))
+            rows.extend(b_lut.values())
+            return unit, rows, axes
+
+        name = dat_file.name
+        idx = name.lower().rfind('.seebeck.dat')
+        sig_file = None
+        if idx >= 0:
+            for suffix in ('.SIGMA.dat', '.sigma.dat'):
+                cand = dat_file.with_name(name[:idx] + suffix)
+                if cand.exists():
+                    sig_file = cand
+                    break
+        _, _, sig_blocks, _ = CrystalPropertyExtractor._read_transport_blocks(sig_file)
+        if set(sig_blocks) != {'alpha', 'beta'}:
+            print(f"Warning: {dat_file.name} has per-spin Seebeck blocks and no per-spin SIGMA.dat beside "
+                  f"it to weight them with; its data are not used")
+            return unit, [], axes
+        sa = {key(r): r[3] for r in sig_blocks['alpha']}
+        sb = {key(r): r[3] for r in sig_blocks['beta']}
+        b_lut = {key(r): r for r in beta}
+        rows = []
+        for r in alpha:
+            k = key(r)
+            b = b_lut.get(k)
+            ga, gb = sa.get(k), sb.get(k)
+            if b is None or ga is None or gb is None or len(ga) != len(r[3]):
+                continue
+            diag = []
+            for s_a, s_b, g_a, g_b in zip(r[3], b[3], ga, gb):
+                w = g_a + g_b
+                diag.append((g_a * s_a + g_b * s_b) / w if w != 0.0 else 0.5 * (s_a + s_b))
+            rows.append((r[0], r[1], r[2] + b[2], tuple(diag)))
+        return unit, rows, axes
 
     def _extract_transport_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
         """Extract thermoelectric / electronic transport properties.
@@ -3040,6 +3356,11 @@ class CrystalPropertyExtractor:
         if not is_transport_output(content):
             return props
 
+        # What save_properties_to_database needs to settle the run's earlier
+        # total ZT rows (never stored itself: a "_" key): the fingerprint of
+        # the files a total would be computed from, and whether a kappa_L
+        # given to this extraction was refused.
+        zt_state = props['_transport_zt'] = {'inputs': None, 'refused': False}
         try:
             props['calculation_type'] = 'TRANSPORT'
             props['has_transport'] = True
@@ -3086,13 +3407,46 @@ class CrystalPropertyExtractor:
                 props['transport_data_available'] = False
                 return props
 
-            s_unit, s_rows = self._parse_transport_dat(seebeck_file)
-            _, sig_rows = self._parse_transport_dat(sigma_file)
-            _, kap_rows = self._parse_transport_dat(kappa_file)
+            # the tensors' diagonals, and the axes the run is periodic along:
+            # the *_avg values average those (a slab: in plane), and each
+            # axis gets its own PF and ZT (B8: S̄²σ̄ of averaged tensors is
+            # no physical quantity of an anisotropic cell)
+            s_unit, s_t, s_axes = self._transport_tensor_rows(seebeck_file)
+            _, sig_t, sig_axes = self._transport_tensor_rows(sigma_file)
+            _, kap_t, kap_axes = self._transport_tensor_rows(kappa_file)
+            axes = [a for a in self.periodic_axes(content) if a in s_axes
+                    and (not sig_t or a in sig_axes) and (not kap_t or a in kap_axes)] or list(s_axes)
+            s_rows = self._average_rows(s_t, s_axes, axes)
+            sig_rows = self._average_rows(sig_t, sig_axes, axes) if sig_t else []
+            kap_rows = self._average_rows(kap_t, kap_axes, axes) if kap_t else []
+            tensor_average = (('(' + '+'.join(axes) + f')/{len(axes)}' if len(axes) > 1 else axes[0])
+                              + {2: ', in plane (a slab)', 1: ' (a polymer)'}.get(len(axes), '')
+                              + ' of the diagonal of each of S, sigma and kappa0') if axes else None
+            per_axis_rows = {a: (self._axis_rows(s_t, s_axes, a),
+                                 self._axis_rows(sig_t, sig_axes, a) if sig_t else [],
+                                 self._axis_rows(kap_t, kap_axes, a) if kap_t else [])
+                             for a in axes}
 
             if not s_rows:
                 props['transport_data_available'] = False
                 return props
+            zt_state['inputs'] = self._transport_inputs_fingerprint(
+                output_file, seebeck_file, sigma_file, kappa_file)
+
+            # The first header's "# 0" (closed shell) or "# 1" (open shell:
+            # SIGMA/SIGMAS/KAPPA hold alpha and beta blocks, summed above).
+            spin_channels = 'closed shell'
+            for f in (sigma_file, kappa_file, seebeck_file):
+                if f is None:
+                    continue
+                try:
+                    with open(f, errors='ignore') as fh:
+                        first = fh.readline().strip()
+                except OSError:
+                    continue
+                if re.match(r'^#\s*1\s*\[', first):
+                    spin_channels = 'alpha+beta'
+                break
 
             # (T, mu) -> property lookups (round mu to align grids across files).
             sig_lut = {(round(T, 3), round(mu, 4)): v
@@ -3191,8 +3545,12 @@ class CrystalPropertyExtractor:
                 # False => SEEBECK-only run: PF/ZT peaks below are not computed.
                 'sigma_data_available': bool(have_sigma),
                 'carrier_type': carrier_type,
-                'tensor_reduction': ('diagonal isotropic average (xx+yy+zz)/3; '
-                                     'off-diagonal tensor components discarded'),
+                # open shell: sigma, kappa0 and the carriers are alpha + beta
+                'spin_channels': spin_channels,
+                'tensor_reduction': (f'the *_max values average the diagonal: {tensor_average}; '
+                                     'per_axis: each diagonal element alone; off-diagonal components '
+                                     'discarded'),
+                'axes': list(axes),
                 'units': {
                     'seebeck': s_unit or 'V/K',
                     'electrical_conductivity': '1/Ohm/m',
@@ -3216,6 +3574,23 @@ class CrystalPropertyExtractor:
                                                          if peak_zt_kappas else None),
                 'zt_points_skipped_kappa_e_nonpositive': int(n_kappa_skipped),
             }
+            # each axis: the peak PF and ZT_e of its diagonal element alone
+            per_axis = {}
+            if have_sigma:
+                from mace.utils import transport_zt as Z
+                for a, (s_a, g_a, k_a) in per_axis_rows.items():
+                    pf_a, pf_loc_a = self._pf_peak(s_a, g_a)
+                    entry = {'power_factor_max_w_per_m_k2': float(pf_a) if pf_loc_a else None,
+                             'power_factor_max_at': _loc(pf_loc_a)}
+                    peak_a = Z.zt_points(s_a, g_a, k_a)['zt_e_max'] if k_a else None
+                    if peak_a:
+                        entry.update({
+                            'zt_electronic_max': float(peak_a['value']),
+                            'zt_electronic_max_at': _loc((peak_a['temperature_k'], peak_a['mu_ev'])),
+                            'kappa0_at_zt_max_w_per_m_k': float(peak_a['kappa0']),
+                            'kappa_electronic_at_zt_max_w_per_m_k': float(peak_a['kappa_e'])})
+                    per_axis[a] = entry
+                summary['per_axis'] = per_axis
             props['transport'] = summary
 
             # Flat, numerically-queryable scalar rows.
@@ -3227,21 +3602,119 @@ class CrystalPropertyExtractor:
                 if have_sigma:
                     # PF/ZT need conductivity; for SEEBECK-only runs storing
                     # 0.0 here would be the same misleading-zero bug.
-                    props['transport_power_factor_max'] = float(peak_pf)
+                    props['transport_power_factor_max_avg'] = float(peak_pf)
                     if peak_zt_loc:   # none without a usable KAPPA.dat
-                        # electrons only (no lattice kappa): an upper bound on ZT.
-                        # transport_zt_max is the same value under its old name.
-                        props['transport_zt_electronic_max'] = float(peak_zt)
-                        props['transport_zt_max'] = float(peak_zt)
+                        # electrons only (no lattice kappa): an upper bound on ZT
+                        props['transport_zt_electronic_max_avg'] = float(peak_zt)
                         props['transport_kappa0_at_zt_max'] = float(peak_zt_kappas[0])
                         props['transport_kappa_electronic_at_zt_max'] = float(peak_zt_kappas[1])
+                props['transport_tensor_average'] = tensor_average
+                for quantity, field in (('power_factor', 'power_factor_max_w_per_m_k2'),
+                                        ('zt_electronic', 'zt_electronic_max')):
+                    values = {a: e[field] for a, e in per_axis.items() if e.get(field) is not None}
+                    for a, v in values.items():
+                        props[f'transport_{quantity}_max_{a}'] = v
+                    if values:
+                        props[f'transport_{quantity}_best_axis'] = max(values, key=values.get)
                 if carrier_type:
                     props['transport_carrier_type'] = carrier_type
+                if have_sigma and peak_zt_loc and self.kappa_lattice is not None:
+                    total = self._transport_zt_total(content, output_file, s_rows, sig_rows,
+                                                     kap_rows, temperatures, per_axis_rows)
+                    if total:
+                        total['transport_zt_total_inputs'] = zt_state['inputs']
+                    props.update(total)
 
         except Exception as e:  # never let transport extraction break the run
             print(f"Warning: Could not extract transport properties: {e}")
 
+        if self.kappa_lattice is not None and 'transport_zt_total_max_avg' not in props:
+            zt_state['refused'] = True
         return props
+
+    @staticmethod
+    def _transport_inputs_fingerprint(output_file, *dat_files) -> Optional[str]:
+        """The run's .out and .dat files as the database build's change
+        detection sees them (size and the sha1 of the first and last 64 KiB,
+        db_build.fingerprint; an mtime alone never decides), in one string."""
+        parts = []
+        for f in (output_file, *dat_files):
+            if f is None:
+                continue
+            try:
+                size, _mtime, sha = db_build.fingerprint(Path(f))
+            except OSError:
+                return None
+            parts.append(f"{Path(f).name}:{size}:{sha}")
+        return ";".join(parts)
+
+    def _transport_zt_total(self, content, output_file, s_rows, sig_rows, kap_rows, temperatures,
+                            per_axis_rows=None) -> Dict[str, Any]:
+        """The total ZT = S^2 sigma T / (kappa_e + kappa_L) of a TRANSPORT run
+        (``self.kappa_lattice``, ``self.tau_fs``), as ``transport_zt_total*``
+        keys; nothing, with the reason printed, when MACE refuses it (a
+        kappa_L table that misses a run temperature, no RELAXTIM tau in the
+        .out). See :mod:`mace.utils.transport_zt` for the tau argument."""
+        from mace.utils import transport_zt as Z
+        kl = self.kappa_lattice
+        try:
+            missing = Z.uncovered(kl, temperatures)
+            if missing:
+                raise Z.KappaLatticeError(
+                    f"the kappa_L table {Path(kl.path).name} covers {kl.range_text()}, and the run has "
+                    f"{', '.join(f'{t:g} K' for t in missing)}: MACE does not extrapolate")
+            tau_run = Z.read_relaxation_time_fs(content)
+            tau, scale, tau_source = Z.resolve_tau(tau_run, self.tau_fs, output_file.name)
+        except Z.KappaLatticeError as e:
+            print(f"❌ {output_file.name}: no total ZT stored: {e}")
+            return {}
+        r = Z.zt_points(s_rows, sig_rows, kap_rows, kl, scale)
+        peak = r["zt_total_max"]
+        if peak is None:
+            return {}
+        detail = {
+            'formula': ('S^2*sigma*T/(kappa_e + kappa_L), kappa_e = kappa0 - T*sigma*S^2; '
+                        'sigma and kappa0 at tau (scaled by tau/tau_run)'),
+            'zt_total_max': float(peak['value']),
+            'zt_total_max_at': {'temperature_k': float(peak['temperature_k']), 'mu_ev': float(peak['mu_ev'])},
+            'kappa_lattice_source': kl.source(),
+            'kappa_lattice_at_max_w_per_m_k': float(peak['kappa_l']),
+            'kappa0_at_max_w_per_m_k': float(peak['kappa0']),
+            'kappa_electronic_at_max_w_per_m_k': float(peak['kappa_e']),
+            'tau_fs': float(tau),
+            'tau_run_fs': float(tau_run),
+            'tau_source': tau_source,
+        }
+        # each axis (``per_axis_rows``: axis -> its S, sigma, kappa0 rows)
+        axis_peaks = {}
+        for a, (s_a, g_a, k_a) in (per_axis_rows or {}).items():
+            if not (g_a and k_a):
+                continue
+            pk = Z.zt_points(s_a, g_a, k_a, kl, scale)["zt_total_max"]
+            if pk:
+                axis_peaks[a] = pk
+        if axis_peaks:
+            detail['per_axis'] = {a: {'zt_total_max': float(pk['value']),
+                                      'zt_total_max_at': {'temperature_k': float(pk['temperature_k']),
+                                                          'mu_ev': float(pk['mu_ev'])},
+                                      'kappa_lattice_at_max_w_per_m_k': float(pk['kappa_l']),
+                                      'kappa_electronic_at_max_w_per_m_k': float(pk['kappa_e'])}
+                                  for a, pk in axis_peaks.items()}
+        per_axis_keys = {f'transport_zt_total_max_{a}': float(pk['value']) for a, pk in axis_peaks.items()}
+        if axis_peaks:
+            per_axis_keys['transport_zt_total_best_axis'] = max(axis_peaks, key=lambda a: axis_peaks[a]['value'])
+        return {
+            **per_axis_keys,
+            'transport_zt_total': detail,
+            'transport_zt_total_max_avg': float(peak['value']),
+            'transport_zt_total_max_temperature_k': float(peak['temperature_k']),
+            'transport_zt_total_max_mu_ev': float(peak['mu_ev']),
+            'transport_zt_total_kappa_lattice_at_max': float(peak['kappa_l']),
+            'transport_zt_total_kappa_electronic_at_max': float(peak['kappa_e']),
+            'transport_zt_total_tau_fs': float(tau),
+            'transport_zt_total_lattice_source': kl.source(),
+            'transport_zt_total_tau_source': tau_source,
+        }
 
     def _extract_scf_settings(self, content: str) -> Dict[str, Any]:
         """Extract SCF and advanced electronic settings from output file."""
@@ -3263,15 +3736,30 @@ class CrystalPropertyExtractor:
         }
         
         for param, pattern in info_patterns.items():
-            match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+            match = ci_search(pattern, content, _SCF_INFO_LITERALS[param], re.IGNORECASE | re.DOTALL)
             if match:
                 if param in ['scf_ppan', 'scf_diis', 'scf_scfdir', 'scf_savewf', 'scf_savepred']:
                     props[param] = True
                 elif param in ['scf_biposize', 'scf_exchsize', 'scf_maxcycle', 'scf_toldee']:
                     props[param] = int(match.group(1))
+                elif param == 'scf_tolinteg':
+                    # The five exponents CRYSTAL used ("8 8 8 9 24"), from the
+                    # T1-T5 lines of the header; None when the header is cut.
+                    tols = re.findall(r'\(T([1-5])\)\s+10\*\*\s+(-?\d+)', content)
+                    first = {}
+                    for t, v in tols:
+                        first.setdefault(t, str(abs(int(v))))
+                    if len(first) == 5:
+                        props[param] = ' '.join(first[str(i)] for i in range(1, 6))
                 else:
                     props[param] = True
         
+        # A two-component (TWOCOMPON) SCF, from the lines CRYSTAL prints for
+        # it (calc_detection). Stored only for such a run; the calculation
+        # type stays SP.
+        if is_two_component_output(content):
+            props['scf_two_component'] = True
+
         # Check for level shifter status
         if 'LEVEL SHIFTER DISABLED' in content:
             props['scf_levshift_enabled'] = False
@@ -3290,9 +3778,12 @@ class CrystalPropertyExtractor:
         if gilat_match:
             props['scf_gilat_shrink'] = int(gilat_match.group(1))
         
-        # FMIXING percentage
-        fmixing_match = re.search(r'FMIXING\s*[:=]\s*(\d+)', content)
-        if fmixing_match:
+        # FMIXING percentage: CRYSTAL23 prints 'FOCK/KS MATRIX MIXING SET TO n %'
+        fmixing = re.findall(r'FOCK/KS MATRIX MIXING SET TO\s+(\d+)\s*%', content)
+        fmixing_match = None if fmixing else re.search(r'FMIXING\s*[:=]\s*(\d+)', content)
+        if fmixing:
+            props['scf_fmixing_percentage'] = int(fmixing[-1])
+        elif fmixing_match:
             props['scf_fmixing_percentage'] = int(fmixing_match.group(1))
         
         # Anderson mixing
@@ -3301,10 +3792,8 @@ class CrystalPropertyExtractor:
             props['scf_anderson_factor'] = float(anderson_match.group(1))
             props['scf_anderson_enabled'] = True
         
-        # DIIS mixing parameters
+        # DIIS mixing parameters (DIIS itself: scf_diis)
         if 'DIIS FOR SCF ACTIVE' in content:
-            props['scf_diis_enabled'] = True
-            
             # Extract DIIS parameters
             diis_start_match = re.search(r'DIIS STARTING FROM CYCLE\s*(\d+)', content)
             if diis_start_match:
@@ -3335,7 +3824,7 @@ class CrystalPropertyExtractor:
         }
         
         for param, pattern in intgpack_patterns.items():
-            match = re.search(pattern, content, re.IGNORECASE)
+            match = ci_search(pattern, content, (param[len('scf_'):],))
             if match:
                 props[param] = int(match.group(1))
         
@@ -3461,202 +3950,14 @@ class CrystalPropertyExtractor:
         return props
     
     def _categorize_property(self, prop_name: str) -> str:
-        """Categorize a property based on its name."""
-        if any(x in prop_name.lower() for x in ['primitive_a', 'primitive_b', 'primitive_c', 'primitive_alpha', 'primitive_beta', 'primitive_gamma']):
-            return 'lattice'
-        elif any(x in prop_name.lower() for x in ['cell', 'volume', 'density', 'atomic', 'position']):
-            return 'structural'
-        elif any(x in prop_name.lower() for x in ['band_gap', 'energy', 'gap', 'electronic']):
-            return 'electronic'
-        elif any(x in prop_name.lower() for x in ['mulliken', 'overlap', 'charge', 'population']):
-            return 'population_analysis'
-        elif any(x in prop_name.lower() for x in ['optimization', 'gradient', 'converged', 'cycles']):
-            return 'optimization'
-        elif any(x in prop_name.lower() for x in ['space_group', 'crystal_system', 'centering']):
-            return 'crystallographic'
-        elif any(x in prop_name.lower() for x in ['cpu_time', 'scf_cycles', 'memory', 'fermi_energy']):
-            return 'computational'
-        elif any(x in prop_name.lower() for x in ['band_', 'total_kpoints', 'total_bands', 'vbm_', 'cbm_', 'has_band_structure']):
-            return 'band_structure'
-        elif any(x in prop_name.lower() for x in ['dos_', 'doss_', 'has_dos']):
-            return 'density_of_states'
-        elif any(x in prop_name.lower() for x in ['electronic_classification', 'classification_', 'insulator_type', 'semiconductor_type', 'magnetic_', 'conductivity_type']):
-            return 'electronic_classification'
-        elif any(x in prop_name.lower() for x in ['freq', 'vibrational', 'thermodynamic', 'entropy', 'heat_capacity', 'zero_point', 'gibbs', 'thermal_energy', 'force_constant']):
-            return 'frequency'
-        else:
-            return 'other'
-    
-    def _get_property_unit(self, prop_name: str) -> str:
-        """Get the appropriate unit for a property."""
-        prop_lower = prop_name.lower()
-        
-        # Energy properties (check specific patterns first)
-        if any(x in prop_lower for x in ['energy', 'gap']) and prop_name.endswith('_ev'):
-            return 'eV'
-        elif any(x in prop_lower for x in ['energy', 'gap']) and prop_name.endswith('_au'):
-            return 'Hartree'
-        elif 'band_gap' in prop_lower:
-            return 'eV'
-        elif 'fermi_energy' in prop_lower:
-            # CRYSTAL prints FERMI ENERGY / EFERMI(AU) in Hartree and the
-            # extractor stores the raw value
-            return 'Hartree'
-        elif prop_lower.endswith('_energy') and not 'lattice' in prop_lower:
-            return 'eV'
-        
-        # Angles MUST come before length parameters to avoid conflicts
-        elif any(x in prop_lower for x in ['alpha', 'beta', 'gamma']) and any(y in prop_lower for y in ['primitive', 'crystallographic', 'cell']):
-            return 'degrees'
-        
-        # Volumes MUST come before length parameters
-        elif 'volume' in prop_lower:
-            return 'Å³'
-        elif prop_lower.endswith('cell_area'):
-            return 'Å²'
-        elif prop_lower.endswith('cell_length'):
-            return 'Å'
-        
-        # Density
-        elif 'density' in prop_lower:
-            return 'g/cm³'
-        
-        # Length parameters (lattice constants, distances)
-        elif any(x in prop_lower for x in ['primitive_a', 'primitive_b', 'primitive_c', 'crystallographic_a', 'crystallographic_b', 'crystallographic_c']):
-            return 'Å'
-        elif 'distance' in prop_lower:
-            return 'Å'
-        
-        # Advanced electronic properties
-        elif 'effective_mass' in prop_lower:
-            return 'm_e'  # electron mass units
-        elif 'mobility' in prop_lower:
-            return 'cm²/(V·s)'
-        elif 'kappa' in prop_lower:
-            return 'W/(m·K)'
-        elif 'power_factor' in prop_lower:
-            return 'W/(m·K²)'
-        elif 'conductivity' in prop_lower and 'classification' not in prop_lower:
-            return 'S/m'  # Siemens per meter
-        elif 'seebeck' in prop_lower:
-            return 'μV/K'  # microvolts per Kelvin
-        elif 'thermal_conductivity' in prop_lower:
-            return 'W/(m·K)'
-        elif 'dielectric' in prop_lower and 'constant' in prop_lower:
-            return 'dimensionless'
-        elif 'refractive_index' in prop_lower:
-            return 'dimensionless'
-        elif 'absorption' in prop_lower:
-            return 'cm⁻¹'
-        
-        # Count properties (dimensionless)
-        elif any(x in prop_name.lower() for x in ['atoms_count', 'coordination_number', 'atoms_in_unit_cell', 'shells']):
-            return 'dimensionless'
-        
-        # Population analysis
-        elif 'mulliken' in prop_name.lower():
-            return 'electrons'
-        elif 'overlap_population' in prop_name.lower():
-            return 'dimensionless'
-        
-        # Boolean properties
-        elif any(x in prop_name.lower() for x in ['converged', 'polarized']):
-            return 'boolean'
-        
-        # Cycles and iterations
-        elif 'cycles' in prop_name.lower():
-            return 'cycles'
-        
-        # Gradients
-        elif 'gradient' in prop_name.lower():
-            return 'Hartree/Bohr'
-        
-        # Codes and identifiers
-        elif any(x in prop_name.lower() for x in ['code', 'centering']):
-            return 'code'
-        elif 'space_group' in prop_name.lower():
-            return 'number'
-        
-        # Positions and coordinates
-        elif 'position' in prop_name.lower():
-            return 'coordinates'
-        
-        # Complex data (JSON)
-        elif any(x in prop_name.lower() for x in ['processed_', 'neighbor_analysis']):
-            return 'JSON'
-        
-        # Computational properties
-        elif 'cpu_time' in prop_name.lower() or 'time' in prop_name.lower():
-            return 'seconds'
-        elif 'fermi_energy' in prop_name.lower():
-            return 'eV'
-        elif 'scf_cycles' in prop_name.lower():
-            return 'cycles'
-        elif 'memory' in prop_name.lower():
-            return 'MB'
-        
-        # Band structure properties
-        elif any(x in prop_name.lower() for x in ['fermi_energy_band', 'fermi_energy_dos', 'vbm_energy', 'cbm_energy']):
-            return 'eV'
-        elif any(x in prop_name.lower() for x in ['total_kpoints', 'total_bands', 'band_start', 'band_end', 'dos_energy_points']):
-            return 'dimensionless'
-        elif any(x in prop_name.lower() for x in ['dos_energy_min', 'dos_energy_max', 'dos_energy_range', 'dos_broadening']):
-            return 'eV'
-        elif any(x in prop_name.lower() for x in ['dos_at_fermi']):
-            return 'states/eV'
-        elif any(x in prop_name.lower() for x in ['band_dat_size', 'doss_dat_size']):
-            return 'bytes'
-        elif any(x in prop_name.lower() for x in ['band_dat_exists', 'doss_dat_exists', 'has_band_structure', 'has_dos']):
-            return 'boolean'
-        
-        # Electronic classification properties
-        elif any(x in prop_name.lower() for x in ['electronic_classification', 'insulator_type', 'semiconductor_type', 'magnetic_classification', 'magnetic_type', 'conductivity_type', 'classification_gap_source']):
-            return 'category'
-        elif 'classification_band_gap' in prop_name.lower():
-            return 'eV'
-        
-        # Frequency calculation properties
-        elif 'frequency_cm' in prop_name.lower() or 'frequency_cm' in prop_name.lower():
-            return 'cm⁻¹'
-        elif 'frequency_thz' in prop_name.lower():
-            return 'THz'
-        elif 'vibrational_temperature' in prop_name.lower() or 'temperature_k' in prop_name.lower():
-            return 'K'
-        elif 'zero_point_energy_au' in prop_name.lower():
-            return 'Hartree'
-        elif 'zero_point_energy_ev' in prop_name.lower():
-            return 'eV'
-        elif 'zero_point_energy_kj_mol' in prop_name.lower():
-            return 'kJ/mol'
-        elif any(x in prop_name.lower() for x in ['thermal_energy_au', 'pv_term_au', 'entropy_term_au', 'free_energy_correction_au', 'gibbs_free_energy_au', 'enthalpy_au', 'enthalpy_total_au']):
-            return 'Hartree'
-        elif any(x in prop_name.lower() for x in ['thermal_energy_ev', 'pv_term_ev', 'entropy_term_ev', 'free_energy_correction_ev', 'gibbs_free_energy_ev', 'enthalpy_ev', 'enthalpy_total_ev']):
-            return 'eV'
-        elif any(x in prop_name.lower() for x in ['thermal_energy_kj_mol', 'pv_term_kj_mol', 'entropy_term_kj_mol', 'free_energy_correction_kj_mol', 'gibbs_free_energy_kj_mol', 'enthalpy_kj_mol', 'enthalpy_total_kj_mol']):
-            return 'kJ/mol'
-        elif 'entropy_mhartree_cell_k' in prop_name.lower() or 'heat_capacity_mhartree_cell_k' in prop_name.lower():
-            return 'mHartree/(cell·K)'
-        elif 'entropy_mev_cell_k' in prop_name.lower() or 'heat_capacity_mev_cell_k' in prop_name.lower():
-            return 'meV/(cell·K)'
-        elif 'entropy_j_mol_k' in prop_name.lower() or 'heat_capacity_j_mol_k' in prop_name.lower():
-            return 'J/(mol·K)'
-        elif 'pressure_mpa' in prop_name.lower():
-            return 'MPa'
-        elif 'eigenvalue' in prop_name.lower():
-            return 'Hartree²'
-        elif 'ir_intensity' in prop_name.lower():
-            return 'km/mol'
-        elif any(x in prop_name.lower() for x in ['num_vibrational_modes', 'num_imaginary_frequencies', 'num_displaced_calculations', 'symmetry_allowed_dof', 'mode_number']):
-            return 'dimensionless'
-        elif any(x in prop_name.lower() for x in ['has_frequency_data', 'has_force_constants', 'has_normal_mode_displacements', 'ir_active', 'raman_active']):
-            return 'boolean'
-        elif 'irrep' in prop_name.lower():
-            return 'symmetry_label'
-        
-        # Default for unknown properties
-        else:
-            return 'dimensionless'
+        """The property's category (property_keys.KEYS; 'other' for a name
+        the registry does not know)."""
+        return property_keys.category(prop_name)
 
+    def _get_property_unit(self, prop_name: str) -> str:
+        """The property's unit (property_keys.KEYS). By the module: callers
+        also use it unbound (self None)."""
+        return property_keys.unit(prop_name)
 
     def _extract_charge_potential_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
         """Extract CHARGE+POTENTIAL (CRYSTAL ECH3/POT3) metadata.
@@ -3684,8 +3985,8 @@ class CrystalPropertyExtractor:
         Any internal failure degrades gracefully -- it never raises.
         """
         try:
-            has_ech3 = re.search(r'\bECH3\s+(?:START|END)\b', content) is not None
-            has_pot3 = re.search(r'\bPOT3\s+(?:START|END)\b', content) is not None
+            has_ech3 = 'ECH3' in content and re.search(r'\bECH3\s+(?:START|END)\b', content) is not None
+            has_pot3 = 'POT3' in content and re.search(r'\bPOT3\s+(?:START|END)\b', content) is not None
             if not (has_ech3 or has_pot3):
                 return {}  # not a charge/potential calc -> contribute nothing
 
@@ -3700,9 +4001,9 @@ class CrystalPropertyExtractor:
             # ECH3 and POT3 print the same grid; take the first occurrence.
             grid_dims = None
             num_points = None
-            gm = re.search(
+            gm = ci_search(
                 r'3D\s+\w+,\s*GRID\s+IS\s+(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)',
-                content, re.IGNORECASE)
+                content, ('3d', 'grid', 'is'))
             if gm:
                 grid_dims = [int(gm.group(1)), int(gm.group(2)), int(gm.group(3))]
                 num_points = int(grid_dims[0] * grid_dims[1] * grid_dims[2])
@@ -3780,7 +4081,8 @@ class CrystalPropertyExtractor:
             # --- Flat, queryable scalar/string rows (distinct from the JSON blob).
             props['chargepot_has_ech3'] = bool(has_ech3)
             props['chargepot_has_pot3'] = bool(has_pot3)
-            props['chargepot_spin_polarized'] = bool(spin_polarized)
+            # merged into spin_polarized by extract_all_properties
+            props['_chargepot_spin'] = bool(spin_polarized)
             if grid_dims is not None:
                 props['chargepot_grid_dims'] = 'x'.join(str(d) for d in grid_dims)
             if num_points is not None:
@@ -3796,6 +4098,113 @@ class CrystalPropertyExtractor:
             return props
         except Exception as e:
             print(f"Warning: Could not extract charge/potential properties: {e}")
+            return {}
+
+    # Molden files read for the levels/self-check of the index; bigger runs are
+    # indexed from the .out and file names only
+    ORBITALS_INDEX_MAX_BYTES = 20 * 1024 * 1024
+    ORBITALS_CHECK_MAX_NBF = 600
+    ORBITALS_LEVEL_WINDOW = 8
+
+    def _extract_orbitals_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
+        """Index of a CRYSTAL ORBITALS run (the Molden files it wrote).
+
+        Stores what a later viewer needs to find and choose orbitals: the file
+        names and sizes, the k list (fractional k, real/complex, whether MACE can
+        draw it), and per k point and spin the HOMO/LUMO and the levels around
+        them (Hartree), plus the self-check result. Grids and coefficients stay
+        in the files. Returns {} when the .out has no ORBITALS section.
+        """
+        if 'ORBITALS' not in content:
+            return {}
+        try:
+            from mace.orbitals.outfile import has_orbitals_section, parse_out_text
+            if not has_orbitals_section(content):
+                return {}
+            from mace.orbitals.dataset import OrbitalRun, HARTREE_EV
+            out = parse_out_text(content, str(output_file))
+            folder = output_file.parent
+            files = [folder / n for n in out.files if (folder / n).is_file()]
+            summary: Dict[str, Any] = {
+                'source': 'ORBITALS (.out text + .molden sidecars)',
+                'files_listed': len(out.files),
+                'files': [{'name': f.name, 'bytes': f.stat().st_size} for f in files],
+                'missing_files': [n for n in out.files if not (folder / n).is_file()],
+                'nao': out.nao,
+                'electrons': out.electrons,
+                'kpoints': [{'index': k.index, 'frac': [float(x) for x in k.frac], 'real': k.real}
+                            for k in out.kpoints],
+            }
+            if out.errors:
+                summary['errors'] = out.errors[:5]
+            props: Dict[str, Any] = {'orbitals': summary}
+            props['orbitals_num_files'] = len(files)
+            props['orbitals_total_bytes'] = int(sum(f['bytes'] for f in summary['files']))
+            if files:
+                props['orbitals_files'] = ','.join(f.name for f in files)
+            props['orbitals_num_kpoints'] = len(out.kpoints) if out.kpoints else (1 if files else 0)
+            if out.nao is not None:
+                props['orbitals_nbf'] = int(out.nao)
+            if out.vbm and out.cbm:
+                props['orbitals_gap_ev'] = (out.cbm[2] - out.vbm[2]) * HARTREE_EV
+            if not files:
+                return props
+            run = OrbitalRun(files, out)
+            props['orbitals_dimensionality'] = run.dimensionality()
+            summary['dimensionality'] = run.dimensionality()
+            kinfo = []
+            statuses = []
+            homo_best = None
+            for e in run.kpoints():
+                rec = e.to_dict()
+                rec['files'] = sorted(p.name for p in e.files.values())
+                if not e.usable:
+                    kinfo.append(rec)
+                    continue
+                big = sum(p.stat().st_size for p in e.files.values()) > self.ORBITALS_INDEX_MAX_BYTES
+                if big:
+                    rec['status'] = 'unchecked'
+                    kinfo.append(rec)
+                    continue
+                kd = run.load(e.index, check=(out.nao or 0) <= self.ORBITALS_CHECK_MAX_NBF)
+                rec['status'] = kd.status
+                statuses.append(kd.status)
+                rec['spins'] = []
+                for sp in kd.spins:
+                    lv = kd.levels(sp)
+                    h = kd.homo(sp)
+                    lo = max(1, (h or 1) - self.ORBITALS_LEVEL_WINDOW)
+                    hi = min(len(lv), (h or 0) + self.ORBITALS_LEVEL_WINDOW + 1)
+                    rec['spins'].append({
+                        'spin': sp, 'homo': h, 'n_levels': len(lv),
+                        'levels_from': lo,
+                        'energies_au': [lv[i - 1].energy for i in range(lo, hi + 1)],
+                        'occupations': [lv[i - 1].occupation for i in range(lo, hi + 1)],
+                        'degenerate_groups': [lv[i - 1].group for i in range(lo, hi + 1)],
+                    })
+                    if h is not None and (homo_best is None or lv[h - 1].energy > homo_best[1]):
+                        lumo = lv[h].energy if h < len(lv) else None
+                        homo_best = (h, lv[h - 1].energy, lumo, sp)
+                kinfo.append(rec)
+            summary['kpoints'] = kinfo
+            props['orbitals_kpoints'] = ';'.join(
+                f"{k['index']}:{','.join(f'{x:g}' for x in k['frac'])}:{'R' if k['real'] else 'C'}"
+                for k in kinfo)
+            props['orbitals_usable_kpoints'] = sum(1 for k in kinfo if k.get('usable'))
+            if statuses:
+                order = {'fail': 3, 'warn': 2, 'unchecked': 1, 'ok': 0}
+                props['orbitals_self_check'] = max(statuses, key=lambda s: order.get(s, 1))
+            if homo_best:
+                props['orbitals_homo_band'] = int(homo_best[0])
+                props['orbitals_homo_energy_au'] = float(homo_best[1])
+                if homo_best[2] is not None:
+                    props['orbitals_lumo_band'] = int(homo_best[0] + 1)
+                    props['orbitals_lumo_energy_au'] = float(homo_best[2])
+            props['orbitals_spin_polarized'] = any(
+                s['spin'] != 'ALPHA+BETA' for k in kinfo for s in k.get('spins', []))
+            return props
+        except Exception as e:
+            print(f"Warning: Could not index ORBITALS files: {e}")
             return {}
 
     @staticmethod
@@ -3818,9 +4227,12 @@ class CrystalPropertyExtractor:
         tail = f".{kind}.DAT".lower()
         siblings = {f"{base}_{kind}".lower(), base.lower()}
         own, sibling = [], []
-        for path in sorted(output_file.parent.iterdir()):
-            name = path.name
-            if not name.lower().endswith(tail) or not path.is_file():
+        parent = output_file.parent
+        for name in _sorted_names(parent):
+            if not name.lower().endswith(tail):
+                continue
+            path = parent / name
+            if not path.is_file():
                 continue
             dat_stem = name[: -len(tail)]
             if dat_stem == stem:
@@ -3859,30 +4271,16 @@ class CrystalPropertyExtractor:
                 advanced_props['advanced_analysis_note'] = '; '.join(notes)
             
             if not band_file and not doss_file:
-                # No advanced data available
-                advanced_props['advanced_analysis_available'] = False
-                advanced_props.setdefault('advanced_analysis_note',
-                                          'No BAND.DAT or DOSS.DAT files found')
-                return advanced_props
+                return advanced_props  # nothing to analyze
             
             # Perform advanced analysis
             analyzer = AdvancedElectronicAnalyzer()
             analysis_results = analyzer.analyze_material(band_file, doss_file)
             
-            # Map results to our property naming convention
-            advanced_props['advanced_analysis_available'] = True
-            advanced_props['advanced_analysis_method'] = analysis_results.get('analysis_method', 'unknown')
-            
-            # Electronic classification (override basic classification if we have better data);
-            # none from a DOSS.DAT alone
-            if analysis_results.get('electronic_classification') is not None:
-                advanced_props['electronic_classification_advanced'] = analysis_results['electronic_classification']
-                
-                # Update the main classification if we have better data
-                if band_file and doss_file:
-                    # We have both BAND and DOSS - this is the most accurate
-                    advanced_props['electronic_classification'] = analysis_results['electronic_classification']
-                    advanced_props['classification_gap_source'] = analysis_results.get('gap_source', 'unknown')
+            # metal or semimetal of a gapless band structure with a DOS
+            # beside it (_classify_electronic_properties; not stored itself)
+            if band_file and doss_file and analysis_results.get('electronic_classification') is not None:
+                advanced_props['_band_dos_classification'] = analysis_results['electronic_classification']
             
             # Real effective masses from band structure
             if analysis_results.get('has_real_effective_mass'):
@@ -3895,38 +4293,22 @@ class CrystalPropertyExtractor:
                 
                 advanced_props['effective_mass_calculation_method'] = analysis_results.get('calculation_method', 'unknown')
             
-            # Semimetal detection
-            advanced_props['is_semimetal_advanced'] = analysis_results.get('is_semimetal', False)
-            
-            # DOS analysis results
+            # the metal/semimetal criterion of the DOS analysis
             if analysis_results.get('dos_data_available'):
-                advanced_props['dos_at_fermi_level'] = analysis_results.get('dos_at_fermi', 0.0)
                 advanced_props['dos_threshold'] = analysis_results.get('dos_threshold', 0.0)
                 advanced_props['dos_mean'] = analysis_results.get('dos_mean', 0.0)
-                advanced_props['dos_analysis_gcrit_factor'] = analysis_results.get('gcrit_factor', 0.0)
             
             # Band structure analysis results
             if analysis_results.get('band_data_available'):
                 advanced_props['band_structure_k_points'] = analysis_results.get('band_k_points', 0)
                 if 'band_structure_range' in analysis_results:
-                    k_range = analysis_results['band_structure_range']
-                    advanced_props['band_structure_k_range_min'] = k_range[0]
-                    advanced_props['band_structure_k_range_max'] = k_range[1]
+                    advanced_props['band_structure_k_range_max'] = analysis_results['band_structure_range'][1]
             
-            # Enhanced transport properties
-            if 'electron_mobility_estimate' in analysis_results:
-                advanced_props['real_electron_mobility'] = analysis_results['electron_mobility_estimate']
-            if 'hole_mobility_estimate' in analysis_results:
-                advanced_props['real_hole_mobility'] = analysis_results['hole_mobility_estimate']
-            
-            advanced_props['conductivity_type_advanced'] = analysis_results.get('conductivity_type', 'unknown')
-            advanced_props['conductivity_estimate_advanced'] = analysis_results.get('conductivity_estimate', 'unknown')
-            
-            # Gap information with source tracking (none from a DOSS.DAT alone)
-            if analysis_results.get('gap_ev') is not None:
-                advanced_props['band_gap_advanced_ev'] = analysis_results['gap_ev']
-            if analysis_results.get('gap_hartree') is not None:
-                advanced_props['band_gap_advanced_ha'] = analysis_results['gap_hartree']
+            # The band-path gap by occupation when the BAND.DAT gap by band
+            # index is unknown (no occupied-band count in the .out)
+            if (analysis_results.get('gap_ev') is not None
+                    and properties.get('band_fundamental_gap_ev') is None and band_file):
+                advanced_props['band_fundamental_gap_ev'] = analysis_results['gap_ev']
             
             # Analysis metadata
             files_analyzed = analysis_results.get('files_analyzed', {})
@@ -3940,14 +4322,36 @@ class CrystalPropertyExtractor:
                 print(f"      📊 Real effective masses calculated from band structure")
             
         except ImportError:
-            advanced_props['advanced_analysis_available'] = False
             advanced_props['advanced_analysis_note'] = 'AdvancedElectronicAnalyzer not available'
         except Exception as e:
-            advanced_props['advanced_analysis_available'] = False
             advanced_props['advanced_analysis_error'] = str(e)
             print(f"      ⚠️  Advanced analysis failed: {e}")
         
         return advanced_props
+
+
+def transport_axis_lines(properties: Dict[str, Any]) -> List[str]:
+    """What `mace analyze --extract-properties` prints for a TRANSPORT run:
+    the peak PF, ZT_e and (with --kappa-lattice) total ZT along each axis,
+    the best axis, and the value of the averaged tensors beside them."""
+    lines = []
+    for quantity, label, fmt in (('power_factor', 'PF (W/(m·K²))', '.4g'),
+                                 ('zt_electronic', 'ZTₑ (no lattice κ)', '.4g'),
+                                 ('zt_total', 'total ZT', '.4g')):
+        per = {a: properties.get(f'transport_{quantity}_max_{a}') for a in ('xx', 'yy', 'zz')}
+        per = {a: v for a, v in per.items() if v is not None}
+        avg = properties.get(f'transport_{quantity}_max_avg')
+        if not per and avg is None:
+            continue
+        parts = [f"{a} {format(v, fmt)}" for a, v in per.items()]
+        best = properties.get(f'transport_{quantity}_best_axis')
+        text = f"{label} peak: " + ", ".join(parts)
+        if best:
+            text += f" (best {best})"
+        if avg is not None:
+            text += f"; of the averaged tensors {format(avg, fmt)}"
+        lines.append(text)
+    return lines
 
 
 def _output_calc_type(output_file: Path) -> str:
@@ -4026,8 +4430,14 @@ def main():
     parser.add_argument("--fragments", action="store_true",
                         help="Per-fragment Mulliken charges for every run (charged runs get them anyway)")
     # Building a database from a folder (all opt-in; without them a run is unchanged)
-    parser.add_argument("--register", action="store_true",
-                        help="First record the folder's completed calculations (materials and calculations rows)")
+    # On by default for a folder (--scan-directory): without the calculation
+    # records, `mace database` lists none of the materials and an export is
+    # empty. --no-register keeps the untracked extraction.
+    parser.add_argument("--register", dest="register", action="store_true", default=None,
+                        help="First record the folder's completed calculations (materials and calculations "
+                             "rows); the default with --scan-directory")
+    parser.add_argument("--no-register", dest="register", action="store_false",
+                        help="Do not record calculations: store the properties of untracked outputs only")
     parser.add_argument("--dry-run", action="store_true",
                         help="Write nothing: list each output as new, changed, unchanged, not tracked, "
                              "unreadable or incomplete")
@@ -4040,12 +4450,22 @@ def main():
                         help="With --backup: keep the newest N backups (1-100, default 3)")
     parser.add_argument("--progress-json", action="store_true",
                         help="Machine-readable progress: one JSON line per file on stdout, the rest on stderr")
+    # Total ZT of TRANSPORT runs (opt-in; without it only the electronic ZT_e is stored)
+    parser.add_argument("--kappa-lattice", metavar="VALUE|FILE",
+                        help="Lattice thermal conductivity in W/(m·K) for the total ZT = S²σT/(κe + κL) of "
+                             "TRANSPORT runs: one value, or a CSV of T,kappa_L rows (linear interpolation, "
+                             "no extrapolation)")
+    parser.add_argument("--tau-fs", metavar="FS",
+                        help="With --kappa-lattice: the relaxation time in fs to evaluate the total ZT at "
+                             "(default: the run's RELAXTIM; σ and κ0 are scaled by tau/tau_run)")
     
     args = parser.parse_args()
     
     if not args.output_file and not args.scan_directory:
         print("❌ Please specify either --output-file or --scan-directory")
         sys.exit(1)
+    if args.register is None:
+        args.register = bool(args.scan_directory) and not args.output_file
     if args.keep_backups is not None and not args.backup:
         print("❌ --keep-backups needs --backup", file=sys.stderr)
         sys.exit(2)
@@ -4056,6 +4476,19 @@ def main():
     if args.json and not args.dry_run:
         print("❌ --json goes with --dry-run (use --progress-json for a run)", file=sys.stderr)
         sys.exit(2)
+    kappa_lattice = tau_fs = None
+    if args.tau_fs is not None and args.kappa_lattice is None:
+        print("❌ --tau-fs goes with --kappa-lattice (the electronic ZT does not depend on tau)", file=sys.stderr)
+        sys.exit(2)
+    if args.kappa_lattice is not None:
+        from mace.utils import transport_zt
+        try:
+            kappa_lattice = transport_zt.parse_kappa_lattice(args.kappa_lattice)
+            tau_fs = transport_zt.check_tau_fs(args.tau_fs)
+        except transport_zt.KappaLatticeError as e:
+            print(f"❌ --kappa-lattice/--tau-fs: {e}", file=sys.stderr)
+            sys.exit(2)
+    args.kappa_lattice_parsed, args.tau_fs_parsed = kappa_lattice, tau_fs
     if args.skip_unchanged and not args.register and not db_build.has_tracked(args.db_path):
         print("❌ --skip-unchanged needs tracked calculations; add --register", file=sys.stderr)
         sys.exit(2)
@@ -4148,6 +4581,11 @@ def _run(args, keep: int, real_stdout) -> None:
 
     extractor = CrystalPropertyExtractor(args.db_path, ase_db_path=ase_db)
     extractor.extract_fragments = args.fragments
+    extractor.kappa_lattice = args.kappa_lattice_parsed
+    extractor.tau_fs = args.tau_fs_parsed
+    if extractor.kappa_lattice is not None:
+        print(f"κL for the total ZT of TRANSPORT runs: {extractor.kappa_lattice.source()}"
+              + (f"; tau {extractor.tau_fs:g} fs" if extractor.tau_fs is not None else "; tau: each run's RELAXTIM"))
 
     materials_before = _material_count(extractor.db) if building else None
     if args.register:
@@ -4166,11 +4604,29 @@ def _run(args, keep: int, real_stdout) -> None:
             classes[str(r["file"])] = r["class"]
             if r.get("reason"):
                 reasons[str(r["file"])] = r["reason"]
+    # a build that stopped before its end (a CPU-time limit, a kill, a cancel) left its marker: with
+    # --skip-unchanged this one continues it (what it committed is "unchanged" now) and says so
+    resumed = None
+    if building:
+        previous = db_build.begin_build(args.db_path, scan_root, len(output_files))
+        if previous is not None:
+            if args.skip_unchanged:
+                already = sum(1 for f in output_files if classes.get(str(f)) == "unchanged")
+                resumed = {"already": already, "total": len(output_files)}
+                print(f"↻ {db_build.resumed_message(already, len(output_files))} "
+                      "(the last update of this database stopped before its end)")
+                if args.progress_json:
+                    _json_line(real_stdout, {"resumed": resumed})
+            else:
+                print("ℹ️  The last update of this database stopped before its end; this run extracts every "
+                      "output again (--skip-unchanged continues where it stopped).")
     records = []   # one per file, as --progress-json writes them: the summary counts these
     
     total_properties = 0
     files_processed = 0
     materials_processed = set()
+    # material -> the TRANSPORT outputs given the one --kappa-lattice's total ZT
+    zt_materials: Dict[str, List[str]] = {}
     # Untracked outputs (no calculation record) share one set of rows per
     # material, so a row cannot name the output that wrote it. Rows of such
     # a material that this run did not write again are removed after the
@@ -4238,6 +4694,8 @@ def _run(args, keep: int, real_stdout) -> None:
             saved_count = extractor.save_properties_to_database(properties)
             total_properties += saved_count
             files_processed += 1
+            if saved_count and 'transport_zt_total_max_avg' in properties:
+                zt_materials.setdefault(material or Path(output_file).stem, []).append(Path(output_file).name)
             meta = properties.get('_metadata', {})
             if meta.get('calc_id') is None and saved_count and not args.material_id:
                 untracked.setdefault(meta['material_id'], set()).add(Path(output_file).resolve())
@@ -4248,6 +4706,8 @@ def _run(args, keep: int, real_stdout) -> None:
                     print(f"   ⚠️  Could not record the extraction of {output_file}: {e}")
             status = "extracted" if saved_count else "failed"
             print(f"   ✅ Extracted and saved {saved_count} properties")
+            for line in transport_axis_lines(properties):
+                print(f"   {line}")
             if properties.get("fragment_charges"):
                 from mace.utils.ion_fragments import format_fragment_charges
                 for line in format_fragment_charges(properties):
@@ -4273,10 +4733,26 @@ def _run(args, keep: int, real_stdout) -> None:
             print(f"   🧹 {material_id}: removed {removed} stale properties an earlier "
                   f"extraction stored and this one no longer produces")
 
+    if len(zt_materials) > 1:
+        # κL is a property of the material: one value or table for several
+        # materials is rarely what the user meant (the source is stored, but
+        # nothing else would say so)
+        print(f"\n⚠️  One κL ({extractor.kappa_lattice.source()}) was used for the total ZT of "
+              f"{len(zt_materials)} materials: " + ", ".join(sorted(zt_materials))
+              + ". κL is a property of each material; extract each one with its own --kappa-lattice "
+              "unless they share it.")
+
     print(f"\n🎉 Processing complete!")
     print(f"   Files processed: {files_processed}")
     print(f"   Total properties extracted: {total_properties}")
     print(f"   Materials processed: {len(materials_processed)}")
+    n_untracked = sum(len(v) for v in untracked.values())
+    if n_untracked:
+        # (--no-register, or outputs the registration does not record)
+        print(f"   ⚠️  {n_untracked} output(s) have no calculation record: they share one set of rows "
+              "per material (a later output's value replaces an earlier one)"
+              + ("" if building else ", and `mace database` lists no material for them")
+              + ". Run with --register to record them as calculations.")
     
     if args.filter_material or args.filter_type or args.calc_type:
         print(f"\n📌 Filters applied:")
@@ -4294,7 +4770,10 @@ def _run(args, keep: int, real_stdout) -> None:
                 "new": counted["new"], "changed": counted["changed"],
                 "reextracted": counted["reextracted"],
                 "failed_outputs": len(counted["failed"]), "skipped_outputs": counted["skipped"]}
+        if resumed is not None:
+            done["resumed"] = resumed
         done["message"] = db_build.summary_message(done)
+        db_build.end_build(args.db_path)
         print(f"   {done['message']}")
         if args.progress_json:
             _json_line(real_stdout, done)

@@ -76,10 +76,10 @@ def write_basis_block(f: TextIO, basis_config: Dict[str, Any],
         
         # Write basis sets for each unique element
         unique_elements = sorted(set(elements))
+        # read_basis_file raises BasisFileError for an element the directory
+        # has no record for: a deck without that element's basis never runs.
         for element in unique_elements:
-            basis_content = read_basis_file(basis_path, element)
-            if basis_content:
-                f.write(basis_content)
+            f.write(read_basis_file(basis_path, element))
         
         # End basis input
         f.write("99 0\n")

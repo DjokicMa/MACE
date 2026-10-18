@@ -17,6 +17,7 @@ from typing import Dict, List, Any, Tuple, Optional
 # Single-sourced from mace.constants (re-exported here so existing
 # `dat_file_processor.HARTREE_TO_EV` users keep working unchanged).
 from mace.constants import HARTREE_TO_EV
+from mace.utils.dat_text import read_text
 
 
 class DatFileProcessor:
@@ -51,8 +52,7 @@ class DatFileProcessor:
             return {"error": f"File not found: {file_path}"}
 
         try:
-            with open(file_path, 'r') as f:
-                content = f.read()
+            content = read_text(file_path)  # shared with the other readers
 
             results = {
                 'file_type': 'BAND.DAT',
@@ -91,8 +91,7 @@ class DatFileProcessor:
             return {"error": f"File not found: {file_path}"}
         
         try:
-            with open(file_path, 'r') as f:
-                content = f.read()
+            content = read_text(file_path)  # shared with the other readers
             
             results = {
                 'file_type': 'DOSS.DAT',
@@ -169,7 +168,7 @@ class DatFileProcessor:
 
             parts = line.split()
             try:
-                values = [float(x) for x in parts]
+                values = list(map(float, parts))
             except ValueError:
                 continue
             # CRYSTAL wraps a k-point row after 1000 fields (NBND >= 1000):
@@ -249,7 +248,7 @@ class DatFileProcessor:
             if line.startswith('@'):
                 continue  # xmgrace directive
             try:
-                vals = [float(x) for x in line.split()]
+                vals = list(map(float, line.split()))
             except ValueError:
                 continue
             tokens.extend(vals)
@@ -281,12 +280,13 @@ class DatFileProcessor:
         total_dos: List[float] = []
         projected_dos: Dict[str, List[float]] = {}
         if width >= 2 and len(tokens) % width == 0:
-            for i in range(0, len(tokens), width):
-                rec = tokens[i:i + width]
-                energy_points.append(rec[0])
-                total_dos.append(rec[-1])  # total DOS is the last column
-                for j, val in enumerate(rec[1:-1], start=1):
-                    projected_dos.setdefault(f'projected_dos_{j}', []).append(val)
+            # record by record: column 0 is the energy, the last the total
+            # DOS, the ones between the projections (strided slices)
+            energy_points = tokens[0::width]
+            total_dos = tokens[width - 1::width]
+            if tokens:
+                for j in range(1, width - 1):
+                    projected_dos[f'projected_dos_{j}'] = tokens[j::width]
 
         results['energy_points'] = energy_points
         results['total_dos'] = total_dos
@@ -442,66 +442,6 @@ class DatFileProcessor:
             analysis['metallic'] = False
             analysis['band_gap_ev'] = gap_ev
         return analysis
-
-
-def process_calculation_dat_files(calc_id: str, work_dir: str, db_path: str = "materials.db") -> Dict[str, Any]:
-    """
-    Process all DAT files for a specific calculation.
-    
-    Args:
-        calc_id: Calculation ID
-        work_dir: Working directory containing DAT files
-        db_path: Path to materials database
-        
-    Returns:
-        Dictionary with processed DAT file data
-    """
-    from mace.database.materials import MaterialDatabase
-    
-    processor = DatFileProcessor()
-    results = {}
-    
-    work_path = Path(work_dir)
-    
-    # Look for BAND.DAT files
-    band_dat_files = list(work_path.glob("*BAND.DAT")) + list(work_path.glob("*band.dat"))
-    for band_file in band_dat_files:
-        results[f'band_structure_{band_file.stem}'] = processor.process_band_dat_file(band_file)
-    
-    # Look for DOSS.DAT files  
-    doss_dat_files = list(work_path.glob("*DOSS.DAT")) + list(work_path.glob("*doss.dat"))
-    for doss_file in doss_dat_files:
-        results[f'density_of_states_{doss_file.stem}'] = processor.process_doss_dat_file(doss_file)
-    
-    # Save results to database if files were found
-    if results:
-        db = MaterialDatabase(db_path)
-        
-        for file_type, data in results.items():
-            if 'error' not in data:
-                # Save as a property in the database
-                property_name = f"dat_file_{file_type}"
-                
-                try:
-                    with db._get_connection() as conn:
-                        # Get material_id for this calc_id
-                        cursor = conn.execute("SELECT material_id FROM calculations WHERE calc_id = ?", (calc_id,))
-                        material_row = cursor.fetchone()
-                        if material_row:
-                            material_id = material_row[0]
-                            
-                            # Insert the DAT file data as a property
-                            conn.execute("""
-                                INSERT OR REPLACE INTO properties 
-                                (material_id, calc_id, property_category, property_name, 
-                                 property_value_text, property_unit, extracted_at, extractor_script)
-                                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)
-                            """, (material_id, calc_id, 'electronic', property_name,
-                                  str(data), 'N/A', 'dat_file_processor.py'))
-                except Exception as e:
-                    print(f"Error saving DAT file data for {calc_id}: {e}")
-    
-    return results
 
 
 if __name__ == "__main__":

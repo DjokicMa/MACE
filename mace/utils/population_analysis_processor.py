@@ -24,6 +24,14 @@ except ImportError:  # copied flat next to this file (copy_dependencies)
     from ion_fragments import VALENCE_UNKNOWN_FLAG, valence_charges, valence_of as valence_charge
 
 
+def raw_population(atom: Dict[str, Any]) -> float:
+    """The electron (or spin) population of an atom row of the extractor's
+    Mulliken tables: ``mulliken_population``, called ``mulliken_charge``
+    before MACE 1.1.6 (a database built earlier holds that name)."""
+    value = atom.get('mulliken_population')
+    return atom['mulliken_charge'] if value is None else value
+
+
 @dataclass
 class AtomicCharge:
     """Atomic charge information."""
@@ -144,7 +152,7 @@ class PopulationAnalysisProcessor:
             if nuclear_charge is None:
                 charges.append(self._unknown_charge(atom_data))
                 continue
-            electron_population = atom_data['mulliken_charge']
+            electron_population = raw_population(atom_data)
             net_charge = nuclear_charge - electron_population
             
             # Estimate oxidation state
@@ -178,11 +186,11 @@ class PopulationAnalysisProcessor:
             # Calculate spin density if available
             spin_density = None
             if i < len(spin_atoms):
-                spin_density = spin_atoms[i]['mulliken_charge']
+                spin_density = raw_population(spin_atoms[i])
             if nuclear_charge is None:
                 charges.append(self._unknown_charge(atom_data, spin_density))
                 continue
-            total_electrons = atom_data['mulliken_charge']
+            total_electrons = raw_population(atom_data)
             net_charge = nuclear_charge - total_electrons
             
             # Estimate oxidation state
@@ -292,7 +300,7 @@ class PopulationAnalysisProcessor:
             return magnetic_info
         
         spin_atoms = alpha_minus_beta['atoms']
-        total_spin = sum(atom['mulliken_charge'] for atom in spin_atoms)
+        total_spin = sum(raw_population(atom) for atom in spin_atoms)
         
         magnetic_info['total_spin_moment'] = total_spin
         magnetic_info['is_magnetic'] = abs(total_spin) > 0.01
@@ -309,7 +317,7 @@ class PopulationAnalysisProcessor:
             magnetic_info['atomic_spin_moments'].append({
                 'atom_number': atom['atom_number'],
                 'element': atom['element'],
-                'spin_moment': atom['mulliken_charge']
+                'spin_moment': raw_population(atom)
             })
         
         return magnetic_info
@@ -440,11 +448,18 @@ def process_material_population_analysis(material_id: str, db_path: str = "mater
     
     # Get all population analysis properties for this material
     with db._get_connection() as conn:
+        # the overlap populations are in property_blobs (1.1.6 on)
+        blobs = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                             "AND name = 'property_blobs'").fetchone()
         cursor = conn.execute("""
             SELECT calc_id, property_name, property_value_text
             FROM properties 
             WHERE material_id = ? AND property_category = 'population_analysis'
-        """, (material_id,))
+        """ + ("""UNION ALL
+            SELECT calc_id, property_name, property_value_text
+            FROM property_blobs
+            WHERE material_id = ? AND property_category = 'population_analysis'
+        """ if blobs else ""), (material_id, material_id) if blobs else (material_id,))
         
         properties = {}
         for calc_id, prop_name, prop_text in cursor.fetchall():

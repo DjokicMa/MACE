@@ -25,7 +25,15 @@ calculation writes one row of the existing ``files`` table with
   its rows would sit under a material with no materials row), or MACE's ``X_temp.out`` copy of the run whose ``X.out``
   is beside it.
 
-Nothing here writes; the read-only database connection never creates a file.
+A build that stops before its end (a CPU-time limit, a kill, a cancel, a
+lost session) loses nothing it committed: each output's rows and its
+``output_extracted`` row are written together, per file. The next build with
+``--skip-unchanged`` classifies what was done as ``unchanged`` and goes on
+with the rest. ``begin_build``/``end_build`` keep a marker beside the
+database (``.<name>.building``) from a build's start to its end, so that next
+build says it is continuing one that stopped: "Resumed: N of M already done".
+
+Nothing else here writes; the read-only database connection never creates a file.
 """
 from __future__ import annotations
 
@@ -385,7 +393,52 @@ def summary_message(done: Dict[str, Any]) -> str:
            f"{n_failed} failed outputs; {done.get('materials', 0)} materials ({done.get('materials_new', 0)} new)")
     if done.get("skipped_outputs"):
         msg += f"; {done['skipped_outputs']} skipped"
+    r = done.get("resumed")
+    if isinstance(r, dict):
+        msg = f"{resumed_message(r.get('already', 0), r.get('total', 0))}. {msg}"
     return msg
+
+
+def build_marker(db_path) -> Path:
+    """The marker of a build in progress, beside the database (hidden)."""
+    p = Path(db_path)
+    return p.resolve().parent / f".{p.name}.building"
+
+
+def begin_build(db_path, folder, n_outputs: int) -> Optional[Dict[str, Any]]:
+    """Mark a build as started; the marker of an earlier build that never
+    ended (None when the last one ended, or there was none). Best effort: a
+    marker that cannot be written only loses the "Resumed" message."""
+    import json
+    from datetime import datetime
+    m = build_marker(db_path)
+    prev = None
+    try:
+        prev = json.loads(m.read_text())
+        if not isinstance(prev, dict):
+            prev = {}
+    except FileNotFoundError:
+        prev = None
+    except (OSError, ValueError):
+        prev = {}
+    try:
+        m.write_text(json.dumps({"started": datetime.now().isoformat(timespec="seconds"), "pid": os.getpid(),
+                                 "folder": str(folder), "outputs": int(n_outputs)}) + "\n")
+    except OSError:
+        pass
+    return prev
+
+
+def end_build(db_path) -> None:
+    """The build reached its end: no marker."""
+    try:
+        build_marker(db_path).unlink()
+    except OSError:
+        pass
+
+
+def resumed_message(already: int, total: int) -> str:
+    return f"Resumed: {already} of {total} already done"
 
 
 def record_extracted(db, calc_id: str, output_file: Path) -> None:

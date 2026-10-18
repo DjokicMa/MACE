@@ -378,7 +378,10 @@ class AdvancedFilterParser:
                     pass
             return value
             
-        # Then check properties
+        # Then check properties (a name renamed in 1.1.6: by its current
+        # name, as the rows read show it - property_keys)
+        from mace.utils.property_keys import canonical
+        property_name = canonical(property_name)
         for prop in properties:
             if prop.get('property_name') == property_name:
                 value = prop.get('property_value')

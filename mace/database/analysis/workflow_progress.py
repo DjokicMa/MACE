@@ -9,20 +9,14 @@ import json
 from datetime import datetime
 from collections import defaultdict, OrderedDict
 
+from mace.workflow.common.constants import WORKFLOW_TEMPLATES
+
 
 class WorkflowProgress:
     """Tracks and analyzes workflow progress for materials."""
     
     # Standard workflow sequences
-    WORKFLOWS = {
-        'basic_opt': ['OPT'],
-        'opt_sp': ['OPT', 'SP'],
-        'full_electronic': ['OPT', 'SP', 'BAND', 'DOSS'],
-        'transport_analysis': ['OPT', 'SP', 'TRANSPORT'],
-        'charge_analysis': ['OPT', 'SP', 'CHARGE+POTENTIAL'],
-        'combined_analysis': ['OPT', 'SP', 'BAND', 'DOSS', 'TRANSPORT'],
-        'complete': ['OPT', 'SP', 'BAND', 'DOSS', 'FREQ']
-    }
+    WORKFLOWS = {k: list(v) for k, v in WORKFLOW_TEMPLATES.items()}
     
     def __init__(self, db):
         """

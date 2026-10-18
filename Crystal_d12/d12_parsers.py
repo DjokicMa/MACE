@@ -28,6 +28,7 @@ from d12_constants import (
     mace_functional_name,
     CUSTOM_FUNCTIONAL,
 )
+from soc_ecp import is_spin_orbit_deck, is_two_component_deck, is_two_component_output
 
 # The group record a SLAB / POLYMER deck carries, and its range (CRYSTAL23
 # manual Appendix A.2: 80 layer groups; A.3: 99 rod groups). The record is
@@ -216,6 +217,11 @@ class CrystalOutputParser:
 
         # Extract calculation settings
         self._extract_settings(lines)
+
+        # A two-component run (its .out headers). Whether it had SOC is in its
+        # deck, not here; the key is set only for such a run.
+        if is_two_component_output(content):
+            self.data["two_component"] = True
 
         return self.data
 
@@ -1185,6 +1191,15 @@ class CrystalInputParser:
         if scf_settings:
             self.data["scf_settings"] = scf_settings
 
+        # A two-component deck (TWOCOMPON block), with SOC in it: a deck
+        # derived from it is written as a SOC deck too, unless the template
+        # says "soc": false. Set only for such a deck.
+        content = "".join(lines)
+        if is_two_component_deck(content):
+            self.data["two_component"] = True
+            if is_spin_orbit_deck(content):
+                self.data["soc"] = True
+
         return self.data
 
     def _extract_geometry(self, lines: List[str], dim_idx: int) -> None:
@@ -1818,7 +1833,13 @@ class CrystalInputParser:
                 skip_to += 1
                 continue
             elif stripped in ["UHF", "RHF"] and not in_dft_block:
-                # Hartree-Fock methods outside DFT block
+                # Hartree-Fock methods outside DFT block. UHF next to an
+                # HF-3c block is that run's open-shell form: the functional
+                # stays the 3c method, spin-polarized.
+                if self.data.get("functional") in ("HF3C", "HFSOL3C"):
+                    if stripped == "UHF":
+                        self.data["spin_polarized"] = True
+                    continue
                 self.data["functional"] = stripped
                 self.data["method"] = "HF"
                 continue
@@ -1826,6 +1847,8 @@ class CrystalInputParser:
                 # The HF composite methods are Hamiltonian keywords of their
                 # own after the basis set, with no DFT block (manual sec.
                 # 5.3.1, p. 158: HF3C; p. 162: HFSOL3C).
+                if self.data.get("functional") == "UHF":
+                    self.data["spin_polarized"] = True
                 self.data["functional"] = stripped
                 self.data["method"] = "HF"
                 self.data["is_3c_method"] = True

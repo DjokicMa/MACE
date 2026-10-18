@@ -382,6 +382,8 @@ Current context: No material selected
             return
 
         props = self.db.get_material_properties(self.current_material)
+        from mace.utils.property_keys import canonical  # a 1.1.6 rename: its current name
+        arg = canonical(arg)
 
         for prop in props:
             if prop['property_name'] == arg:
@@ -421,6 +423,8 @@ Current context: No material selected
         prop_name, target_unit = parts
         
         props = self.db.get_material_properties(self.current_material)
+        from mace.utils.property_keys import canonical  # a 1.1.6 rename: its current name
+        prop_name = canonical(prop_name)
         
         for prop in props:
             if prop['property_name'] == prop_name:

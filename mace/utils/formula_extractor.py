@@ -23,8 +23,10 @@ from datetime import datetime
 
 try:
     from mace.utils.calc_detection import deck_records_for
+    from mace.utils.fast_text import ci_search
 except ImportError:  # pragma: no cover - loaded as a bare module next to it
     from calc_detection import deck_records_for
+    from fast_text import ci_search
 
 
 # Atomic number -> element symbol (Z = 1..86 covers everything in these basis sets).
@@ -41,10 +43,9 @@ _ELEMENT_SYMBOLS = {
     81: 'Tl', 82: 'Pb', 83: 'Bi', 84: 'Po', 85: 'At', 86: 'Rn'
 }
 
-# Elements that conventionally come last in a formula (electronegative, in
-# decreasing electropositivity so e.g. SiO2 / TiO2 / CaCO3 read naturally).
-_NONMETAL_ORDER = ['B', 'C', 'Si', 'Ge', 'N', 'P', 'As', 'Sb', 'H',
-                   'Te', 'Se', 'S', 'At', 'I', 'Br', 'Cl', 'F', 'O']
+# The order a materials.db formula is written in (mace.utils.formula, shared
+# with the GUI)
+from mace.utils.formula import NONMETAL_ORDER as _NONMETAL_ORDER, format_formula  # noqa: E402,F401
 
 
 def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
@@ -138,21 +139,9 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
 def _format_formula(atom_counts) -> str:
     """A formula from element counts. Convention: electropositive elements
     (cations/metals) first, ordered by atomic number, then the nonmetal anions
-    in a fixed electronegativity order (so SiO2, TiPbO3, AgBr read naturally)."""
-    symbol_to_z = {sym: z for z, sym in _ELEMENT_SYMBOLS.items()}
-
-    cations = sorted(
-        (el for el in atom_counts if el not in _NONMETAL_ORDER),
-        key=lambda el: symbol_to_z.get(el, 999)
-    )
-    anions = [el for el in _NONMETAL_ORDER if el in atom_counts]
-
-    formula_parts = []
-    for element in cations + anions:
-        count = atom_counts[element]
-        formula_parts.append(element if count == 1 else f"{element}{count}")
-
-    return ''.join(formula_parts)
+    in a fixed electronegativity order (so SiO2, TiPbO3, AgBr read naturally).
+    mace.utils.formula's "mace" order."""
+    return format_formula(atom_counts, "mace")
 
 
 def extract_formula_from_cif(cif_file: Path) -> Optional[str]:
@@ -239,12 +228,13 @@ def _atom_site_symbols(content: str):
 _SYMBOL_SET = frozenset(_ELEMENT_SYMBOLS.values())
 
 
-def extract_space_group_from_output(output_file: Path) -> Optional[int]:
+def extract_space_group_from_output(output_file: Path, content: Optional[str] = None) -> Optional[int]:
     """
     Extract space group number from CRYSTAL output file.
     
     Args:
         output_file: Path to .out file
+        content: the file's text, when the caller has already read it
         
     Returns:
         Space group number (1-230) or None
@@ -253,22 +243,23 @@ def extract_space_group_from_output(output_file: Path) -> Optional[int]:
     if not output_file.exists():
         return None
     
-    try:
-        with open(output_file, 'r') as f:
-            content = f.read()
-    except:
-        return None
+    if content is None:
+        try:
+            with open(output_file, 'r') as f:
+                content = f.read()
+        except:
+            return None
     
     # First try to find explicit space group numbers
     number_patterns = [
-        r'SPACE GROUP NUMBER\s+(\d+)',
-        r'SPACE GROUP:\s+(\d+)',
-        r'S\.G\.\s+(\d+)',
-        r'SYMMOPS - SPACE GROUP\s+(\d+)'
+        (r'SPACE GROUP NUMBER\s+(\d+)', ('space group number',)),
+        (r'SPACE GROUP:\s+(\d+)', ('space group:',)),
+        (r'S\.G\.\s+(\d+)', ('s.g.',)),
+        (r'SYMMOPS - SPACE GROUP\s+(\d+)', ('symmops - space group',))
     ]
     
-    for pattern in number_patterns:
-        match = re.search(pattern, content, re.IGNORECASE)
+    for pattern, literals in number_patterns:
+        match = ci_search(pattern, content, literals)
         if match:
             sg_num = int(match.group(1))
             if 1 <= sg_num <= 230:  # Valid space group range
@@ -276,7 +267,7 @@ def extract_space_group_from_output(output_file: Path) -> Optional[int]:
     
     # If no number found, try to map space group symbols to numbers
     symbol_pattern = r'SPACE GROUP.*:\s*([A-Z0-9\s/-]{1,20})'
-    match = re.search(symbol_pattern, content, re.IGNORECASE)
+    match = ci_search(symbol_pattern, content, ('space group', ':'))
     if match:
         sg_symbol = match.group(1).strip()
         # Take only the first line if there are line breaks
@@ -301,6 +292,7 @@ def _space_group_symbol_to_number(symbol: str) -> Optional[int]:
         'IMM2': 44, 'IBA2': 45, 'IMA2': 46, 'PMMM': 47, 'PNNN': 48, 'PCCM': 49, 'PBAN': 50,
         'PMMA': 51, 'PNNA': 52, 'PMNA': 53, 'PCCA': 54, 'PBAM': 55, 'PCCN': 56, 'PBCM': 57,
         'PNNM': 58, 'PMMN': 59, 'PBCN': 60, 'PBCA': 61, 'PNMA': 62, 'CMCM': 63, 'CMCE': 64,
+        'CMCA': 64,  # the pre-2002 symbol of Cmce, which CRYSTAL23 prints
         'CMMM': 65, 'CCCM': 66, 'CMME': 67, 'CCCE': 68, 'FMMM': 69, 'FDDD': 70, 'IMMM': 71,
         'IBAM': 72, 'IBCA': 73, 'IMMA': 74, 'P4': 75, 'P41': 76, 'P42': 77, 'P43': 78,
         'I4': 79, 'I41': 80, 'P-4': 81, 'I-4': 82, 'P4/M': 83, 'P42/M': 84, 'P4/N': 85,

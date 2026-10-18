@@ -12,6 +12,7 @@ CRYSTAL calculations (optimization or single point). It handles:
 - TRANSPORT: Boltzmann transport properties  
 - CHARGE: Charge density (ECH3/ECHG)
 - POTENTIAL: Electrostatic potential (POT3/POTC)
+- ORBITALS: Orbitals as Molden files (NEWK + ORBITALS)
 
 The script automatically:
 - Extracts necessary information from output files
@@ -41,7 +42,8 @@ try:
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
                                extract_shrink_from_d12, extract_shrink_from_out,
-                               ghost_atom_labels, GHOST_SUFFIX)
+                               ghost_atom_labels, GHOST_SUFFIX,
+                               orbitals_kchoice, orbitals_file_warnings)
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
@@ -55,7 +57,8 @@ except ImportError:
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
                                extract_shrink_from_d12, extract_shrink_from_out,
-                               ghost_atom_labels, GHOST_SUFFIX)
+                               ghost_atom_labels, GHOST_SUFFIX,
+                               orbitals_kchoice, orbitals_file_warnings)
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
@@ -116,6 +119,60 @@ _MAP_FRACTION_WORDS = {"F", "FRAC", "FRACTION", "FRACTIONAL"}
 _MAP_ANGSTROM_WORDS = {"C", "CART", "CARTESIAN", "ANGSTROM"}
 
 
+# Two-component (SOC) parents. The .out markers and the deck's TWOCOMPON block
+# are defined once, in mace/utils/calc_detection.py (standard library only);
+# run standalone, it is loaded by path, and a copy of this script with neither
+# beside it uses the same markers inline.
+try:
+    from mace.utils.calc_detection import (is_two_component_deck, is_two_component_output,
+                                           orbitals_root)
+except ImportError:
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_mace_calc_detection",
+            Path(__file__).resolve().parent.parent / "mace" / "utils" / "calc_detection.py")
+        _calc_detection = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_calc_detection)
+        is_two_component_deck = _calc_detection.is_two_component_deck
+        is_two_component_output = _calc_detection.is_two_component_output
+        orbitals_root = _calc_detection.orbitals_root
+    except Exception:  # pragma: no cover - flat copy without the mace package
+        def orbitals_root(stem: str) -> str:
+            return f"{stem}_orb"
+
+        def is_two_component_output(content: str) -> bool:
+            return re.search(r"^[ \t]*(?:TOTAL [XY]-COMP MAGNETIZATION[ \t]"
+                             r"|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t])",
+                             content, re.MULTILINE) is not None
+
+        def is_two_component_deck(content: str) -> bool:
+            return any(line.strip().upper() == "TWOCOMPON"
+                       for line in content.splitlines()[1:])
+
+# What properties can do with a two-component (2c-SCF) wavefunction. The
+# CRYSTAL23 manual, sec. 6.4 (p. 183), lists the properties keywords the 2c
+# implementation supports: NEWK, BAND, ECHG, ECH3, PPAN, PROPS2COMP, ANBD,
+# BWIDTH, DOSS and TOPO (and auxiliary ones), and p. 166 says "Any feature not
+# explicitly mentionned in this chapter is not supported" in 2c. BOLTZTRA
+# (TRANSPORT) and POT3/POTC (POTENTIAL) are not in the list.
+TWO_COMPONENT_D3_TYPES = {"BAND", "DOSS", "CHARGE", "ECH3", "ECHG"}
+
+# Measured on HPCC (a molecule, stock serial properties on a 2c fort.9):
+# ECH3 ends with rc 0 but DENS_CUBE.DAT is 0 bytes. Refused for 0D 2c parents.
+TWO_COMPONENT_0D_REFUSED = {"CHARGE", "ECH3", "ECHG"}
+TWO_COMPONENT_0D_CUBE_REASON = (
+    "Measured on HPCC: the stock properties runs ECH3 on a 2c molecule's fort.9 "
+    "with exit code 0 but writes an empty (0-byte) DENS_CUBE.DAT, and ECHG was "
+    "never run from one, so MACE writes no charge-density deck for a 0D "
+    "two-component parent. Run the charge density from the scalar (1c) SCF.")
+
+_TWO_COMPONENT_REFUSED = {
+    "TRANSPORT": "BOLTZTRA", "POTENTIAL": "POT3/POTC", "POT3": "POT3", "POTC": "POTC",
+    "CHARGE+POTENTIAL": "POT3",
+}
+
+
 def _resolve_map_coord_type(value: Any) -> Optional[str]:
     """Map an answer/config value onto "FRACTION" or "ANGSTROM", else None."""
     word = str(value).strip().upper()
@@ -132,6 +189,27 @@ def _strip_run_suffix(stem: str) -> str:
         if stem.endswith(suffix):
             return stem[:-len(suffix)]
     return stem
+
+
+# "Edit the band k-path?" is asked at a terminal, or on piped answers with
+# --edit-kpath: 1.1.5 did not ask it, so piped 1.1.5 answers keep their order
+# (the GUI's Calculation Setup has its own k-path editor).
+_EDIT_KPATH = False
+
+
+def request_kpath_question() -> None:
+    """Ask "Edit the band k-path?" on piped answers too (--edit-kpath)."""
+    global _EDIT_KPATH
+    _EDIT_KPATH = True
+
+
+def _kpath_question_wanted() -> bool:
+    if _EDIT_KPATH:
+        return True
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
 
 
 class D3Generator:
@@ -181,6 +259,21 @@ class D3Generator:
         except Exception:
             return False
     
+    def parent_is_two_component(self) -> bool:
+        """Whether the parent run was a two-component (TWOCOMPON) SCF: its .out
+        has the lines CRYSTAL prints for a 2c-SCF, or its .d12 (same name,
+        same folder) has the TWOCOMPON block."""
+        try:
+            if is_two_component_output(self.input_file.read_text(errors="replace")):
+                return True
+        except OSError:
+            pass
+        deck = self.input_file.with_suffix(".d12")
+        try:
+            return deck.exists() and is_two_component_deck(deck.read_text(errors="replace"))
+        except OSError:
+            return False
+
     def _parse_output_file(self) -> Dict[str, Any]:
         """Extract structure information from output file."""
         info = {
@@ -554,7 +647,132 @@ class D3Generator:
 
     def _write_band_d3(self, config: Dict[str, Any]) -> Optional[str]:
         """Write BAND calculation D3 file (None when no readable deck can be
-        written)."""
+        written). An edited path (config["band_path"], d3_band_path) is written
+        from the deck of the computed path; without one the computed deck is
+        returned as it is."""
+        deck = self._write_computed_band_d3(config)
+        band_path = config.get("band_path")
+        if deck is None or not band_path:
+            return deck
+        import d3_band_path as kpath
+        parsed = kpath.parse_band_deck(deck)
+        try:
+            norm = kpath.normalize(band_path)
+        except ValueError as exc:
+            ui.err(f"BAND: the edited k-path (band_path) cannot be used: {exc}; no D3 file was written.")
+            return None
+        if parsed and kpath.same_path(norm, parsed["segments"]):
+            return deck                     # the computed path as it is: the same deck
+        if parsed and parsed["labels_mode"] and not any("k_from" in s or "k_to" in s for s in norm):
+            norm = self._crystal_readable_label_edit(norm)
+            if norm is None:
+                return None
+        if parsed and parsed["labels_mode"] and any("k_from" in s or "k_to" in s for s in norm):
+            # a point given by coordinates: the whole path is written as coordinates
+            converted = self._label_path_as_coordinates(config, kpath.path_tokens(parsed["segments"]))
+            if converted is None:
+                ui.err("BAND: the edited k-path adds coordinates, but this path's labels have no "
+                       "coordinates for this lattice; no D3 file was written.")
+                return None
+            deck = self._write_computed_band_d3(converted)
+            parsed = kpath.parse_band_deck(deck)
+        _, warnings = kpath.validate(norm, parsed["segments"] if parsed else None)
+        for w in warnings:
+            ui.warn(f"  BAND: {w}")
+        try:
+            edited = kpath.write_band_deck(deck, norm, scale_kpoint_segments,
+                                           dimensionality=self.structure_info.get('dimensionality', 3))
+        except ValueError as exc:
+            ui.err(f"BAND: the edited k-path (band_path) cannot be written: {exc}; no D3 file was written.")
+            return None
+        ui.info("  BAND: k-path as edited: " + " ".join(kpath.path_tokens(norm)))
+        return edited
+
+    def _crystal_readable_label_edit(self, norm: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
+        """An edited labels-only path that CRYSTAL23 can read.
+
+        CRYSTAL23 reads BAND labels only from its Tables 14.1/14.2 (manual
+        p. 309, note 6); any other label stops the run with "K-POINTS NOT
+        CODIFIED". When every label is in the table the path is returned as
+        it is. Otherwise every point gets its Table 14.1/14.2 coordinates, so
+        the deck is written as coordinates (CRYSTAL does not mix the two
+        forms); a label MACE has no coordinates for is refused by name
+        (None)."""
+        import d3_band_path as kpath
+        kpts = sys.modules[validate_kpoint_labels_for_crystal23.__module__]
+        space_group = self.structure_info.get('space_group', 1)
+        lattice_type = self.structure_info.get('lattice_type', 'P')
+        system = kpts.get_crystal_system_from_space_group(space_group, lattice_type)
+        if system not in kpts.KPOINT_COORDINATES:
+            return norm
+        valid = kpts.CRYSTAL23_VALID_LABELS.get(system, set())
+        shown = kpath.visible(norm)
+        labels = list(dict.fromkeys(kpath.canonical_label(s[e]) for s in shown for e in ("from", "to")))
+        unread = [lab for lab in labels if lab not in ("GAMMA", "G") and lab not in valid]
+        if not unread:
+            return norm
+        table = kpts.KPOINT_COORDINATES[system]
+        missing = [lab for lab in labels if lab not in table]
+        if missing:
+            ui.err(f"BAND: the edited k-path names {', '.join(unread)}, which CRYSTAL23 does not "
+                   f"read as a label for this lattice ({system}, space group {space_group}; "
+                   f"manual p. 309, note 6: only the labels of Tables 14.1/14.2, else "
+                   f"\"K-POINTS NOT CODIFIED\"), and MACE has no coordinates for "
+                   f"{', '.join(missing)} to write the path as coordinates instead. Give the "
+                   f"coordinates (k_from/k_to) in band_path. No D3 file was written.")
+            return None
+        ui.warn(f"  BAND: CRYSTAL23 does not read {', '.join(unread)} as a label for this lattice "
+                f"({system}; manual p. 309, note 6), so the edited path is written as "
+                f"coordinates (Tables 14.1/14.2).")
+        out = []
+        for s in norm:
+            seg = dict(s)
+            for end in ("from", "to"):
+                lab = kpath.canonical_label(s[end])
+                if lab in table:
+                    seg[f"k_{end}"] = list(table[lab])
+            out.append(seg)
+        return out
+
+    def _offer_band_path_edit(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Ask whether to edit the k-path; the edit goes into config["band_path"]
+        (saved with --save-config, as the GUI's Calculation Setup writes it)."""
+        import d3_band_path as kpath
+        try:
+            if not yes_no_prompt("\nEdit the band k-path (reorder, reverse, remove or add points)?", "no"):
+                return config
+        except EOFError:
+            return config
+        computed = self.computed_band_path(config)
+        if not computed:
+            ui.warn("  This path cannot be edited here (no BAND segments were computed)")
+            return config
+        try:
+            edited = kpath.edit_interactively(computed, input, print,
+                                              self.structure_info.get('dimensionality', 3))
+        except EOFError:
+            return config
+        if edited is None:
+            return config
+        config = dict(config)
+        # points of the computed path by label (so the edit carries over to other
+        # materials, as an automatic path does); added points with coordinates
+        known = kpath.points(computed)
+        config["band_path"] = [{k: v for k, v in seg.items()
+                                if not (k.startswith("k_") and kpath.canonical_label(seg[k[2:]]) in known
+                                        and kpath._same_k(v, known[kpath.canonical_label(seg[k[2:]])]))}
+                               for seg in edited]
+        return config
+
+    def computed_band_path(self, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """The segments (labels, fractional k) the deck of ``config`` computes, before any edit."""
+        import d3_band_path as kpath
+        deck = self._write_computed_band_d3({k: v for k, v in config.items() if k != "band_path"})
+        parsed = kpath.parse_band_deck(deck) if deck else None
+        return parsed["segments"] if parsed else []
+
+    def _write_computed_band_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """The BAND deck of the computed (unedited) path."""
         lines = ["BAND"]
 
         dimensionality = self.structure_info.get('dimensionality', 3)
@@ -1176,71 +1394,98 @@ class D3Generator:
             lines.append(str(config.get("derivative_order", 0)))
             
             # Need MAPNET input. The records are unconditional for ECHG (manual
-            # 25573 lists "insert MAPNET input records" with no if-clause), so a
-            # configuration that carries the plane implies them even when it was
-            # saved without need_map_points.
-            if config.get("need_map_points", False) or config.get("map_points"):
-                points = config.get("map_points")
-                npy = config.get("n_points")
+            # p. 324 lists "insert MAPNET input records" with no if-clause): a
+            # deck of ECHG / IDER / END makes CRYSTAL read END as NPY. So the
+            # plane is always asked at a terminal, and a configuration without
+            # it (need_map_points false or no map_points) is refused in batch.
+            points = config.get("map_points")
+            npy = config.get("n_points")
 
-                if points is not None:
-                    coord_type = _resolve_map_coord_type(config.get("map_coord_type", ""))
-                    if coord_type is None:
-                        ui.err('map_points needs an explicit map_coord_type: "F" (FRACTION)')
-                        ui.err('or "C" (ANGSTROM, the MAPNET default).')
-                        ui.err("The two differ by the lattice parameter and CRYSTAL cannot")
-                        ui.err("detect a plane given in the wrong unit.")
-                        return None
-                    if len(points) != 3 or any(len(p) != 3 for p in points):
-                        ui.err(f"MAPNET takes exactly three points A, B, C of three "
-                               f"coordinates each; got {len(points)}.")
-                        return None
-                    if npy is None:
-                        npy = 50
-                        ui.warn(f"No n_points (MAPNET NPY) in the configuration, using {npy}.")
-                else:
-                    if not self._can_ask():
-                        # Non-interactive (batch/workflow callback): fail cleanly
-                        # instead of raising EOFError at the prompt.
-                        ui.err("ECHG needs the MAPNET map plane and there is no terminal to ask.")
-                        ui.err('Supply "map_points" (A, B, C) and "map_coord_type" in the configuration.')
-                        return None
-                    print()
-                    ui.info("Define map plane by three points A, B, C")
-                    ui.info("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
+            if points is not None:
+                coord_type = _resolve_map_coord_type(config.get("map_coord_type", ""))
+                if coord_type is None:
+                    ui.err('map_points needs an explicit map_coord_type: "F" (FRACTION)')
+                    ui.err('or "C" (ANGSTROM, the MAPNET default).')
+                    ui.err("The two differ by the lattice parameter and CRYSTAL cannot")
+                    ui.err("detect a plane given in the wrong unit.")
+                    return None
+                if len(points) != 3 or any(len(p) != 3 for p in points):
+                    ui.err(f"MAPNET takes exactly three points A, B, C of three "
+                           f"coordinates each; got {len(points)}.")
+                    return None
+                if npy is None:
+                    npy = 50
+                    ui.warn(f"No n_points (MAPNET NPY) in the configuration, using {npy}.")
+            else:
+                if not self._can_ask():
+                    # Non-interactive (batch/workflow callback): fail cleanly
+                    # instead of raising EOFError at the prompt.
+                    ui.err("ECHG needs the MAPNET map plane (manual p. 324: the MAPNET records "
+                           "are mandatory) and there is no terminal to ask; no D3 file was written.")
+                    ui.err('Supply "map_points" (three points A, B, C) and "map_coord_type" '
+                           '("F" or "C") in the configuration (and "n_points", default 50).')
+                    return None
+                print()
+                ui.info("Define map plane by three points A, B, C")
+                ui.info("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
 
+                answer = input("Coordinate type (F)ractional or (C)artesian [F]: ").strip() or "F"
+                # Up to 1.1.5 a "Define charge density map plane? [Y/n]" came
+                # first; a piped answer meant for it lands here. Yes asks
+                # again, no is the refusal it now is (there is no deck
+                # without the plane).
+                if answer.lower() in ("y", "yes"):
                     answer = input("Coordinate type (F)ractional or (C)artesian [F]: ").strip() or "F"
-                    coord_type = _resolve_map_coord_type(answer)
-                    if coord_type is None:
-                        ui.err(f"'{answer}' is neither FRACTION nor ANGSTROM; not guessing "
-                               "the unit of the map plane.")
+                elif answer.lower() in ("n", "no"):
+                    ui.err("ECHG needs the MAPNET map plane (manual p. 324: the MAPNET records "
+                           "are mandatory); no D3 file was written.")
+                    return None
+                coord_type = _resolve_map_coord_type(answer)
+                if coord_type is None:
+                    ui.err(f"'{answer}' is neither FRACTION nor ANGSTROM; not guessing "
+                           "the unit of the map plane.")
+                    return None
+
+                # a point is three numbers; anything else (an answer meant for
+                # another question, e.g. a 1.1.5-era stream answering the
+                # removed plane question with Enter) is refused, never guessed
+                points = []
+                for point in ["A", "B", "C"]:
+                    raw = input(f"Point {point} (x y z): ").strip()
+                    try:
+                        coords = [float(x) for x in raw.split()]
+                    except ValueError:
+                        coords = []
+                    if len(coords) != 3:
+                        ui.err(f"Point {point} is three numbers (x y z), not '{raw}'; no D3 file was written.")
+                        return None
+                    points.append(coords)
+
+                if npy is None:
+                    raw = input("Number of points along the B-A segment [50]: ").strip()
+                    try:
+                        npy = int(raw or 50)
+                    except ValueError:
+                        ui.err(f"The number of points is a whole number, not '{raw}'; no D3 file was written.")
                         return None
 
-                    points = []
-                    for point in ["A", "B", "C"]:
-                        coords = input(f"Point {point} (x y z): ").strip().split()
-                        points.append([float(x) for x in coords])
+            # MAPNET records: NPY first, then the unit of measure (it
+            # applies to subsequent input), then the keyword declaring how
+            # the three points are given. "MAPNET" itself is a dummy
+            # keyword and is never written into the deck. nBC is chosen by
+            # CRYSTAL so the net is as equally spaced as possible.
+            # ANGSTROM is the documented default, so it needs no keyword.
+            lines.append(str(npy))
+            if coord_type == "FRACTION":
+                lines.append("FRACTION")
+            lines.append("COORDINA")
 
-                    if npy is None:
-                        npy = int(input("Number of points along the B-A segment [50]: ") or 50)
+            # Points
+            for i, point in enumerate(points):
+                lines.append(f"{point[0]} {point[1]} {point[2]}")
 
-                # MAPNET records: NPY first, then the unit of measure (it
-                # applies to subsequent input), then the keyword declaring how
-                # the three points are given. "MAPNET" itself is a dummy
-                # keyword and is never written into the deck. nBC is chosen by
-                # CRYSTAL so the net is as equally spaced as possible.
-                # ANGSTROM is the documented default, so it needs no keyword.
-                lines.append(str(npy))
-                if coord_type == "FRACTION":
-                    lines.append("FRACTION")
-                lines.append("COORDINA")
-
-                # Points
-                for i, point in enumerate(points):
-                    lines.append(f"{point[0]} {point[1]} {point[2]}")
-
-                # End of the MAPNET input block; the deck's own END follows
-                lines.append("END")
+            # End of the MAPNET input block; the deck's own END follows
+            lines.append("END")
         
         lines.append("END")
         return '\n'.join(lines)
@@ -1341,6 +1586,79 @@ class D3Generator:
         lines.append("END")
         return '\n'.join(lines)
     
+    def _parent_d12_text(self) -> Optional[str]:
+        """The parent's .d12 (same name, else the first <base>*.d12 beside it)."""
+        d12_file = self.input_file.with_suffix('.d12')
+        if not d12_file.exists():
+            d12_files = sorted(self.input_dir.glob(f"{glob.escape(self.base_name)}*.d12"))
+            if not d12_files:
+                return None
+            d12_file = d12_files[0]
+        try:
+            return d12_file.read_text(errors="replace")
+        except OSError:
+            return None
+
+    def orbitals_kchoice(self, config: Dict[str, Any]):
+        """The NEWK mesh of this output's ORBITALS deck (mace.orbitals.kchoice)."""
+        kc = orbitals_kchoice()
+        try:
+            text = self.input_file.read_text(errors="replace")
+        except OSError:
+            text = ""
+        return kc.choose_kmesh(
+            text, config.get("kmesh", "band_edges"),
+            dimensionality=self.structure_info.get('dimensionality', 3),
+            custom_is=config.get("is"), d12_text=self._parent_d12_text())
+
+    def _write_orbitals_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """Write an ORBITALS deck: the orbitals as Molden files.
+
+        NEWK first (ORBITALS needs it; its mesh is the k points written, no
+        mesh line for a molecule), then ORBITALS with the root name
+        <deck stem>_orb, ICAR and ILOC each on a line of its own (one line
+        "ICAR ILOC" stops properties with FORMAT ERROR IN INPUT DECK, and the
+        serial run still exits 0), and one END: ORBITALS has no END of its
+        own (measured on CRYSTAL23, HPCC, 0D to 3D).
+        """
+        why = orbitals_config_refusal(config)
+        if why:
+            ui.err(why)
+            return None
+        kc = orbitals_kchoice()
+        try:
+            choice = self.orbitals_kchoice(config)
+        except kc.KChoiceError as e:
+            ui.err(f"No ORBITALS deck written: {e}")
+            return None
+        dimensionality = choice.dimensionality
+        ui.info("ORBITALS configuration:")
+        if choice.is_ is None:
+            ui.info("  Molecule: one Molden file with every molecular orbital")
+        else:
+            ui.info(f"  k points: {kc.MODE_LABELS.get(choice.mode, choice.mode)}; "
+                    f"NEWK IS {choice.is_} ISP {choice.isp}")
+            for edge in choice.edges:
+                ui.info(f"  {edge.describe()}")
+        for note in choice.notes:
+            (ui.warn if note.startswith("Warning") else ui.info)(f"  Note: {note}")
+        try:
+            text = self.input_file.read_text(errors="replace")
+        except OSError:
+            text = ""
+        for warning in orbitals_file_warnings(kc, choice.is_, dimensionality, text):
+            ui.warn(f"  Warning: {warning}")
+
+        lines = ["NEWK"]
+        lines.extend(choice.newk_lines())
+        lines.append("1 0")  # IFE=1 (Fermi level recomputed), NPR=0
+        lines.append("ORBITALS")
+        lines.append(orbitals_root(f"{self.base_name}_orbitals"))
+        lines.append("0" if dimensionality == 0 else "1")  # ICAR (no effect on the files)
+        lines.append("0")                                    # ILOC: Bloch orbitals, always
+        lines.append("END")
+        return '\n'.join(lines)
+
     def generate_d3(self, shared_config: Optional[Dict[str, Any]] = None,
                     answers_on_stdin: Optional[bool] = None) -> Optional[Dict[str, Any]]:
         """Generate the D3 file based on calculation type.
@@ -1379,11 +1697,48 @@ class D3Generator:
         ui.info(f"Input file: {self.input_file}")
         ui.info(f"Base name: {self.base_name}")
 
-        why = molecule_refusal(self.calc_type, self.structure_info.get('dimensionality', 3))
+        # A molecule first: BAND/DOSS/TRANSPORT need a periodic structure,
+        # whatever else the parent is (so no 2c "supported" line precedes it).
+        dimensionality = self.structure_info.get('dimensionality', 3)
+        why = molecule_refusal(self.calc_type, dimensionality)
         if why:
             ui.err(why)
             return None
-        
+
+        # A two-component (SOC) parent: only what manual sec. 6.4 supports.
+        if self.parent_is_two_component():
+            if self.calc_type == "ORBITALS":
+                # mace.orbitals.kchoice.SOC_REFUSAL: CRYSTAL23 crashes on it
+                ui.err(f"Not writing an ORBITALS deck: {self.input_file.name} is a two-component "
+                       f"run. {orbitals_kchoice().SOC_REFUSAL}")
+                return None
+            if self.calc_type not in TWO_COMPONENT_D3_TYPES:
+                record = _TWO_COMPONENT_REFUSED.get(self.calc_type, self.calc_type)
+                ui.err(f"Not writing a {self.calc_type} deck: {self.input_file.name} is a "
+                       f"two-component (SOC) run, and {record} is not among the properties "
+                       f"CRYSTAL23 supports from a 2c-SCF (manual sec. 6.4, p. 183: NEWK, "
+                       f"BAND, ECHG, ECH3, PPAN, PROPS2COMP, ANBD, BWIDTH, DOSS, TOPO).")
+                return None
+            if dimensionality == 0 and self.calc_type in TWO_COMPONENT_0D_REFUSED:
+                ui.err(f"Not writing a {self.calc_type} deck: {self.input_file.name} is a "
+                       f"two-component (SOC) molecule. {TWO_COMPONENT_0D_CUBE_REASON}")
+                return None
+            ui.info(f"The parent is a two-component (SOC) run; {self.calc_type} is among "
+                    f"the properties the manual supports from it (sec. 6.4, p. 183).")
+            # Measured on HPCC with the stock serial properties on a 2c fort.9.
+            if self.calc_type == "BAND":
+                ui.info("Measured: the stock properties runs BAND on a 2c fort.9 and writes "
+                        "all 2 x NAO spinor bands to BAND.DAT (manual p. 166); a deck "
+                        "asking for bands 1-NAO gave all 2 x NAO.")
+            elif self.calc_type == "DOSS":
+                ui.warn("Note: the stock properties runs DOSS on a 2c fort.9 once the DOSS "
+                        "record is valid (measured). A 2c run has 2 x NAO spinor bands "
+                        "(manual p. 166); which of them a band range MACE takes from NAO "
+                        "selects was not measured, so check the band range in the deck.")
+            elif self.calc_type == "CHARGE":
+                ui.info("Measured: the stock properties runs ECH3 on a periodic 2c fort.9 "
+                        "(DENS_CUBE.DAT written); ECHG was not run from one.")
+
         # Check if wavefunction exists and copy it
         # ALL calculation types need the wavefunction file
         if not self._copy_wavefunction():
@@ -1581,6 +1936,8 @@ class D3Generator:
         
         # Generate D3 content
         if self.calc_type == "BAND":
+            if not shared_config and self._can_ask() and not config.get("band_path") and _kpath_question_wanted():
+                config = self._offer_band_path_edit(config)
             d3_content = self._write_band_d3(config)
             if d3_content is None:
                 return None
@@ -1588,6 +1945,8 @@ class D3Generator:
             d3_content = self._write_doss_d3(config)
         elif self.calc_type == "TRANSPORT":
             d3_content = self._write_transport_d3(config)
+        elif self.calc_type == "ORBITALS":
+            d3_content = self._write_orbitals_d3(config)
         elif self.calc_type in ["CHARGE", "ECH3", "ECHG"]:
             d3_content = self._write_charge_d3(config)
         elif self.calc_type in ["POTENTIAL", "POT3", "POTC"]:
@@ -1667,6 +2026,15 @@ class D3Generator:
             ui.info("  - SIGMAS.DAT: σS product")
             ui.info("  - KAPPA.DAT: Thermal conductivity")
             ui.info("  - TDF.DAT: Transport distribution function")
+        elif self.calc_type == "ORBITALS":
+            root = orbitals_root(f"{self.base_name}_orbitals")
+            print()
+            ui.info("Output files:")
+            if self.structure_info.get('dimensionality', 3) == 0:
+                ui.info(f"  - {root}.molden: every molecular orbital")
+            else:
+                ui.info(f"  - {root}_<k>_K<ijk>_real.molden (and _complex.molden): "
+                        f"every band at each k point")
         
         # Return the configuration for potential saving
         return config
@@ -1688,6 +2056,22 @@ def molecule_refusal(calc_type: str, dimensionality: int) -> Optional[str]:
         return None
     return (f"{calc_type} requires a periodic structure, and this output is a molecule (MOLECULE): "
             f"{PERIODIC_ONLY[calc_type]}. No D3 file was written; CHARGE and POTENTIAL work for molecules.")
+
+
+def orbitals_config_refusal(config: Dict[str, Any]) -> Optional[str]:
+    """Why an ORBITALS configuration cannot be written, or None.
+
+    ILOC 1 (Wannier functions from LOCALWF) is refused: those files are not
+    usable (the coefficients are normalized neither as home-cell nor as
+    Γ-folded functions, measured on Si and polyyne), and Pproperties aborts on
+    it. Wannier functions go through the Wannier90 / lcao2wannier route.
+    """
+    iloc = config.get("iloc", config.get("ILOC", 0))
+    if str(iloc).strip() not in ("0", "", "None", "False") or config.get("wannier"):
+        kc = orbitals_kchoice()
+        return (f"ORBITALS with ILOC {iloc} is not written: {kc.WANNIER_ROUTE}. "
+                f"MACE writes ILOC 0 (Bloch orbitals) only.")
+    return None
 
 
 def main():
@@ -1713,7 +2097,7 @@ Examples:
     parser.add_argument(
         "--calc-type", "-t", "--calc_type",
         dest="calc_type",
-        choices=["BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL"],
+        choices=["BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL", "ORBITALS"],
         help="Type of property calculation"
     )
     parser.add_argument(
@@ -1757,10 +2141,18 @@ Examples:
              "seekpath is not installed (SeeK-path's standard cell, which can differ "
              "from CRYSTAL's); without it such a deck stops. Same as MACE_STATIC_KPATH=1"
     )
+    parser.add_argument(
+        "--edit-kpath",
+        action="store_true",
+        help="BAND: ask \"Edit the band k-path?\" when the answers are piped in too "
+             "(it is asked only at a terminal otherwise)"
+    )
     
     args = parser.parse_args()
     if args.static_kpath:
         request_static_kpath()
+    if args.edit_kpath:
+        request_kpath_question()
     
     # Handle --list-configs
     if args.list_configs:
@@ -1821,19 +2213,21 @@ Examples:
             ui.info("4: CHARGE - Charge density")
             ui.info("5: POTENTIAL - Electrostatic potential")
             ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+            ui.info("7: ORBITALS - Orbitals as Molden files")
 
             calc_types = {
                 "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                "7": "ORBITALS"
             }
             try:
-                choice = input("\nSelect type (1-6): ").strip()
+                choice = input("\nSelect type (1-7): ").strip()
                 while choice not in calc_types:
                     # Re-prompt instead of silently defaulting a typo to BAND, which
                     # would generate the wrong property calculation with no warning
                     # (same contract as the single-file path).
-                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                    choice = input("Select type (1-6): ").strip()
+                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                    choice = input("Select type (1-7): ").strip()
             except EOFError:
                 print()
                 ui.err("No calculation type: give --calc-type, or a config file with "
@@ -1965,17 +2359,19 @@ Examples:
                     ui.info("4: CHARGE - Charge density")
                     ui.info("5: POTENTIAL - Electrostatic potential")
                     ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+                    ui.info("7: ORBITALS - Orbitals as Molden files")
 
-                    choice = input("\nSelect type (1-6): ").strip()
+                    choice = input("\nSelect type (1-7): ").strip()
                     calc_types = {
                         "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                        "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                        "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                        "7": "ORBITALS"
                     }
                     while choice not in calc_types:
                         # Re-prompt instead of silently defaulting a typo to BAND
                         # (same contract as the single-file path).
-                        ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                        choice = input("Select type (1-6): ").strip()
+                        ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                        choice = input("Select type (1-7): ").strip()
                     calc_type = calc_types[choice]
                 else:
                     calc_type = args.calc_type
@@ -2070,17 +2466,19 @@ Examples:
                 ui.info("4: CHARGE - Charge density (3D or 2D)")
                 ui.info("5: POTENTIAL - Electrostatic potential")
                 ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+                ui.info("7: ORBITALS - Orbitals as Molden files")
 
                 calc_types = {
                     "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                    "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                    "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                    "7": "ORBITALS"
                 }
-                choice = input("\nSelect type (1-6): ").strip()
+                choice = input("\nSelect type (1-7): ").strip()
                 while choice not in calc_types:
                     # Re-prompt instead of silently defaulting a typo to BAND, which
                     # would generate the wrong property calculation with no warning.
-                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                    choice = input("Select type (1-6): ").strip()
+                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                    choice = input("Select type (1-7): ").strip()
                 calc_type = calc_types[choice]
             else:
                 calc_type = args.calc_type

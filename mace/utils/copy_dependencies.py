@@ -117,6 +117,7 @@ def copy_dependencies(target_dir: str = "."):
                 "d12_writer.py",
                 "menu_nav.py",
                 "spglib_compat.py",
+                "soc_ecp.py",
                 "charge_records.py",
                 "ion_charges.py",
                 "basis_library.py",  # reads the bundled basis library files
@@ -134,7 +135,8 @@ def copy_dependencies(target_dir: str = "."):
                 "d3_config.py",
                 "d3_kpoints.py",
                 "seekpath_interface.py",
-                "hpkot_static.py"
+                "hpkot_static.py",
+                "d3_band_path.py",           # the k-path editor (1.1.6)
             ]
         }
     }
