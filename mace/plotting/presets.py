@@ -155,16 +155,26 @@ ORDER = ["default", "publication", "vesta", "presentation", "grayscale", "colorb
 # mace-folder.toml [plots] keys (plots.<name>). "gui" is the GUI setting that
 # holds the user's default; a plot's own choice is its option of the same name.
 # ---------------------------------------------------------------------------
+# How a closed-shell run's bands are drawn (1.1.6 design, Marcus 2026-10-18): single (one solid line in the
+# color pair's first color), overlay (that line with a dashed line in the second color on top, the look of a
+# spin-polarized plot) or ink (the plot's neutral ink, the 1.1.6 preview's look); auto: single when the bands
+# have a gap at E_F, overlay for a metal (is_metallic). A spin-polarized run always draws up solid, down dashed.
+BAND_STYLES = ("auto", "single", "overlay", "ink")
+# a band crosses E_F (a metal) when it reaches this far (eV) above and below it
+METAL_TOL = 0.01
+
 STYLE_OPTIONS = [
     {"name": "style", "label": "Plot style", "cli": "--style", "gui": "plots.style", "choices": list(ORDER), "default": "default"},
-    {"name": "spin_colors", "label": "Spin colors", "cli": "--spin-colors", "gui": "plots.spinColors",
+    {"name": "spin_colors", "label": "Color pair", "cli": "--spin-colors", "gui": "plots.spinColors",
      "choices": list(SPIN_COLOR_CHOICES), "default": "auto"},
     {"name": "spin_up_color", "label": "Spin up color", "cli": "--spin-up-color", "gui": "plots.spinUp", "choices": None, "default": ""},
     {"name": "spin_down_color", "label": "Spin down color", "cli": "--spin-down-color", "gui": "plots.spinDown", "choices": None, "default": ""},
     {"name": "band_color", "label": "Band color", "cli": "--band-color", "gui": "plots.bandColor", "choices": None, "default": ""},
+    # a closed-shell run's bands (BAND_STYLES): auto is single with a gap, overlay for a metal (is_metallic)
+    {"name": "band_style", "label": "Band style", "cli": "--band-style", "gui": "plots.bandStyle", "choices": list(BAND_STYLES), "default": "auto"},
     {"name": "spin_down_style", "label": "β line", "cli": "--spin-down-style", "gui": "plots.spinDownDash",
      "choices": ["dash", "dot", "dashdot", "solid"], "default": "dash"},
-    {"name": "dos_colors", "label": "DOS colors", "cli": "--dos-colors", "gui": "plots.dosColors", "choices": list(DOS_MODES), "default": "auto"},
+    {"name": "dos_colors", "label": "DOS projections", "cli": "--dos-colors", "gui": "plots.dosColors", "choices": list(DOS_MODES), "default": "auto"},
     {"name": "dos_spin", "label": "DOS spin layout", "cli": "--dos-spin", "gui": "plots.spinDos", "choices": list(SPIN_DOS), "default": "auto"},
     {"name": "dos_total", "label": "DOS total", "cli": "--no-dos-total", "gui": "plots.dosTotal", "choices": [True, False], "default": True},
     # Gaussian smoothing of the drawn DOS (display only): sigma in eV, 0 = off; on: DOS_SMOOTH_SIGMA
@@ -191,6 +201,8 @@ def style_flags(look: Dict[str, Any], explicit: bool = False) -> List[str]:
                 out.append(f"--{k.replace('_', '-')}={v[k].lower()}")
     if v.get("band_color") and _HEXCOLOR.match(v["band_color"]):
         out.append(f"--band-color={v['band_color'].lower()}")
+    if (v.get("band_style") or "auto") != "auto" or explicit:
+        out.append(f"--band-style={v.get('band_style') or 'auto'}")
     if v["spin_down_style"] == "solid":
         out.append("--spin-down-solid")
     elif v["spin_down_style"] != "dash" or explicit:
@@ -237,7 +249,8 @@ DOS_LAYOUT = {"pick_min": 2, "pick_max": 4, "pick_frac": 0.04, "smooth_sigma": D
 SHARED = {"spin": SPIN_COLORS, "spin_schemes": SPIN_SCHEMES, "default_spin_scheme": DEFAULT_SPIN_SCHEME,
           "spin_color_choices": list(SPIN_COLOR_CHOICES), "spin_down_dash": SPIN_DOWN_DASH, "style_options": STYLE_OPTIONS, "families": list(FAMILIES), "order": ORDER,
           "presets": PRESETS, "orbital_colors": ORBITAL_COLORS, "orbital_dash": ORBITAL_DASH,
-          "shade_span": 0.36, "auto_dos": AUTO_DOS, "dos_modes": list(DOS_MODES), "dos_layout": DOS_LAYOUT}
+          "shade_span": 0.36, "auto_dos": AUTO_DOS, "dos_modes": list(DOS_MODES), "dos_layout": DOS_LAYOUT,
+          "band_styles": list(BAND_STYLES), "metal_tol": METAL_TOL}
 
 
 def shared_json() -> str:
@@ -307,6 +320,27 @@ def band_color(pid: Optional[str], family: str = "band", tone: str = "light", cu
     if own:
         return own.get(tone) or own["light"]
     return ink
+
+
+def is_metallic(band: Optional[Dict[str, Any]]) -> bool:
+    """A band structure without a gap at E_F (plotpresets.js isMetallic): one of its bands (either spin)
+    reaches METAL_TOL eV above and below the Fermi energy (band["fermi"], the energies' own scale)."""
+    if not band:
+        return False
+    ef = band.get("fermi") or 0
+    for block in (band.get("up") or [], band.get("down") or []):
+        for b in block:
+            v = [e for e in b if e is not None]
+            if v and min(v) < ef - METAL_TOL and max(v) > ef + METAL_TOL:
+                return True
+    return False
+
+
+def band_style(style: Optional[str], band: Optional[Dict[str, Any]] = None) -> str:
+    """The band style drawn (single, overlay or ink): ``style`` (BAND_STYLES), auto: overlay for a metal, else single."""
+    if style in ("single", "overlay", "ink"):
+        return style
+    return "overlay" if is_metallic(band) else "single"
 
 
 # ---------------------------------------------------------------------------

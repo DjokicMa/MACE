@@ -81,6 +81,8 @@ _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": (
             "plots.spinDos": ("auto", "mirrored", "overlaid"),
             # the spin colors (presets.py SPIN_SCHEMES; auto: the plot style's scheme)
             "plots.spinColors": ("auto", "mace", "blue-red", "black-vermilion", "custom"),
+            # a closed-shell run's bands (presets.py BAND_STYLES)
+            "plots.bandStyle": ("auto", "single", "overlay", "ink"),
             "energyUnit": ("eV", "meV", "Ha", "kJ/mol", "kcal/mol")}
 _RANGE_KEYS = ("displayLo", "displayHi")
 RANGE_LIMITS = (-5.0, 10.0)

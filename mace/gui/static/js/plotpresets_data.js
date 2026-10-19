@@ -7,6 +7,12 @@ export const SHARED = {
   "max_lines": 12,
   "orbital_max_elements": 1
  },
+ "band_styles": [
+  "auto",
+  "single",
+  "overlay",
+  "ink"
+ ],
  "default_spin_scheme": "blue-red",
  "dos_layout": {
   "chroma": 0.25,
@@ -32,6 +38,7 @@ export const SHARED = {
   "maps",
   "scf"
  ],
+ "metal_tol": 0.01,
  "orbital_colors": {
   "all": "#555555",
   "d": "#009e73",
@@ -491,7 +498,7 @@ export const SHARED = {
    "cli": "--spin-colors",
    "default": "auto",
    "gui": "plots.spinColors",
-   "label": "Spin colors",
+   "label": "Color pair",
    "name": "spin_colors"
   },
   {
@@ -520,6 +527,19 @@ export const SHARED = {
   },
   {
    "choices": [
+    "auto",
+    "single",
+    "overlay",
+    "ink"
+   ],
+   "cli": "--band-style",
+   "default": "auto",
+   "gui": "plots.bandStyle",
+   "label": "Band style",
+   "name": "band_style"
+  },
+  {
+   "choices": [
     "dash",
     "dot",
     "dashdot",
@@ -542,7 +562,7 @@ export const SHARED = {
    "cli": "--dos-colors",
    "default": "auto",
    "gui": "plots.dosColors",
-   "label": "DOS colors",
+   "label": "DOS projections",
    "name": "dos_colors"
   },
   {

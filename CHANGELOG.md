@@ -135,6 +135,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Closed-shell bands are blue.** A run that is not spin-polarized draws its
+  bands in the color pair's first color (blue in the default style) beside a
+  DOS total of the same color, instead of the 1.1.6 preview's black ink; a
+  metal (no gap at E_F) draws Overlay, the second color dashed on top. New
+  Band style control (Single, Overlay, Ink; GUI Style section and Settings ›
+  Plots, `mace plotting --band-style`, `[plots] band_style`):
+  `--band-style ink` gives the old look. The GUI's "Spin colors" is now
+  **Color pair**, in its own Colors group (it drives the bands and the DOS),
+  and "DOS colors" is **DOS projections**; the flags and `[plots]` keys keep
+  their names (`--dos-projections` is an alias of `--dos-colors`).
+
 - **GUI: scrolling up zooms in, toward the structure, in every 3D view.** The
   run and comparison views (OPT, FREQ, volumes and the others drawn by 3Dmol)
   zoomed out on scrolling up, the opposite of the structure viewport. A new

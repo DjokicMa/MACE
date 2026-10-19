@@ -82,7 +82,7 @@ export function createPlotView(host, optsHost, H) {
   const DEFAULTS = {
     bands: { emin: -6, emax: 6, shift: 0, spin: "both", width: 1.5, hidden: null, kpath: null,
       // the plot's own style (Plot options › Style; null: Settings), by the presets.py STYLE_OPTIONS names
-      style: null, spin_colors: null, spin_up_color: null, spin_down_color: null, band_color: null, spin_down_style: null, dos_colors: null, dos_spin: null, dos_total: null, dos_smooth: null },
+      style: null, spin_colors: null, spin_up_color: null, spin_down_color: null, band_color: null, band_style: null, spin_down_style: null, dos_colors: null, dos_spin: null, dos_total: null, dos_smooth: null },
     spectrum: { xmin: null, xmax: null, normalize: false, component: "total", average: false, width: 1.5, style: null },
     // BOLTZTRA transport data (plan E8): the temperature block and the tensor component shown
     // view "zt": the figure of merit ZTₑ and, with a lattice κ_L (kl: W/(m·K) or a T,kappa_L CSV in the
@@ -195,7 +195,7 @@ export function createPlotView(host, optsHost, H) {
   function settingsLook() {
     return { style: H.plotPreset ? H.plotPreset("band") : "default", spin_colors: setting("plots.spinColors", "auto"),
       spin_up_color: setting("plots.spinUp", ""), spin_down_color: setting("plots.spinDown", ""),
-      band_color: setting("plots.bandColor", ""),
+      band_color: setting("plots.bandColor", ""), band_style: setting("plots.bandStyle", "auto"),
       spin_down_style: setting("plots.spinDownDash", "dash"), dos_colors: setting("plots.dosColors", "auto"),
       dos_spin: setting("plots.spinDos", "auto"), dos_total: setting("plots.dosTotal", true) !== false,
       dos_smooth: Number(setting("plots.dosSmooth", 0)) || 0 };
@@ -670,10 +670,11 @@ export function createPlotView(host, optsHost, H) {
   const resetButton = () => `<div class="po-acts"><button class="tb-btn-text" data-po="reset"${doc.pos > 0 || JSON.stringify(doc.opts) !== JSON.stringify(defaultsFor(doc)) ? "" : " disabled"}>${icon("rotate-ccw")}<span>Reset Plot Options</span></button></div>`;
   /* Plot options › Style and the toolbar's Style ▾ menu draw ONE list of controls (styleControls), each an
      option of the plot (presets.py STYLE_OPTIONS names; undo, Reset; "Settings" follows Settings, shown in
-     brackets); Make This the Default writes them to Settings. A band + DOS plot has a Bands group (spin colors,
-     band color, β line) and a DOS group (DOS colors, spin layout, total, smoothing), whichever of the two files
-     was opened: the groups follow the figure's data, not the opened file's kind. A BAND.DAT alone has the Bands
-     group only, a DOSS.DAT alone the DOS group only (its total's spin colors, color and β line in it). */
+     brackets); Make This the Default writes them to Settings. A band + DOS plot has a Colors group (the color
+     pair, both halves'), a Bands group (band style, band color, β line) and a DOS group (DOS projections, spin
+     layout, total, smoothing), whichever of the two files was opened: the groups follow the figure's data, not
+     the opened file's kind. A BAND.DAT alone has no DOS group, a DOSS.DAT alone no Bands group (its total's
+     color and β line in the DOS group). */
   const PRESET_LABEL = (id) => { const p = H.presets && H.presets() && H.presets().SHARED.presets[id]; return p ? p.label : id; };
   const SCHEME_LABEL = (id) => (id === "auto" ? "Auto (the plot style's)" : id === "custom" ? "Custom" : ((H.presets && H.presets() && H.presets().SHARED.spin_schemes[id]) || {}).label || id);
   const DOS_LABEL = { auto: "Auto", total: "Total only", element: "By element", orbital: "By orbital", "element-orbital": "Element × orbital" };
@@ -708,35 +709,36 @@ export function createPlotView(host, optsHost, H) {
     if (!band && !dos) return groups;
     const color = (id, mv, name, label, current, title) => ({ id, mv, type: "color", label, current, title,
       apply: (v) => [{ [name]: v }, `${label} ${v}`, `opt:${id}`] });
-    // the spins' look: the bands' and the DOS total's at once (a DOSS.DAT alone: the total's). A run that is
-    // not spin-polarized has no spin pair: its bands and one-sided DOS total are in the neutral Band color
-    // (--band-color: Auto, the plot's ink, or a custom color), and Spin colors is hidden there
+    /* Colors: the Color pair (--spin-colors) drives the bands and the DOS at once: spin up / down of a
+       spin-polarized run, a closed-shell run's Single band color (the first) and Overlay pair, the DOS total.
+       Bands: Band style (Auto: Single with a gap, Overlay for a metal; Ink the neutral look), Single's
+       Band color override, the β line. A DOSS.DAT alone: its total's Band color and β line in the DOS group */
     const tone = toneOf(doc), pid = pp.resolveId(look.style, "band");
-    const closed = !(band && band.spin_polarized) && !(dos && dos.spin_polarized);
+    const parts = BF.lookParts(envOf(o), band || null).spin || {};
+    const colors = [choose("po-spinc", "spin", "spin_colors", "Color pair", o.spin_colors, look.spin_colors || "auto",
+      pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL)];
+    if (look.spin_colors === "custom") {
+      const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
+      colors.push(color("po-spinup", "spinup", "spin_up_color", "First color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Second color", pair.down));
+    }
+    groups.push({ key: "colors", head: "Colors", ctrls: colors });
+    const BSL = { auto: "Auto", single: "Single", overlay: "Overlay", ink: "Ink" };
+    const bsWord = (v) => (v === "auto" ? `Auto (${BSL[pp.bandStyle("auto", band)].toLowerCase()})` : BSL[v] || v);
     const spin = [];
-    if (closed) {
+    if (band) spin.push({ ...choose("po-bstyle", "bstyle", "band_style", "Band style", o.band_style, look.band_style || "auto",
+      Object.keys(BSL).map((v) => [v, bsWord(v)]), bsWord(base.band_style || "auto"), bsWord),
+      title: "A closed-shell run's bands: Single (one line, the pair's first color), Overlay (the second color dashed on top), Ink (the neutral color); Auto: Single with a gap, Overlay for a metal. A spin-polarized run draws up solid, down dashed (mace plotting --band-style)" });
+    // the closed-shell half's Single color: the pair's first, or a custom Band color
+    const closedHalf = (band && !band.spin_polarized) || (dos && !dos.spin_polarized);
+    if (closedHalf && parts.style === "single") {
       const bcLabel = band ? "Band color" : "Total color", custom = /^#[0-9a-f]{6}$/i.test(look.band_color || "");
-      const bc = pp.bandColor(pid, "band", tone, look.band_color, tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);   // undefined: bandColor's own black
-      const BCM = { auto: "Auto (ink)", custom: "Custom" };
+      const bc = parts.bands || "";
+      const BCM = { auto: "Auto (first color)", custom: "Custom" };
+      const tip = "Single bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)";
       spin.push({ id: "po-bandm", mv: "bandm", type: "select", label: bcLabel, value: o.band_color === null || o.band_color === undefined ? null : /^#[0-9a-f]{6}$/i.test(o.band_color) ? "custom" : "auto",
-        current: custom ? "custom" : "auto", choices: Object.entries(BCM), settings: setting("plots.bandColor", "") ? "Custom" : BCM.auto,
-        title: "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)",
+        current: custom ? "custom" : "auto", choices: Object.entries(BCM), settings: setting("plots.bandColor", "") ? "Custom" : BCM.auto, title: tip,
         apply: (v) => [{ band_color: v === "custom" ? bc : v === "auto" ? "" : null }, `${bcLabel} ${v ? BCM[v] : "as Settings"}`] });
-      spin.push(color("po-bandc", "bandc", "band_color", band ? "Custom band color" : "Custom total color", bc,
-        "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"));
-    } else {
-      spin.push(choose("po-spinc", "spin", "spin_colors", "Spin colors", o.spin_colors, look.spin_colors || "auto",
-        pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL));
-      if (look.spin_colors === "custom") {
-        const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
-        spin.push(color("po-spinup", "spinup", "spin_up_color", "Spin up color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Spin down color", pair.down));
-      }
-      // one half spin-polarized, the other not: the closed half's neutral color
-      if ((band && !band.spin_polarized) || (dos && !dos.spin_polarized)) {
-        const bc = pp.bandColor(pid, "band", tone, look.band_color, tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);
-        spin.push(color("po-bandc", "bandc", "band_color", band && !band.spin_polarized ? "Band color" : "Total color", bc,
-          "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"));
-      }
+      spin.push(color("po-bandc", "bandc", "band_color", band ? "Custom band color" : "Custom total color", bc, tip));
     }
     const dash = look.spin_down_style !== "solid";
     spin.push({ id: "po-bdash", mv: "bdash", type: "toggle", label: "β dashed", current: dash,
@@ -746,7 +748,7 @@ export function createPlotView(host, optsHost, H) {
     if (dos) {
       const sm = Number(look.dos_smooth) || 0;
       const ctrls = [
-        choose("po-dosc", "dos", "dos_colors", "DOS colors", o.dos_colors, look.dos_colors || "auto", Object.entries(DOS_LABEL), DOS_LABEL[base.dos_colors] || base.dos_colors, (v) => DOS_LABEL[v] || v),
+        choose("po-dosc", "dos", "dos_colors", "DOS projections", o.dos_colors, look.dos_colors || "auto", Object.entries(DOS_LABEL), DOS_LABEL[base.dos_colors] || base.dos_colors, (v) => DOS_LABEL[v] || v),
         choose("po-dspin", "dspin", "dos_spin", "DOS spin layout", o.dos_spin, look.dos_spin || "auto", Object.entries(DSPIN_LABEL), DSPIN_LABEL[base.dos_spin] || base.dos_spin, (v) => DSPIN_LABEL[v] || v),
         { id: "po-dtotal", mv: "dtotal", type: "toggle", label: "DOS total", current: look.dos_total !== false,
           apply: (v) => [{ dos_total: v }, v ? "DOS total" : "No DOS total"] },
@@ -798,7 +800,7 @@ export function createPlotView(host, optsHost, H) {
     if (isBandDos(doc)) {
       // both halves of a band + DOS plot
       set("plots.spinColors", look.spin_colors); set("plots.spinUp", look.spin_up_color || ""); set("plots.spinDown", look.spin_down_color || "");
-      set("plots.bandColor", look.band_color || "");
+      set("plots.bandColor", look.band_color || ""); set("plots.bandStyle", look.band_style || "auto");
       set("plots.spinDownDash", look.spin_down_style); set("plots.dosColors", look.dos_colors); set("plots.spinDos", look.dos_spin);
       set("plots.dosTotal", look.dos_total !== false);
       set("plots.dosSmooth", Number(look.dos_smooth) || 0);

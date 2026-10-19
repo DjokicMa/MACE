@@ -47,6 +47,7 @@ ENUMS = {
     "plots.dosColors": {"auto", "total", "element", "orbital", "element-orbital"},
     "plots.spinDownDash": {"dash", "dot", "dashdot", "solid"}, "plots.spinDos": {"auto", "mirrored", "overlaid"},
     "plots.spinColors": {"auto", "mace", "blue-red", "black-vermilion", "custom"},
+    "plots.bandStyle": {"auto", "single", "overlay", "ink"},
     "reduceMotion": {"system", "on", "off"}, "colorScheme": {"jmol", "vesta", "cvd", "legacy"},
     "radiusSet": {"atomic", "covalent", "ionic", "vdw"}, "bondColoring": {"split", "uniform"},
     "background": {"theme", "white", "black", "custom"}, "labels": {"off", "element", "index", "both", "wyckoff"},

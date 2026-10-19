@@ -103,7 +103,7 @@ def _style_defaults() -> Dict[str, Any]:
     --spin-down-style, --dos-colors, --dos-spin, --no-dos-total), the energy unit and the renderer:
     the built-in defaults (the flags override them; a folder's [plots] sets them as defaults)."""
     return {'style': 'default', 'dos_colors': None, 'dos_total': True, 'spin_dos': 'auto', 'spin_style': 'dash',
-            'spin_colors': None, 'band_color': None, 'dos_smooth': None, 'units': None, 'backend': None}
+            'spin_colors': None, 'band_color': None, 'band_style': None, 'dos_smooth': None, 'units': None, 'backend': None}
 
 
 def _style_argv(config: Dict[str, Any], dos: bool) -> List[str]:

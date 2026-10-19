@@ -89,16 +89,23 @@ def look_of(o: Optional[Dict[str, Any]], base: Optional[Dict[str, Any]]) -> Dict
     return out
 
 
-def look_parts(env: Dict[str, Any]) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+def look_parts(env: Dict[str, Any], band: Optional[Dict[str, Any]] = None) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
     look = env.get("look") or {}
     preset = P.resolve_id(look.get("style") or "default", "band")
     spin = P.spin_colors(preset, "band", env.get("tone") or "light", look.get("spin_colors"),
                          look.get("spin_up_color"), look.get("spin_down_color"))
     spin["dash"] = look.get("spin_down_style") or "dash"
     css = env.get("css") or (lambda n: "")
-    # a run that is not spin-polarized: its one set of bands and one-sided DOS total in a neutral color
-    spin["bands"] = P.band_color(preset, "band", env.get("tone") or "light", look.get("band_color"),
-                                 css("--plot-ink") or css("--text") or "#000000")
+    # a run that is not spin-polarized: its one set of bands and one-sided DOS total in the band style's
+    # color: single the pair's first color (or --band-color), overlay the first color, ink the plot's ink
+    spin["style"] = P.band_style(look.get("band_style"), band)
+    custom = look.get("band_color")
+    if spin["style"] == "ink":
+        spin["bands"] = P.band_color(preset, "band", env.get("tone") or "light", None, css("--plot-ink") or css("--text") or "#000000")
+    elif spin["style"] == "single" and custom and P._HEXCOLOR.match(custom):
+        spin["bands"] = custom.lower()
+    else:
+        spin["bands"] = spin["up"]
     return preset, spin, look
 
 
@@ -408,17 +415,39 @@ def group_title(css: Callable[[str], str]) -> Dict[str, Any]:
     return {"size": 11, "color": css("--text-2")}
 
 
-def spin_keys(spin2: bool, o: Dict[str, Any], spin_dash: str, closed: Optional[str] = None) -> List[Dict[str, Any]]:
-    """The legend's Spin keys (bandfig.js spinKeys): [{"name", "dash"(, "closed")}]: spin up solid and
-    spin down in its line style (o["spin"]: one of them), or one closed-shell key."""
+def spin_keys(spin2: bool, o: Dict[str, Any], spin_dash: str, closed: Optional[str] = None,
+              spin: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The legend's Spin keys (bandfig.js spinKeys): [{"name", "dash", "color"(, "closed")}]: spin up solid
+    in the pair's first color and spin down in its second and line style (o["spin"]: one of them), or one
+    closed-shell key in the band color; ``spin``: the pair drawn {"up", "down", "bands"} (None: no colors)."""
+    sp = spin or {}
     if not spin2:
-        return [{"name": closed or "α = β (closed shell)", "dash": "solid", "closed": True}]
+        return [{"name": closed or "α = β (closed shell)", "dash": "solid", "closed": True, "color": sp.get("bands")}]
     out = []
     if o.get("spin") != "down":
-        out.append({"name": "spin up (α)", "dash": "solid"})
+        out.append({"name": "spin up (α)", "dash": "solid", "color": sp.get("up")})
     if o.get("spin") != "up":
-        out.append({"name": "spin down (β)", "dash": spin_dash})
+        out.append({"name": "spin down (β)", "dash": spin_dash, "color": sp.get("down")})
     return out
+
+
+def half_keys(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], side: Optional[str], o: Dict[str, Any],
+              spin: Dict[str, Any], closed_words: str) -> Dict[str, Any]:
+    """A band + DOS figure's legend keys (bandfig.js halfKeys): {"spin", "bands"}: the DOS's keys as the
+    Spin group and, when the bands are drawn in other colors or line styles, the bands' own keys (else
+    "bands" None: one shared group)."""
+    bk = spin_keys(bool(band.get("spin_polarized")), o, spin["dash"], closed_words, spin) if band else None
+    if not dos:
+        return {"spin": bk, "bands": None}
+    dk = spin_keys(side != "one", o, spin["dash"], closed_words, spin)
+    if not bk:
+        return {"spin": dk, "bands": None}
+    # a closed-shell Overlay draws the pair itself: it matches a DOS drawn in the pair
+    same = (not band.get("spin_polarized") and spin["style"] == "overlay" and side != "one") or (
+        len(bk) == len(dk) and all(a["color"] == b["color"] and a["dash"] == b["dash"] for a, b in zip(bk, dk)))
+    if same:
+        return {"spin": bk if (band.get("spin_polarized") or side == "one") else dk, "bands": None}
+    return {"spin": dk, "bands": bk}
 
 
 def legend_box(names: Sequence[str], groups: int, width: Optional[float], height: Optional[float]) -> Dict[str, float]:
@@ -440,7 +469,7 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
     ``env``: {"css": token function, "look", "tone", "paper", "element_colors", "width", "height",
     "marginR", "fermiKey"} (as bandfig.js; presets are this package's)."""
     css = env["css"]
-    preset, spin, look_ = look_parts(env)
+    preset, spin, look_ = look_parts(env, band)
     abs_shown = False
     dos_mode = None
     ref_d = band or dos
@@ -476,7 +505,6 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
     }
     look = dos_look(dos, env, o) if dos else None
     side = look["side"] if look else None
-    spin2 = bool((band and band.get("spin_polarized")) or (look and side != "one"))
     if band:
         lay["xaxis"] = {"domain": [0, 0.7] if dos else [0, 1],
                         "range": [band["ticks"][0], band["ticks"][-1]], "showgrid": True, "gridcolor": css("--border-strong"),
@@ -496,6 +524,13 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                            "showlegend": False, "meta": "up", "legendrank": 1,
                            "line": {"color": spin["up"] if band.get("spin_polarized") else spin["bands"], "width": o["width"],
                                     "simplify": False}, "hoverinfo": "none"})
+            # Band style overlay (a closed-shell run): the same bands again, dashed, in the pair's second color
+            if not band.get("spin_polarized") and spin["style"] == "overlay":
+                traces.append({"x": xs, "y": ys, "customdata": idx, "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter",
+                               "name": "bands (overlay)", "showlegend": False, "meta": "overlay", "legendrank": 2,
+                               "line": {"color": spin["down"], "width": o["width"],
+                                        "dash": "dash" if spin["dash"] == "solid" else spin["dash"], "simplify": False},
+                               "hoverinfo": "none"})
         if band.get("spin_polarized") and band.get("down") and o.get("spin") != "up":
             xs, ys, idx = join_bands(band["x"], band["down"], shift)
             ys = lg([tf(y) for y in ys])
@@ -602,15 +637,20 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                                 "showarrow": False,
                                 "text": f"smoothed, σ = {P.js_num(smooth)} eV" if band else f"Gaussian smoothing σ = {P.js_num(smooth)} eV (display only)",
                                 "font": {"size": 10, "color": css("--text-2")}, "name": "dos-smooth"})
+    # the Spin group (keys in the colors and line styles drawn) and, beside it, the bands' own group when
+    # the bands are drawn otherwise than the DOS
     closed_words = "α = β (non-magnetic)" if band and not band.get("spin_polarized") and band.get("spin_identical") else "α = β (closed shell)"
     grouped = bool(dos)
-    sk = spin_keys(spin2, o, spin["dash"], closed_words)
-    keys[:0] = [_drop_none({"x": [None], "y": [None], "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter", "name": k["name"],
-                            "meta": "key-spin", "legend": "legend", "legendgroup": "spin" if grouped else None, "legendrank": 1 + i,
-                            "hoverinfo": "skip", "showlegend": True,
-                            "line": {"color": spin["bands"] if k.get("closed") else ink, "width": 2, "dash": k["dash"]},
-                            "legendgrouptitle": {"text": "Spin", "font": group_title(css)} if grouped and i == 0 else None})
-                for i, k in enumerate(sk)]
+    hk = half_keys(band, dos, side, o, spin, closed_words)
+
+    def key_of(k: Dict[str, Any], i: int, group: str, title: str, meta: str) -> Dict[str, Any]:
+        return _drop_none({"x": [None], "y": [None], "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter", "name": k["name"],
+                           "meta": meta, "legend": "legend", "legendgroup": group if grouped else None,
+                           "legendrank": (50 if group == "bands" else 1) + i, "hoverinfo": "skip", "showlegend": True,
+                           "line": {"color": k.get("color") or ink, "width": 2, "dash": k["dash"]},
+                           "legendgrouptitle": {"text": title, "font": group_title(css)} if grouped and i == 0 else None})
+    keys[:0] = ([key_of(k, i, "spin", "Spin", "key-spin") for i, k in enumerate(hk["spin"])]
+                + [key_of(k, i, "bands", "Bands", "key-band") for i, k in enumerate(hk["bands"] or [])])
     if env.get("fermiKey") and not log_e:
         keys.append({"x": [None], "y": [None], "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter", "meta": "key-fermi",
                      "name": f"E<sub>F</sub>{shift_text(shift)}", "legend": "legend", "line": dict(fermi_line), "hoverinfo": "skip",

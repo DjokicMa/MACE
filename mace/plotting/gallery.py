@@ -883,11 +883,11 @@ def _draw_panel(ax, pl: Dict[str, Any], shared: Optional[Dict[str, Any]], small:
     ax.tick_params(labelsize=5 if small else 7, length=2)
     spin2 = both if side else (not pl.get("closed") if pl.get("energy") == "y" and "closed" in pl else None)
     return {"spin2": spin2, "identical": bool(pl.get("spin_identical")), "keys": keys, "ink": ink, "bands": bands,
-            "dash": down_dash}
+            "up": spin["up"], "down": spin["down"], "dash": down_dash}
 
 
 def _legend(fig, ax, infos: Sequence[Dict[str, Any]], band_dos: bool, small: bool) -> None:
-    """One pane's legend (plotly_bands' two titled groups): Spin (neutral ink, spin up solid and spin
+    """One pane's legend (plotly_bands' two titled groups): Spin (in the colors drawn, spin up solid and spin
     down in its line style, or the one closed-shell key) and Projections (color swatches); in the
     right margin beside a band + DOS pane, inside a DOS-alone pane where it covers no curve
     (presets.legend_spot), else outside."""
@@ -902,8 +902,8 @@ def _legend(fig, ax, infos: Sequence[Dict[str, Any]], band_dos: bool, small: boo
     words = "α = β (non-magnetic)" if any(i["identical"] for i in infos) else "α = β (closed shell)"
     handles: List[Any] = [Patch(visible=False)]
     labels = ["Spin"]
-    for kk in spin_keys(any(spin2), {"spin": "both"}, first["dash"], words):
-        handles.append(Line2D([], [], color=first["bands"] if kk.get("closed") else first["ink"], lw=1.4,
+    for kk in spin_keys(any(spin2), {"spin": "both"}, first["dash"], words, first):
+        handles.append(Line2D([], [], color=kk.get("color") or first["ink"], lw=1.4,
                               linestyle=presets.mpl_dash(kk["dash"])))
         labels.append(kk["name"])
     keys = [k for i in infos for k in i["keys"]]

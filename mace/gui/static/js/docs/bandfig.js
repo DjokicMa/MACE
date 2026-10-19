@@ -32,13 +32,20 @@ export function lookOf(o, base, PP) {
   }
   return out;
 }
-/** The look's preset id (band family) and spin pair {up, down, dash}. */
-export function lookParts(env) {
+/** The look's preset id (band family) and spin pair {up, down, dash, style, bands}: `band` (the figure's
+ *  bands, or null) decides Band style Auto (presets.py band_style). */
+export function lookParts(env, band = null) {
   const PP = env.presets, look = env.look || {};
   const preset = PP ? PP.resolveId(look.style || "default", "band") : "default";
   const spin = PP ? { ...PP.spinColors(preset, "band", env.tone || "light", look.spin_colors, look.spin_up_color, look.spin_down_color), dash: look.spin_down_style || "dash" } : null;
-  // a run that is not spin-polarized: its one set of bands and one-sided DOS total in a neutral color
-  if (spin) spin.bands = PP.bandColor(preset, "band", env.tone || "light", look.band_color, (env.css && (env.css("--plot-ink") || env.css("--text"))) || undefined);   // undefined: bandColor's own black
+  // a run that is not spin-polarized: its one set of bands and one-sided DOS total in the band style's
+  // color: single the pair's first color (or Band color), overlay the first color, ink the plot's ink
+  if (spin) {
+    spin.style = PP.bandStyle(look.band_style, band);
+    const custom = look.band_color;
+    spin.bands = spin.style === "ink" ? PP.bandColor(preset, "band", env.tone || "light", null, (env.css && (env.css("--plot-ink") || env.css("--text"))) || undefined)   // undefined: bandColor's own black
+      : spin.style === "single" && /^#[0-9a-f]{6}$/i.test(custom || "") ? custom.toLowerCase() : spin.up;
+  }
   return { preset, spin, look };
 }
 
@@ -208,19 +215,33 @@ export function editedBand(band, edit) {
 }
 
 /* ------------------------------------------------------------ the legend (1.1.6 design)
-   Two titled groups: Spin (neutral keys: spin up solid, spin down in its line style; a closed-shell
-   run "α = β (closed shell)") and Projections (color swatches only). A band plot alone: one line above
+   Two titled groups: Spin (keys in the colors and line styles drawn: spin up in the pair's first color,
+   spin down in its second and line style; a closed-shell run "α = β (closed shell)" in the band color)
+   and Projections (color swatches only). Band + DOS drawn in different colors or styles (Band style
+   Single/Ink or a Band color beside a DOS in the pair): the bands get a Bands group of their own. A band plot alone: one line above
    the frame; a DOS alone: inside the plot where it covers no curve, else right of it; band + DOS: right
    of the plot. Keys are legend-only entries (meta "key-..."): a click on them hides nothing. */
 export const GROUP_TITLE = (css) => ({ size: 11, color: css("--text-2") });
-/** The Spin group's keys: [{name, dash}] for a figure that draws both spins (o.spin: one of them) or one
- *  closed-shell set (`closed`: its words). */
-export function spinKeys(spin2, o, spinDash, closed) {
-  if (!spin2) return [{ name: closed || "α = β (closed shell)", dash: "solid", closed: true }];
+/** The Spin group's keys: [{name, dash, color}] for a figure that draws both spins (o.spin: one of them) or one
+ *  closed-shell set (`closed`: its words); `spin`: the pair drawn {up, down, bands} (the keys' colors). */
+export function spinKeys(spin2, o, spinDash, closed, spin = null) {
+  if (!spin2) return [{ name: closed || "α = β (closed shell)", dash: "solid", closed: true, color: spin ? spin.bands : undefined }];
   const out = [];
-  if (o.spin !== "down") out.push({ name: "spin up (α)", dash: "solid" });
-  if (o.spin !== "up") out.push({ name: "spin down (β)", dash: spinDash });
+  if (o.spin !== "down") out.push({ name: "spin up (α)", dash: "solid", color: spin ? spin.up : undefined });
+  if (o.spin !== "up") out.push({ name: "spin down (β)", dash: spinDash, color: spin ? spin.down : undefined });
   return out;
+}
+/** A band + DOS figure's legend keys: {spin, bands}: the DOS's keys as the Spin group and, when the bands
+ *  are drawn in other colors or line styles, the bands' own keys (else bands null: one shared group). */
+export function halfKeys(band, dos, side, o, spin, closedWords) {
+  const bk = band ? spinKeys(!!band.spin_polarized, o, spin.dash, closedWords, spin) : null;
+  if (!dos) return { spin: bk, bands: null };
+  const dk = spinKeys(side !== "one", o, spin.dash, closedWords, spin);
+  if (!bk) return { spin: dk, bands: null };
+  // a closed-shell Overlay draws the pair itself: it matches a DOS drawn in the pair
+  const same = (!band.spin_polarized && spin.style === "overlay" && side !== "one")
+    || (bk.length === dk.length && bk.every((k, i) => k.color === dk[i].color && k.dash === dk[i].dash));
+  return same ? { spin: band.spin_polarized || side === "one" ? bk : dk, bands: null } : { spin: dk, bands: bk };
 }
 /** The DOS-alone legend's box as a fraction of the plot {fw, fh}: from its entries and their words. */
 export function legendBox(names, groups, width, height) {
@@ -233,9 +254,9 @@ export function legendBox(names, groups, width, height) {
 /** The figure: {traces, layout, legendBase, absShown, dosMode}. `band`, `dos`: the readers' data
  *  (either may be null); `o`: the plot's options (plot.js DEFAULTS.bands). */
 export function bandFigure(band, dos, o, env) {
-  const css = env.css, pal = PAL(css), parts = lookParts(env);
-  // the spin pair and spin down's line style (the look's Spin colors, the plot style's scheme by default; β dashed)
-  const spin = parts.spin || { up: css("--accent"), down: pal[0], dash: "dash", bands: css("--plot-ink") || css("--text") };
+  const css = env.css, pal = PAL(css), parts = lookParts(env, band);
+  // the spin pair and spin down's line style (the look's Color pair, the plot style's scheme by default; β dashed)
+  const spin = parts.spin || { up: css("--accent"), down: pal[0], dash: "dash", style: "ink", bands: css("--plot-ink") || css("--text") };
   let absShown = false, dosMode = null;
   // the API's energies as they come (results.py, mace plotting's readers): E - E_F, or with a POTC run
   // E - E_vac with E_F at the vacuum shift (fermi), as mace plotting draws them; nothing is recomputed
@@ -265,7 +286,6 @@ export function bandFigure(band, dos, o, env) {
       showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: css("--text-3"), spikedash: "dot" },
   };
   const look = dos ? dosLook(dos, env, o) : null, side = look ? look.side : null;
-  const spin2 = !!((band && band.spin_polarized) || (look && side !== "one"));
   if (band) {
     lay.xaxis = { domain: dos ? [0, 0.7] : [0, 1],
       range: [band.ticks[0], band.ticks[band.ticks.length - 1]], showgrid: true, gridcolor: css("--border-strong"), zeroline: false,
@@ -287,6 +307,12 @@ export function bandFigure(band, dos, o, env) {
         name: band.spin_polarized ? "spin up (α)" : band.spin_identical ? "α = β (non-magnetic)" : "bands",
         showlegend: false, meta: "up", legendrank: 1,
         line: { color: band.spin_polarized ? accent : spin.bands, width: o.width, simplify: false }, hoverinfo: "none" });
+      // Band style overlay (a closed-shell run): the same bands again, dashed, in the pair's second color
+      if (!band.spin_polarized && spin.style === "overlay") {
+        traces.push({ x: up.xs, y: up.ys, customdata: up.idx, xaxis: "x", yaxis: "y", mode: "lines", type: "scatter",
+          name: "bands (overlay)", showlegend: false, meta: "overlay", legendrank: 2,
+          line: { color: downCol, width: o.width, dash: spin.dash === "solid" ? "dash" : spin.dash, simplify: false }, hoverinfo: "none" });
+      }
     }
     if (band.spin_polarized && band.down && o.spin !== "up") {
       const dn = joinBands(band.x, band.down, shift);
@@ -400,14 +426,17 @@ export function bandFigure(band, dos, o, env) {
         font: { size: 10, color: css("--text-2") }, name: "dos-smooth" });
     }
   }
-  // the Spin group (neutral keys: line style is the message)
+  // the Spin group (keys in the colors and line styles drawn) and, beside it, the bands' own group when
+  // the bands are drawn otherwise than the DOS
   const closedWords = band && !band.spin_polarized && band.spin_identical ? "α = β (non-magnetic)" : "α = β (closed shell)";
-  const sk = spinKeys(spin2, o, spin.dash, closedWords);
+  const hk = halfKeys(band, dos, side, o, spin, closedWords);
   const grouped = !!dos;
-  keys.unshift(...sk.map((k, i) => ({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "lines", type: "scatter", name: k.name, meta: "key-spin",
-      legend: "legend", legendgroup: grouped ? "spin" : undefined, legendrank: 1 + i, hoverinfo: "skip", showlegend: true,
-      line: { color: k.closed ? spin.bands : ink, width: 2, dash: k.dash },
-      legendgrouptitle: grouped && i === 0 ? { text: "Spin", font: GROUP_TITLE(css) } : undefined })));
+  const keyOf = (k, i, group, title, meta) => ({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "lines", type: "scatter", name: k.name, meta,
+    legend: "legend", legendgroup: grouped ? group : undefined, legendrank: (group === "bands" ? 50 : 1) + i, hoverinfo: "skip", showlegend: true,
+    line: { color: k.color || ink, width: 2, dash: k.dash },
+    legendgrouptitle: grouped && i === 0 ? { text: title, font: GROUP_TITLE(css) } : undefined });
+  keys.unshift(...hk.spin.map((k, i) => keyOf(k, i, "spin", "Spin", "key-spin")),
+    ...(hk.bands || []).map((k, i) => keyOf(k, i, "bands", "Bands", "key-band")));
   // mace plotting's files have no note line above them: the dotted line gets a legend entry of its own
   if (env.fermiKey && !logE) {
     keys.push({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "lines", type: "scatter", meta: "key-fermi",

@@ -38,7 +38,7 @@ export const DEFAULTS = Object.freeze({
   // band/DOS (1.1.6): DOS colors (auto, total, element, orbital, element-orbital) and the total beside them; the
   // spin pair (blank: the preset's, presets.py SPIN_COLORS), spin down's line style, the spin DOS (auto: mirrored
   // for a spin-polarized run, one-sided for a closed-shell one)
-  "plots.dosColors": "auto", "plots.dosTotal": true, "plots.dosSmooth": 0, "plots.spinColors": "auto", "plots.spinUp": "", "plots.spinDown": "", "plots.bandColor": "", "plots.spinDownDash": "dash", "plots.spinDos": "auto",
+  "plots.dosColors": "auto", "plots.dosTotal": true, "plots.dosSmooth": 0, "plots.spinColors": "auto", "plots.spinUp": "", "plots.spinDown": "", "plots.bandColor": "", "plots.bandStyle": "auto", "plots.spinDownDash": "dash", "plots.spinDos": "auto",
   // VESTA, as the classic views have always drawn (open decision D1: the spec's table says Jmol)
   colorScheme: "vesta", radiusSet: "atomic", atomScale: 0.4, bondRadius: 0.12, bondTolerance: 1.15,
   bondMetalMetal: false, bondColoring: "split", background: "theme", backgroundColor: "", labels: "off", labelSize: 12,
@@ -97,6 +97,7 @@ const CHOICES = {
   "plots.dosColors": ["auto", "total", "element", "orbital", "element-orbital"],
   "plots.spinDownDash": ["dash", "dot", "dashdot", "solid"], "plots.spinDos": ["auto", "mirrored", "overlaid"],
   "plots.spinColors": ["auto", "mace", "blue-red", "black-vermilion", "custom"],
+  "plots.bandStyle": ["auto", "single", "overlay", "ink"],
   // 1.1.6's "cli" (red = positive, then the default, so stored with everything else) reads as the new default
   "volume.mepColors": ["chemistry", "physics"],
   "viewport.rotation": ["free", "axes"], "viewport.angleSnap": ["off", "15", "30", "45", "90"],

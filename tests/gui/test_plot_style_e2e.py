@@ -208,8 +208,8 @@ def test_publication_theme_loads_as_light_with_the_plot_style(app):
 
 
 def test_closed_shell_band_color_reaches_bands_and_dos_total(drv):
-    """A closed-shell band + DOS pair: Band color (not Spin colors, hidden there) recolors the bands and the
-    one-sided DOS total, from the Inspector and the Style menu alike"""
+    """A closed-shell band + DOS pair with a gap: Band style Single, whose Band color (in Bands; the Color pair
+    sits in Colors) recolors the bands and the one-sided DOS total, from the Inspector and the Style menu alike"""
     open_plot(drv, "grc/gra_band.BAND.DAT")
     ids = drv.execute_script("return [...document.querySelectorAll('.po-style [data-group=\"bands\"] [id]')].map((i) => i.id)")
     assert "po-bandm" in ids and "po-bandc" in ids and "po-spinc" not in ids, ids
@@ -223,5 +223,7 @@ def test_closed_shell_band_color_reaches_bands_and_dos_total(drv):
     H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
     menu = drv.execute_script("return [...document.querySelectorAll('.pk-menu [data-v]')].map((b) => b.dataset.v)")
     drv.execute_script("document.querySelector('.pk-menu').close()")
-    assert "bandm:auto" in menu and "bandc" in menu and not any(v.startswith("spin:") for v in menu), menu
+    assert "bandm:auto" in menu and "bandc" in menu and "bstyle:overlay" in menu and any(v.startswith("spin:") for v in menu), menu
+    colors = drv.execute_script("return [...document.querySelectorAll('.po-style [data-group=\"colors\"] [id]')].map((i) => i.id)")
+    assert colors == ["po-spinc"], colors
     U.no_errors(drv)

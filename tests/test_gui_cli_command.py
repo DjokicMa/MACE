@@ -119,7 +119,7 @@ def test_copied_command_beats_a_folder_file(tmp_path, monkeypatch):
 
 def test_explicit_style_flags_name_every_default():
     assert P.style_flags({}) == []
-    assert P.style_flags({}, explicit=True) == ["--style=default", "--spin-colors=auto", "--spin-down-style=dash",
+    assert P.style_flags({}, explicit=True) == ["--style=default", "--spin-colors=auto", "--band-style=auto", "--spin-down-style=dash",
                                                 "--dos-colors=auto", "--dos-spin=auto", "--dos-total", "--dos-smooth=0"]
 
 

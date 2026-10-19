@@ -1690,16 +1690,21 @@ Plot Style Options (band, DOS, band + DOS; the GUI's Style controls):
                         can export) or matplotlib (the figures of MACE 1.1.5)
   --style NAME          default, publication, vesta, presentation, grayscale,
                         colorblind (also gallery, spectra and cube maps)
-  --spin-colors NAME    auto (the style's), mace (pink/cyan), blue-red,
-                        black-vermilion or custom
+  --spin-colors NAME    The color pair (spin up/down; a closed-shell run's bands
+                        and DOS total): auto (the style's), mace (pink/cyan),
+                        blue-red, black-vermilion or custom
   --spin-up-color HEX, --spin-down-color HEX
-                        A custom spin pair, #rrggbb
-  --band-color HEX      A run that is not spin-polarized (closed shell, or
-                        alpha = beta): its bands and DOS total, #rrggbb
-                        (default: the style's, the plot's text color)
+                        A custom pair, #rrggbb
+  --band-style S        A closed-shell run's bands: auto (default: single with a
+                        gap, overlay for a metal), single (the pair's first
+                        color), overlay (the second dashed on top), ink (the
+                        1.1.6 preview's look); plotly only, matplotlib ignores it
+  --band-color HEX      Band style single: a closed-shell run's bands and DOS
+                        total, #rrggbb (default: the pair's first color)
   --spin-down-style S   Spin down's line: dash (default), dot, dashdot, solid
                         (also --spin-style); --spin-down-solid: solid
-  --dos-colors MODE     auto (default), total, element, orbital, element-orbital
+  --dos-colors MODE     DOS projections (also --dos-projections): auto (default),
+                        total, element, orbital, element-orbital
   --dos-spin MODE       auto (default), mirrored or overlaid (also --spin-dos)
   --no-dos-total        DOS without the total
   --dos-total           DOS with the total (default; overrides the folder file's)
@@ -1722,6 +1727,8 @@ Cube Options:
   --view {iso,slice,slice-all}    Visualization mode (default: iso)
   --slice AXIS POS      Single 2D slice (axis x/y/z, integer index)
   --colorscale NAME     Plotly colorscale; --no-atoms / --bonds / --publication
+  --potential-colors S  Potential colors: chemistry (default: red = negative) or
+                        physics (red = positive), as the GUI's
   --clip P              Slices: color range from the (100-P)th to the Pth percentile,
                         symmetric about 0 for spin and potential (default: 99)
   --color-range LO,HI   Slices: the color range outright (log10 units for a log

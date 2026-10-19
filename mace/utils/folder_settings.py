@@ -115,18 +115,20 @@ KEYS: Dict[str, Dict[str, Any]] = {
     # Settings and mace plotting --style/--dos-colors/--spin-style)
     "plots.style": _k("choice", "plots.style", "Plot style of every plot (mace plotting --style)",
                       choices=("default", "publication", "vesta", "presentation", "grayscale", "colorblind"), cli=True),
-    "plots.dos_colors": _k("choice", "plots.dosColors", "DOS colors (mace plotting --dos-colors)",
+    "plots.dos_colors": _k("choice", "plots.dosColors", "DOS projections (mace plotting --dos-colors)",
                            choices=("auto", "total", "element", "orbital", "element-orbital"), cli=True),
     "plots.spin_down_style": _k("choice", "plots.spinDownDash", "Spin down's line style (mace plotting --spin-down-style; "
                                 "--spin-down-solid)", choices=("dash", "dot", "dashdot", "solid"), cli=True),
     # the spin colors (presets.py SPIN_SCHEMES; auto: the plot style's), the DOS spin layout and total,
     # the energy zero and mace plotting's renderer: the same names as the GUI's Style controls and the flags
-    "plots.spin_colors": _k("choice", "plots.spinColors", "Spin colors (mace plotting --spin-colors)",
+    "plots.spin_colors": _k("choice", "plots.spinColors", "Color pair: spin up/down, a closed-shell run's bands and DOS total (mace plotting --spin-colors)",
                             choices=("auto", "mace", "blue-red", "black-vermilion", "custom"), cli=True),
     "plots.spin_up_color": _k("color", "plots.spinUp", "Spin up's custom color (mace plotting --spin-up-color)", cli=True),
     "plots.spin_down_color": _k("color", "plots.spinDown", "Spin down's custom color (mace plotting --spin-down-color)", cli=True),
-    "plots.band_color": _k("color", "plots.bandColor", "The bands and one-sided DOS total of a run that is not "
-                           "spin-polarized (mace plotting --band-color)", cli=True),
+    "plots.band_color": _k("color", "plots.bandColor", "Band style single: the bands and one-sided DOS total of a run "
+                           "that is not spin-polarized (mace plotting --band-color)", cli=True),
+    "plots.band_style": _k("choice", "plots.bandStyle", "A closed-shell run's bands: auto, single, overlay, ink "
+                           "(mace plotting --band-style)", choices=("auto", "single", "overlay", "ink"), cli=True),
     "plots.dos_spin": _k("choice", "plots.spinDos", "DOS spin layout (mace plotting --dos-spin)",
                          choices=("auto", "mirrored", "overlaid"), cli=True),
     "plots.dos_total": _k("bool", "plots.dosTotal", "Draw the DOS total (mace plotting --dos-total/--no-dos-total)", cli=True),
@@ -201,7 +203,8 @@ TEMPLATE = """\
 # dos_colors = "auto"               # auto, total, element, orbital, element-orbital
 # spin_down_style = "dash"          # dash, dot, dashdot, solid (spin down's line)
 # spin_colors = "auto"              # auto (the style's), mace, blue-red, black-vermilion, custom
-# band_color = "#000000"            # a run that is not spin-polarized: its bands and one-sided DOS total
+# band_color = "#000000"            # band style single: a closed-shell run's bands and one-sided DOS total
+# band_style = "auto"               # closed-shell bands: auto (single with a gap, overlay for a metal), single, overlay, ink
 # dos_spin = "auto"                 # auto, mirrored, overlaid
 # dos_smooth = 0.05                 # DOS smoothing: Gaussian sigma in eV (display only); 0 = off
 # backend = "plotly"                # mace plotting's band/DOS renderer: plotly or matplotlib
@@ -552,6 +555,7 @@ def plot_defaults(fs: FolderSettings) -> Dict[str, Any]:
     for key, dest in (("plots.style", "style"), ("plots.dos_colors", "dos_colors"), ("plots.spin_down_style", "spin_style"),
                       ("plots.spin_colors", "spin_colors"), ("plots.spin_up_color", "spin_up_color"),
                       ("plots.spin_down_color", "spin_down_color"), ("plots.band_color", "band_color"),
+                      ("plots.band_style", "band_style"),
                       ("plots.dos_spin", "spin_dos"),
                       ("plots.dos_total", "dos_total"), ("plots.dos_smooth", "dos_smooth"), ("plots.fermi_shift", "fermi_shift"),
                       ("plots.energy_reference", "energy_reference"), ("plots.backend", "backend"),

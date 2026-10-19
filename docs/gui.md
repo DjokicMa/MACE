@@ -1182,13 +1182,13 @@ for `mace plotting --style`):
 The band, DOS, run (SCF, optimization), IR/Raman and transport plots, volume
 slices and isosurfaces, 2D maps, the Gallery and the FREQ stick spectrum all
 follow their family's preset. PNG and SVG exports from the GUI are the figure
-as shown, and Export › Publication Figure… passes the same style, DOS colors
+as shown, and Export › Publication Figure… passes the same style, DOS projections
 and spin styling to `mace plotting`. A folder's `mace-folder.toml` can set
 `[plots] style`, `spin_colors`, `spin_up_color`, `spin_down_color`,
-`band_color`, `spin_down_style`, `dos_colors`, `dos_spin`, `dos_total` and `dos_smooth` for the GUI and the
+`band_color`, `band_style`, `spin_down_style`, `dos_colors`, `dos_spin`, `dos_total` and `dos_smooth` for the GUI and the
 CLI: the same names as the plot's Style controls and `mace plotting`'s flags
 (`--style`, `--spin-colors`, `--spin-up-color`, `--spin-down-color`,
-`--band-color`, `--spin-down-style`/`--spin-down-solid`, `--dos-colors`, `--dos-spin`,
+`--band-color`, `--band-style`, `--spin-down-style`/`--spin-down-solid`, `--dos-colors`, `--dos-spin`,
 `--no-dos-total`/`--dos-total`, `--dos-smooth`), and `[plots] potential_colors`
 (`chemistry` or `physics`, `--potential-colors`; the GUI's Settings › Viewport ›
 Potential colors). Two more `[plots]` keys are for `mace plotting` only:
@@ -1198,8 +1198,8 @@ Potential colors). Two more `[plots]` keys are for `mace plotting` only:
 then the `MACE_PLOT_BACKEND` environment variable, so a `site.toml` value
 overrides the variable.
 
-**DOS colors.** Settings › Plots › **DOS colors** (and a DOS plot's own Plot
-options › DOS colors): **Auto** (by orbital for one element, element × orbital
+**DOS projections.** Settings › Plots › **DOS projections** (and a DOS plot's own Plot
+options › DOS projections; `mace plotting --dos-colors`): **Auto** (by orbital for one element, element × orbital
 for two or three, by element for more), **Total only**, **By element** (each
 element in its 3D color, Viewport › Color scheme, darkened where too light to
 read), **By orbital** (s, p, d, f in four hues, the same for every element;
@@ -1210,12 +1210,12 @@ beside them. The legend names projections "Mg s", "O p", "Mg".
 **The DOS layout.** A DOS draws the 2 to 4 projections that carry the most
 DOS in the energy window (each at least 4% of it); the others are listed,
 unchecked, in Plot options › Projections (a click on a projection's legend
-swatch hides it too). With DOS colors Auto they take colors that keep clear of
+swatch hides it too). With DOS projections Auto they take colors that keep clear of
 the spin pair. A spin-polarized DOS is mirrored: spin up on the right, spin
 down on the left, "↑ up" and "down ↓" over each half, magnitudes on both
 sides, each total lightly filled in its spin's color and each projection in
 one color on both sides, dashed on the spin down side. A closed-shell DOS is
-one-sided: the total as a light fill under a line in the band color, the
+one-sided: the total as a light fill under a line in the color pair's first color (the band color), the
 projections on top. The legend has two titled groups: **Spin** (neutral keys,
 spin up solid and spin down dashed, or "α = β (closed shell)") and
 **Projections** (color swatches). A band plot alone has it on one line above
@@ -1227,24 +1227,33 @@ Plots, a plot's Style section and Style ▾; `mace plotting --dos-smooth EV`,
 `[plots] dos_smooth`) applies a Gaussian of σ = 0.05 eV (or the σ given) to
 the drawn curves only, and the plot says so; it is off by default.
 
-**Spin.** Settings › Plots › **Spin colors** picks the spin up / spin down
-pair, one pair for a light plot and one for a dark plot, the same in
-`mace plotting --spin-colors`:
+**Colors and spin.** Settings › Plots › **Color pair** picks the pair the bands
+and the DOS share: spin up / spin down of a spin-polarized run, and a closed-shell
+run's bands and DOS total (below). One pair for a light plot and one for a dark
+plot, the same in `mace plotting --spin-colors`:
 
-| Spin colors | Light plot (up / down) | Dark plot (up / down) |
+| Color pair | Light plot (up / down) | Dark plot (up / down) |
 |---|---|---|
 | Auto | the plot style's: Blue/red in Default and Presentation, Black/vermilion in Publication; Print grayscale and Colorblind safe keep their own pairs | |
 | MACE pink/cyan | `#e0218a` / `#00a0a4` | `#fa26a0` / `#2ff3e0` |
 | Blue/red | `#1f4e9c` / `#c0392b` | `#7aa7f0` / `#f08a7c` |
 | Black/vermilion | `#000000` / `#d55e00` | `#ffffff` / `#e8803a` |
-| Custom | **Spin up color** and **Spin down color** | |
+| Custom | **First color** and **Second color** | |
 
-A color set in Spin up/down color also applies with Auto. A run that is not
-spin-polarized (closed shell, or α = β) is drawn in one neutral **Band color**:
-its bands and its one-sided DOS total in the plot's text color by default
-(Publication, Print grayscale and Colorblind safe set their own), with the
-legend key "α = β (closed shell)"; Settings › Plots › Band color, a plot's Style section, `mace plotting
---band-color`. **Spin down line**
+A color set in First/Second color also applies with Auto. **Band style**
+(Settings › Plots, a plot's Style section, `mace plotting --band-style`,
+`[plots] band_style`) draws a run that is not spin-polarized (closed shell, or
+α = β): **Single**, one solid line in the pair's first color, so blue bands
+beside a blue DOS total by default (**Band color** overrides it: Settings ›
+Plots, the Style section, `--band-color`); **Overlay**, that line with a dashed
+line in the second color on top, the look of a spin-polarized plot; **Ink**, the
+neutral ink color (the plot's text color, or the Publication, Print grayscale and
+Colorblind safe style's own), the 1.1.6 preview's look. **Auto** (the default) is
+Single when the bands have a gap at E<sub>F</sub> and Overlay for a metal (a band
+reaching 0.01 eV above and below E<sub>F</sub>). The one-sided DOS total takes the
+band color (Ink: ink). The legend key reads "α = β (closed shell)". A spin-polarized
+run always draws spin up solid in the first color and spin down dashed in the second,
+whatever the Band style. **Spin down line**
 is dashed by default in every scheme, so the two spins read apart without
 color (dotted, dash-dot or solid; `--spin-down-solid` in the CLI), and **Spin DOS**: Auto draws a
 spin-polarized run mirrored (spin down on the left) and a closed-shell run
@@ -1258,13 +1267,13 @@ element's orbitals by a shade of its color, the largest strongest), so a dash
 always means spin down.
 
 **A plot's own style.** Every plot's Plot options has a **Style** section with
-**Plot style**. A band or DOS plot adds its halves' groups: **Bands** (**Spin
-colors**, with two color pickers for Custom, **Band color** for a run that is not
-spin-polarized, and **β dashed**) and **DOS** (**DOS colors**, **DOS spin
-layout**, **DOS total**, **DOS smoothing** and its σ). A band + DOS plot has
-both groups, whether you opened the BAND.DAT or its DOSS.DAT; a BAND.DAT alone
-has only Bands, and a DOSS.DAT alone only DOS (with the spin colors, color and β
-line of its total). Each starts at "Settings (…)", which follows Settings and names
+**Plot style**. A band or DOS plot adds **Colors** (**Color pair**, with two
+color pickers for Custom: it drives both halves) and its halves' groups: **Bands**
+(**Band style**, **Band color** while a closed-shell run is drawn Single, and
+**β dashed**) and **DOS** (**DOS projections**, **DOS spin layout**, **DOS total**,
+**DOS smoothing** and its σ). A band + DOS plot has both groups, whether you
+opened the BAND.DAT or its DOSS.DAT; a BAND.DAT alone has no DOS group, and a
+DOSS.DAT alone no Bands group (its total's color and β line are in DOS). Each starts at "Settings (…)", which follows Settings and names
 what that is; a choice applies to this plot only, redraws at once and is
 undone with Mod+Z like every plot option. **Reset Plot Options** goes back to
 Settings. **Make This the Default** writes the plot's style, both halves, into
@@ -1282,7 +1291,7 @@ plot shows both, with the file, `--e-lower`/`--e-upper`, `--fermi-shift`,
 style flags that are not the defaults; an edited k-path comes first as a
 `band_path.json` written by the command, then `--band-path band_path.json`.
 When the folder has a `mace-folder.toml`, the command also names the values
-equal to `mace plotting`'s defaults (`--style=default`, `--spin-colors=auto`,
+equal to `mace plotting`'s defaults (`--style=default`, `--spin-colors=auto`, `--band-style=auto`,
 `--fermi-shift=0`, `--units=eV`, `--energy-reference=fermi`, `--dos-total`,
 ...), because the folder file's `[plots]` and `[units]` values would replace
 any default left out. Run in the data's folder it draws the same figure.
@@ -2917,7 +2926,7 @@ The rest of the band and DOS notes:
   can export), at a white Light background, with an `E_F` legend entry for
   the dotted line (the screen has the note line instead) and the legends
   fitted by plotly's margins. It uses what the plot on screen uses: the plot's
-  style (Plot style, spin colors, β line, DOS colors, DOS spin layout, total,
+  style (Plot style, color pair, band style, β line, DOS projections, DOS spin layout, total,
   unit), the energy window
   (`--e-lower`/`--e-upper`), the Fermi shift, dragged or typed
   (`--fermi-shift`), and with a POTC run the vacuum scale

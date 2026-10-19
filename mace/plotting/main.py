@@ -312,7 +312,7 @@ Examples:
 
     # Plot styles (1.1.6, mace/plotting/presets.py STYLE_OPTIONS: the same names as the GUI's Style controls
     # and a folder's mace-folder.toml [plots] keys)
-    from .presets import ORDER, DOS_MODES, SPIN_COLOR_CHOICES, DOS_SMOOTH_SIGMA
+    from .presets import ORDER, DOS_MODES, SPIN_COLOR_CHOICES, DOS_SMOOTH_SIGMA, BAND_STYLES
     style_group = parser.add_argument_group('plot style options (band, DOS, band + DOS, gallery, spectra, cube maps)')
     style_group.add_argument('--backend', choices=['plotly', 'matplotlib'], default=None,
                              help='Band/DOS renderer: plotly draws the GUI\'s figure (default, when plotly and kaleido '
@@ -323,7 +323,8 @@ Examples:
                                   'presentation (large text, thick lines), grayscale (print: line styles and markers), '
                                   'colorblind (Okabe-Ito). Default: default')
     style_group.add_argument('--spin-colors', choices=list(SPIN_COLOR_CHOICES), default=None,
-                             help="Band/DOS spin colors: auto (the style's: blue/red in default and presentation, "
+                             help="Band/DOS color pair (the GUI's Color pair: spin up/down, a closed-shell run's "
+                                  "bands and DOS total): auto (the style's: blue/red in default and presentation, "
                                   "black/vermilion in publication), mace (pink/cyan), blue-red, black-vermilion, or "
                                   "custom (--spin-up-color/--spin-down-color). Default: auto")
     style_group.add_argument('--potential-colors', choices=['chemistry', 'physics'], default=None,
@@ -335,16 +336,22 @@ Examples:
     style_group.add_argument('--spin-down-color', metavar='HEX', default=None,
                              help="Band/DOS: spin down's color, #rrggbb (a custom pair; default: the spin colors')")
     style_group.add_argument('--band-color', metavar='HEX', default=None,
-                             help="Band/DOS: the color of a run that is not spin-polarized (closed shell, or α = β): its "
-                                  "bands and one-sided DOS total, #rrggbb (default: the style's, the plot's text color; "
-                                  "a spin-polarized run keeps the spin colors)")
+                             help="Band/DOS: with --band-style single, the color of a run that is not spin-polarized "
+                                  "(closed shell, or α = β): its bands and one-sided DOS total, #rrggbb (default: the "
+                                  "color pair's first; a spin-polarized run keeps the color pair)")
+    style_group.add_argument('--band-style', choices=list(BAND_STYLES), default=None,
+                             help="Band/DOS: a closed-shell run's bands: single (one line in the color pair's first "
+                                  "color), overlay (the second color dashed on top), ink (the neutral ink color, the "
+                                  "1.1.6 preview's look); auto (default): single with a gap at E_F, overlay for a metal. "
+                                  "A spin-polarized run always draws spin up solid, spin down dashed. Plotly backend "
+                                  "only: --backend matplotlib ignores it")
     style_group.add_argument('--spin-down-style', '--spin-style', dest='spin_style',
                              choices=['dash', 'dot', 'dashdot', 'solid'], default=None,
                              help="Band/DOS: spin down's (β's) line style, spin up solid (default: dash)")
     style_group.add_argument('--spin-down-solid', dest='spin_style', action='store_const', const='solid',
                              help='Band/DOS: spin down solid too (the spins told apart by color only)')
-    style_group.add_argument('--dos-colors', choices=list(DOS_MODES), default=None,
-                             help="DOS: which projections and their colors: auto (one element by orbital, two or three "
+    style_group.add_argument('--dos-colors', '--dos-projections', dest='dos_colors', choices=list(DOS_MODES), default=None,
+                             help="DOS projections (--dos-projections the same): which projections and their colors: auto (one element by orbital, two or three "
                                   "element x orbital, more by element; default), total, element, orbital, element-orbital")
     style_group.add_argument('--no-dos-total', dest='dos_total', action='store_false', default=None,
                              help='DOS: without the total')

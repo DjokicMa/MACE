@@ -238,18 +238,22 @@ def test_band_and_dos_lines_keep_every_point(fe):
 
 
 @pytest.mark.skipif(not (CORPUS / "DOSS").is_dir(), reason="test/ data corpus not present")
-def test_closed_shell_run_is_drawn_in_a_neutral_color(tmp_path):
-    """Marcus 2026-10-16: a run that is not spin-polarized (diamond: alpha = beta) draws its bands and
-    its one-sided DOS total in the plot's ink, not spin up's pink, with no spin legend; --band-color /
-    the style's "bands" color set it; a spin-polarized run (Fe) keeps the spin pair. The GUI's
-    bandfig.js draws the same (the cases go through node too)."""
+def test_closed_shell_run_is_drawn_in_the_pairs_first_color(tmp_path):
+    """Marcus 2026-10-18 (Band style): a run that is not spin-polarized with a gap (diamond: alpha = beta)
+    draws its bands and its one-sided DOS total Single, in the color pair's first color, with no spin
+    legend; --band-color overrides it; --band-style ink is the 1.1.6 preview's ink; a spin-polarized run
+    (Fe) keeps the spin pair. The GUI's bandfig.js draws the same (the cases go through node too)."""
     dia = "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized"
     band = results.band_data(next((CORPUS / "BAND").glob(f"{dia}_band.BAND.DAT")))
     dos = results.dos_data(CORPUS / "DOSS" / f"{dia}_doss.DOSS.DAT")
-    assert not band["spin_polarized"] and not dos["spin_polarized"]
-    cases = [_case(band, dos), _case(band, dos, look={"band_color": "#2E7D32"}), _case(band, dos, look={"style": "publication"})]
-    _compare(cases, tmp_path)
-    for c, want in zip(cases, [PB.tokens("default")["--plot-ink"] or PB.tokens("default")["--text"], "#2e7d32", "#000000"]):
+    assert not band["spin_polarized"] and not dos["spin_polarized"] and not P.is_metallic(band)
+    cases = [_case(band, dos), _case(band, dos, look={"band_color": "#2E7D32"}), _case(band, dos, look={"style": "publication"}),
+             _case(band, dos, look={"band_style": "ink"}), _case(band, dos, look={"band_style": "overlay"})]
+    _compare(cases + [_case(band, dos, look={"band_style": "ink", "dos_spin": "mirrored"}),
+                      _case(band, dos, look={"band_color": "#2e7d32", "dos_spin": "mirrored"})], tmp_path)
+    ink = PB.tokens("default")["--plot-ink"] or PB.tokens("default")["--text"]
+    wants = [P.spin_colors("default")["up"], "#2e7d32", P.spin_colors("publication")["up"], ink, P.spin_colors("default")["up"]]
+    for c, want in zip(cases, wants):
         fig = _python(c)
         bands = [t for t in fig["traces"] if t.get("meta") == "up"]
         total = next(t for t in fig["traces"] if t.get("meta") == "dos" and t["name"] == "Total")
@@ -259,11 +263,43 @@ def test_closed_shell_run_is_drawn_in_a_neutral_color(tmp_path):
         spin_keys = [t for t in fig["traces"] if t.get("meta") == "key-spin"]
         assert [(t["name"], t["line"]["color"]) for t in spin_keys] == [("α = β (closed shell)", want)]
         assert not any("spin up" in str(t.get("name")) for t in fig["traces"] if t.get("showlegend", True))
+        over = [t for t in fig["traces"] if t.get("meta") == "overlay"]
+        if c["o"].get("band_style") == "overlay":
+            assert len(over) == 1 and over[0]["line"]["color"] == P.spin_colors("default")["down"] and over[0]["line"]["dash"] == "dash"
+        else:
+            assert not over
+    # Band style Ink beside a DOS mirrored in the pair: the bands get a Bands group of their own
+    tr = _python(_case(band, dos, look={"band_style": "ink", "dos_spin": "mirrored"}))["traces"]
+    assert [(t["name"], t["line"]["color"]) for t in tr if t.get("meta") == "key-spin"] == [
+        ("spin up (α)", P.spin_colors("default")["up"]), ("spin down (β)", P.spin_colors("default")["down"])]
+    bk = [t for t in tr if t.get("meta") == "key-band"]
+    assert [(t["name"], t["line"]["color"]) for t in bk] == [("α = β (closed shell)", ink)] and bk[0]["legendgrouptitle"]["text"] == "Bands"
     fe = results.band_data(FE / "fe_band.BAND.DAT")
-    fig = _python(_case(fe, None, look={"band_color": "#2e7d32"}))
-    up = next(t for t in fig["traces"] if t.get("meta") == "up")
-    assert up["line"]["color"] == P.spin_colors("default")["up"] and up["showlegend"] is False
-    assert [t["name"] for t in fig["traces"] if t.get("meta") == "key-spin"] == ["spin up (α)", "spin down (β)"]
+    for look in ({"band_color": "#2e7d32"}, {"band_style": "single"}, {"band_style": "ink"}):
+        fig = _python(_case(fe, None, look=look))
+        up = next(t for t in fig["traces"] if t.get("meta") == "up")
+        assert up["line"]["color"] == P.spin_colors("default")["up"] and up["showlegend"] is False
+        assert [t["name"] for t in fig["traces"] if t.get("meta") == "key-spin"] == ["spin up (α)", "spin down (β)"]
+        assert not any(t.get("meta") == "overlay" for t in fig["traces"])
+
+
+def test_band_style_auto_is_overlay_for_a_metal(fe, tmp_path):
+    """Band style Auto: a closed-shell metal (Fe's alpha bands cross E_F) draws Overlay, the pair's second
+    color dashed over the first; Single and Ink on request; bandfig.js the same."""
+    band, dos = fe
+    cb, cd = _closed(band, dos)
+    assert P.is_metallic(cb) and P.band_style("auto", cb) == "overlay" and P.band_style("ink", cb) == "ink"
+    assert P.band_style("auto", None) == "single"
+    cases = [_case(cb, cd), _case(cb, None, look={"band_style": "single"}), _case(cb, cd, look={"band_style": "ink"})]
+    _compare(cases, tmp_path)
+    pair = P.spin_colors("default")
+    tr = _python(cases[0])["traces"]
+    up = next(t for t in tr if t.get("meta") == "up")
+    over = next(t for t in tr if t.get("meta") == "overlay")
+    assert up["line"]["color"] == pair["up"] and over["line"]["color"] == pair["down"] and over["line"]["dash"] == "dash"
+    assert over["x"] == up["x"] and over["y"] == up["y"]
+    assert not any(t.get("meta") == "overlay" for t in _python(cases[1])["traces"])
+    assert not any(t.get("meta") == "overlay" for t in _python(cases[2])["traces"])
 
 
 # ---------------------------------------------------------------- the 1.1.6 DOS / legend design
@@ -314,10 +350,14 @@ def test_spin_dos_is_mirrored_with_neutral_spin_keys(fe):
     assert d_up["line"]["color"] not in (spin["up"], spin["down"], "#2f5fd0")
     # the 2-4 projections that carry the DOS: Fe d and Fe s (the design notes)
     assert [t["name"] for t in tr if t.get("meta") == "key-proj"] == ["Total", "Fe d", "Fe s"]
-    # two titled legend groups, neutral spin keys, one legend right of the plot
+    # two titled legend groups, spin keys in the colors and line styles drawn, one legend right of the plot
     keys = [t for t in tr if t.get("meta") == "key-spin"]
     assert [(t["name"], t["line"]["dash"], t["line"]["color"]) for t in keys] == [
-        ("spin up (α)", "solid", PB.tokens("default")["--text"]), ("spin down (β)", "dash", PB.tokens("default")["--text"])]
+        ("spin up (α)", "solid", spin["up"]), ("spin down (β)", "dash", spin["down"])]
+    assert not any(t.get("meta") == "key-band" for t in tr)     # bands and DOS in the same pair: one group
+    # β solid: the keys still differ, in the pair's two colors
+    solid = [t for t in _python(_case(band, dos, look={"spin_down_style": "solid"}))["traces"] if t.get("meta") == "key-spin"]
+    assert [(t["line"]["dash"], t["line"]["color"]) for t in solid] == [("solid", spin["up"]), ("solid", spin["down"])]
     assert keys[0]["legendgrouptitle"]["text"] == "Spin"
     assert next(t for t in tr if t.get("meta") == "key-proj")["legendgrouptitle"]["text"] == "Projections"
     assert lay["legend"]["x"] >= 1 and "legend2" not in lay
@@ -350,9 +390,9 @@ def test_closed_shell_dos_and_smoothing(fe):
     cb, cd = _closed(band, dos)
     fig = _python(_case(None, cd, look={"dos_smooth": 0.05}, width=520))
     tr, lay = fig["traces"], fig["layout"]
-    ink = PB.tokens("default")["--text"]
+    first = P.spin_colors("default")["up"]          # Band style Single: the pair's first color
     total = next(t for t in tr if t.get("meta") == "dos" and t["name"] == "Total")
-    assert total["line"]["color"] == ink and total["fillcolor"] == P.neutral_fill(ink)
+    assert total["line"]["color"] == first and total["fillcolor"] == P.neutral_fill(first)
     assert lay["xaxis"]["range"][0] == 0 and "tickvals" not in lay["xaxis"]
     assert [t["name"] for t in tr if t.get("meta") == "key-spin"] == ["α = β (closed shell)"]
     assert any(a["text"] == "Gaussian smoothing σ = 0.05 eV (display only)" for a in lay["annotations"])

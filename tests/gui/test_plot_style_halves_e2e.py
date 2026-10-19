@@ -1,12 +1,15 @@
 """A band + DOS plot's style controls (1.1.6 preview fix, Marcus 2026-10-18): the toolbar's Style ▾ menu and
 Plot options › Style draw one list of controls, grouped by the figure's halves, whichever file was opened.
 
-* a BAND.DAT with its DOSS.DAT partner, and that DOSS.DAT: both the Bands group (spin colors, β line) and
-  the DOS group (DOS colors, spin layout, total, smoothing), the same controls in the menu and the Inspector;
-* a BAND.DAT alone: the Bands group only; a DOSS.DAT alone: the DOS group only;
+* a BAND.DAT with its DOSS.DAT partner, and that DOSS.DAT: the Colors group (the color pair, both halves'),
+  the Bands group (band style, β line) and the DOS group (DOS projections, spin layout, total, smoothing), the
+  same controls in the menu and the Inspector;
+* a BAND.DAT alone: no DOS group; a DOSS.DAT alone: no Bands group;
 * the DOSS.DAT's view of the pair: a Bands control recolors the bands, a DOS control the DOS panel, from the
   menu and the Inspector alike; undo, Make This the Default and Copy CLI Command take both halves.
-On the spin-polarized Fe run (tests/data/spin_fe).
+On the spin-polarized Fe run (tests/data/spin_fe). Band style (Marcus 2026-10-18): a closed-shell
+semiconductor Single in the pair's first color (bands and DOS total), Overlay on request; a closed-shell
+metal (Fe's α block) Overlay by default.
 """
 import shutil
 import time
@@ -21,16 +24,18 @@ pytest.importorskip("selenium.webdriver")
 pytest.importorskip("plotly")
 
 FE = H.REPO_ROOT / "tests" / "data" / "spin_fe"
-KEYS = ["plots.style", "plots.style.band", "plots.spinColors", "plots.spinUp", "plots.spinDown", "plots.spinDownDash",
+KEYS = ["plots.style", "plots.style.band", "plots.spinColors", "plots.spinUp", "plots.spinDown", "plots.spinDownDash", "plots.bandStyle", "plots.bandColor",
         "plots.dosColors", "plots.spinDos", "plots.dosTotal", "plots.dosSmooth", "plots.background", "plots.backgroundColor", "theme"]
 PAIR_BAND, PAIR_DOS = "fe/fe_band.BAND.DAT", "fe/fe_doss.DOSS.DAT"
 CLOSED = "closed/fe_band.BAND.DAT"
 BAND_ALONE, DOS_ALONE = "bandonly/fe_band.BAND.DAT", "dosonly/fe_doss.DOSS.DAT"
-BANDS = {"po-spinc", "po-bdash"}
+SEMI = "semi/gra_band.BAND.DAT"
+COLORS = {"po-spinc"}
+BANDS = {"po-bstyle", "po-bdash"}
 DOS = {"po-dosc", "po-dspin", "po-dtotal", "po-dsmooth"}
 # the Style menu's value prefix of each Inspector control (plot.js styleControls)
 MENU = {"po-style": "style", "po-spinc": "spin", "po-bdash": "bdash", "po-dosc": "dos", "po-dspin": "dspin",
-        "po-dtotal": "dtotal", "po-dsmooth": "dsmooth", "po-bandc": "bandc", "po-spinup": "spinup", "po-spindn": "spindn",
+        "po-dtotal": "dtotal", "po-dsmooth": "dsmooth", "po-bstyle": "bstyle", "po-bandm": "bandm", "po-bandc": "bandc", "po-spinup": "spinup", "po-spindn": "spindn",
         "po-bg": "bg", "po-bgc": "bgc"}
 
 
@@ -49,6 +54,16 @@ def app(request, tmp_path_factory):
     alpha = (FE / "fe_band.BAND.DAT").read_text().splitlines()[:240]
     alpha[0] = alpha[0].replace("NSPIN     2", "NSPIN     1")
     (root / "closed" / "fe_band.BAND.DAT").write_text("\n".join(alpha) + "\n")
+    # a closed-shell semiconductor (a gap at E_F) with its one-block DOS
+    from test_dos_spin_window import write_doss_spin
+    from test_gui_results import write_band_crystal
+    (root / "semi").mkdir()
+    write_band_crystal(root / "semi")
+    (root / "semi" / "gra_band.BAND.DAT").write_text((root / "semi" / "gra_band.BAND.DAT").read_text().split("@ XAXIS TICK SPEC")[0]
+                                                     .replace("NSPIN     2", "NSPIN     1") + "@ XAXIS TICK SPEC" +
+                                                     (root / "semi" / "gra_band.BAND.DAT").read_text().split("@ XAXIS TICK SPEC")[1])
+    doss = write_doss_spin(root / "semi").read_text().split("&\n")[0].replace("NSPIN     2", "NSPIN     1")
+    (root / "semi" / "gra_doss.DOSS.DAT").write_text(doss + "&\n")
     real = H.firefox
     if request.param == "chromium":
         H.firefox = lambda w, h, download_dir=None, **kw: H.chromium(w, h, download_dir=download_dir)
@@ -143,8 +158,8 @@ def same_controls(ins, menu):
 def test_band_with_dos_partner_offers_both_halves(drv, path):
     open_plot(drv, path)
     ins, menu = inspector(drv), style_menu(drv)
-    assert set(ins) == {"plot", "bands", "dos"}, ins
-    assert BANDS <= set(ins["bands"]) and DOS <= set(ins["dos"]), ins
+    assert set(ins) == {"plot", "colors", "bands", "dos"}, ins
+    assert COLORS == set(ins["colors"]) and BANDS <= set(ins["bands"]) and DOS <= set(ins["dos"]), ins
     assert not (DOS & set(ins["bands"])) and not (BANDS & set(ins["dos"])), ins
     same_controls(ins, menu)
     U.no_errors(drv)
@@ -153,7 +168,7 @@ def test_band_with_dos_partner_offers_both_halves(drv, path):
 def test_band_alone_offers_only_band_settings(drv):
     open_plot(drv, BAND_ALONE)
     ins, menu = inspector(drv), style_menu(drv)
-    assert set(ins) == {"plot", "bands"} and BANDS <= set(ins["bands"]) and not (DOS & set(ins["bands"])), ins
+    assert set(ins) == {"plot", "colors", "bands"} and BANDS <= set(ins["bands"]) and not (DOS & set(ins["bands"])), ins
     same_controls(ins, menu)
     U.no_errors(drv)
 
@@ -161,8 +176,8 @@ def test_band_alone_offers_only_band_settings(drv):
 def test_dos_alone_offers_only_dos_settings(drv):
     open_plot(drv, DOS_ALONE)
     ins, menu = inspector(drv), style_menu(drv)
-    # no Bands group: the DOS total's spin colors and β line sit in the DOS group
-    assert set(ins) == {"plot", "dos"} and DOS <= set(ins["dos"]), ins
+    # no Bands group: the color pair in Colors, the DOS total's β line in the DOS group
+    assert set(ins) == {"plot", "colors", "dos"} and COLORS == set(ins["colors"]) and DOS <= set(ins["dos"]), ins
     same_controls(ins, menu)
     U.no_errors(drv)
 
@@ -181,9 +196,9 @@ def test_each_half_is_styled_from_the_dos_files_view(drv):
     pick(drv, "dos:total")
     f = drv.execute_script(FIG)
     assert f["opts"]["dos_colors"] == "total" and f["dosNames"] and all(n.startswith("Total") for n in f["dosNames"])
-    # the Inspector: a custom spin pair, then its spin up color from the menu's color picker
+    # the Inspector: a custom color pair, then its first (spin up) color from the menu's color picker
     change(drv, "po-spinc", "custom")
-    assert "spinup" in style_menu(drv)["bands"]
+    assert "spinup" in style_menu(drv)["colors"]
     drv.find_element("css selector", "#plot-host .pk-style").click()
     drv.execute_script("document.querySelector('.pk-menu button[data-v=\"spinup\"]').click()")
     H.wait(drv, "return !!document.getElementById('pk-colorpick')", 5)
@@ -260,8 +275,8 @@ BLUE_RED = {"light": {"up": "#1f4e9c", "down": "#c0392b"}, "dark": {"up": "#7aa7
 
 @pytest.mark.parametrize("theme,bg,tone", [("dark", "white", "light"), ("light", "black", "dark")])
 def test_plot_background_sets_the_data_colors(drv, theme, bg, tone):
-    """The data colors follow the plot's own background, not the app theme: the closed-shell band ink contrasts
-    with it, and the spin pair is the light-plot (white) or dark-plot (black) Blue/red"""
+    """The data colors follow the plot's own background, not the app theme: the closed-shell bands (a metal:
+    Overlay, the pair) contrast with it, and the spin pair is the light-plot (white) or dark-plot (black) Blue/red"""
     drv.execute_script("window.__mace.settings.set('theme', arguments[0])", theme)
     open_plot(drv, CLOSED)
     change(drv, "po-bg", bg)
@@ -272,4 +287,46 @@ def test_plot_background_sets_the_data_colors(drv, theme, bg, tone):
     pair = BLUE_RED[tone]
     s = drv.execute_script(INK)
     assert {pair["up"].lstrip("#"), pair["down"].lstrip("#")} <= set(s["colors"]), (s, pair)
+    U.no_errors(drv)
+
+
+BSTYLE = """const norm = (x) => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#123456'; c.fillStyle = x; return c.fillStyle; };
+  const p = document.querySelector('#plot-host .pv-plot'), one = (m) => p.data.filter((t) => t.meta === m).map((t) => ({color: norm(t.line.color), dash: t.line.dash || 'solid'}));
+  const tot = p.data.find((t) => t.meta === 'dos' && /^Total/.test(t.name));
+  return {up: one('up'), down: one('down'), over: one('overlay'), total: tot ? norm(tot.line.color) : null,
+          opts: window.__mace.plotView.state().opts, label: (document.querySelector('#po-bstyle option[value=""]') || {}).textContent}"""
+
+
+def test_band_style_single_overlay_and_metal(drv):
+    """Band style: a closed-shell semiconductor is Single, blue bands beside a blue DOS total; Overlay adds the
+    pair's second color dashed (undo, Copy CLI Command and Make This the Default take it); a closed-shell metal
+    is Overlay by default; the spin-polarized Fe run is unchanged (up solid blue, down dashed red)."""
+    blue, red = BLUE_RED["light"]["up"], BLUE_RED["light"]["down"]
+    open_plot(drv, SEMI)
+    f = drv.execute_script(BSTYLE)
+    assert f["up"] == [{"color": blue, "dash": "solid"}] and not f["over"] and not f["down"] and f["total"] == blue, f
+    assert "po-bstyle" in inspector(drv)["bands"] and "Auto (single)" in f["label"], f
+    assert "bstyle" in style_menu(drv)["bands"]
+    pick(drv, "bstyle:overlay")
+    f = drv.execute_script(BSTYLE)
+    assert f["opts"]["band_style"] == "overlay" and f["up"] == [{"color": blue, "dash": "solid"}], f
+    assert f["over"] == [{"color": red, "dash": "dash"}] and f["total"] == blue, f
+    assert "--band-style=overlay" in drv.execute_script("return window.__mace.plotView.cliText()")
+    drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = ''; window.__mace.plotView.undo()")
+    drawn(drv)
+    assert not drv.execute_script(BSTYLE)["over"]
+    change(drv, "po-bstyle", "overlay")
+    drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = ''; document.querySelector('[data-po=default]').click()")
+    drawn(drv)
+    assert drv.execute_script("return window.__mace.settings.get('plots.bandStyle')") == "overlay"
+    drv.execute_script("window.__mace.settings.set('plots.bandStyle', 'auto')")
+    # a closed-shell metal: Overlay by default
+    open_plot(drv, CLOSED)
+    f = drv.execute_script(BSTYLE)
+    assert f["up"] == [{"color": blue, "dash": "solid"}] and f["over"] == [{"color": red, "dash": "dash"}], f
+    assert "Auto (overlay)" in f["label"], f
+    # the spin-polarized pair: as before
+    open_plot(drv, PAIR_BAND)
+    f = drv.execute_script(BSTYLE)
+    assert f["up"] == [{"color": blue, "dash": "solid"}] and f["down"] == [{"color": red, "dash": "dash"}] and not f["over"], f
     U.no_errors(drv)

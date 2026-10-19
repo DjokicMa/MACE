@@ -63,7 +63,7 @@ def look_of_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """The style (presets.STYLE_OPTIONS names) of a band/DOS config (legacy.py's keys)."""
     look = dict(P.STYLE_DEFAULTS)
     for name, key in (("style", "style"), ("spin_colors", "spin_colors"), ("spin_up_color", "spin_up_color"),
-                      ("spin_down_color", "spin_down_color"), ("band_color", "band_color"), ("spin_down_style", "spin_style"),
+                      ("spin_down_color", "spin_down_color"), ("band_color", "band_color"), ("band_style", "band_style"), ("spin_down_style", "spin_style"),
                       ("dos_colors", "dos_colors"), ("dos_spin", "spin_dos"), ("dos_total", "dos_total"),
                       ("dos_smooth", "dos_smooth")):
         v = config.get(key)

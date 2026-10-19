@@ -45,6 +45,24 @@ export function bandColor(pid, family = "band", tone = "light", custom = null, i
   if (own) return own[tone === "dark" ? "dark" : "light"] || own.light;
   return ink;
 }
+/** A band structure without a gap at E_F (presets.py is_metallic): one of its bands (either spin) reaches
+ *  SHARED.metal_tol eV above and below the Fermi energy (band.fermi, the energies' own scale). */
+export function isMetallic(band) {
+  if (!band) return false;
+  const ef = band.fermi || 0, tol = SHARED.metal_tol;
+  for (const block of [band.up || [], band.down || []]) {
+    for (const b of block) {
+      const v = b.filter((e) => e !== null && e !== undefined);
+      if (v.length && Math.min(...v) < ef - tol && Math.max(...v) > ef + tol) return true;
+    }
+  }
+  return false;
+}
+/** The band style drawn (presets.py band_style): single, overlay or ink; auto: overlay for a metal, else single. */
+export function bandStyle(style, band = null) {
+  if (style === "single" || style === "overlay" || style === "ink") return style;
+  return isMetallic(band) ? "overlay" : "single";
+}
 export const STYLE_OPTIONS = SHARED.style_options;
 export const STYLE_DEFAULTS = Object.fromEntries(SHARED.style_options.map((o) => [o.name, o.default]));
 /** mace plotting's flags for a style (presets.py style_flags): only the values that are not the defaults;
@@ -60,6 +78,7 @@ export function styleFlags(look, explicit = false) {
     for (const k of ["spin_up_color", "spin_down_color"]) if (v[k] && HEX.test(v[k])) out.push(`--${k.replace(/_/g, "-")}=${v[k].toLowerCase()}`);
   }
   if (v.band_color && HEX.test(v.band_color)) out.push(`--band-color=${v.band_color.toLowerCase()}`);
+  if ((v.band_style || "auto") !== "auto" || explicit) out.push(`--band-style=${v.band_style || "auto"}`);
   if (v.spin_down_style === "solid") out.push("--spin-down-solid");
   else if (v.spin_down_style !== "dash" || explicit) out.push(`--spin-down-style=${v.spin_down_style}`);
   if (v.dos_colors !== "auto" || explicit) out.push(`--dos-colors=${v.dos_colors}`);
