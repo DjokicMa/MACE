@@ -39,6 +39,8 @@ export function createPlotView(host, optsHost, H) {
     return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.5 ? "light" : "dark"; };
   const tokenOf = (fam) => (n) => { const pid = ownPreset(fam), sf = surfaceOf(doc); return pid && H.plotVarIn ? H.plotVarIn(n, pid, sf) : H.plotVar ? H.plotVar(n, fam, sf) : H.cssVar(n); };
   const cssVar = (n) => tokenOf(familyOf(doc))(n);
+  // the light- or dark-plot data colors (spin pair, band ink): the plot's own background's lightness, else the theme's
+  const toneOf = (d) => surfaceOf(d) || (H.plotTone ? H.plotTone() : "light");
   const paper = () => {
     const h = bgHex(doc), sf = surfaceOf(doc);
     if (sf) el.setAttribute("data-plot-surface", sf); else el.removeAttribute("data-plot-surface");
@@ -203,8 +205,8 @@ export function createPlotView(host, optsHost, H) {
     const PP = H.presets ? H.presets() : null;
     const look = PP ? BF.lookOf(o, settingsLook(), PP) : settingsLook();
     const pid = PP ? PP.resolveId(look.style, "band") : "default";
-    const css = o && o.style && H.plotVarIn ? (n) => H.plotVarIn(n, pid) : tokenOf("band");
-    return { css, look, tone: H.plotTone ? H.plotTone() : "light", paper: paper(), presets: PP,
+    const css = o && o.style && H.plotVarIn ? (n) => H.plotVarIn(n, pid, surfaceOf(doc)) : tokenOf("band");
+    return { css, look, tone: toneOf(doc), paper: paper(), presets: PP,
       elementColors: H.elementColors ? H.elementColors() : {},
       width: el.clientWidth || 900, height: el.clientHeight || 420, marginR: el._fullLayout && el._fullLayout.margin ? el._fullLayout.margin.r : 14, fermiKey };
   }
@@ -709,7 +711,7 @@ export function createPlotView(host, optsHost, H) {
     // the spins' look: the bands' and the DOS total's at once (a DOSS.DAT alone: the total's)
     const spin = [choose("po-spinc", "spin", "spin_colors", "Spin colors", o.spin_colors, look.spin_colors || "auto",
       pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL)];
-    const tone = H.plotTone ? H.plotTone() : "light", pid = pp.resolveId(look.style, "band");
+    const tone = toneOf(doc), pid = pp.resolveId(look.style, "band");
     if (look.spin_colors === "custom") {
       const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
       spin.push(color("po-spinup", "spinup", "spin_up_color", "Spin up color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Spin down color", pair.down));

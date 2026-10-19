@@ -24,6 +24,7 @@ FE = H.REPO_ROOT / "tests" / "data" / "spin_fe"
 KEYS = ["plots.style", "plots.style.band", "plots.spinColors", "plots.spinUp", "plots.spinDown", "plots.spinDownDash",
         "plots.dosColors", "plots.spinDos", "plots.dosTotal", "plots.dosSmooth", "plots.background", "plots.backgroundColor", "theme"]
 PAIR_BAND, PAIR_DOS = "fe/fe_band.BAND.DAT", "fe/fe_doss.DOSS.DAT"
+CLOSED = "closed/fe_band.BAND.DAT"
 BAND_ALONE, DOS_ALONE = "bandonly/fe_band.BAND.DAT", "dosonly/fe_doss.DOSS.DAT"
 BANDS = {"po-spinc", "po-bdash"}
 DOS = {"po-dosc", "po-dspin", "po-dtotal", "po-dsmooth"}
@@ -43,6 +44,11 @@ def app(request, tmp_path_factory):
         shutil.copy(f, root / "fe")
     shutil.copy(FE / "fe_band.BAND.DAT", root / "bandonly")
     shutil.copy(FE / "fe_doss.DOSS.DAT", root / "dosonly")
+    # a closed-shell run: the Fe bands' α block alone
+    (root / "closed").mkdir()
+    alpha = (FE / "fe_band.BAND.DAT").read_text().splitlines()[:240]
+    alpha[0] = alpha[0].replace("NSPIN     2", "NSPIN     1")
+    (root / "closed" / "fe_band.BAND.DAT").write_text("\n".join(alpha) + "\n")
     real = H.firefox
     if request.param == "chromium":
         H.firefox = lambda w, h, download_dir=None, **kw: H.chromium(w, h, download_dir=download_dir)
@@ -235,4 +241,35 @@ def test_plot_background_black_custom_theme(drv):
     change(drv, "po-bg", "")
     t = drv.execute_script(BG)
     assert t["paper"] == theme["paper"] and t["surface"] is None and t["opts"]["background"] is None, (t, theme)
+    U.no_errors(drv)
+
+
+INK = """const p = document.querySelector('#plot-host .pv-plot'), rgb = (x) => { const c = document.createElement('canvas').getContext('2d');
+  c.fillStyle = x; const n = parseInt(c.fillStyle.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  const L = (x) => { const v = rgb(x).map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const bg = p._fullLayout.plot_bgcolor, lines = p.data.filter((t) => t.mode === 'lines' && t.line && t.line.color && !/dos/i.test(t.xaxis || ''));
+  const cs = [...new Set(lines.map((t) => rgb(t.line.color).map((c) => c.toString(16).padStart(2, '0')).join('')))];
+  const a = L(bg), contrast = Math.min(...lines.map((t) => { const b = L(t.line.color); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }));
+  return {bg, colors: cs, contrast}"""
+
+
+# presets.py SPIN_SCHEMES["blue-red"]: the default spin pair on a light and a dark plot
+BLUE_RED = {"light": {"up": "#1f4e9c", "down": "#c0392b"}, "dark": {"up": "#7aa7f0", "down": "#f08a7c"}}
+
+
+@pytest.mark.parametrize("theme,bg,tone", [("dark", "white", "light"), ("light", "black", "dark")])
+def test_plot_background_sets_the_data_colors(drv, theme, bg, tone):
+    """The data colors follow the plot's own background, not the app theme: the closed-shell band ink contrasts
+    with it, and the spin pair is the light-plot (white) or dark-plot (black) Blue/red"""
+    drv.execute_script("window.__mace.settings.set('theme', arguments[0])", theme)
+    open_plot(drv, CLOSED)
+    change(drv, "po-bg", bg)
+    c = drv.execute_script(INK)
+    assert c["colors"] and c["contrast"] >= 3, c
+    open_plot(drv, BAND_ALONE)
+    change(drv, "po-bg", bg)
+    pair = BLUE_RED[tone]
+    s = drv.execute_script(INK)
+    assert {pair["up"].lstrip("#"), pair["down"].lstrip("#")} <= set(s["colors"]), (s, pair)
     U.no_errors(drv)
