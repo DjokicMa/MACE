@@ -66,6 +66,11 @@ def app(request, tmp_path_factory):
     (root / "gr").mkdir()
     write_band_crystal(root / "gr", noise=1e-4)
     write_doss_spin(root / "gr")
+    # a closed-shell pair: the same bands with the DOS's α block alone (NSPIN 1)
+    (root / "grc").mkdir()
+    write_band_crystal(root / "grc")
+    doss = write_doss_spin(root / "grc").read_text().split("&\n")[0].replace("NSPIN     2", "NSPIN     1")
+    (root / "grc" / "gra_doss.DOSS.DAT").write_text(doss + "&\n")
     real = H.firefox
     if request.param == "chromium":
         H.firefox = lambda w, h, download_dir=None, **kw: H.chromium(w, h, download_dir=download_dir)
@@ -199,4 +204,24 @@ def test_publication_theme_loads_as_light_with_the_plot_style(app):
     drv.execute_script("document.querySelectorAll('dialog[open]').forEach((d) => d.close())")
     assert "publication" not in cards and len(cards) == 18 and groups == ["Light & Dark", "Accessibility", "Editor themes"], (cards, groups)
     drv.execute_script("window.__mace.settings.set('plots.style', 'default')")
+    U.no_errors(drv)
+
+
+def test_closed_shell_band_color_reaches_bands_and_dos_total(drv):
+    """A closed-shell band + DOS pair: Band color (not Spin colors, hidden there) recolors the bands and the
+    one-sided DOS total, from the Inspector and the Style menu alike"""
+    open_plot(drv, "grc/gra_band.BAND.DAT")
+    ids = drv.execute_script("return [...document.querySelectorAll('.po-style [data-group=\"bands\"] [id]')].map((i) => i.id)")
+    assert "po-bandm" in ids and "po-bandc" in ids and "po-spinc" not in ids, ids
+    drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = '';"
+                       "const i = document.getElementById('po-bandc'); i.value = '#12ab34'; i.dispatchEvent(new Event('change', {bubbles: true}))")
+    H.wait(drv, "const v = window.__mace.plotView, s = v && v.state(); return s && s.drawn && v.el().dataset.drawn !== ''", 30)
+    time.sleep(0.3)
+    f = drv.execute_script(FIG)
+    assert f["band"] == "#12ab34" and f["dos"] == "#12ab34", f
+    drv.find_element("css selector", "#plot-host .pk-style").click()
+    H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
+    menu = drv.execute_script("return [...document.querySelectorAll('.pk-menu [data-v]')].map((b) => b.dataset.v)")
+    drv.execute_script("document.querySelector('.pk-menu').close()")
+    assert "bandm:auto" in menu and "bandc" in menu and not any(v.startswith("spin:") for v in menu), menu
     U.no_errors(drv)

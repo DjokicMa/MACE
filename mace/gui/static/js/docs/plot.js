@@ -708,19 +708,35 @@ export function createPlotView(host, optsHost, H) {
     if (!band && !dos) return groups;
     const color = (id, mv, name, label, current, title) => ({ id, mv, type: "color", label, current, title,
       apply: (v) => [{ [name]: v }, `${label} ${v}`, `opt:${id}`] });
-    // the spins' look: the bands' and the DOS total's at once (a DOSS.DAT alone: the total's)
-    const spin = [choose("po-spinc", "spin", "spin_colors", "Spin colors", o.spin_colors, look.spin_colors || "auto",
-      pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL)];
+    // the spins' look: the bands' and the DOS total's at once (a DOSS.DAT alone: the total's). A run that is
+    // not spin-polarized has no spin pair: its bands and one-sided DOS total are in the neutral Band color
+    // (--band-color: Auto, the plot's ink, or a custom color), and Spin colors is hidden there
     const tone = toneOf(doc), pid = pp.resolveId(look.style, "band");
-    if (look.spin_colors === "custom") {
-      const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
-      spin.push(color("po-spinup", "spinup", "spin_up_color", "Spin up color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Spin down color", pair.down));
-    }
-    // a run that is not spin-polarized: its bands and one-sided DOS total in one neutral color (--band-color)
-    if ((band && !band.spin_polarized) || (dos && !dos.spin_polarized)) {
+    const closed = !(band && band.spin_polarized) && !(dos && dos.spin_polarized);
+    const spin = [];
+    if (closed) {
+      const bcLabel = band ? "Band color" : "Total color", custom = /^#[0-9a-f]{6}$/i.test(look.band_color || "");
       const bc = pp.bandColor(pid, "band", tone, look.band_color, tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);   // undefined: bandColor's own black
-      spin.push(color("po-bandc", "bandc", "band_color", band ? "Band color" : "Total color", bc,
+      const BCM = { auto: "Auto (ink)", custom: "Custom" };
+      spin.push({ id: "po-bandm", mv: "bandm", type: "select", label: bcLabel, value: o.band_color === null || o.band_color === undefined ? null : /^#[0-9a-f]{6}$/i.test(o.band_color) ? "custom" : "auto",
+        current: custom ? "custom" : "auto", choices: Object.entries(BCM), settings: setting("plots.bandColor", "") ? "Custom" : BCM.auto,
+        title: "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)",
+        apply: (v) => [{ band_color: v === "custom" ? bc : v === "auto" ? "" : null }, `${bcLabel} ${v ? BCM[v] : "as Settings"}`] });
+      spin.push(color("po-bandc", "bandc", "band_color", band ? "Custom band color" : "Custom total color", bc,
         "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"));
+    } else {
+      spin.push(choose("po-spinc", "spin", "spin_colors", "Spin colors", o.spin_colors, look.spin_colors || "auto",
+        pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL));
+      if (look.spin_colors === "custom") {
+        const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
+        spin.push(color("po-spinup", "spinup", "spin_up_color", "Spin up color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Spin down color", pair.down));
+      }
+      // one half spin-polarized, the other not: the closed half's neutral color
+      if ((band && !band.spin_polarized) || (dos && !dos.spin_polarized)) {
+        const bc = pp.bandColor(pid, "band", tone, look.band_color, tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);
+        spin.push(color("po-bandc", "bandc", "band_color", band && !band.spin_polarized ? "Band color" : "Total color", bc,
+          "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"));
+      }
     }
     const dash = look.spin_down_style !== "solid";
     spin.push({ id: "po-bdash", mv: "bdash", type: "toggle", label: "β dashed", current: dash,

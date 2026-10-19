@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GUI: a closed-shell band + DOS plot's bands can be colored.** Its Bands style group
+  now offers Band color (Auto, the plot's ink, or a custom color), which recolors the bands
+  and the one-sided DOS total together; Spin colors, which only changed the DOS there, is
+  shown for spin-polarized runs only.
 - **GUI: Atom size and Bond radius resize every style, and a style shows in the Display
   section.** Space-filling and the Display section's Stick style drew fixed sizes (0.95,
   0.16 Å) whatever the sliders said; they now scale with them (unchanged at the defaults).
