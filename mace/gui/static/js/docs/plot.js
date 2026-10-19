@@ -344,6 +344,8 @@ export function createPlotView(host, optsHost, H) {
     // style (filled, lines or both: this map's own choice over the preset's)
     const pp = H.presets ? H.presets() : null, pid = presetOf("maps");
     const sc = pp ? pp.mapScale(pid, signed) : { colorscale: signed ? "RdBu" : "Viridis", reversescale: signed, contours: "both" };
+    // a POTM/CLAS potential in physics colors (Settings › Viewport › Potential colors): red = +; chemistry keeps + blue, − red
+    if (signed && m.potential && setting("volume.mepColors", "chemistry") === "physics") sc.reversescale = !sc.reversescale;
     const cstyle = o.contour_style || sc.contours, darkLines = pid === "vesta" || pid === "grayscale" || pid === "publication";
     const nc = Math.max(2, o.contours || 20), step = (zr[1] - zr[0]) / nc || 1;
     const trace = { type: "contour", x: m.x, y: m.y, z, colorscale: sc.colorscale, reversescale: sc.reversescale,
@@ -644,63 +646,104 @@ export function createPlotView(host, optsHost, H) {
     if (again) again.focus({ preventScroll: true });
   }
   const resetButton = () => `<div class="po-acts"><button class="tb-btn-text" data-po="reset"${doc.pos > 0 || JSON.stringify(doc.opts) !== JSON.stringify(defaultsFor(doc)) ? "" : " disabled"}>${icon("rotate-ccw")}<span>Reset Plot Options</span></button></div>`;
-  /* Plot options › Style: this plot's own Plot style, and for a band/DOS plot its spin colors, β line, DOS
-     colors, DOS spin layout and total (presets.py STYLE_OPTIONS; "Settings" follows Settings, shown in
-     brackets). Each is an option of the plot (undo, Reset); Make This the Default writes them to Settings. */
+  /* Plot options › Style and the toolbar's Style ▾ menu draw ONE list of controls (styleControls), each an
+     option of the plot (presets.py STYLE_OPTIONS names; undo, Reset; "Settings" follows Settings, shown in
+     brackets); Make This the Default writes them to Settings. A band + DOS plot has a Bands group (spin colors,
+     band color, β line) and a DOS group (DOS colors, spin layout, total, smoothing), whichever of the two files
+     was opened: the groups follow the figure's data, not the opened file's kind. A BAND.DAT alone has the Bands
+     group only, a DOSS.DAT alone the DOS group only (its total's spin colors, color and β line in it). */
   const PRESET_LABEL = (id) => { const p = H.presets && H.presets() && H.presets().SHARED.presets[id]; return p ? p.label : id; };
   const SCHEME_LABEL = (id) => (id === "auto" ? "Auto (the plot style's)" : id === "custom" ? "Custom" : ((H.presets && H.presets() && H.presets().SHARED.spin_schemes[id]) || {}).label || id);
   const DOS_LABEL = { auto: "Auto", total: "Total only", element: "By element", orbital: "By orbital", "element-orbital": "Element × orbital" };
   const DSPIN_LABEL = { auto: "Auto", mirrored: "Mirrored", overlaid: "Overlaid" };
-  // DOS smoothing turned on: the shared width (presets.py DOS_SMOOTH_SIGMA, 0.05 eV)
+  // DOS smoothing turned on: the shared width (presets.py DOS_SMOOTH_SIGMA, 0.05 eV); the Style menu's σ choices
   const SMOOTH_SIGMA = () => ((H.presets && H.presets() && H.presets().SHARED.dos_layout) || {}).smooth_sigma || 0.05;
+  const SIGMA_CHOICES = [0.02, 0.05, 0.1, 0.2];
   const isBandDos = (d) => !!d && !isOwn(d) && !isSpec(d);
   function lookNow(d = doc) {
     if (isBandDos(d)) return envOf(d.opts).look;
     return { style: presetOf(familyOf(d)) };
   }
+  /* the plot's style controls in groups: [{ key, head, ctrls }]; a control is { id (the Inspector's input),
+     mv (the Style menu's value prefix), type (select, color, toggle, number), label, current (the value drawn),
+     value (a select's own option, null: Settings), settings (Settings' value, as text), choices, apply(v) →
+     [patch, undo label, merge key] } */
+  function styleControls(d = doc) {
+    const pp = H.presets ? H.presets() : null;
+    if (!pp || !d || !d.opts) return [];
+    const o = d.opts, fam = familyOf(d), look = lookNow(d);
+    const base = isBandDos(d) ? settingsLook() : { style: H.plotPreset ? H.plotPreset(fam) : "default" };
+    const choose = (id, mv, name, label, value, current, choices, settings, word) => ({ id, mv, type: "select", label, value, current, choices, settings,
+      apply: (v) => [{ [name]: v || null }, `${label} ${v ? word(v) : "as Settings"}`] });
+    const groups = [{ key: "plot", head: "Plot style", ctrls: [choose("po-style", "style", "style", "Plot style", o.style, look.style,
+      pp.SHARED.order.filter((id) => pp.SHARED.presets[id].families.includes(fam)).map((id) => [id, PRESET_LABEL(id)]), PRESET_LABEL(base.style), PRESET_LABEL)] }];
+    if (!isBandDos(d)) return groups;
+    const data = d.data || {}, band = data.band, dos = data.dos;
+    if (!band && !dos) return groups;
+    const color = (id, mv, name, label, current, title) => ({ id, mv, type: "color", label, current, title,
+      apply: (v) => [{ [name]: v }, `${label} ${v}`, `opt:${id}`] });
+    // the spins' look: the bands' and the DOS total's at once (a DOSS.DAT alone: the total's)
+    const spin = [choose("po-spinc", "spin", "spin_colors", "Spin colors", o.spin_colors, look.spin_colors || "auto",
+      pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors), SCHEME_LABEL)];
+    const tone = H.plotTone ? H.plotTone() : "light", pid = pp.resolveId(look.style, "band");
+    if (look.spin_colors === "custom") {
+      const pair = pp.spinColors(pid, "band", tone, look.spin_colors, look.spin_up_color, look.spin_down_color);
+      spin.push(color("po-spinup", "spinup", "spin_up_color", "Spin up color", pair.up), color("po-spindn", "spindn", "spin_down_color", "Spin down color", pair.down));
+    }
+    // a run that is not spin-polarized: its bands and one-sided DOS total in one neutral color (--band-color)
+    if ((band && !band.spin_polarized) || (dos && !dos.spin_polarized)) {
+      const bc = pp.bandColor(pid, "band", tone, look.band_color, tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);   // undefined: bandColor's own black
+      spin.push(color("po-bandc", "bandc", "band_color", band ? "Band color" : "Total color", bc,
+        "Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"));
+    }
+    const dash = look.spin_down_style !== "solid";
+    spin.push({ id: "po-bdash", mv: "bdash", type: "toggle", label: "β dashed", current: dash,
+      title: "Spin down (β) dashed, spin up solid: the spins read apart without color (mace plotting --spin-down-solid turns it off)",
+      apply: (v) => [{ spin_down_style: v ? "dash" : "solid" }, v ? "β dashed" : "β solid"] });
+    if (band) groups.push({ key: "bands", head: "Bands", ctrls: spin });
+    if (dos) {
+      const sm = Number(look.dos_smooth) || 0;
+      const ctrls = [
+        choose("po-dosc", "dos", "dos_colors", "DOS colors", o.dos_colors, look.dos_colors || "auto", Object.entries(DOS_LABEL), DOS_LABEL[base.dos_colors] || base.dos_colors, (v) => DOS_LABEL[v] || v),
+        choose("po-dspin", "dspin", "dos_spin", "DOS spin layout", o.dos_spin, look.dos_spin || "auto", Object.entries(DSPIN_LABEL), DSPIN_LABEL[base.dos_spin] || base.dos_spin, (v) => DSPIN_LABEL[v] || v),
+        { id: "po-dtotal", mv: "dtotal", type: "toggle", label: "DOS total", current: look.dos_total !== false,
+          apply: (v) => [{ dos_total: v }, v ? "DOS total" : "No DOS total"] },
+        // DOS smoothing (display only, labeled in the plot): mace plotting --dos-smooth, [plots] dos_smooth
+        { id: "po-dsmooth", mv: "dsmooth", type: "toggle", label: "DOS smoothing", current: sm > 0, title: "Gaussian smoothing of the drawn DOS, display only (mace plotting --dos-smooth)",
+          apply: (v) => [{ dos_smooth: v ? SMOOTH_SIGMA() : 0 }, v ? "DOS smoothing" : "No DOS smoothing"] }];
+      if (sm > 0) ctrls.push({ id: "po-dsigma", mv: "dsigma", type: "number", label: "Smoothing σ", unit: "eV", step: "0.01", current: sm,
+        choices: [...new Set([...SIGMA_CHOICES, sm])].sort((a, b) => a - b).map((v) => [String(v), `σ ${v} eV`]),
+        apply: (v) => { const s = Math.min(1, Math.max(0, Number(v) || 0)); return [{ dos_smooth: s }, `DOS smoothing σ ${s} eV`, "opt:dsigma"]; } });
+      groups.push({ key: "dos", head: "DOS", ctrls: band ? ctrls : spin.concat(ctrls) });
+    }
+    return groups;
+  }
+  const styleControl = (pick) => { for (const g of styleControls()) for (const c of g.ctrls) if (pick(c)) return c; return null; };
   function styleSection() {
     const pp = H.presets ? H.presets() : null;
     if (!pp || !doc) return "";
-    const o = doc.opts, fam = familyOf(doc), base = isBandDos(doc) ? settingsLook() : { style: H.plotPreset ? H.plotPreset(fam) : "default" };
-    const ids = pp.SHARED.order.filter((id) => pp.SHARED.presets[id].families.includes(fam));
-    const sel = (id, label, value, opts, settingsText) => `<label class="po-row" for="${id}"><span>${label}</span><select id="${id}">` +
-      `<option value=""${value === null || value === undefined ? " selected" : ""}>Settings (${esc(settingsText)})</option>` +
-      opts.map(([v, t]) => `<option value="${esc(v)}"${value === v ? " selected" : ""}>${esc(t)}</option>`).join("") + "</select></label>";
+    const sel = (c) => `<label class="po-row" for="${c.id}"><span>${esc(c.label)}</span><select id="${c.id}">` +
+      `<option value=""${c.value === null || c.value === undefined ? " selected" : ""}>Settings (${esc(c.settings)})</option>` +
+      c.choices.map(([v, t]) => `<option value="${esc(v)}"${c.value === v ? " selected" : ""}>${esc(t)}</option>`).join("") + "</select></label>";
+    const tip = (c) => (c.title ? ` title="${esc(c.title)}"` : "");
+    const ctrl = (c) => c.type === "select" ? sel(c)
+      : c.type === "color" ? `<label class="po-row" for="${c.id}"${tip(c)}><span>${esc(c.label)}</span><input id="${c.id}" type="color" value="${esc(c.current)}"></label>`
+      : c.type === "toggle" ? `<label class="chk po-row"${tip(c)}><input type="checkbox" id="${c.id}"${c.current ? " checked" : ""}> ${esc(c.label)}</label>`
+      : num(c.id, c.label, c.current, c.unit, c.step);
     let h = `<div class="po-style" role="group" aria-label="Style"><div class="po-h">Style</div>`;
-    h += sel("po-style", "Plot style", o.style, ids.map((id) => [id, PRESET_LABEL(id)]), PRESET_LABEL(base.style));
-    if (isBandDos(doc)) {
-      const look = lookNow(), d = doc.data || {}, dos = d.dos;
-      h += sel("po-spinc", "Spin colors", o.spin_colors, pp.SHARED.spin_color_choices.map((v) => [v, SCHEME_LABEL(v)]), SCHEME_LABEL(base.spin_colors));
-      if (look.spin_colors === "custom") {
-        const pair = pp.spinColors(pp.resolveId(look.style, "band"), "band", H.plotTone ? H.plotTone() : "light", look.spin_colors, look.spin_up_color, look.spin_down_color);
-        h += `<label class="po-row" for="po-spinup"><span>Spin up color</span><input id="po-spinup" type="color" value="${pair.up}"></label>` +
-          `<label class="po-row" for="po-spindn"><span>Spin down color</span><input id="po-spindn" type="color" value="${pair.down}"></label>`;
-      }
-      // a run that is not spin-polarized: its bands and one-sided DOS total in one neutral color (--band-color)
-      if ((d.band && !d.band.spin_polarized) || (dos && !dos.spin_polarized)) {
-        const bc = pp.bandColor(pp.resolveId(look.style, "band"), "band", H.plotTone ? H.plotTone() : "light", look.band_color,
-          tokenOf("band")("--plot-ink") || tokenOf("band")("--text") || undefined);   // undefined: bandColor's own black
-        h += `<label class="po-row" for="po-bandc" title="Bands and the one-sided DOS total of a run that is not spin-polarized (mace plotting --band-color)"><span>Band color</span><input id="po-bandc" type="color" value="${esc(bc)}"></label>`;
-      }
-      h += `<label class="chk po-row" title="Spin down (β) dashed, spin up solid: the spins read apart without color (mace plotting --spin-down-solid turns it off)"><input type="checkbox" id="po-bdash"${look.spin_down_style !== "solid" ? " checked" : ""}> β dashed</label>`;
-      if (dos) {
-        h += sel("po-dosc", "DOS colors", o.dos_colors, Object.entries(DOS_LABEL), DOS_LABEL[base.dos_colors] || base.dos_colors);
-        h += sel("po-dspin", "DOS spin layout", o.dos_spin, Object.entries(DSPIN_LABEL), DSPIN_LABEL[base.dos_spin] || base.dos_spin);
-        h += `<label class="chk po-row"><input type="checkbox" id="po-dtotal"${look.dos_total !== false ? " checked" : ""}> DOS total</label>`;
-        // DOS smoothing (display only, labeled in the plot): mace plotting --dos-smooth, [plots] dos_smooth
-        const sm = Number(look.dos_smooth) || 0;
-        h += `<label class="chk po-row" title="Gaussian smoothing of the drawn DOS, display only (mace plotting --dos-smooth)"><input type="checkbox" id="po-dsmooth"${sm > 0 ? " checked" : ""}> DOS smoothing</label>`;
-        if (sm > 0) h += num("po-dsigma", "Smoothing σ", sm, "eV", "0.01");
-      }
+    for (const g of styleControls()) {
+      h += `<div class="po-sgroup" role="group" aria-label="${esc(g.head)}" data-group="${g.key}">` +
+        (g.key === "plot" ? "" : `<div class="po-h po-sub">${esc(g.head)}</div>`) + g.ctrls.map(ctrl).join("") + "</div>";
     }
-    const own = pp.STYLE_OPTIONS.some((x) => o[x.name] !== null && o[x.name] !== undefined);
+    const own = pp.STYLE_OPTIONS.some((x) => doc.opts[x.name] !== null && doc.opts[x.name] !== undefined);
     h += `<div class="po-acts"><button class="tb-btn-text" data-po="default"${own ? "" : " disabled"} title="Save this plot's style as the default of every plot (Settings)">Make This the Default</button></div></div>`;
     return h;
   }
-  /* the plot's style patch for one STYLE_OPTIONS name: null (follow Settings) when it is Settings' own value */
-  function styleOpt(name, value, label) {
-    if (!doc) return;
-    setOpt(doc, { [name]: value }, label);
+  /* one style control's new value (the Inspector's input or the Style menu's pick): one undoable option change */
+  function styleApply(c, v) {
+    if (!doc || !c) return;
+    const [patch, label, mergeKey] = c.apply(v);
+    setOpt(doc, patch, label, mergeKey || null);
   }
   function makeDefault() {
     if (!doc || !H.setSetting) return;
@@ -711,6 +754,7 @@ export function createPlotView(host, optsHost, H) {
       set(own && own !== "same" ? `plots.style.${fam}` : "plots.style", look.style);
     }
     if (isBandDos(doc)) {
+      // both halves of a band + DOS plot
       set("plots.spinColors", look.spin_colors); set("plots.spinUp", look.spin_up_color || ""); set("plots.spinDown", look.spin_down_color || "");
       set("plots.bandColor", look.band_color || "");
       set("plots.spinDownDash", look.spin_down_style); set("plots.dosColors", look.dos_colors); set("plots.spinDos", look.dos_spin);
@@ -721,44 +765,51 @@ export function createPlotView(host, optsHost, H) {
     setOpt(doc, clear, "Style saved as the default");
     toast("This plot's style is the default now (Settings)", "success");
   }
-  /* the toolbar's Style ▾ menu: the same options, one pick at a time */
+  /* the toolbar's Style ▾ menu: the same controls (styleControls), one pick at a time; a color opens the
+     system color picker, a number its choices */
   function styleMenu() {
-    const pp = H.presets ? H.presets() : null;
-    if (!pp || !doc) return [];
-    const look = lookNow(), fam = familyOf(doc), items = [{ head: "Plot style" }];
-    pp.SHARED.order.filter((id) => pp.SHARED.presets[id].families.includes(fam)).forEach((id) => items.push({ v: `style:${id}`, label: PRESET_LABEL(id), checked: look.style === id }));
-    if (isBandDos(doc)) {
-      items.push("-", { head: "Spin colors" });
-      pp.SHARED.spin_color_choices.filter((v) => v !== "custom" || look.spin_colors === "custom" || look.spin_up_color || look.spin_down_color)
-        .forEach((v) => items.push({ v: `spin:${v}`, label: SCHEME_LABEL(v), checked: (look.spin_colors || "auto") === v }));
-      items.push({ v: "bdash", label: "β dashed", checked: look.spin_down_style !== "solid", toggle: true });
-      if (doc.data && doc.data.dos) {
-        items.push("-", { head: "DOS colors" });
-        Object.entries(DOS_LABEL).forEach(([v, t]) => items.push({ v: `dos:${v}`, label: t, checked: look.dos_colors === v }));
-        items.push("-", { head: "DOS spin layout" });
-        Object.entries(DSPIN_LABEL).forEach(([v, t]) => items.push({ v: `dspin:${v}`, label: t, checked: look.dos_spin === v }));
-        items.push({ v: "dtotal", label: "DOS total", checked: look.dos_total !== false, toggle: true });
-        items.push({ v: "dsmooth", label: "DOS smoothing", checked: (Number(look.dos_smooth) || 0) > 0, toggle: true });
+    if (!doc) return [];
+    const items = [];
+    styleControls().forEach((g, k) => {
+      if (k) items.push("-", { head: g.head, group: g.key });
+      for (const c of g.ctrls) {
+        if (c.type === "select" || c.type === "number") {
+          if (c.type === "number" || g.key !== "plot") items.push({ head: c.label });
+          else items.push({ head: g.head, group: g.key });
+          c.choices.forEach(([v, t]) => items.push({ v: `${c.mv}:${v}`, label: t, checked: String(c.current) === String(v) }));
+        } else if (c.type === "toggle") items.push({ v: c.mv, label: c.label, checked: !!c.current, toggle: true });
+        else items.push({ v: c.mv, label: `${c.label}…` });
       }
-    }
+    });
+    if (!items.length) return items;
     items.push("-", { v: "settings", label: "Follow Settings" });
     if (cliKind(doc)) items.push({ v: "cli", label: "Copy CLI Command" });
     return items;
   }
+  function pickColor(c) {
+    document.getElementById("pk-colorpick")?.remove();
+    const i = document.createElement("input");
+    i.type = "color"; i.id = "pk-colorpick"; i.value = c.current; i.setAttribute("aria-label", c.label);
+    i.style.cssText = "position:fixed;left:50%;top:40%;width:1px;height:1px;opacity:0;border:0;padding:0";
+    const d = doc;
+    i.addEventListener("change", () => { if (doc === d) styleApply(c, i.value); i.remove(); });
+    i.addEventListener("blur", () => setTimeout(() => i.isConnected && i.remove(), 60000));
+    document.body.appendChild(i);
+    try { if (i.showPicker) i.showPicker(); else i.click(); } catch (e) { i.click(); }
+  }
   function styleSet(v) {
     if (!doc) return;
-    const look = lookNow(), [k, val] = v.split(":");
-    if (k === "style") styleOpt("style", val, `Plot style ${PRESET_LABEL(val)}`);
-    else if (k === "spin") styleOpt("spin_colors", val, `Spin colors ${SCHEME_LABEL(val)}`);
-    else if (k === "bdash") styleOpt("spin_down_style", look.spin_down_style === "solid" ? "dash" : "solid", look.spin_down_style === "solid" ? "β dashed" : "β solid");
-    else if (k === "dos") styleOpt("dos_colors", val, `DOS colors ${DOS_LABEL[val]}`);
-    else if (k === "dspin") styleOpt("dos_spin", val, `DOS spin ${DSPIN_LABEL[val]}`);
-    else if (k === "dtotal") styleOpt("dos_total", look.dos_total === false, look.dos_total === false ? "DOS total" : "No DOS total");
-    else if (k === "dsmooth") styleOpt("dos_smooth", (Number(look.dos_smooth) || 0) > 0 ? 0 : SMOOTH_SIGMA(), (Number(look.dos_smooth) || 0) > 0 ? "No DOS smoothing" : "DOS smoothing");
-    else if (k === "settings") {
+    const at = v.indexOf(":"), k = at < 0 ? v : v.slice(0, at), val = at < 0 ? null : v.slice(at + 1);
+    if (k === "settings") {
       const clear = Object.fromEntries((H.presets ? H.presets().STYLE_OPTIONS : []).map((x) => [x.name, null]).filter(([n]) => n in doc.opts));
       setOpt(doc, clear, "Style as Settings");
+      return;
     }
+    const c = styleControl((x) => x.mv === k);
+    if (!c) return;
+    if (c.type === "toggle") styleApply(c, !c.current);
+    else if (c.type === "color") pickColor(c);
+    else styleApply(c, val);
   }
   /* Copy CLI Command (clicmd.js): mace plotting with this plot's file, window, energy zero, unit and look */
   const cliKind = (d) => (!d || !d.data ? null : d.data.band && d.data.dos ? "bandos" : d.data.band ? "band" : d.data.dos ? "dos"
@@ -889,17 +940,11 @@ export function createPlotView(host, optsHost, H) {
       else go();
     }
     else if (t.id === "po-comp") setOpt(doc, { component: t.value }, `Component ${t.value}`);
-    else if (t.id === "po-dosc") setOpt(doc, { dos_colors: t.value || null }, `DOS colors ${t.value || "as Settings"}`);
-    else if (t.id === "po-style") setOpt(doc, { style: t.value || null }, `Plot style ${t.value ? PRESET_LABEL(t.value) : "as Settings"}`);
-    else if (t.id === "po-spinc") setOpt(doc, { spin_colors: t.value || null }, `Spin colors ${t.value ? SCHEME_LABEL(t.value) : "as Settings"}`);
-    else if (t.id === "po-spinup") setOpt(doc, { spin_up_color: t.value }, `Spin up color ${t.value}`, "opt:spinup");
-    else if (t.id === "po-spindn") setOpt(doc, { spin_down_color: t.value }, `Spin down color ${t.value}`, "opt:spindn");
-    else if (t.id === "po-bandc") setOpt(doc, { band_color: t.value }, `Band color ${t.value}`, "opt:bandc");
-    else if (t.id === "po-bdash") setOpt(doc, { spin_down_style: t.checked ? "dash" : "solid" }, t.checked ? "β dashed" : "β solid");
-    else if (t.id === "po-dspin") setOpt(doc, { dos_spin: t.value || null }, `DOS spin ${t.value || "as Settings"}`);
-    else if (t.id === "po-dtotal") setOpt(doc, { dos_total: t.checked }, t.checked ? "DOS total" : "No DOS total");
-    else if (t.id === "po-dsmooth") setOpt(doc, { dos_smooth: t.checked ? SMOOTH_SIGMA() : 0 }, t.checked ? "DOS smoothing" : "No DOS smoothing");
-    else if (t.id === "po-dsigma") setOpt(doc, { dos_smooth: Math.min(1, Math.max(0, Number(t.value) || 0)) }, `DOS smoothing σ ${t.value} eV`, "opt:dsigma");
+    else if (t.id && t.id.startsWith("po-") && styleControl((c) => c.id === t.id)) {
+      // Plot options › Style (styleControls): the same controls as the Style menu
+      const c = styleControl((x) => x.id === t.id);
+      styleApply(c, c.type === "toggle" ? t.checked : t.value);
+    }
     else if (t.id === "po-crange") setOpt(doc, { crange: t.value }, `Color range ${t.value}`);
     else if (t.id === "po-zmin" || t.id === "po-zmax") setOpt(doc, { [t.id === "po-zmin" ? "zmin" : "zmax"]: v(t.value) }, `Color ${t.id === "po-zmin" ? "from" : "to"} ${t.value || "auto"}`, `opt:${t.id}`);
     else if (t.id === "po-temp") setOpt(doc, { T: Number(t.value) }, `Temperature ${t.value} K`);

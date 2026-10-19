@@ -61,7 +61,12 @@ PLOT_PRESETS = ("default", "publication", "vesta", "presentation", "grayscale", 
 PLOT_FAMILIES = ("band", "spectra", "maps", "scf")
 # one of a fixed set of values
 _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": ("off", "neighbors", "molecules"),
-            "renderPreset": ("default", "flat", "publication", "presentation", "custom"),
+            # the 3D view's Lighting and Style presets (static/js/viewport/presets.js)
+            "renderPreset": ("default", "flat", "publication", "presentation", "glossy", "custom"),
+            "stylePreset": ("default", "vesta", "spacefill", "wireframe", "grayscale", "polyhedral", "magnetic", "custom"),
+            "atomDraw": ("auto", "ballstick", "spacefill", "sticks"),
+            "atomColor": ("scheme", "vesta", "gray", "spin"),
+            "atomRadii": ("auto", "atomic", "vdw"),
             "database.refreshSeconds": (0, 15, 30, 60),
             "plots.relTo": ("first", "final", "minimum", "absolute"),
             "plots.per": ("cell", "atom", "fu"),
@@ -84,7 +89,10 @@ RANGE_MIN_SPAN = 0.05
 ENUMS = {
     "files.openFreqAs": ("modes", "structure"),
     "volume.quality": ("low", "medium", "high"),
-    "volume.mepColors": ("cli", "chemistry"),
+    "volume.mepColors": ("chemistry", "physics"),
+    "viewport.rotation": ("free", "axes"),
+    "viewport.angleSnap": ("off", "15", "30", "45", "90"),
+    "viewport.zoomToward": ("center", "pointer"),
     "spectra.lineShape": ("lorentzian", "gaussian"),
     "export.units": ("in", "cm"),
     "export.vectorShading": ("flat", "shaded"),
@@ -228,7 +236,11 @@ def migrate_theme(values: Dict[str, Any]) -> Dict[str, Any]:
     """The 1.1.6 preview's Publication theme is now Light with Plot style Publication
     (Settings › Appearance): a stored theme "publication" reads as that, silently; a
     Plot style stored beside it is kept. The same mapping runs in the browser
-    (settings.js migrate(), boot.js), so gui.json, localStorage and first paint agree."""
+    (settings.js migrate(), boot.js), so gui.json, localStorage and first paint agree.
+    1.1.6's Potential colors "cli" (red = positive, then the default and stored with
+    every other value) is dropped: the new default (chemistry) applies."""
+    if isinstance(values, dict) and values.get("volume.mepColors") == "cli":
+        values = {k: v for k, v in values.items() if k != "volume.mepColors"}
     if not isinstance(values, dict) or values.get("theme") != "publication":
         return values
     out = dict(values)

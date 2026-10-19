@@ -95,8 +95,6 @@ KEYS: Dict[str, Dict[str, Any]] = {
     "viewer.display_to": _k("triple", "displayHi", "Drawn range end, fractional a, b, c", range=(-5.0, 10.0)),
     "viewer.bonded_outside": _k("choice", "bondedOutside", "Atoms outside the range bonded to atoms inside it",
                                 choices=("off", "neighbors", "molecules")),
-    "viewer.potential_colors": _k("choice", "volume.mepColors", "Potential colors (cli: red = positive)",
-                                  choices=("cli", "chemistry")),
     # [units]
     "units.coordinates": _k("choice", "coordMode", "Fractional or Cartesian coordinates", choices=("frac", "cart")),
     "units.energy": _k("choice", "energyUnit", "Energy unit of plots and run charts",
@@ -136,6 +134,11 @@ KEYS: Dict[str, Dict[str, Any]] = {
                            "(mace plotting --dos-smooth)", range=(0.0, 1.0), cli=True),
     "plots.energy_reference": _k("choice", None, "Band/DOS energy zero (mace plotting --energy-reference)",
                                  choices=("auto", "fermi", "vacuum"), cli=True),
+    # electrostatic potential colors (1.1.7): chemistry red = negative (the default), physics red = positive;
+    # 1.1.6's viewer.potential_colors reads as this key (RENAMED)
+    "plots.potential_colors": _k("choice", "volume.mepColors", "Electrostatic potential colors: chemistry "
+                                 "(red = negative) or physics (red = positive) (mace plotting --potential-colors)",
+                                 choices=("chemistry", "physics"), cli=True),
     "plots.backend": _k("choice", None, "mace plotting's band/DOS renderer (--backend; default plotly when it can export)",
                         choices=("plotly", "matplotlib"), cli=True),
     "plots.ir_line_shape": _k("choice", "spectra.lineShape", "IR line shape", choices=("lorentzian", "gaussian")),
@@ -164,6 +167,11 @@ KEYS: Dict[str, Dict[str, Any]] = {
                                    "[resources.properties] ntasks)", range=(1, 4096), cli=True),
     "submit.properties.walltime": _k("walltime", None, "Walltime of properties jobs (over site.toml's "
                                      "[resources.properties] walltime)", cli=True),
+}
+# keys of an earlier version: old name -> (new name, {old value: new value})
+RENAMED: Dict[str, Tuple[str, Dict[Any, Any]]] = {
+    # 1.1.6's "cli" was red = positive (mace plotting's colors then)
+    "viewer.potential_colors": ("plots.potential_colors", {"cli": "physics", "chemistry": "chemistry"}),
 }
 GUI_KEYS: Dict[str, str] = {spec["gui"]: key for key, spec in KEYS.items() if spec["gui"]}
 TABLES = sorted({k.rsplit(".", 1)[0] for k in KEYS})
@@ -463,6 +471,10 @@ def parse(text: str, path: Path) -> FolderSettings:
         return fs
     unknown = []
     for key, v in _flatten(data):
+        if key in RENAMED:
+            new, values = RENAMED[key]
+            fs.warnings.append(f"{path}: {key} is now {new}; read as {new} = {json.dumps(values.get(v, v))}")
+            key, v = new, values.get(v, v)
         if key not in KEYS:
             unknown.append(key)
             continue
@@ -543,6 +555,7 @@ def plot_defaults(fs: FolderSettings) -> Dict[str, Any]:
                       ("plots.dos_spin", "spin_dos"),
                       ("plots.dos_total", "dos_total"), ("plots.dos_smooth", "dos_smooth"), ("plots.fermi_shift", "fermi_shift"),
                       ("plots.energy_reference", "energy_reference"), ("plots.backend", "backend"),
+                      ("plots.potential_colors", "potential_colors"),
                       ("units.energy", "units")):
         if fs.get(key) is not None:
             out[dest] = fs.get(key)

@@ -575,12 +575,15 @@ function glExtras(v) {
 }
 /* The Rendering values of the drawn document (Settings › Viewport by default), before every paint. */
 function lookOf(v) {
+  // an outline from the lighting or from the style (Grayscale print draws one under any lighting)
+  const outline = setting("outline", false) === true || setting("styleOutline", false) === true;
   state.gl.look.apply(v, { lightStrength: num("lightStrength", 1), lightDirection: setting("lightDirection", "front"),
-    ambient: num("ambient", 0), outline: setting("outline", false) === true, outlineWidth: num("outlineWidth", 0.1),
+    ambient: num("ambient", 0), shininess: num("shininess", 0), outline, outlineWidth: num("outlineWidth", 0.1),
     // no color chosen: one that stands out on the drawn background (a style read only when an outline is drawn)
-    outlineColor: setting("outline", false) === true ? setting("outlineColor", "")
+    outlineColor: outline ? setting("outlineColor", "")
       || state.gl.look.autoOutline(setting("background", "theme"), setting("backgroundColor", ""), cssVar("--text")) : "",
     ambientOcclusion: num("ambientOcclusion", 0), lod: v.maceLod || 0 });
+  spinLegend(v);
   // a document with its own background: switched to on the next frame (never inside this paint)
   const bg = `${setting("background", "theme")}|${setting("backgroundColor", "")}`;
   if (v.maceBg === undefined) v.maceBg = bg;
@@ -647,6 +650,69 @@ function unzoom3Dmol() {
   };
   P.getX = wrap(P.getX, "left");
   P.getY = wrap(P.getY, "top");
+  /* Settings › Viewport › Rotation and Angle snap in the 3Dmol views: a
+   * left-drag in Turntable mode or with an angle snap is turned by
+   * the structure view's own rule (viewport/camera.js dragOrientation, from
+   * the orientation at the button press, the turntable's up kept on the
+   * viewer); a free drag, Shift (zoom), Ctrl (pan) and touch stay 3Dmol's. */
+  if (P._handleMouseMove && !P._handleMouseMove.maceRotation) {
+    const move = P._handleMouseMove;
+    P._handleMouseMove = function (e) {
+      const M = window.MACE, rp = M && M.rotationPrefs ? M.rotationPrefs() : null;
+      if (!rp || (rp.mode === "free" && !rp.step) || !this.isDragging || !this.scene || this.mouseButton !== 1
+        || e.shiftKey || e.ctrlKey || e.targetTouches || !this.cq) return move.call(this, e);
+      e.preventDefault();
+      const x = this.getX(e), y = this.getY(e);
+      if (x === undefined) return;
+      const q0 = [this.cq.x, this.cq.y, this.cq.z, this.cq.w];
+      if (this.maceDragFrom !== this.cq) { this.maceDragFrom = this.cq; if (rp.mode === "axes") this.maceUp = M.turntableUp(q0, this.maceUp); }
+      const q = M.dragOrientation(q0, x - this.mouseStartX, y - this.mouseStartY, { ...rp, up: this.maceUp });
+      const view = this.getView();
+      this.setView([view[0], view[1], view[2], view[3], ...q]);
+    };
+    P._handleMouseMove.maceRotation = true;
+  }
+  /* 3Dmol's own wheel zoomed out on scrolling up, the opposite of the
+   * structure viewport: the run and comparison views now scroll the same way
+   * (up zooms in), and Settings › Viewport › Invert scroll zoom flips both.
+   * Same step as 3Dmol's (85 % of the distance, Ctrl reverses), the settings
+   * read per event so a change applies live. Settings › Viewport › Zoom
+   * toward: the view center stays put (3Dmol's own), or the model point under
+   * the pointer does: the model moves by the change in what the pointer's
+   * offset from the center spans in the model (3Dmol's screenOffsetToModel,
+   * the same measure its own pan uses), before and after. */
+  if (P._handleMouseScroll) P._handleMouseScroll = function (e) {
+    e.preventDefault();
+    if (!this.scene) return;
+    const x = this.getX(e), y = this.getY(e);
+    if (x === undefined || !(this.control_all || this.isInViewer(x, y))) return;
+    let toPointer = null;
+    if (setting("viewport.zoomToward", "center") === "pointer") {
+      const o = this.canvasOffset(), dx = x - o.left - this.WIDTH / 2, dy = y - o.top - this.HEIGHT / 2;
+      this.setSlabAndFog();
+      toPointer = { dx, dy, before: this.screenOffsetToModel(dx, dy) };
+    }
+    const r = 0.85 * (this.CAMERA_Z - this.rotationGroup.position.z);
+    let n = setting("invertWheelZoom", false) === true ? 1 : -1;
+    if (e.ctrlKey) n = -n;
+    // the standard deltaY first (in px: lines are 16 px, pages 400): Firefox also sets the old wheelDelta,
+    // whose formula divides by zero at -600 (one scroll down there) and left the view NaN
+    const px = e.deltaY ? e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1) : 0;
+    let step;
+    if (px) step = n * r * Math.max(-1, Math.min(1, px / 400));
+    else if (e.wheelDelta) step = -n * r * Math.max(-1, Math.min(1, e.wheelDelta / 400));
+    else if (e.detail) step = n * r * e.detail / 10;
+    else return;
+    if (!Number.isFinite(step)) return;
+    this.rotationGroup.position.z += step;
+    this.rotationGroup.position.z = this.adjustZoomToLimits(this.rotationGroup.position.z);
+    if (toPointer) {
+      this.setSlabAndFog();
+      const after = this.screenOffsetToModel(toPointer.dx, toPointer.dy), p = this.modelGroup.position;
+      p.x += after.x - toPointer.before.x; p.y += after.y - toPointer.before.y; p.z += after.z - toPointer.before.z;
+    }
+    this.show();
+  };
 }
 /* The UI scale zooms the shell, and a canvas inside it is drawn at its own px
  * and then stretched by the zoom: 3Dmol sizes its drawing to the viewer's own
@@ -895,15 +961,93 @@ function schemeName() {
   return paletteMap(name) ? name : (c ? c.default : name);
 }
 function currentPalette() { return state.paletteDraft || paletteMap(schemeName()) || {}; }
+/* What the views draw (1.1.7, Inspector › Rendering › Style, the drawn document's atomColor): the
+ * color scheme, VESTA's own colors whatever the scheme, or either as grays of the same lightness. */
+const grayCache = new WeakMap();
+function grayOf(map) {
+  if (!grayCache.has(map)) {
+    const lin = (x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+    const enc = (y) => Math.round(255 * (y <= 0.0031308 ? 12.92 * y : 1.055 * y ** (1 / 2.4) - 0.055));
+    const out = {};
+    for (const [k, v] of Object.entries(map)) {
+      if (!/^#[0-9a-f]{6}$/i.test(v)) { out[k] = v; continue; }
+      const n = parseInt(v.slice(1), 16);
+      const g = enc(0.2126 * lin(n >> 16) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)).toString(16).padStart(2, "0");
+      out[k] = "#" + g + g + g;
+    }
+    grayCache.set(map, out);
+  }
+  return grayCache.get(map);
+}
+function drawnPalette() {
+  const how = setting("atomColor", "scheme");
+  const base = how !== "vesta" || state.paletteDraft ? currentPalette() : paletteMap("vesta") || currentPalette();
+  return how === "gray" ? grayOf(base) : base;
+}
 function colorScheme() {
   const c = state.colors;
   if (!c) return "Jmol";
-  return { prop: "elem", map: currentPalette() };
+  return { prop: "elem", map: drawnPalette() };
 }
 function elementColor(sym) {
   const c = state.colors;
   if (!c) return cssVar("--fallback-atom");
-  return currentPalette()[sym] || c.fallback;
+  return drawnPalette()[sym] || c.fallback;
+}
+/* Magnetic style: each atom by its Mulliken spin moment (the shell's docSpins: {values, max} of the
+ * drawn document's run, or null), on a diverging scale centered at 0 from the --spin-atom-* tokens.
+ * An atom's index in the structure: properties.base where a view sets it (the volume and mode views
+ * draw their own lists), else its serial − 1. */
+const spinCache = { key: "", hex: null };
+function mixRgb(a, b, t) {
+  const p = parseInt(a.slice(1), 16), q = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((p >> sh) & 255) * (1 - t) + ((q >> sh) & 255) * t);
+  return "#" + [16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, "0")).join("");
+}
+function spinData() {
+  if (setting("atomColor", "scheme") !== "spin") return null;
+  const sp = window.MACE.docSpins ? window.MACE.docSpins() : null;
+  return sp && sp.values && sp.values.length ? sp : null;
+}
+function spinHexes(sp) {
+  const up = cssVar("--spin-atom-up"), zero = cssVar("--spin-atom-zero"), down = cssVar("--spin-atom-down");
+  const key = [up, zero, down, sp.max, sp.values.length, sp.source].join("|");
+  if (spinCache.key !== key || spinCache.sp !== sp) {
+    spinCache.key = key; spinCache.sp = sp;
+    spinCache.hex = sp.values.map((m) => { const t = Math.max(-1, Math.min(1, m / sp.max)); return t >= 0 ? mixRgb(zero, up, t) : mixRgb(zero, down, -t); });
+  }
+  return spinCache.hex;
+}
+function colorSpec() {
+  const sp = spinData();
+  if (!sp) return { colorscheme: colorScheme() };
+  const hex = spinHexes(sp), fb = cssVar("--fallback-atom");
+  return { colorfunc: (a) => hex[a.properties && Number.isInteger(a.properties.base) ? a.properties.base : a.serial - 1] || fb };
+}
+/* The atom drawing of the drawn document's style (atomDraw): auto keeps the Display section's
+ * style and Bonds; space-filling never draws bonds; thin sticks are the stick style. */
+function effDraw(style, bonds) {
+  const d = setting("atomDraw", "auto");
+  if (d === "spacefill") return { style: "spacefill", bonds: false };
+  if (d === "sticks") return { style: "stick", bonds };
+  if (d === "ballstick") return { style: "ballstick", bonds };
+  return { style, bonds };
+}
+/* The color scale in a corner of a 3D view while Magnetic colors its atoms (checked at every paint). */
+function spinLegend(v) {
+  // over the viewer itself (not the controls a run view keeps under it in the same frame)
+  const cv = v.getCanvas && v.getCanvas(), wrap = cv && (cv.closest(".viewer") || cv.parentElement);
+  if (!wrap) return;
+  const sp = spinData(), want = sp && v.getModel && v.getModel() ? `${sp.max}|${sp.source}` : "";
+  let el = wrap.querySelector(":scope > .vp-spin-legend");
+  if ((el ? el.dataset.key : "") === want) return;
+  if (!want) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("div"); el.className = "vp-spin-legend"; el.setAttribute("role", "img"); wrap.appendChild(el); }
+  const m = fmt(sp.max, sp.max >= 1 ? 1 : 2);
+  el.dataset.key = want;
+  el.setAttribute("aria-label", `Atoms colored by Mulliken spin moment, from −${m} (blue, spin down) through 0 (white) to +${m} μB (red, spin up)`);
+  el.title = `Mulliken spin moments from ${sp.source}`;
+  el.innerHTML = `<span class="vsl-title">Spin (μB)</span><span class="vsl-bar"></span><span class="vsl-ticks"><span>−${m}</span><span>0</span><span>+${m}</span></span>`;
 }
 /* The classic panel's color select: every palette, the chosen one selected. */
 function fillColorOptions() {
@@ -918,7 +1062,8 @@ function fillColorOptions() {
  * default 0.40 draws 40 % of the atomic radius, T9), × 1.357 without; with van der Waals radii × 0.7
  * and × 0.95, the 0.28 and 0.38 the classic views drew before 1.1.6. */
 const round6 = (x) => Math.round(x * 1e6) / 1e6;
-const radiusSet = () => { const r = setting("radiusSet", "atomic"); return ["atomic", "covalent", "ionic", "vdw"].includes(r) ? r : "atomic"; };
+// the drawn document's style can choose its own (atomRadii: VESTA-like atomic, Space-filling van der Waals)
+const radiusSet = () => { const o = setting("atomRadii", "auto"); const r = o === "atomic" || o === "vdw" ? o : setting("radiusSet", "atomic"); return ["atomic", "covalent", "ionic", "vdw"].includes(r) ? r : "atomic"; };
 function applyRadii() {
   const G = window.$3Dmol && window.$3Dmol.GLModel;
   if (!G || !state.radii) return;
@@ -936,11 +1081,13 @@ function sphereScale(bonds) {
   return round6(num("atomScale", 0.4) * f);
 }
 function styleFor(kind, bonds, opacity = 1) {
-  const cs = colorScheme();
-  if (kind === "spacefill") return { sphere: { scale: 0.95, colorscheme: cs, opacity } };
-  if (kind === "stick") return { stick: { radius: 0.16, colorscheme: cs, opacity } };
-  return bonds ? { sphere: { scale: sphereScale(true), colorscheme: cs, opacity }, stick: { radius: num("bondRadius", 0.12), colorscheme: cs, opacity } }
-               : { sphere: { scale: sphereScale(false), colorscheme: cs, opacity } };
+  applyRadii();                         // the drawn document's radii (its style can choose them)
+  const cs = colorSpec();
+  if (kind === "spacefill") return { sphere: { scale: 0.95, ...cs, opacity } };
+  // Wireframe / sticks: the style's thin bond radius; the Display section's Stick style its own 0.16 Å
+  if (kind === "stick") return { stick: { radius: setting("atomDraw", "auto") === "sticks" ? num("bondRadius", 0.06) : 0.16, ...cs, opacity } };
+  return bonds ? { sphere: { scale: sphereScale(true), ...cs, opacity }, stick: { radius: num("bondRadius", 0.12), ...cs, opacity } }
+               : { sphere: { scale: sphereScale(false), ...cs, opacity } };
 }
 
 function addModel(v, s, atoms, o) {
@@ -993,8 +1140,7 @@ function axisLabels(v, s, n = 1) {
 
 function structOpts() {
   return { cell: $("#opt-cell").checked, boundary: $("#opt-boundary").checked,
-    supercell: $("#opt-super").checked, bonds: $("#opt-bonds").checked,
-    labels: $("#opt-labels").checked, style: $("#opt-style").value };
+    supercell: $("#opt-super").checked, labels: $("#opt-labels").checked, ...effDraw($("#opt-style").value, $("#opt-bonds").checked) };
 }
 
 function drawStructure(keepView = false) {
@@ -1275,8 +1421,12 @@ async function loadOut(path, traj) {
   const t = traj || expandSummary(await api("out/summary?" + q({ path })));
   const last = t.frames[t.frames.length - 1];
   last.path = path;
+  // no optimization: a single point, not the "initial" geometry of a run that moves. CRYSTAL can print
+  // an SP's geometry more than once (after each geometry edit of the input): the last is the one its
+  // SCF ran on, and the run is still one geometry, not a trajectory.
+  if (!t.is_opt && last.frame_label === "initial") last.frame_label = "single-point";
   await loadStructure(path, last);
-  if (t.frames.length > 1) {
+  if (t.frames.length > 1 && t.is_opt) {
     setTrajectory(t, path, t.opt_status || (t.is_opt ? "optimization (no OPT END line: unfinished)" : ""));
     markTab("opt", true);
     showTab("opt");
@@ -1503,8 +1653,14 @@ function renderComparison() {
   const D = dispSet(c), du = lenUnit(D.max), dTip = D.mode === "cart" ? "r(final) − r(initial), the cell change included, the mean shift removed"
     : D.mode === "molecule" ? "r(final) − r(initial) once the molecule's rigid translation and rotation are taken out"
     : "relative to the cell (the change of fractional coordinates, in the final cell)";
-  // Δr is a choice only for a periodic run whose cell changed (a molecule has no cell to be relative to)
-  $("#o-dmode-wrap").hidden = !(c.cell_changed && c.displacements_cart && D.mode !== "molecule");
+  // Δr is a choice only for a periodic run whose cell changed (a molecule has no cell to be relative to).
+  // Frame 0 compares the start with itself (no cell change): the choice keeps its place, invisible, while
+  // the run's cell changes, so scrubbing the Frame slider never reflows the toolbar under the pointer
+  const dmodeOk = (x) => !!(x && x.cell_changed && x.displacements_cart && dispSet(x).mode !== "molecule");
+  const dmodeOn = dmodeOk(c), dmodeWrap = $("#o-dmode-wrap");
+  dmodeWrap.hidden = !(dmodeOn || dmodeOk(t && t.comparison));
+  dmodeWrap.style.visibility = dmodeOn ? "" : "hidden";
+  $("#o-dmode").disabled = !dmodeOn;
   if (D.mode !== "molecule") $("#o-dmode").value = D.mode;
   $("#o-stats").innerHTML = `
     <div class="stat" title="${esc(dTip)}"><div class="k">max |Δr|</div><div class="v">${fmtLen(D.max, du)}</div></div>
@@ -1640,7 +1796,7 @@ function drawOpt() {
   const s0w = { ...s0, cart: c.before_cart };
   const s1u = { ...s1, cart: c.after_unwrapped_cart };
   const atoms1 = s1u.cart.map((p, i) => ({ i, cart: p, image: false }));
-  const base = { bonds: !$("#opt-bonds") || $("#opt-bonds").checked, style: ($("#opt-style") && $("#opt-style").value) || "ballstick" };
+  const base = effDraw(($("#opt-style") && $("#opt-style").value) || "ballstick", !$("#opt-bonds") || $("#opt-bonds").checked);
   const muted = cssVar("--muted"), accent = cssVar("--accent");
   renderLegend(c);
   if (state.layout === "twotone") {
@@ -2272,7 +2428,7 @@ async function start() {
 window.addEventListener("resize", () => Object.values(state.viewers).forEach((v) => v && (v.resize(), v.render())));
 window.MACE = { isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, plotVar, plotVarIn, plotTone, vpVar, plotPaper, styleFigure, isPublication, plotPreset, presetOf, spinStyle, volumeColors, mapScale, elementColors: () => currentPalette(), syncSurfaces, store, viewer, openFile, load3Dmol,
   loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, energyTSV, scfTSV, drawScf, scfSection, displayAtoms, bondsFor, addModel,
-  drawCell, axisLabels, fitView, fitPoints, styleFor, elementColor, showTab, state, highlightDeck,
+  drawCell, axisLabels, fitView, fitPoints, styleFor, colorSpec, effDraw, elementColor, showTab, state, highlightDeck,
   colorScheme, paletteMap, paletteIds, paletteLabel, setPalettes, setPaletteDraft, fillColorOptions,
   redrawViews, sphereScale, schemeName, viewerBg, renderStructureInfo,
   loadFiles: () => loadFiles(), loadStructure: (p, d) => loadStructure(p, d), ensureStep: (t, i) => ensureStep(t, i), expandSummary,

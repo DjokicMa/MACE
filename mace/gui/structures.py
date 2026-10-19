@@ -458,9 +458,12 @@ def _read_external_d12(path: Path) -> Dict[str, Any]:
     else:
         try:
             data = read_any(src, "fort34", box=False)
-        except Exception as exc:  # ase's fort.34 reader: any malformed record
+        except Exception as exc:  # noqa: BLE001 - read_fort34 says which record is wrong
+            why = str(exc)
+            if why.startswith(f"{src.name} is not a readable fort.34: "):
+                why = why[len(f"{src.name} is not a readable fort.34: "):]
             raise ValueError(f"{path.name} reads its geometry from {src.name} (fort.34), "
-                             f"which cannot be read: {exc}") from exc
+                             f"which cannot be read: {why}") from exc
     data["source"] = {"kind": "d12", "path": str(path), "geometry_from": str(src),
                       "geometry_staged": is_staged,
                       "geometry_keyword": external_keyword(path)}
@@ -702,13 +705,16 @@ def _read_structure(path: Path, frame: int = -1) -> Dict[str, Any]:
         with open(path, "rb") as fh:
             fmt = sniff(path.name, fh.read(4096)) or ("poscar" if kind == "poscar" else "xyz")
         return read_any(path, fmt, box=False)
+    if kind == "fort34":
+        return read_any(path, kind, box=False)
     if kind in ASE_ONLY:
         return read_any(path, kind, box=False)
     raise ValueError(f"not a structure file: {path.name}")
 
 
-# molecular and other formats ase reads (plan E10): explorer kind -> ase format
-ASE_ONLY = {"mol": "mol", "pdb": "proteindatabank", "gen": "gen", "fort34": "crystal"}
+# molecular and other formats ase reads (plan E10): explorer kind -> ase format.
+# A fort.34 is not one of them: ase's reader refuses any symmetry beyond P1 (read_fort34)
+ASE_ONLY = {"mol": "mol", "pdb": "proteindatabank", "gen": "gen"}
 
 
 # --------------------------------------------------------------------------
@@ -1137,6 +1143,8 @@ def sniff(name: str, head: bytes) -> Optional[str]:
                      (".xyz", "xyz"), (".vasp", "poscar"), (".poscar", "poscar")):
         if low.endswith(ext):
             return fmt
+    if low == "fort.34" or low.endswith((".f34", ".gui", ".fort.34")):
+        return "fort34"
     if re.match(r"^(POSCAR|CONTCAR)([._-]|$)", base):
         return "poscar"
     text = head.decode("utf-8", "replace")
@@ -1164,9 +1172,38 @@ def read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
         raise _unreadable(path, exc) from exc
 
 
+def read_fort34(path: Path) -> Dict[str, Any]:
+    """A CRYSTAL fort.34 (.f34 / .gui / .ext / EXTERNAL geometry), its asymmetric
+    unit expanded by its symmetry operators (mace.utils.fort34). A SLAB / POLYMER /
+    MOLECULE is drawn as its .out is: periodic directions fractional, the
+    non-periodic ones (CRYSTAL's 500 Å vectors) spanning the atoms."""
+    from mace.utils import fort34
+    try:
+        f = fort34.read(path)
+    except fort34.Fort34Error as exc:
+        raise ValueError(f"{Path(path).name} is not a readable fort.34: {exc}") from exc
+    dim, lat, cart = f["dim"], f["lattice"], np.asarray(f["cart"], float)
+    source = {"kind": "fort34", "path": str(path), "symmetry_operators": f["nsym"],
+              "asymmetric_atoms": f["nirr"]}
+    if dim == 3:
+        return _payload(lat, None, cart, [n % 100 for n in f["numbers"]], (True,) * 3, source)
+    pos = cart.copy()
+    if dim:
+        frac = np.linalg.solve(lat[:dim, :dim].T, cart[:, :dim].T).T
+        pos[:, :dim] = frac
+    _, _, _, al, be, ga = (list(_lattice(lat).values()) + [0])[:6]
+    params = {"a": float(np.linalg.norm(lat[0])), "b": float(np.linalg.norm(lat[1])),
+              "c": float(np.linalg.norm(lat[2])), "alpha": al, "beta": be, "gamma": ga}
+    s = _block_structure({"params": params, "numbers": f["numbers"], "positions": pos}, dim)
+    out = _payload(s["cell"], s["frac"], s["cart"], s["numbers"], s["pbc"], source)
+    out["origin"] = np.asarray(s.get("origin", np.zeros(3))).tolist()
+    return out
+
+
 def _read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
     import warnings
-    path = Path(path)
+    if fmt == "fort34":
+        return read_fort34(path)
     if fmt == "cif":
         return read_cif(path)
     if fmt == "d12":

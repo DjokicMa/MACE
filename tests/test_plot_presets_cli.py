@@ -168,18 +168,89 @@ def test_bare_g_reads_gamma_only_at_the_zone_center(tmp_path):
 
 def test_signed_volumes_plus_blue_and_captions_say_so():
     """B6: spin and difference isosurfaces + blue / − red (the GUI's 3D view and slices draw the same);
-    the captions name those colors; a potential keeps red = +; --style vesta: yellow / cyan."""
+    the captions name those colors; a potential in chemistry colors (the default) the same, physics swaps
+    them; --style vesta: yellow / cyan."""
     E = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly", reason="the cube engine imports plotly")
     E.use_style("default")
+    E.use_potential_colors("chemistry")
     assert E.get_iso_color("spin", 1) == "#2563eb" and E.get_iso_color("spin", -1) == "#dc2626"
     assert E.get_iso_color("density_difference", 1) == "#2563eb"
-    assert E.get_iso_color("potential", 1) == "#b2182b"
-    assert E.get_plotly_colorscale("spin") == "RdBu" and E.get_plotly_colorscale("potential") == "RdBu_r"
+    assert E.get_iso_color("potential", 1) == "#2563eb" and E.get_iso_color("potential", -1) == "#dc2626"
+    assert E.get_plotly_colorscale("spin") == "RdBu" and E.get_plotly_colorscale("potential") == "RdBu"
+    E.use_potential_colors("physics")
+    assert E.get_iso_color("potential", 1) == "#dc2626" and E.get_plotly_colorscale("potential") == "RdBu_r"
+    assert E.get_iso_color("spin", 1) == "#2563eb" and E.get_plotly_colorscale("spin") == "RdBu"
+    E.use_potential_colors("chemistry")
     src = (REPO_ROOT / "mace" / "plotting" / "engines" / "crystal_cubeviz_plotly.py").read_text()
     assert "<b>Red (+):</b> Spin" not in src and "{PW} (+):</b> Spin-up excess" in src
     E.use_style("vesta")
     assert (E.ISO["plus"], E.ISO["plus_word"]) == ("#e6c200", "Yellow")
     E.use_style("default")
+
+
+def _pot_cube(path):
+    """A small signed potential cube (8³, + on one side, − on the other)."""
+    import math
+    n = 8
+    vals = [math.sin(2 * math.pi * i / n) * 0.05 for i in range(n) for _ in range(n) for _ in range(n)]
+    head = ["MACE test potential", "POT3", "    1    0.000000    0.000000    0.000000"]
+    head += [f"    {n}    " + "    ".join("0.600000" if j == k else "0.000000" for j in range(3)) for k in range(3)]
+    head += ["    8    8.000000    2.100000    2.100000    2.100000"]
+    rows = [" ".join(f"{v: .5E}" for v in vals[i:i + 6]) for i in range(0, len(vals), 6)]
+    path.write_text("\n".join(head + rows) + "\n")
+    return path
+
+
+def _low_color(fig):
+    """The (r, g, b) of the colorscale's low end of the figure's first heatmap/contour trace."""
+    import plotly.colors as pc
+    t = next(t for t in fig.data if t.type in ("heatmap", "contour", "surface"))
+    cs = pc.get_colorscale(t.colorscale) if isinstance(t.colorscale, str) else list(t.colorscale)
+    low = cs[-1][1] if t.reversescale else cs[0][1]
+    return pc.unlabel_rgb(pc.convert_colors_to_same_type(low, "rgb")[0][0])
+
+
+def test_potential_colors_chemistry_default_and_physics(tmp_path):
+    """Electrostatic potential: chemistry colors by default (red = negative, blue = positive) in the
+    slices and isosurfaces, captions naming what is drawn; --potential-colors physics: red = positive."""
+    E = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly", reason="the cube engine imports plotly")
+    import contextlib
+    import io
+    E.use_style("default")
+    cube_path = _pot_cube(tmp_path / "x_POT.CUBE")
+    with contextlib.redirect_stdout(io.StringIO()):
+        cube = E.CubeFile(str(cube_path))
+    assert cube.data_type == "potential"
+    for scheme, low_red in (("chemistry", True), ("physics", False)):
+        E.use_potential_colors(scheme)
+        with contextlib.redirect_stdout(io.StringIO()):
+            fig = E.plot_slice_plotly(cube, "x", 2)
+        r, g, b = _low_color(fig)
+        assert (r > b) == low_red, (scheme, r, g, b)
+        cap = E._potential_caption()
+        assert cap.startswith("<b>Red (−):</b> Negative" if low_red else "<b>Blue (−):</b> Negative"), cap
+        assert ("<b>Blue (+):</b> Positive" in cap) == low_red
+    E.use_potential_colors("chemistry")
+    # the engine's flag and mace plotting's handler argv
+    from mace.plotting.handlers import cube as H
+    cfg = {"view": "slice", "style": "default", "potential_colors": "physics"}
+    argv = H._common_argv(cfg)
+    assert argv[argv.index("--potential-colors") + 1] == "physics"
+    assert "--potential-colors" not in H._common_argv({**cfg, "potential_colors": "chemistry"})
+
+
+def test_folder_potential_colors_key_and_old_name(tmp_path):
+    """[plots] potential_colors is mace plotting's --potential-colors default and the GUI's Potential colors;
+    1.1.6's [viewer] potential_colors = "cli" (red = positive) reads as physics."""
+    from mace.utils import folder_settings as fs
+    pytest.importorskip("tomllib")
+    f = tmp_path / "mace-folder.toml"
+    f.write_text('[plots]\npotential_colors = "physics"\n')
+    s = fs.parse(f.read_text(), f)
+    assert fs.plot_defaults(s)["potential_colors"] == "physics" and s.gui()["volume.mepColors"] == "physics"
+    f.write_text('[viewer]\npotential_colors = "cli"\n')
+    s = fs.parse(f.read_text(), f)
+    assert s.values == {"plots.potential_colors": "physics"} and any("is now plots.potential_colors" in w for w in s.warnings)
 
 
 def test_gallery_command_carries_the_style():

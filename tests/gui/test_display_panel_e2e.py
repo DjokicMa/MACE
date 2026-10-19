@@ -87,7 +87,7 @@ def clean(drv, *paths):
     """Start a test with these documents at their defaults (earlier tests changed them on this server)."""
     for p in paths:
         open_doc(drv, p)
-        drv.execute_script("const m = window.__mace.display, a = window.__mace.activeDoc(); m.reset(a, 'range'); m.reset(a, 'render');")
+        drv.execute_script("const m = window.__mace.display, a = window.__mace.activeDoc(); m.reset(a, 'range'); m.reset(a, 'render'); m.reset(a, 'style');")
     drv.execute_script("window.__mace.closeAll()")
     time.sleep(0.3)
 
@@ -253,7 +253,7 @@ def test_settings_default_applies_live_unless_overridden(fresh):
     open_doc(drv, "real/agte.cif")
     open_doc(drv, "real/tipbo3.cif")
     # tipbo3: its own atom size
-    sec = expand(drv, "range")
+    sec = expand(drv, "render")          # Atom Size is part of the Style (1.1.7)
     slider = sec.find_element("css selector", "input[data-k=atomScale]")
     drv.execute_script("arguments[0].value = 0.8; arguments[0].dispatchEvent(new Event('change', {bubbles: true}))", slider)
     time.sleep(0.5)
@@ -267,7 +267,7 @@ def test_settings_default_applies_live_unless_overridden(fresh):
     assert scale() == pytest.approx(0.3, abs=1e-6)  # agte follows the default (atomic radii: scale x 1, T9)
     drv.execute_script("window.__mace.activate(1)")
     time.sleep(0.6)
-    click(drv, expand(drv, "range").find_element("css selector", "[data-reset-group=range]"))
+    click(drv, expand(drv, "render").find_element("css selector", "[data-reset-group=style]"))
     time.sleep(0.6)
     assert scale() == pytest.approx(0.3, abs=1e-6)  # Reset: follows again
     # Save as Default: the document's range becomes the default, in gui.json, no warning
@@ -394,6 +394,42 @@ def test_presets_set_their_values(fresh, preset):
         colors = drv.execute_script("return ['Ag', 'Te'].map((e) => window.MACE.elementColor(e).toLowerCase())")
         assert fills and {f.lower() for f in fills} <= set(colors), (fills, colors)
     click(drv, expand(drv, "render").find_element("css selector", "[data-reset-group=render]"))
+
+
+def test_custom_preset_is_always_selectable_and_brings_back_the_saved_look(fresh):
+    """The maintainer's report: Custom was a grayed-out item until a value was
+    edited. It is selectable at any time; with no custom look saved it starts
+    from the current view and says so, and an edited look comes back."""
+    drv = fresh[0]
+    drv.execute_script("window.__mace.settings.reset('renderCustom')")
+    clean(drv, "real/agte.cif")
+    open_doc(drv, "real/agte.cif")
+    sel = expand(drv, "render").find_element("id", "dp-renderPreset")
+    assert drv.execute_script("return [...arguments[0].options].every((o) => !o.disabled)", sel)
+    assert "Custom" in sel.get_attribute("title")
+    of = "return window.__mace.display.of(window.__mace.activeDoc())"
+    before = drv.execute_script(of)
+    pick(drv, sel, "custom")
+    note = expand(drv, "render").find_element("css selector", ".dp-custom-note")
+    assert note.is_displayed() and "starts from the current view" in note.text, note.text
+    after = drv.execute_script(of)
+    assert after["renderPreset"] == "custom" and {k: v for k, v in after.items() if k != "renderPreset"} == \
+        {k: v for k, v in before.items() if k != "renderPreset"}
+    # an edit is the custom look, kept; a named preset, then Custom again: the look is back
+    el = expand(drv, "render").find_element("css selector", "input[data-k=lightStrength]")
+    drv.execute_script("arguments[0].value = 1.3; arguments[0].dispatchEvent(new Event('change', {bubbles: true}))", el)
+    time.sleep(0.4)
+    assert not expand(drv, "render").find_element("css selector", ".dp-custom-note").is_displayed()
+    assert drv.execute_script("return window.__mace.settings.get('renderCustom').lightStrength") == 1.3
+    pick(drv, expand(drv, "render").find_element("id", "dp-renderPreset"), "flat")
+    assert drv.execute_script(of)["lightStrength"] == 0.8
+    pick(drv, expand(drv, "render").find_element("id", "dp-renderPreset"), "custom")
+    got = drv.execute_script(of)
+    assert got["renderPreset"] == "custom" and got["lightStrength"] == 1.3, got
+    assert not expand(drv, "render").find_element("css selector", ".dp-custom-note").is_displayed()
+    click(drv, expand(drv, "render").find_element("css selector", "[data-reset-group=render]"))
+    drv.execute_script("window.__mace.settings.reset('renderCustom')")
+    assert not H.errors(drv)
 
 
 def test_custom_range_dialog_takes_from_and_to(fresh):

@@ -1,6 +1,7 @@
 /* The structure viewer's pointer (spec §2.1): the same in every tool, as
  * in OVITO, Avogadro and Blender —
- *   wheel: zoom toward the cursor; middle-drag: pan; right-drag: orbit
+ *   wheel: zoom toward the view center, or (Settings › Viewport › Zoom
+ *   toward: Mouse pointer) toward the cursor; middle-drag: pan; right-drag: orbit
  *   (about the view's center, marked while the drag lasts);
  *   Alt+left-drag: orbit from any tool (laptop trackpads);
  *   right-click without dragging (< 4 px): the context menu —
@@ -130,7 +131,7 @@ export function attachPointer(el, deps) {
       deps.cam().orbit(dx, dy, e.shiftKey && k === "orbit" && deps.tool() === "orbit" && !e.altKey);
     }
     else if (k === "pan") deps.cam().pan(dx, dy);
-    else if (k === "zoom") deps.cam().zoomAt(Math.exp(-dy * 0.01), drag.x0, drag.y0);
+    else if (k === "zoom") zoomBy(Math.exp(-dy * 0.01), drag.x0, drag.y0);
     else if (k === "select") drawRegion([[drag.x0, drag.y0], [x, y]], true);
     else if (k === "lasso") {
       const last = drag.poly[drag.poly.length - 1];
@@ -144,6 +145,7 @@ export function attachPointer(el, deps) {
     drag = null;
     try { el.releasePointerCapture(d.id); } catch (err) { /* not captured */ }
     if (["orbit", "pan", "zoom", "right"].includes(d.kind)) deps.interacting(false);
+    if (d.kind === "orbit" || d.kind === "right") deps.cam().endOrbit();
     if (d.pivot) deps.pivot(false);
     if (canceled) { clearOverlay(); return; }
     const [x, y] = local(e);
@@ -183,8 +185,16 @@ export function attachPointer(el, deps) {
     e.preventDefault();
     const [x, y] = local(e);
     const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-    deps.cam().zoomAt(Math.exp(-Math.max(-300, Math.min(300, dy)) * 0.0015), x, y);
+    // scrolling up (deltaY < 0) zooms in; Settings › Viewport › Invert scroll zoom flips it
+    const sign = deps.invertWheel && deps.invertWheel() ? -1 : 1;
+    zoomBy(Math.exp(-sign * Math.max(-300, Math.min(300, dy)) * 0.0015), x, y);
   }, { passive: false });
+  /* Zoom toward (Settings › Viewport, read per event): the view center stays put (the rotation center, so
+   * the turn stays about the same point), or the model point under the pointer does, as map apps zoom. */
+  function zoomBy(f, x, y) {
+    if (deps.zoomToward && deps.zoomToward() === "pointer") deps.cam().zoomAt(f, x, y);
+    else deps.cam().zoom(f);
+  }
   el.addEventListener("pointerleave", () => { if (!drag) { hoverAt = null; deps.hover(-1, false); lastHoverK = -1; } });
 
   /* ---------------------------------------------------------------- hover */
@@ -214,7 +224,7 @@ export function attachPointer(el, deps) {
   return {
     overlay, clearOverlay,
     get dragging() { return !!drag; },
-    cancel() { if (drag) { if (drag.pivot && deps.pivot) deps.pivot(false); drag = null; clearOverlay(); deps.interacting(false); } },
+    cancel() { if (drag) { if (drag.pivot && deps.pivot) deps.pivot(false); drag = null; clearOverlay(); deps.interacting(false); deps.cam().endOrbit(); } },
     /** Where the pointer last was over the viewer (CSS px), or its center. */
     lastPos() { return lastPos || [el.offsetWidth / 2, el.offsetHeight / 2]; },
     regionSelect,

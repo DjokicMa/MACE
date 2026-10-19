@@ -205,6 +205,8 @@ def _cube_config_from_args(args) -> Dict[str, Any]:
         cfg["scale"] = "log"
     elif getattr(args, "linear", False):
         cfg["scale"] = "linear"
+    # Potential colors: chemistry (red = negative, the default) or physics (red = positive)
+    cfg["potential_colors"] = getattr(args, "potential_colors", None) or "chemistry"
     cfg["clip"] = getattr(args, "clip", cfg["clip"])
     cfg["color_range"] = getattr(args, "color_range", None)
 
@@ -251,6 +253,8 @@ def _common_argv(config: Dict[str, Any]) -> List[str]:
         argv += ["--publication"]
     if config.get("style", "default") != "default":
         argv += ["--style", config["style"]]
+    if config.get("potential_colors", "chemistry") != "chemistry":
+        argv += ["--potential-colors", config["potential_colors"]]
     if config.get("scale") == "log":
         argv += ["--log-scale"]
     elif config.get("scale") == "linear":

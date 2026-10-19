@@ -5,8 +5,10 @@ gitignored corpus).
 A molecule's density opens as an isosurface whose vertex count follows the
 level; a spin density shows both lobes; the hexagonal slab's surface sits on
 its atoms (the skewed voxel matrix is right); a density colored by its
-potential gets the CLI's range and colors, a custom range and Reverse
-Colors change it, and a cube of another cell is refused."""
+potential gets the CLI's range and colors (chemistry: red = negative), a
+custom range and the Red = negative box change it, and a cube of another cell
+is refused. A potential cube's isosurfaces and slice follow Settings ›
+Potential colors (chemistry by default, physics on request), live."""
 import shutil
 import time
 
@@ -128,6 +130,46 @@ def test_spin_shows_both_lobes(fresh):
     no_errors(drv)
 
 
+# the [+, −] isosurface colors as (red, blue) and the slice map's low end (the most negative values) as (red, blue)
+SIGN_RGB = """const c = document.createElement('canvas').getContext('2d');
+  const rb = (x) => { c.fillStyle = '#000000'; c.fillStyle = x; const h = c.fillStyle;
+    if (h[0] === '#') return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(5, 7), 16)];
+    const n = h.match(/[0-9.]+/g).map(Number); return [n[0], n[2]]; };
+  const out = {iso: window.__mace.volumeView.signColors().map(rb)};
+  const p = document.querySelector('#volume-host .vv-slice-plot');
+  if (p && p._fullData && p._fullData.length) {
+    const t = p._fullData[0], cs = t.colorscale;
+    out.low = rb((t.reversescale ? cs[cs.length - 1] : cs[0])[1]);
+  }
+  return out;"""
+
+
+def test_potential_colors_chemistry_by_default_physics_on_request(fresh):
+    """A POT3 cube: chemistry colors by default (isosurfaces + blue / − red, the slice red at the negative
+    end), Settings › Viewport › Potential colors › Physics swaps both at once, with no reload."""
+    drv = fresh[0]
+    open_volume(drv, "vol/mol_POT.CUBE")
+    st = vstate(drv)
+    assert st["type"] == "potential" and st["signed"] and st["chem"] is True
+    click(drv, drv.find_element(By.ID, "vo-slice"))
+    H.wait(drv, "const p = document.querySelector('#volume-host .vv-slice-plot'); return p && p._fullData && p._fullData.length", 30)
+    c = drv.execute_script(SIGN_RGB)
+    (pr, pb), (mr, mb) = c["iso"]
+    assert pb > pr and mr > mb, c                     # + blue, − red
+    assert c["low"][0] > c["low"][1], c               # negative values red
+    U.shot(drv, "volume_potential_chemistry")
+    drv.execute_script("window.__mace.settings.set('volume.mepColors', 'physics')")
+    H.wait(drv, "return window.__mace.volumeView.state().chem === false", 5)
+    c = H.wait(drv, SIGN_RGB.replace("return out;", "return out.low && out.low[1] > out.low[0] && out;"), 10)
+    (pr, pb), (mr, mb) = c["iso"]
+    assert pr > pb and mb > mr, c                     # + red, − blue
+    assert c["low"][1] > c["low"][0], c               # negative values blue
+    U.shot(drv, "volume_potential_physics")
+    assert drv.execute_script("return window.__mace.settings.get('volume.mepColors')") == "physics"
+    drv.execute_script("window.__mace.settings.set('volume.mepColors', 'chemistry')")
+    no_errors(drv)
+
+
 def test_slab_surface_sits_on_its_atoms(fresh):
     """The hexagonal slab: with the atoms hidden, the pixels where three carbon atoms project
     are covered by the density surface (a sheared voxel matrix would put it beside them)."""
@@ -175,12 +217,12 @@ def test_mep_colors_range_and_refusal(fresh):
     st = vstate(drv)
     assert st["vmin"] == -st["vmax"] and st["vmax"] > 0
     legend = drv.execute_script("return document.querySelector('#volume-host .vv-legend').textContent")
-    assert "red = positive (electron-poor)" in legend
-    # the CLI's colors: +range red, -range blue
+    assert "red = negative (electron-rich)" in legend and st["chem"] is True
+    # the CLI's chemistry colors: +range blue, -range red
     hexes = drv.execute_script("const v = window.__mace.volumeView, s = v.state(); return [v.gradientHex(s.vmax), v.gradientHex(s.vmin)]")
     r_hi, b_hi = (hexes[0] >> 16) & 255, hexes[0] & 255
     r_lo, b_lo = (hexes[1] >> 16) & 255, hexes[1] & 255
-    assert r_hi > b_hi and b_lo > r_lo, hexes
+    assert b_hi > r_hi and r_lo > b_lo, hexes
     U.shot(drv, "volume_mep")
     # the GUI's range from 3Dmol's own surface equals the CLI's rule on the CLI's surface (2 %)
     pytest.importorskip("skimage", reason="the CLI side needs scikit-image")
@@ -194,11 +236,12 @@ def test_mep_colors_range_and_refusal(fresh):
         fig = E.plot_dual_cube_isosurface(volume.read(str(root / "vol/mol_DENS.CUBE")), volume.read(str(root / "vol/mol_POT.CUBE")), level)
     mesh = next(t for t in fig.data if t.type == "mesh3d")
     assert abs(st["vmax"] - mesh.cmax) <= 0.02 * abs(mesh.cmax), (st["vmax"], mesh.cmax)
-    # Reverse Colors swaps them
-    click(drv, drv.find_element(By.ID, "vo-reverse"))
-    H.wait(drv, "return window.__mace.volumeView.state().reverse === true", 5)
+    # Red = negative off: the physics colors, red = +
+    click(drv, drv.find_element(By.ID, "vo-chem"))
+    H.wait(drv, "return window.__mace.volumeView.state().chem === false", 5)
     hx = drv.execute_script("const v = window.__mace.volumeView, s = v.state(); return v.gradientHex(s.vmax)")
-    assert (hx & 255) > ((hx >> 16) & 255)
+    assert ((hx >> 16) & 255) > (hx & 255)
+    assert "red = positive (electron-poor)" in drv.execute_script("return document.querySelector('#volume-host .vv-legend').textContent")
     # a custom range
     click(drv, drv.find_element(By.CSS_SELECTOR, "[data-vo-range=custom]"))
     inp = H.wait(drv, "const e = document.querySelector('#vo-vmax'); return e && !e.disabled && e", 5)

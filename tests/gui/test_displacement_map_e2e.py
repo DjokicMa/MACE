@@ -134,3 +134,49 @@ def test_molecule_offers_no_cell_choice(app):
     assert not v["modeShown"]                                        # no Δr choice for a molecule
     assert "relative to the cell" not in v["legend"] and not degenerate(v["legend"]), v["legend"]
     assert not H.errors(drv)
+
+
+def test_frame_slider_stays_put_while_scrubbing(app):
+    """The maintainer's report: dragging Frame across 0 and 1 moved the slider,
+    as Δr (hidden at frame 0, which compares the start with itself) and the
+    legend's Cell line came and went and reflowed the toolbar."""
+    drv = app
+    open_run(drv, MOVED)
+    drv.execute_script("window.MACE.setLook('overlay')")
+    boxes = []
+    for f in (0, 1, 0, 2, 0):
+        drv.execute_script("const s = document.querySelector('#o-frame'); s.value = arguments[0]; s.dispatchEvent(new Event('input'))", f)
+        H.wait(drv, "return window.MACE.state.frame === arguments[0] && window.MACE.state.cmp", 30, f)
+        time.sleep(0.6)
+        boxes.append(drv.execute_script("""
+            const r = document.querySelector('#o-frame').getBoundingClientRect(), w = document.querySelector('#o-dmode-wrap');
+            return [Math.round(r.x), Math.round(r.y), Math.round(r.width), w.hidden, getComputedStyle(w).visibility,
+                    document.querySelector('#o-dmode').disabled]"""))
+    assert len({tuple(b[:3]) for b in boxes}) == 1, boxes
+    # Δr keeps its place at frame 0, invisible and disabled, and is the live choice elsewhere
+    assert boxes[0][3:] == [False, "hidden", True] and boxes[1][3:] == [False, "visible", False], boxes
+    assert not H.errors(drv)
+
+
+def test_run_view_wheel_up_zooms_in_and_the_setting_inverts_it(app):
+    """3Dmol's own wheel zoomed the run views out on scrolling up, the opposite
+    of the structure viewport; Settings › Viewport › Invert scroll zoom flips both, live."""
+    from selenium.webdriver.common.action_chains import ActionChains
+    from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
+    drv = app
+    open_run(drv, MOVED)
+    z = "return window.MACE.state.viewers['viewer-before'].getView()[3]"
+    el = drv.find_element("css selector", "#viewer-before canvas")
+
+    def up():
+        z0 = drv.execute_script(z)
+        ActionChains(drv).scroll_from_origin(ScrollOrigin.from_element(el), 0, -200).perform()
+        time.sleep(0.4)
+        return drv.execute_script(z) - z0
+    try:
+        assert up() > 0                       # closer: zoomed in
+        drv.execute_script("window.__mace.settings.set('invertWheelZoom', true)")
+        assert up() < 0
+    finally:
+        drv.execute_script("window.__mace.settings.set('invertWheelZoom', false)")
+    assert not H.errors(drv)

@@ -11,6 +11,10 @@
  * its exact source text first (GUARDS); a vendored 3Dmol that changed fails
  * the unit test loudly instead of silently losing the control.
  *
+ * Shininess (Glossy dark): the sphere imposter gets a Blinn-Phong highlight,
+ * `maceSpecular` × (n·h)^40 with h halfway between the light and the viewer,
+ * added after the diffuse color (the atoms; bonds and meshes stay matte).
+ *
  * Default: exactly the look before 1.1.5: the light 3Dmol sets up, at
  * (0.2, 0.2, 1) normalized with intensity 1, no ambient, no outline. */
 
@@ -20,12 +24,14 @@ export const DIRECTIONS = { front: FRONT, "upper-left": [-0.35, 0.35, 1], top: [
 /* [the text in the vendored shader, its replacement] */
 export const GUARDS = [
   ["vLightFront = vec3( 0.0 );", "vLightFront = vec3( maceAmbient );"],
+  // the sphere imposter: the highlight is computed while vLight is still the light's direction (the next line shadows it)
   ["vec3 vLight = directionalLightColor[ 0 ] * directionalLightWeighting;",
-    "vec3 vLight = directionalLightColor[ 0 ] * directionalLightWeighting + vec3( maceAmbient );"],
+    "float maceSpec = maceSpecular * pow( max( dot( norm, normalize( vLight + vec3( 0.0, 0.0, 1.0 ) ) ), 0.0 ), 40.0 );\n    vec3 vLight = directionalLightColor[ 0 ] * directionalLightWeighting + vec3( maceAmbient );"],
+  ["vec3 color = vLight*vColor;", "vec3 color = vLight*vColor + vec3( maceSpec );"],
   ["vec3 vLightResult = directionalLightWeighting;", "vec3 vLightResult = directionalLightWeighting + vec3( maceAmbient );"],
   ["vec3 light = vec3( max( dotProduct, 0.0 ) );", "vec3 light = vec3( max( dotProduct, 0.0 ) ) + vec3( maceAmbient );"],
 ];
-const DECL = "uniform float maceAmbient;\n";
+const DECL = "uniform float maceAmbient;\nuniform float maceSpecular;\n";
 
 /** A shader source with the ambient term (unchanged when it has no light sum). */
 export function patchSource(src) {
@@ -45,13 +51,18 @@ export function installShaderPatch(v) {
   if (!r || r.maceAmbientPatch || typeof r.buildProgram !== "function") return false;
   const build = r.buildProgram.bind(r), load = r.loadMaterialUniforms.bind(r);
   r.maceAmbient = 0;
+  r.maceSpecular = 0;
   r.buildProgram = function (frag, vert, uniforms, params) {
     const f = patchSource(frag), vs = patchSource(vert);
-    if ((f !== frag || vs !== vert) && uniforms && !uniforms.maceAmbient) uniforms.maceAmbient = { type: "f", value: r.maceAmbient };
+    if ((f !== frag || vs !== vert) && uniforms && !uniforms.maceAmbient) {
+      uniforms.maceAmbient = { type: "f", value: r.maceAmbient };
+      uniforms.maceSpecular = { type: "f", value: r.maceSpecular };
+    }
     return build(f, vs, uniforms, params);
   };
   r.loadMaterialUniforms = function (locs, uniforms) {
     if (uniforms && uniforms.maceAmbient) uniforms.maceAmbient.value = r.maceAmbient;
+    if (uniforms && uniforms.maceSpecular) uniforms.maceSpecular.value = r.maceSpecular;
     return load(locs, uniforms);
   };
   r.maceAmbientPatch = true;
@@ -78,12 +89,12 @@ export function autoOutline(background, backgroundColor, themeText) {
   return asHex(luma > 0.5 ? 0 : WHITE);
 }
 
-/** Apply the values ({lightStrength, lightDirection, ambient, outline, outlineWidth,
+/** Apply the values ({lightStrength, lightDirection, ambient, shininess, outline, outlineWidth,
  * outlineColor, ambientOcclusion, background}) to the viewer; cheap when nothing changed. */
 export function apply(v, val) {
   if (!v || !v.scene) return;
   const key = JSON.stringify([val.lightStrength, val.lightDirection, val.ambient, val.outline, val.outlineWidth,
-    val.outlineColor, val.ambientOcclusion, val.lod >= 3]);
+    val.outlineColor, val.ambientOcclusion, val.lod >= 3, val.shininess]);
   if (v.maceLook === key) return;
   v.maceLook = key;
   const L = lightOf(v), r = v.renderer;
@@ -95,6 +106,7 @@ export function apply(v, val) {
   }
   if (r && r.maceAmbientPatch) {
     r.maceAmbient = Math.max(0, Math.min(1, Number(val.ambient) || 0));
+    r.maceSpecular = Math.max(0, Math.min(1, Number(val.shininess) || 0));
     r._currentMaterialId = -1;        // upload the uniform again with the next draw
     r._currentProgram = null;
   }

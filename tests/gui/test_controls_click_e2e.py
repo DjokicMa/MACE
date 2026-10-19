@@ -224,6 +224,19 @@ def test_named_effects(app):
     dismiss(drv)
     real_click(drv, drv.find_element("css selector", '#activity [data-cmd="view.tasks"]'))
     H.wait(drv, "const t = document.querySelector('.bottom-tab.active'); return t && /Tasks/.test(t.textContent)", 5)
+    # Jobs shows the Jobs tab and Workflows opens the Workflows view, as the View menu does; each has a tooltip
+    for cmd in ("view.jobs", "view.workflows"):
+        b = drv.find_element("css selector", f'#activity [data-cmd="{cmd}"]')
+        assert b.get_attribute("aria-label") and b.find_element("css selector", "svg")
+    real_click(drv, drv.find_element("css selector", '#activity [data-cmd="view.jobs"]'))
+    H.wait(drv, "const t = document.querySelector('.bottom-tab.active'); return t && /Jobs/.test(t.textContent)", 5)
+    real_click(drv, drv.find_element("css selector", '#activity [data-cmd="view.workflows"]'))
+    H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'workflows'", 10)
+    H.wait(drv, "return document.querySelector('#activity [data-cmd=\"view.workflows\"]').getAttribute('aria-pressed') === 'true'", 5)
+    tip = drv.execute_script("""const b = document.querySelector('#activity [data-cmd="view.jobs"]');
+        b.dispatchEvent(new PointerEvent('pointerover', {bubbles: true}));
+        return new Promise((r) => setTimeout(() => r((document.querySelector('#tooltip:not([hidden])') || {}).textContent || ''), 900))""")
+    assert "Jobs" in tip, tip
     assert not H.errors(drv), H.errors(drv)
 
 
@@ -232,7 +245,7 @@ def test_keyboard_activation(app):
     drv = app[0]
     layout(drv, "welcome")
     for sel in ("#palette-btn", "#theme-btn", "#settings-btn", '#activity [data-cmd="view.tasks"]',
-                '#activity [data-cmd="file.settings"]'):
+                '#activity [data-cmd="view.jobs"]', '#activity [data-cmd="view.workflows"]', '#activity [data-cmd="file.settings"]'):
         for key in (Keys.ENTER, Keys.SPACE):
             el = drv.find_element("css selector", sel)
             cmd = el.get_attribute("data-cmd")

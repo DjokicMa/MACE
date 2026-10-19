@@ -122,7 +122,7 @@ export function attach(acts, adapter, H) {
     const m = document.createElement("div");
     m.className = "pk-menu";
     m.setAttribute("role", "menu");
-    m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` : it.head ? `<div class="pk-head" role="presentation">${esc(it.head)}</div>` :
+    m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` : it.head ? `<div class="pk-head${it.group ? " pk-group" : ""}" role="presentation"${it.group ? ` data-group="${esc(it.group)}"` : ""}>${esc(it.head)}</div>` :
       `<button type="button" role="${it.checked !== undefined ? (it.toggle ? "menuitemcheckbox" : "menuitemradio") : "menuitem"}" data-v="${esc(it.v)}"${it.checked !== undefined ? ` aria-checked="${it.checked}"` : ""}${it.disabled ? ' aria-disabled="true" disabled' : ""}>${esc(it.label)}</button>`).join("");
     float(m, btn);
     btn.setAttribute("aria-expanded", "true");

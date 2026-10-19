@@ -1,5 +1,7 @@
 /* The structure viewer's camera (spec §2.1, §6): orbit as a trackball on
- * the view quaternion, pan in screen space, zoom toward the cursor, view
+ * the view quaternion (or, Settings › Viewport › Rotation, as a turntable,
+ * optionally in whole angle steps), pan in screen space, zoom toward the
+ * cursor or the view center, view
  * along a direction with a defined "up", 90°/15° turns, framing, and the
  * projection matrix the picker, box and lasso use (calibrated from 3Dmol's
  * own modelToScreen, so it is exact for both projections).
@@ -10,9 +12,73 @@
 import * as G from "../geom/core.js";
 
 const DEG_PER_PX = 0.4;
+const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
+
+/* ---------------------------------------------------------------- rotation modes
+ * Settings › Viewport › Rotation and Angle snap, shared by the structure view
+ * (this camera) and the 3Dmol run, mode and volume views (app.js):
+ *   free: the trackball, about the screen axis across the drag;
+ *   axes: a turntable: a horizontal drag turns about the model's "up" (the
+ *         direction that was up on screen when the turntable took it, kept
+ *         while it stays upright on screen), a vertical drag about the screen
+ *         x axis. Neither moves up's image off the vertical: no roll drift.
+ *   angle snap (15/30/45/90°): the drag's horizontal and vertical turns are
+ *         summed from where it began and applied in whole steps. */
+export const ANGLE_STEPS = [15, 30, 45, 90];
+export function rotationPrefs(get) {
+  const step = Number(get("viewport.angleSnap"));
+  return { mode: get("viewport.rotation") === "axes" ? "axes" : "free", step: ANGLE_STEPS.includes(step) ? step : 0 };
+}
+/** The model's "up" for a turntable at orientation q: the kept one while its image is still vertical on
+ *  screen (no roll since), else the model direction that is up on screen now. */
+export function turntableUp(q, up) {
+  if (up) {
+    const s = G.qrotate(q, up);
+    if (Math.abs(s[0]) < 1e-3 && Math.hypot(s[1], s[2]) > 0.5) return up;
+  }
+  return G.qrotate(G.qconj(q), Y);
+}
+const snapAngle = (a, step) => (step > 0 ? Math.round(a / step) * step : a);
+/** The orientation after a whole drag of (dx, dy) px from q0 (rotationPrefs: mode, step; up: turntableUp). */
+export function dragOrientation(q0, dx, dy, { mode = "free", step = 0, up = Y } = {}) {
+  const yaw = snapAngle(dx * DEG_PER_PX, step), pitch = snapAngle(dy * DEG_PER_PX, step);
+  if (mode === "axes") return G.qmul(G.qaxis(X, pitch), G.qmul(q0, G.qaxis(up, yaw)));
+  return G.qmul(G.qaxis(X, pitch), G.qmul(G.qaxis(Y, yaw), q0));
+}
+/** A turn by deg about screen axis "x", "y" or "z"; a turntable turns "y" about its up instead. */
+export function turnOrientation(q, axis, deg, { mode = "free", up = null } = {}) {
+  if (mode === "axes" && axis === "y") return G.qmul(q, G.qaxis(turntableUp(q, up), deg));
+  return G.qmul(G.qaxis({ x: X, y: Y, z: Z }[axis], deg), q);
+}
+/** The view along the cell axis or Cartesian axis (a, b, c, a*, b*, c*, x, y, z, either sign) nearest to
+ *  the current one, its "up" the in-plane axis nearest the current up (else the current up, made
+ *  perpendicular): { q, label }. cell: the lattice rows, or null for a molecule (x, y, z only). */
+export function nearestAxisView(q, cell) {
+  const qi = G.qconj(q), toward = G.qrotate(qi, Z), upNow = G.qrotate(qi, Y);
+  // the cell's axes first: of two the same (a cubic cell's a and x), the cell's name
+  const cands = [];
+  if (cell) for (const w of ["a", "b", "c", "a*", "b*", "c*"]) { try { cands.push([w, G.alongDirection(cell, w)]); } catch (e) { /* a flat cell */ } }
+  cands.push(["x", X], ["y", Y], ["z", Z]);
+  const both = cands.flatMap(([n, d]) => [[n, d], [`−${n}`, d.map((x) => -x)]]);
+  let best = both[0], bd = -2;
+  for (const c of both) { const s = G.dot3(c[1], toward); if (s > bd + 1e-9) { bd = s; best = c; } }
+  const d = best[1];
+  let up = null, bu = 0.3;
+  for (const [, c] of both) {
+    if (Math.abs(G.dot3(c, d)) > 0.02) continue;
+    const s = G.dot3(c, upNow);
+    if (s > bu + 1e-9) { bu = s; up = c; }
+  }
+  if (!up) up = G.sub3(upNow, G.scale3(d, G.dot3(upNow, d)));
+  if (G.norm3(up) < 1e-6) up = Math.abs(d[2]) < 0.9 ? Z : Y;
+  return { q: G.viewQuaternion(d, up), label: best[0] };
+}
 
 export function createCamera(v, hooks = {}) {
   let cal = null, anim = 0, radius = 10;
+  // a drag in a snapping or turntable mode: its start, the px moved since, and the turntable's up
+  let drag = null, up = null;
+  const prefs = () => (hooks.rotation ? hooks.rotation() : { mode: "free", step: 0 });
   const el = () => v.getCanvas();
   const rect = () => el().getBoundingClientRect();
   const reduced = () => (hooks.reducedMotion ? hooks.reducedMotion() : false);
@@ -85,10 +151,23 @@ export function createCamera(v, hooks = {}) {
     invalidate() { cal = null; },
     setRadius(r) { radius = r; cal = null; },
     /** Trackball: a drag of (dx, dy) px turns the model about the screen axis
-     * (dy, dx, 0); with roll, about the view axis instead (Shift). */
+     * (dy, dx, 0); with roll, about the view axis instead (Shift). In the
+     * turntable or with an angle snap the drag is summed from its start
+     * (endOrbit closes it) and the orientation computed from there. */
     orbit(dx, dy, roll = false) {
       stopAnim();
-      const view = getView(), q = view.slice(4, 8);
+      const view = getView(), q = view.slice(4, 8), p = prefs();
+      if (p.mode !== "free" || p.step) {
+        if (!drag || drag.roll !== roll) {
+          if (p.mode === "axes") up = turntableUp(q, up);
+          drag = { q0: q, dx: 0, dy: 0, roll };
+        }
+        drag.dx += dx; drag.dy += dy;
+        const target = roll ? G.qmul(G.qaxis(Z, snapAngle(-drag.dx * DEG_PER_PX, p.step)), drag.q0)
+          : dragOrientation(drag.q0, drag.dx, drag.dy, { ...p, up });
+        setView([...view.slice(0, 4), ...target]);
+        return;
+      }
       let dq;
       if (roll) dq = G.qaxis([0, 0, 1], -dx * DEG_PER_PX);
       else {
@@ -98,6 +177,8 @@ export function createCamera(v, hooks = {}) {
       }
       setView([...view.slice(0, 4), ...G.qmul(dq, q)]);
     },
+    /** The drag ended: the next one starts from the view as it is. */
+    endOrbit() { drag = null; },
     /** Move the model with the pointer: (dx, dy) px in screen space. */
     pan(dx, dy) {
       stopAnim();
@@ -121,12 +202,16 @@ export function createCamera(v, hooks = {}) {
     /** Turn about model point p from now on: p slides to the view's center (animated), zoom and orientation kept. */
     centerOn(p) { return animateTo(getView().slice(4, 8), p); },
     /** Look along d (toward the viewer) with up as up; animated. */
-    along(d, up) { return animateTo(G.viewQuaternion(d, up)); },
+    along(d, upv) { return animateTo(G.viewQuaternion(d, upv)); },
+    /** Turn to the nearest cell or Cartesian axis (nearestAxisView); animated. Its label. */
+    snapNearest(cell) { const r = nearestAxisView(getView().slice(4, 8), cell); return animateTo(r.q).then(() => r.label); },
+    /** The turntable's up (model space), for the tests. */
+    turntableUp: () => up,
     /** Turn the view about a screen axis ("x", "y" or "z": in-plane) by deg. */
     turn(axis, deg, animate = true) {
-      const view = getView(), q = view.slice(4, 8);
-      const ax = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[axis];
-      const target = G.qmul(G.qaxis(ax, deg), q);
+      const view = getView(), q = view.slice(4, 8), p = prefs();
+      if (p.mode === "axes" && axis === "y") up = turntableUp(q, up);
+      const target = turnOrientation(q, axis, deg, { mode: p.mode, up });
       if (!animate) { setView([...view.slice(0, 4), ...target]); return Promise.resolve(); }
       return animateTo(target);
     },

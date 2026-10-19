@@ -61,7 +61,9 @@
   --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
   --fallback-atom: #888888;
   /* volumes (plan E5): the two lobes, and the potential's diverging scale (RdBu, as mace plotting --cube) */
-  --vol-plus: #2563eb; --vol-minus: #dc2626; --mep-pos: #b2182b; --mep-mid: #f7f7f7; --mep-neg: #2166ac;
+  --vol-plus: #2563eb; --vol-minus: #dc2626; --mep-red: #b2182b; --mep-mid: #f7f7f7; --mep-blue: #2166ac;
+  /* the Magnetic style (1.1.7): atoms by Mulliken spin moment, a diverging scale centered at 0 (RdBu) */
+  --spin-atom-up: #b2182b; --spin-atom-zero: #f7f7f7; --spin-atom-down: #2166ac;
   /* Compare (plan B7): the ghost, the two tones, and a viridis-like sequential scale
    * (stops sampled from matplotlib's BSD-licensed viridis table) */
   --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #2563eb; --cmp-b: #ea580c;

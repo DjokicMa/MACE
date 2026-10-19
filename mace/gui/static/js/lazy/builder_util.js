@@ -21,7 +21,12 @@ const resultKey = (id) => `mace.gui.builder.${id}.result`;
 const load = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private window */ } };
 export const fmtN = (n) => Number(n).toLocaleString("en-US");
-export const stemOf = (t) => String(t || "structure").split("/").pop().replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_.-]+/g, "_") || "structure";
+/* A builder's default name: the document's stem as NAME_RE accepts it with the builder's suffix
+ * after it (workflow outputs are named "<material>_opt_<functional>_optimized_sp_<functional>_optimized",
+ * often past NAME_RE's 61 characters, and "3,4^2T1" has characters a name cannot hold). */
+export const STEM_MAX = 32;
+export const stemOf = (t) => String(t || "structure").split("/").pop().replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_.-]+/g, "_")
+  .replace(/^[^A-Za-z0-9]+/, "").slice(0, STEM_MAX).replace(/[_.-]+$/, "") || "structure";
 
 /** Open a builder on the active structure document. spec: {id, title, route,
  * results: ["new", "inplace"] | ["new"], defaultResult, primary, render(host, api),

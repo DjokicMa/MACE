@@ -94,9 +94,12 @@ export function createFreqView(host, tableHost, optsHost, H) {
         fr[f].forEach((a, i) => { const r = fr[0][i]; if (r) { a.bonds = r.bonds.slice(); a.bondOrder = (r.bondOrder || []).slice(); } });
       }
     }
+    // each drawn atom's site, in every frame (the Magnetic style colors by it)
+    const n0 = list.n;
+    (fr.length ? fr : [m.selectedAtoms({})]).forEach((atoms) => atoms.forEach((a, k) => { a.properties = { ...(a.properties || {}), base: list.base[k % n0] }; }));
     if (dd.style === "wireframe") {
-      const cs = M().colorScheme();
-      m.setStyle({}, dd.bonds ? { line: { colorscheme: cs }, sphere: { scale: 0.12, colorscheme: cs } } : { sphere: { scale: 0.12, colorscheme: cs } });
+      const cs = M().colorSpec ? M().colorSpec() : { colorscheme: M().colorScheme() };
+      m.setStyle({}, dd.bonds ? { line: { ...cs }, sphere: { scale: 0.12, ...cs } } : { sphere: { scale: 0.12, ...cs } });
     } else m.setStyle({}, M().styleFor(dd.style, dd.bonds));
     const shown = boxed(s, dd.box);
     if (dd.cell) M().drawCell(vw, shown, M().vpVar("--cell"), 0.025, 1);

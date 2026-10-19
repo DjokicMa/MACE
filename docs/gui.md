@@ -1051,7 +1051,8 @@ under Settings › Keyboard › Show: Menu mnemonics, and can be moved or
 removed like any key.
 
 **Viewer and timeline keys:** the arrow keys
-turn the view by 15° (Shift: 1°) and **+**/**−** zoom while the viewport has
+turn the view by 15°, or by the angle snap's step when one is on (Shift: 1°),
+**0** snaps the view to the nearest axis, and **+**/**−** zoom while the viewport has
 focus; **,** and **.** step through an optimization (Shift: first and last
 step), **Space** plays it, and **Ctrl+Alt+O** switches overlay and side by
 side; **Ctrl+G** jumps to an atom; **Shift+F10** opens the context menu of
@@ -1188,7 +1189,9 @@ and spin styling to `mace plotting`. A folder's `mace-folder.toml` can set
 CLI: the same names as the plot's Style controls and `mace plotting`'s flags
 (`--style`, `--spin-colors`, `--spin-up-color`, `--spin-down-color`,
 `--band-color`, `--spin-down-style`/`--spin-down-solid`, `--dos-colors`, `--dos-spin`,
-`--no-dos-total`/`--dos-total`, `--dos-smooth`). Two more `[plots]` keys are for `mace plotting` only:
+`--no-dos-total`/`--dos-total`, `--dos-smooth`), and `[plots] potential_colors`
+(`chemistry` or `physics`, `--potential-colors`; the GUI's Settings › Viewport ›
+Potential colors). Two more `[plots]` keys are for `mace plotting` only:
 `energy_reference` (`--energy-reference`: `auto`, `fermi` or `vacuum`) and
 `backend` (`--backend`: `plotly` or `matplotlib`). For the backend,
 `--backend` wins, then the folder's file, then `site.toml`'s `[plots] backend`,
@@ -1254,15 +1257,20 @@ drawn, the DOS projections are all solid and told apart by color (each
 element's orbitals by a shade of its color, the largest strongest), so a dash
 always means spin down.
 
-**A plot's own style.** Every plot's Plot options has a **Style** section:
-**Plot style**, and for a band or DOS plot **Spin colors** (with two color
-pickers for Custom), **β dashed**, **DOS colors**, **DOS spin layout**,
-**DOS total** and **DOS smoothing**. Each starts at "Settings (…)", which follows Settings and names
+**A plot's own style.** Every plot's Plot options has a **Style** section with
+**Plot style**. A band or DOS plot adds its halves' groups: **Bands** (**Spin
+colors**, with two color pickers for Custom, **Band color** for a run that is not
+spin-polarized, and **β dashed**) and **DOS** (**DOS colors**, **DOS spin
+layout**, **DOS total**, **DOS smoothing** and its σ). A band + DOS plot has
+both groups, whether you opened the BAND.DAT or its DOSS.DAT; a BAND.DAT alone
+has only Bands, and a DOSS.DAT alone only DOS (with the spin colors, color and β
+line of its total). Each starts at "Settings (…)", which follows Settings and names
 what that is; a choice applies to this plot only, redraws at once and is
 undone with Mod+Z like every plot option. **Reset Plot Options** goes back to
-Settings. **Make This the Default** writes the plot's style into Settings (and
-the plot follows Settings again). The **Style ▾** menu in the plot's toolbar,
-next to Export, has the same choices one click away, **Follow Settings**, and
+Settings. **Make This the Default** writes the plot's style, both halves, into
+Settings (and the plot follows Settings again). The **Style ▾** menu in the
+plot's toolbar, next to Export, has the same controls in the same groups one
+click away (a color opens the color picker), **Follow Settings**, and
 **Copy CLI Command**.
 
 **Copy CLI Command** (Style ▾ and Export ▾) copies the `mace plotting` command
@@ -1279,7 +1287,7 @@ any default left out. Run in the data's folder it draws the same figure.
 
 *White figures* for a paper or slides: Plot style **Publication** with Plot
 background **Light** gives black-on-white plots in any theme; for the 3D
-view add Settings › Viewport › Rendering preset **Publication** (white
+view add Settings › Viewport › Lighting preset **Publication** (white
 background, outlines, ambient occlusion). For the 3D view, Settings › Viewport › **Background** (or Inspector ›
 Display) White or Black keeps it light or dark in any theme: when it is the
 other lightness from the theme, its axis triad, labels, measurement chips,
@@ -1487,7 +1495,7 @@ change it), and so is a file MACE refuses (below).
 
 | Command | Reads |
 |---|---|
-| `mace plotting` | `[plots] energy_window` as `--e-lower`/`--e-upper` when they are not given, and as the energy range its interactive questions offer; `fermi_shift`, `energy_reference`, `backend`, `style`, `dos_colors`, `dos_spin`, `dos_total`, `spin_colors`, `spin_up_color`, `spin_down_color` and `spin_down_style` as the flags of the same names (`dos_total = false` is `--no-dos-total`) when they are not given; `[units] energy` as `--units` |
+| `mace plotting` | `[plots] energy_window` as `--e-lower`/`--e-upper` when they are not given, and as the energy range its interactive questions offer; `fermi_shift`, `energy_reference`, `backend`, `style`, `dos_colors`, `dos_spin`, `dos_total`, `spin_colors`, `spin_up_color`, `spin_down_color`, `spin_down_style` and `potential_colors` as the flags of the same names (`dos_total = false` is `--no-dos-total`) when they are not given; `[units] energy` as `--units` |
 | `mace convert` (cif2d12) | `[setup] functional` and `basis_set` as the defaults of a deck made from a CIF (a name with `-D3`, such as `PBE0-D3`, turns D3 on; without it D3 follows the built-in default) |
 | `mace opt2d12` | the same `functional`, only where the parent's functional cannot be used (instead of HSE06); a follow-up otherwise keeps its parent's method |
 | `mace opt2d12`, `mace opt2d3` | `[setup] opt2d12_config` / `opt2d3_config` as `--config-file` when none is given (and no `--save-options` / `--save-config`). GUI Calculation Setup does not start from these presets (its command names its own file); it says so above its form |
@@ -1619,8 +1627,16 @@ are off (a run's step can be edited with **Edit This Step**, below).
 The pointer works the same way in every tool, as in OVITO, Avogadro and
 Blender:
 
-- the wheel zooms toward the cursor, a middle-drag pans, a right-drag orbits,
-  and Alt+left-drag orbits from any tool (for trackpads);
+- the wheel zooms (scrolling up zooms in, as in VESTA; the run and
+  comparison views scroll the same way, and Settings › Viewport › Invert
+  scroll zoom flips it everywhere) toward Settings › Viewport › **Zoom
+  toward**: **View center** (the default: the middle of the view, which is
+  the rotation center, stays put, so a turn after zooming is still about the
+  same point) or **Mouse pointer** (the point under the pointer stays under
+  it, as in map apps; the rotation center moves with the view). Both apply
+  to every 3D view, live, and are also in the toolbar's View Along ▾ menu. A
+  middle-drag pans, a right-drag
+  orbits, and Alt+left-drag orbits from any tool (for trackpads);
 - a right-click without dragging opens the atom menu (on an atom) or the
   viewport menu (on empty space);
 - the left button belongs to the tool. With **Select** (V) a click picks an
@@ -1628,6 +1644,30 @@ Blender:
   double-click selects the symmetry orbit and a triple-click the bonded
   fragment. **Lasso** (L) draws a free polygon; **Orbit** (O), **Pan** (H) and
   **Zoom** (Z) turn the left button into that motion.
+
+**Rotation.** Settings › Viewport › **Rotation** and **Angle snap** (also
+the toolbar's **View Along ▾** menu and View › Rotation and Zoom)
+set how a drag turns every 3D view, the structure view and the 3Dmol run,
+mode and volume views alike, live:
+
+- **Free** (the default) is the trackball: a drag turns about the screen axis
+  across it, so a few diagonal drags also roll the structure.
+- **Turntable**: a horizontal drag turns about the
+  structure's up (whatever pointed up on screen when you started, kept until
+  something else rolls the view, such as an in-plane turn or View Along), a
+  vertical drag about the screen's horizontal axis. Up never leaves the
+  screen's vertical, so the structure stays upright however long you drag.
+  The arrow keys Left and Right turn about the same up.
+- **Angle snap** Off, 15°, 30°, 45° or 90°: a drag's horizontal and vertical
+  turns are summed from where it began and applied in whole steps (a drag
+  of half a step jumps one step), with either rotation mode; the arrow keys
+  then turn by one step instead of 15°.
+- **Snap View to Nearest Axis** (**0**, View menu, the viewport's empty-space
+  menu, the View Along ▾ menu) turns the view to look along the nearest of a,
+  b, c, a\*, b\*, c\* (a periodic structure) and the Cartesian x, y, z,
+  either sign, with the nearest of those across it as up; the View Along
+  button then names it. Use it after a free drag to square the view up
+  again; View Along and Rotate 90° are unchanged.
 
 Selected atoms get an amber ring and a translucent shell, and the atom under
 the pointer a blue ring (the halo). The rings are drawn over the 3D view
@@ -2032,7 +2072,7 @@ wave functions.
 | `*.BAND.DAT`, `*.DOSS.DAT`, `*_IRSPEC.DAT`, `*_RAMSPEC.DAT` | plots |
 | `.molden` (CRYSTAL23 ORBITALS: `<job>_orb.molden`, `<job>_orb_<n>_K<ijk>_real.molden`, `_complex.molden`) | the Volume document with the orbital picker (below); the files are never changed |
 | cube files: `*_DENS.CUBE`, `*_POT.CUBE`, `*_SPIN.CUBE`, `.cube`, and CRYSTAL's own names `DENS_CUBE.DAT`, `POT_CUBE.DAT`, `SPIN_CUBE.DAT`, `<input>_WAN_CUBE.DAT` | the Volume document (below) |
-| `fort.25` / `.f25` | a 2D map (ECHG charge density, POTM potential: the MAPN block) opens as a contour plot of the A-B-C plane with its corners labeled, a log scale for a positive map, and the spin density as a second map; the colors span the 1st to 99th percentile of the map (symmetric about zero for a signed map), so the spikes at the nuclei do not take the whole scale (Plot options › **Color range**: Auto, Full min to max, or Custom from/to); each map is named by the properties output of the same name beside it (CRYSTAL's fort.25 does not say whether a block is a density or a potential), else "2D map"; a BAND or DOSS fort.25 says so and opens the `.DAT` beside it |
+| `fort.25` / `.f25` | a 2D map (ECHG charge density, POTM potential: the MAPN block) opens as a contour plot of the A-B-C plane with its corners labeled, a log scale for a positive map, and the spin density as a second map; the colors span the 1st to 99th percentile of the map (symmetric about zero for a signed map), so the spikes at the nuclei do not take the whole scale (Plot options › **Color range**: Auto, Full min to max, or Custom from/to); a POTM or CLAS potential is drawn in Settings › Viewport › Potential colors (chemistry, the default: red = negative); each map is named by the properties output of the same name beside it (CRYSTAL's fort.25 does not say whether a block is a density or a potential), else "2D map"; a BAND or DOSS fort.25 says so and opens the `.DAT` beside it |
 | BOLTZTRA `*.SEEBECK.dat`, `*.SIGMA.dat`, `*.SIGMAS.dat`, `*.KAPPA.dat`, `*.TDF.dat` | a transport plot |
 | `FREQINFO.DAT`, `BORN.DAT`, `HESSOPT.DAT`, `OPTINFO.DAT`, `SCFOUT.LOG`, ...; `.f9`, `.f98` | a note on what the file is (MACE uses wave functions for GUESSP restarts and properties runs), with **Reveal the run's output**; never read past 4 KB |
 | `.sh` job scripts | text |
@@ -2546,6 +2586,15 @@ an output that a resubmitted job started over says "This output was replaced
 copying opens with **Retry** instead of an error, and Calculation Setup waits
 for a running job's wavefunction (`.f9`) before it writes decks that need it.
 
+## The activity bar
+
+The strip of buttons at the far left opens the views: **Explorer** (shows or
+hides the side bar), **Database**, **Search files** (Go to File), **Tasks**,
+**Jobs** (the bottom panel's Jobs tab, as View › Jobs), **Workflows** (the
+Workflows view, as View › Workflows) and, on a cluster, **Cluster**; Settings
+sits at the bottom. Each button names its view and shortcut on hover and is
+reachable with Tab (Enter or Space opens it).
+
 ## The Cluster view
 
 On a cluster (where `sinfo` or a quota tool exists) the activity bar has a
@@ -2964,10 +3013,13 @@ skewed (hexagonal) cell's surface sits on its atoms.
   sampled on the isosurface as `plot_dual_cube_isosurface` builds it (where
   scikit-image is installed; otherwise at the density's grid points within 2 %
   of the level), then ±max(|5th percentile of the negative values|, 95th of the
-  positive ones). The colors are the CLI's too: red = positive (electron-poor),
-  blue = negative (electron-rich). **Reverse Colors** (or Settings › Potential
-  colors) gives the chemistry convention, red = negative; a custom range and
-  Reset Range are in the inspector.
+  positive ones). The colors are the CLI's too, in Settings › Viewport ›
+  **Potential colors**: Chemistry (the default, as GaussView and VMD: red =
+  negative, electron-rich; blue = positive, electron-poor) or Physics (red =
+  positive). The same setting colors a potential cube's isosurfaces (+ blue,
+  − red in chemistry colors, as spin) and slices, and POTM/CLAS 2D maps.
+  The inspector's **Red = negative (chemistry colors)** box overrides it for
+  one volume; a custom range and Reset Range are in the inspector.
 - **Difference…** (Analysis › Volume Difference) makes A − B (− C ...) with any
   coefficients and opens the result as an untitled volume; **Save Result As…**
   writes it as a new `.CUBE` with the CLI's `write_cube_file` and never
@@ -3219,27 +3271,74 @@ style and colors) stays the same for all documents ("All documents").
   grown: the group says the structure is an extended network (with its
   dimension, from the bonds MACE draws) and only completes discrete molecules.
   At most 50 000 atoms are drawn.
-- **Polyhedra** (Shift+P), **Atom Size** and **Bond Radius**.
+- **Polyhedra** (Shift+P), **Atom Size** and **Bond Radius** moved to
+  Rendering › Style (below).
 
-**Rendering**:
+**Rendering** has two dropdowns that combine freely (Space-filling with
+Glossy dark, Polyhedral with Publication): **Style** sets how atoms are drawn
+and colored, **Lighting** sets the light and the background. Each applies only
+its own values. Each also has **Custom**, your own look: changing one of its
+values shows Custom and keeps that look; choosing Custom later (after another
+preset, or in another document) brings it back. Before you have edited any
+value, Custom starts from the current view and says so.
 
-- **Preset**: Default (the look of earlier versions with subtle depth
-  cueing), Flat, Publication (white background, outline, ambient light,
-  ambient occlusion) and Presentation (black background). Changing a value
-  afterwards shows Custom.
+**Style**:
+
+| Style | What it draws |
+|---|---|
+| Default | Ball and stick with the Display section's atom style, Settings' color scheme and radii (the look of earlier versions) |
+| VESTA-like | VESTA's ball and stick whatever Settings choose: VESTA's atomic radii at 40 %, VESTA's colors, 0.12 Å bonds |
+| Space-filling | van der Waals spheres, no bonds |
+| Wireframe / sticks | Thin sticks only (0.06 Å), for big cells, frameworks and supercells |
+| Grayscale print | Each element color as the gray of the same lightness, with outlines whatever the lighting |
+| Polyhedral | Coordination polyhedra around the cations, translucent in the cation's color, with smaller balls and sticks. A center is an atom with 4 to 12 bonded neighbors that are all more electronegative (Pauling): the Ti–O octahedra in TiPbO3, Mg in MgO, S in a sulfonyl group. Polyhedra are built from the drawn atoms, so a cation on a cell edge gets its whole polyhedron from the periodic images |
+| Magnetic (spin-colored) | Each atom by its Mulliken spin moment on a diverging scale centered at 0: blue for excess spin down, white for none, red for excess spin up, full color at the largest moment. A small legend in the corner gives the scale in μB |
+| Custom | Your own style |
+
+Magnetic reads the moments from the final "ALPHA-BETA ELECTRONS" Mulliken
+analysis of the run: the output itself, or for a CIF, deck or cube the output
+of the same name beside it. The moments must be for the drawn atoms (same
+count and elements). When there is no such output, the run is closed-shell
+(every moment zero) or the counts differ, Magnetic is grayed out and its
+tooltip, and the note under the dropdown, say why. Polyhedral is grayed out
+in the optimization, mode and volume views (polyhedra are drawn in the
+structure view only). **Polyhedra** (Shift+P), **Atom Size** and **Bond
+Radius** are part of the style: changing them makes it Custom.
+
+**Lighting**:
+
+| Lighting | Look |
+|---|---|
+| Default | One front light, no ambient light, subtle depth cueing, the theme's background (the look of earlier versions) |
+| Flat | Soft, even light without depth cueing: colors read true |
+| Publication | White background, thin outline, ambient light and ambient occlusion, for papers |
+| Presentation | Black background, stronger light and depth cueing, for projectors |
+| Glossy dark | Black background, shiny atoms (a specular highlight) lit from the upper left, strong depth cueing, for slides |
+| Custom | Your own lighting |
+
+Grayscale print is a style, not a lighting: it changes the colors, and goes
+with any lighting (Publication for a white page).
+
+The lighting values:
+
 - **Depth Cueing**: how much the farthest atoms fade toward the background
   (15% by default; 0 is off).
 - **Light Strength**, **Light Direction** (Front, Upper Left, Top; an
   off-axis light raises Ambient Light to 15% so the shaded side stays
   visible) and **Ambient Light** (light from all directions).
+- **Shininess**: a glossy highlight on every atom (Glossy dark).
 - **Ambient Occlusion** (darkens creases between atoms; off on very large
   structures), **Outline** with its width and color (Theme: the theme's
   text color, or black or white, whichever stands out on a white, black or
   custom background), and **Background**.
 
 A dot after a label means the document has its own value; click it to use
-the default again. **Reset** does that for the whole group, and **Save as
-Default** makes the document's values the defaults. These options only
+the default again. **Reset** does that for the whole group (Style and
+Lighting each have their own), and **Save as Default** makes the document's
+values the defaults. Settings › Viewport shows both defaults, **Style preset**
+and **Lighting preset**; choosing one there also sets the values it stands
+for. A document saved before the Style dropdown keeps its look: its Rendering
+preset is its Lighting. These options only
 change what you see: decks, CIF files and the settings JSON never contain
 them. Export Image (PNG) draws the document's look; Export SVG draws flat
 colors (no lighting, depth cueing or outline).
@@ -3266,7 +3365,7 @@ only for an atom with no metal-nonmetal bond, so Mg in MgO has its six O and
 copper its twelve Cu.
 
 **View › Show Polyhedra** (Shift+P) draws the coordination polyhedra around
-the cations (centers with 4 to 12 neighbors, all of another element): one
+the cations (centers with 4 to 12 neighbors, all more electronegative): one
 translucent mesh per element, with edges in the cell color. The geometry
 worker builds them. Above 2000 drawn atoms they stay off and the viewport
 banner says why.

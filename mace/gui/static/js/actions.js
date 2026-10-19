@@ -173,11 +173,30 @@ export function registerAll(S) {
     keys: ["Alt+["], ...needsView, run: () => S.rotateView("z", 90) });
   register({ id: "view.rotateInPlanePlus", title: "Rotate 90° In-Plane Right", menuTitle: "In-Plane +90°", category: "View",
     keys: ["Alt+]"], ...needsView, run: () => S.rotateView("z", -90) });
-  // 15° turns with the arrow keys (Shift: 1°) while the viewport has focus
+  // 15° turns with the arrow keys (Shift: 1°) while the viewport has focus; with an angle snap
+  // (Settings › Viewport) the snap's step instead of 15°
   [["Left", "y", -1], ["Right", "y", 1], ["Up", "x", -1], ["Down", "x", 1]].forEach(([d, axis, sign]) =>
-    register({ id: `view.rotate15${d}`, title: `Rotate 15° ${d}`, category: "View", keys: [d, `Shift+${d}`],
-      when: `${view3D} && viewportFocus`, reason: "Needs a structure", desc: "Shift: 1°",
-      run: (c, a) => S.rotateView(axis, sign * (a && a.chord && a.chord.startsWith("Shift+") ? 1 : 15)) }));
+    register({ id: `view.rotate15${d}`, title: `Rotate ${d} (15° or the Angle Snap)`, category: "View", keys: [d, `Shift+${d}`],
+      when: `${view3D} && viewportFocus`, reason: "Needs a structure", desc: "15°, or the angle snap's step when one is on. Shift: 1°",
+      run: (c, a) => S.rotateView(axis, sign * (a && a.chord && a.chord.startsWith("Shift+") ? 1 : S.rotateStep())) }));
+  // Settings › Viewport › Rotation and Angle snap (the toolbar's Rotation ▾ menu), and the snap to the nearest axis
+  [["free", "Free (Trackball)"], ["axes", "Turntable"]].forEach(([m, t]) => register({ id: `view.rotation.${m}`,
+    title: `Rotation: ${t}`, menuTitle: t, category: "View", radio: true, aliases: ["rotation mode", "turntable", "trackball", "orbit"],
+    desc: m === "axes" ? "Dragging turns about the structure's up and the screen's horizontal axis: no roll, the structure stays upright"
+      : "Dragging turns about any axis, as a trackball", checked: () => (S.setting("viewport.rotation") || "free") === m,
+    run: () => S.set("viewport.rotation", m) }));
+  [["off", "Off (Any Angle)"], ["15", "15°"], ["30", "30°"], ["45", "45°"], ["90", "90°"]].forEach(([s, t]) => register({
+    id: `view.angleSnap.${s}`, title: `Angle Snap: ${t}`, menuTitle: t, category: "View", radio: true, aliases: ["snap", "rotation step"],
+    desc: s === "off" ? "Drags turn the view by any angle" : `Drags turn the view in ${t} steps; the arrow keys turn by ${t}`,
+    checked: () => (S.setting("viewport.angleSnap") || "off") === s, run: () => S.set("viewport.angleSnap", s) }));
+  [["center", "View Center"], ["pointer", "Mouse Pointer"]].forEach(([m, t]) => register({ id: `view.zoomToward.${m}`,
+    title: `Zoom Toward: ${t}`, menuTitle: t, category: "View", radio: true, aliases: ["wheel", "scroll zoom", "zoom to cursor"],
+    desc: m === "pointer" ? "The wheel zooms toward the point under the pointer" : "The wheel zooms toward the middle of the view (the rotation center)",
+    checked: () => (S.setting("viewport.zoomToward") || "center") === m, run: () => S.set("viewport.zoomToward", m) }));
+  register({ id: "view.snapNearestAxis", title: "Snap View to Nearest Axis", category: "View", keys: ["0"], icon: "rotate-3d",
+    aliases: ["align", "straighten", "nearest axis"], ...needsView,
+    desc: "Look along the nearest of a, b, c, a*, b*, c* and x, y, z, with the nearest axis across it as up",
+    run: () => S.snapNearestAxis() });
   register({ id: "view.zoomIn3D", title: "Zoom In", category: "View", keys: ["+"], icon: "zoom-in",
     when: `${view3D} && viewportFocus`, reason: "Needs a structure", run: () => S.zoomView(1.25) });
   register({ id: "view.zoomOut3D", title: "Zoom Out", category: "View", keys: ["-"], icon: "zoom-out",
@@ -506,8 +525,11 @@ export function registerAll(S) {
   register({ id: "analysis.volumeDiff", title: "Volume Difference…", category: "Analysis", icon: "minus",
     when: "hasTwoCubes", reason: "Needs two cube files in this folder",
     aliases: ["density difference", "deformation density", "subtract cubes", "orbital", "wannier"], run: () => S.volumeDifference() });
+  // a single-point output has one geometry: nothing moves along it (its SCF is Run Analysis › SCF)
+  const SP_NO = "A single-point run has one geometry: no optimization steps (its SCF is in Run Analysis › SCF)";
+  const spReason = (other) => (c) => (c.docSinglePoint ? SP_NO : other);
   register({ id: "analysis.trajectory", title: "Optimization Trajectory", category: "Analysis", icon: "history",
-    when: "docKind == trajectory|structure && docFileKind == out", reason: "Needs an open .out",
+    when: "docKind == trajectory|structure && docFileKind == out && !docSinglePoint", reason: spReason("Needs an open .out"),
     run: () => S.reopenActive() });
   register({ id: "analysis.compareGroups", title: "Compare the Two Groups' Structures", category: "Analysis", icon: "layers",
     enabled: (c) => !!c.splitOpen && c.docHasPath && (c.docKind === "structure" || c.docKind === "trajectory") && !!S.otherStructurePath(),
@@ -519,19 +541,20 @@ export function registerAll(S) {
   const cmpDoc = { when: "docKind == trajectory", reason: "Needs an optimization or a comparison" };
   // Run Analysis (PLAN_analysis C4): an optimization's energy, convergence, SCF, cell and tracked measurements
   const runDoc = { when: "docFileKind == out", reason: "Needs an open optimization output (.out)" };
+  const optRunDoc = { when: "docFileKind == out && !docSinglePoint", reason: spReason("Needs an open optimization output (.out)") };
   register({ id: "analysis.energy", title: "Energy Along the Run", category: "Analysis", icon: "chart-line",
     when: "docKind == trajectory || docKind == runplot", reason: "Needs an optimization or a comparison",
     run: () => (S.runPathOf() ? S.openRunPlot(null, "energy") : S.compareSub("energy")) });
   register({ id: "analysis.runPlot", title: "Run Analysis", category: "Analysis", icon: "chart-line", ...runDoc,
     aliases: ["convergence", "energy", "scf", "optimization plot"], desc: "Energy, convergence, SCF and cell along an optimization",
     run: () => S.openRunPlot(null, "energy") });
-  register({ id: "analysis.convergence", title: "Convergence Criteria", category: "Analysis", icon: "activity", ...runDoc,
+  register({ id: "analysis.convergence", title: "Convergence Criteria", category: "Analysis", icon: "activity", ...optRunDoc,
     aliases: ["toldeg", "toldex", "gradient", "displacement"], run: () => S.openRunPlot(null, "convergence") });
   register({ id: "analysis.scf", title: "SCF Convergence", category: "Analysis", icon: "activity", ...runDoc,
     aliases: ["scf cycles", "toldee"], run: () => S.openRunPlot(null, "scf") });
-  register({ id: "analysis.cellRun", title: "Cell Along the Run", category: "Analysis", icon: "box", ...runDoc,
+  register({ id: "analysis.cellRun", title: "Cell Along the Run", category: "Analysis", icon: "box", ...optRunDoc,
     aliases: ["lattice", "volume"], run: () => S.openRunPlot(null, "cell") });
-  register({ id: "analysis.trackMeasurement", title: "Track Measurement Along the Run", category: "Analysis", icon: "ruler", ...runDoc,
+  register({ id: "analysis.trackMeasurement", title: "Track Measurement Along the Run", category: "Analysis", icon: "ruler", ...optRunDoc,
     aliases: ["track bond", "distance along"], desc: "The Tracked tab: measure on the run (Measurements), then Track Along the Run",
     run: () => S.openRunPlot(null, "tracked") });
   register({ id: "analysis.compareRuns", title: "Compare Runs…", category: "Analysis", icon: "layers", ...runDoc,
@@ -699,6 +722,13 @@ export function registerAll(S) {
     run: () => S.contextMenuForFocus() });
 }
 
+/* The rotation part of the toolbar's View Along ▾ menu and View › Rotation: the drag's mode, its angle snap,
+ * where the wheel zooms, the snap to an axis. */
+export const ROTATION_MENU = [{ head: "Rotation" }, "view.rotation.free", "view.rotation.axes", "-",
+  { head: "Angle snap" }, "view.angleSnap.off", "view.angleSnap.15", "view.angleSnap.30", "view.angleSnap.45", "view.angleSnap.90", "-",
+  { head: "Zoom toward" }, "view.zoomToward.center", "view.zoomToward.pointer", "-",
+  "view.snapNearestAxis"];
+
 /* The atom and empty-space menus (spec §2.2), the explorer item and tab menus. */
 export const CONTEXT = {
   atom: ["atom.selectEquivalents", "atom.selectElement", "atom.selectNeighbors", "-", "edit.replaceElement",
@@ -707,7 +737,7 @@ export const CONTEXT = {
     "atom.copyCart", "-", "atom.properties"],
   empty: ["viewport.addAtomHere", "edit.paste", "select.all", "-",
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
-    "view.reset", "view.pivotCell", "view.pivotSelection",
+    "view.snapNearestAxis", "view.reset", "view.pivotCell", "view.pivotSelection",
     { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom"] }, "-",
     "file.exportImage", "file.exportLegend"],
   explorer: ["explorer.open", "explorer.openToSide", "explorer.openAsText", "explorer.compareWithActive", "explorer.plot",
@@ -731,6 +761,7 @@ export const MENUS = [
   { label: "View", items: ["view.palette", "-",
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
     { label: "Rotate 90°", sub: ["view.rotateLeft", "view.rotateRight", "view.rotateUp", "view.rotateDown", "view.rotateInPlaneMinus", "view.rotateInPlanePlus"] },
+    { label: "Rotation and Zoom", sub: ROTATION_MENU.slice(0, -2) }, "view.snapNearestAxis",
     "view.reset", "view.frameSelection", "view.pivotCell", "view.pivotSelection", "view.projection", "-",
     "view.cell", "view.boundary", "view.bonds",
     { label: "Show Labels", sub: ["view.labels.off", "view.labels.element", "view.labels.index", "view.labels.both", "view.labels.wyckoff", "-", "view.labelsCycle"] },

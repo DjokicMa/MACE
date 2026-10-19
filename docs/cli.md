@@ -1010,6 +1010,7 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 | `--view iso\|slice\|slice-all` | Cube: view (default iso) |
 | `--slice AXIS POS` | Cube: one 2D slice, drawn as a flat map on Cartesian in-plane axes (a skewed cell keeps its parallelogram), equal x/y scale, the atoms within 2 bohr of the plane and the unit on the colorbar |
 | `--colorscale NAME`, `--no-atoms`, `--bonds`, `--publication` | Cube: color scale and display |
+| `--potential-colors chemistry\|physics` | Cube: electrostatic potential colors in isosurfaces, slices and potential-colored surfaces. `chemistry` (default, as GaussView and VMD): red = negative (electron-rich), blue = positive (electron-poor), the same pair as spin (+ blue); `physics`: red = positive (MACE 1.1.6 and earlier). The GUI's Settings › Viewport › Potential colors; also `[plots] potential_colors`. Spin and differences stay + blue, − red |
 | `--clip P` | Cube slices: the color range runs from the (100 − P)th to the Pth percentile of the values, symmetric about 0 for spin and potential, so the nuclear spikes do not take the whole scale (default 99) |
 | `--color-range LO,HI` | Cube slices: the color range outright (log10 units for a log-scale density; a negative low end needs `--color-range=-0.01,0.01`) |
 | `--engine-args "..."` | Cube: extra flags for the cube engine |

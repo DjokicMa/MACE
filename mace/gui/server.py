@@ -977,6 +977,8 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._structure(query)
             if route == "related":
                 return self._json(_related(st, st.resolve(self._q(query, "path")), self._q(query, "pick") or None))
+            if route == "spins":
+                return self._json(_spins(st, st.resolve(self._q(query, "path"))))
             if route == "filekind":
                 p = st.resolve(self._q(query, "path"))
                 if not p.is_file():
@@ -3853,6 +3855,25 @@ def _related(st, path: Path, pick: Optional[str] = None) -> Dict[str, Any]:
 
     return gui_related.find(path, inside=lambda f: filekind.rel_inside(st, f), has_geometry=has_geometry,
                             payload=payload, pick=pick)
+
+
+def _spins(st, path: Path) -> Dict[str, Any]:
+    """/api/spins: the Mulliken spin moments of the run behind a document (related.spins), for the
+    Magnetic style; read-only, an output's cached by (path, mtime, size)."""
+    from . import related as gui_related
+    if not path.is_file():
+        raise FileNotFoundError(st.rel(path))
+
+    def read():
+        return gui_related.spins(path, inside=lambda f: filekind.rel_inside(st, f))
+    if path.suffix.lower() != ".out":
+        return read()                 # the output beside it may change on its own: read it again (memory-mapped, cheap)
+    key = gui_cache.file_key(path, ("spins",))
+    data = st.parse_cache.get(key)
+    if data is None:
+        data = read()
+        st.parse_cache.put(key, data, 64 + 16 * len(data.get("values") or ()))
+    return data
 
 
 def _cached_payload(st, path: Path, frame: int = -1) -> Dict[str, Any]:

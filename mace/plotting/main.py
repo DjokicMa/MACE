@@ -326,6 +326,10 @@ Examples:
                              help="Band/DOS spin colors: auto (the style's: blue/red in default and presentation, "
                                   "black/vermilion in publication), mace (pink/cyan), blue-red, black-vermilion, or "
                                   "custom (--spin-up-color/--spin-down-color). Default: auto")
+    style_group.add_argument('--potential-colors', choices=['chemistry', 'physics'], default=None,
+                             help='Cube maps and isosurfaces: electrostatic potential colors, chemistry (default: '
+                                  'red = negative, electron-rich; blue = positive) or physics (red = positive), '
+                                  'as the GUI\'s Potential colors')
     style_group.add_argument('--spin-up-color', metavar='HEX', default=None,
                              help="Band/DOS: spin up's color, #rrggbb (a custom pair; default: the spin colors')")
     style_group.add_argument('--spin-down-color', metavar='HEX', default=None,

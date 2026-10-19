@@ -43,10 +43,16 @@ export const DEFAULTS = Object.freeze({
   colorScheme: "vesta", radiusSet: "atomic", atomScale: 0.4, bondRadius: 0.12, bondTolerance: 1.15,
   bondMetalMetal: false, bondColoring: "split", background: "theme", backgroundColor: "", labels: "off", labelSize: 12,
   projection: "orthographic", "viewport.defaultView": "standard", quality: "auto", antialias: true, showAxes: true, showCell: true,
-  showBoundary: true, showPolyhedra: false, depthCue: 0.15,
+  showBoundary: true, showPolyhedra: false, depthCue: 0.15, invertWheelZoom: false,
+  // 1.1.7: how a drag turns the 3D views (free trackball or a turntable) and its angle snap (off or degrees)
+  "viewport.rotation": "free", "viewport.angleSnap": "off",
+  // ... and where the wheel zooms: toward the view center (the rotation center) or the mouse pointer
+  "viewport.zoomToward": "center",
   // polish A3/A6: the defaults of every document's Range & boundary and Rendering groups
   displayLo: [0, 0, 0], displayHi: [1, 1, 1], bondedOutside: "off", lightStrength: 1, lightDirection: "front", ambient: 0,
-  outline: false, outlineWidth: 0.1, outlineColor: "", ambientOcclusion: 0, renderPreset: "default", cellColor: "", coordMode: "frac", lengthUnit: "Å", energyUnit: "eV",
+  outline: false, outlineWidth: 0.1, outlineColor: "", ambientOcclusion: 0, renderPreset: "default", renderCustom: null, shininess: 0,
+  // 1.1.7: the Style dropdown (viewport/presets.js STYLES): how atoms are drawn and colored
+  stylePreset: "default", styleCustom: null, atomDraw: "auto", atomColor: "scheme", atomRadii: "auto", styleOutline: false, cellColor: "", coordMode: "frac", lengthUnit: "Å", energyUnit: "eV",
   "decimals.coord": 5, "decimals.length": 4, "decimals.angle": 3,
   symmetryModeDefault: "sym", symprec: 1e-3, defaultElement: "C", nudgeStepFrac: 0.01, nudgeStepCart: 0.05,
   wrapIntoCell: true, confirmOverwrite: true, keepBackup: true, autosaveDrafts: 10, undoLimit: 200,
@@ -71,7 +77,7 @@ export const DEFAULTS = Object.freeze({
   "cluster.pollSeconds": 60, "cluster.showView": "auto", "cluster.notify": false,
   "update.check": true, "update.channel": "release", "update.intervalHours": 6,
   // plan E (CLI parity): what a FREQ output opens as, notification timing, volumes, spectra, molecules, export units
-  "files.openFreqAs": "modes", "notifications.infoSeconds": 6, "volume.quality": "medium", "volume.mepColors": "cli",
+  "files.openFreqAs": "modes", "notifications.infoSeconds": 6, "volume.quality": "medium", "volume.mepColors": "chemistry",
   "spectra.lineShape": "lorentzian", "structure.vacuumGap": 8,
   // export (plan E9; PLAN_viewer P6 owns these keys at the merge): PNG resolution, physical units, SVG shading
   "export.dpi": 150, "export.units": "in", "export.vectorShading": "flat",
@@ -89,6 +95,10 @@ const CHOICES = {
   "plots.dosColors": ["auto", "total", "element", "orbital", "element-orbital"],
   "plots.spinDownDash": ["dash", "dot", "dashdot", "solid"], "plots.spinDos": ["auto", "mirrored", "overlaid"],
   "plots.spinColors": ["auto", "mace", "blue-red", "black-vermilion", "custom"],
+  // 1.1.6's "cli" (red = positive, then the default, so stored with everything else) reads as the new default
+  "volume.mepColors": ["chemistry", "physics"],
+  "viewport.rotation": ["free", "axes"], "viewport.angleSnap": ["off", "15", "30", "45", "90"],
+  "viewport.zoomToward": ["center", "pointer"],
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const listeners = new Set();

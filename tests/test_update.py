@@ -3,6 +3,7 @@ with tags v1.1.4, v1.1.5-preview, v1.1.5, v1.1.6-preview and main commits
 after them; channel resolution, the refusals (local changes, local commits,
 older targets), dry runs, the requirements message, --check, and --remote
 through a fake ssh that runs the command in a temporary "cluster" checkout."""
+import re
 import os
 import subprocess
 import sys
@@ -93,7 +94,9 @@ def test_release_fast_forwards_main_and_prints_the_pip_line(origin, tmp_path):
     assert "Target (release): v1.1.5 = 1.1.5 (v1.1.5)" in out
     assert "## [1.1.5]" in out and "## [1.1.5-preview]" in out and "## [1.1.4]" not in out
     assert "Will run: git merge --ff-only v1.1.5   (on main; git pull keeps working)" in out
-    assert "requirements.txt changed" in out and f"-m pip install -r {home}/requirements.txt" in out
+    # a system/module Python (GitHub's runner) gets --user
+    assert "requirements.txt changed" in out and re.search(
+        rf"-m pip install (--user )?-r {re.escape(str(home))}/requirements.txt", out), out
     assert "Check: MACE v1.1.5" in out
     assert git(home, "describe", "--tags") == "v1.1.5" and git(home, "rev-parse", "--abbrev-ref", "HEAD") == "main"
     git(home, "pull", "-q", "--ff-only")                          # still a normal git pull checkout

@@ -7,7 +7,8 @@ On the spin-polarized Fe run (tests/data/spin_fe) as a band + DOS figure:
   Make This the Default writes the look into Settings and the plot follows Settings again;
 * the toolbar's Style ▾ menu picks a preset and the DOS colors through the same options;
 * Copy CLI Command writes `mace plotting --band-dos ...` with the plot's style flags;
-* a 2D map's color range is robust (1st to 99th percentile); Full and Custom override it.
+* a 2D map's color range is robust (1st to 99th percentile); Full and Custom override it;
+* a POTM potential map is red at its negative end (chemistry colors), blue with Potential colors › Physics.
 """
 import shutil
 import time
@@ -35,6 +36,7 @@ def app(request, tmp_path_factory):
     for f in FE.iterdir():
         shutil.copy(f, root / "fe")
     unpack(root / "gp")
+    _potm(root / "gp")
     real = H.firefox
     if request.param == "chromium":
         H.firefox = lambda w, h, download_dir=None, **kw: H.chromium(w, h, download_dir=download_dir)
@@ -168,6 +170,46 @@ def test_a_style_pick_by_keyboard_keeps_the_focus_on_style(drv):
 
 MAP = """const p = document.querySelector('#plot-host .pv-plot'), t = p.data[0], v = t.z.flat().filter(Number.isFinite);
   return {zmin: t.zmin, zmax: t.zmax, lo: Math.min(...v), hi: Math.max(...v)};"""
+
+
+def _potm(gp):
+    """mgo_echg's map made a POTM potential: values shifted to both signs, the output's keyword POTM."""
+    lines = (gp / "mgo_echg.f25").read_text().splitlines()
+    n = int(lines[0].split()[1]) * int(lines[0].split()[2])
+    rows = (n + 5) // 6
+    vals = [float(x) - 0.05 for ln in lines[3:3 + rows] for x in ln.split()]
+    body = ["".join(f"{v:12.5E}" for v in vals[i:i + 6]) for i in range(0, n, 6)]
+    (gp / "mgo_potm.f25").write_text("\n".join(lines[:3] + body + lines[3 + rows:]) + "\n")
+    out = (gp / "mgo_echg.out").read_text().replace("ALPHA+BETA ELECTRONS DENSITY", "").replace(
+        "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT ECHG ", "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT POTM ")
+    (gp / "mgo_potm.out").write_text(out)
+
+
+# the low end (most negative values) of the map's colorscale as (red, blue)
+MAP_LOW = """const p = document.querySelector('#plot-host .pv-plot'), t = p._fullData[0], cs = t.colorscale;
+  const c = document.createElement('canvas').getContext('2d'); c.fillStyle = (t.reversescale ? cs[cs.length - 1] : cs[0])[1];
+  const h = c.fillStyle; if (h[0] === '#') return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(5, 7), 16)];
+  const n = h.match(/[0-9.]+/g).map(Number); return [n[0], n[2]];"""
+
+
+def test_potential_map_in_chemistry_colors_and_physics_on_request(drv):
+    open_plot(drv, "gp/mgo_potm.f25")
+    assert drv.execute_script("return document.querySelector('#plot-host .pv-plot').data[0].zmin") < 0
+    r, b = drv.execute_script(MAP_LOW)
+    assert r > b, (r, b)                                               # negative: red
+    U.shot(drv, "map_potential_chemistry")
+    drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = '';"
+                       "window.__mace.settings.set('volume.mepColors', 'physics')")
+    drawn(drv)
+    r, b = H.wait(drv, MAP_LOW.replace("return [n[0], n[2]];", "return n[2] > n[0] && [n[0], n[2]];")
+                  .replace("return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(5, 7), 16)];",
+                           "{ const a = [parseInt(h.slice(1, 3), 16), parseInt(h.slice(5, 7), 16)]; return a[1] > a[0] && a; }"), 10)
+    assert b > r                                                       # physics: negative blue
+    U.shot(drv, "map_potential_physics")
+    drv.execute_script("window.__mace.settings.set('volume.mepColors', 'chemistry')")
+    # a charge density map is not a potential: the setting does not touch it
+    open_plot(drv, "gp/mgo_echg.f25")
+    U.no_errors(drv)
 
 
 def test_map_color_range_is_robust(drv):

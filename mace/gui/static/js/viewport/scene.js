@@ -29,16 +29,17 @@ export function createScene(v, deps) {
   };
   /** The radius 3Dmol draws an atom with, in Å, for the current style. */
   function atomRadius(sym, style, bonds) {
-    if (style === "stick") return 0.16;
+    if (style === "stick") return deps.setting("atomDraw") === "sticks" ? Math.max(0.1, Number(deps.setting("bondRadius")) || 0.06) : 0.16;
     if (style === "wireframe") return 0.1 * vdw(sym);
     if (style === "spacefill") return 0.95 * vdw(sym);
     return M.sphereScale(bonds) * vdw(sym);
   }
   function styleObj(style, bonds, level) {
-    const cs = M.styleFor("ballstick", true).sphere.colorscheme;
-    if (style === "wireframe") return { line: { colorscheme: cs }, sphere: { scale: 0.1, colorscheme: cs } };
+    // the element colors, or the Magnetic style's spin colors (a colorfunc)
+    const cs = M.colorSpec ? M.colorSpec() : { colorscheme: M.styleFor("ballstick", true).sphere.colorscheme };
+    if (style === "wireframe") return { line: { ...cs }, sphere: { scale: 0.1, ...cs } };
     if (style !== "ballstick" || !bonds) return M.styleFor(style, bonds);
-    if (level >= 2) return { sphere: { scale: M.sphereScale(true), colorscheme: cs }, line: { colorscheme: cs } };
+    if (level >= 2) return { sphere: { scale: M.sphereScale(true), ...cs }, line: { ...cs } };
     return M.styleFor("ballstick", true);
   }
 
@@ -215,6 +216,7 @@ export function createScene(v, deps) {
 
   /** Draw a document's structure. keepView: keep the camera (an edit);
    * otherwise fit it (a newly opened structure). */
+  let lastRange = { doc: null, s: null, key: "" };
   function draw(doc, { keepView = true } = {}) {
     const s = doc.structure;
     if (!s) return;
@@ -241,6 +243,7 @@ export function createScene(v, deps) {
     v.maceLod = lod;           // the Rendering group turns ambient occlusion off at LOD 3 and above
     radiiPx = null; projCache = null; hovered = -1;
     drawnR = new Float32Array(disp.n);
+    if (M.sphereScale) M.sphereScale(true);        // installs the document's radius set before the radii are read
     const bondsWanted = opts.bonds && opts.style !== "spacefill" && (lod <= 2 || bondsForced);
     for (let k = 0; k < disp.n; k++) drawnR[k] = atomRadius(s.symbols[disp.base[k]], opts.style, bondsWanted);
     pairs = null;
@@ -265,7 +268,13 @@ export function createScene(v, deps) {
     showLod(disp.n);
     drawPolyhedra(s, disp);            // after the LOD banner: above 2000 atoms it says why there are none
     deps.setRadius(sceneRadius(s, opts));
+    // a new display range of the same document (2×2×2 after 1×1×1): what is drawn grew or shrank, so the
+    // camera follows it (the kept view cut a 2×2×2 to the cells that fit, often just 2×2×1 in a wide viewport)
+    const rangeKey = JSON.stringify(opts.box || opts.range || null);
+    const rangeChanged = !!view && (lastRange.doc === doc || lastRange.s === s) && lastRange.key !== rangeKey;
+    lastRange = { doc, s, key: rangeKey };
     if (view) v.setView(view); else deps.fit(s, disp, opts);
+    if (rangeChanged && deps.refit) deps.refit(s, disp, opts);
     v.render();
     performance.mark("vp:draw:end");
     performance.measure("vp:draw", "vp:draw:start", "vp:draw:end");

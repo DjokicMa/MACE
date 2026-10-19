@@ -37,9 +37,13 @@
 .po-row .po-tq { display: flex; flex-wrap: wrap; max-width: 100%; justify-self: start; }
 .po-row .po-tq button { flex: 1 0 auto; }
 .po-u { color: var(--text-3); font-size: var(--fs-xs); }
+/* a slider's readout keeps its width, so the slider (the 1fr column) does not resize under the pointer as the value changes */
+.po-row > input[type=range] + .po-u { min-width: 8ch; text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .po-proj { margin: var(--s-3) 0; display: grid; gap: 2px; }
 .po-proj .chk { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); }
 .po-h { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin: 0 0 var(--s-1); }
+/* Plot options › Style: a band + DOS plot's Bands and DOS groups */
+.po-style .po-sub { margin-top: var(--s-2); text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text); }
 .po-acts { margin-top: var(--s-3); }
 /* a sentence under the options (the ZT peaks, a refused κ_L) */
 .po-note { font-size: var(--fs-xs); color: var(--text-2); margin: 0 0 var(--s-2); line-height: 1.4; overflow-wrap: anywhere; }

@@ -16,12 +16,13 @@ import { initMenubar, openMenuIndex, focusBar, closeAll as closeMenus, isOpen as
 import { initPalette, openPalette, openPick, isPaletteOpen, closePalette, results as paletteResults, bench as paletteBench, domRows } from "./palette.js";
 import { THEMES, themeOf, groupLabel } from "./themes.js";
 import * as rank from "./rank.js";
-import { registerAll, registerMnemonics, MENUS, TOOLBAR, CONTEXT } from "./actions.js";
+import { registerAll, registerMnemonics, MENUS, TOOLBAR, CONTEXT, ROTATION_MENU } from "./actions.js";
 import { initContext, openForFocus, contextAt, contextFor, openViewportMenu } from "./context.js";
 import { abbrev, chars, middle } from "./paths.js";
 import * as docprefs from "./docprefs.js";
 import * as profile from "./profile.js";
 import * as DS from "./viewport/display_state.js";
+import { rotationPrefs, dragOrientation, turnOrientation, turntableUp, nearestAxisView } from "./viewport/camera.js";
 import { PANE, createGroups } from "./groups.js";
 import { bindSplitter } from "./splitter.js";
 import { initSidebar } from "./sidebar.js";
@@ -71,6 +72,8 @@ function ctxHere() {
   return {
     tool, moveNudge: tool === "move" && !!ae && !!ae.closest && !!ae.closest(".viewer-wrap"), controlFocus: control,
     hasDoc: !!d, docCount: docs.length, docKind: d ? d.kind : "", docFileKind: d ? d.fileKind || "" : "",
+    // a single-point output (one geometry, no optimization): no trajectory, cell or measurement along a run
+    docSinglePoint: !!(d && d.kind === "structure" && d.data && d.data.summary && !d.data.is_opt),
     docEditable: !!eds && !eds.editBlock(),
     canUndo: !!eds && eds.canUndo && !eds.lost && !eds.previewing,
     canRedo: !!eds && eds.canRedo && !eds.lost && !eds.previewing,
@@ -190,7 +193,9 @@ async function openDoc(path, opts = {}) {
       toast(`${e.message}; opening it instead.`, "info");
       return openDoc(e.data.open);
     }
-    toast(`${path.split("/").pop()}: ${e.message}`, "error");
+    // the server's words often name the file already ("X.d12 reads its geometry from ..."): once is enough
+    const fname = path.split("/").pop();
+    toast(String(e.message).startsWith(fname) ? e.message : `${fname}: ${e.message}`, "error");
     return null;
   } finally { clearTimeout(busy); setTask(""); }
 }
@@ -712,7 +717,9 @@ function splitter(el, prop, key, min, max, sign, axis = "x") {
 let activityHtml = "";
 function renderActivity() {
   const items = [["view.explorer", "files", panelShown("explorer"), "Explorer"], ["view.database", "database", active && active.kind === "db", "Database"],
-    ["file.quickOpen", "search", false, "Search files"], ["view.tasks", "list-checks", false, "Tasks"]];
+    ["file.quickOpen", "search", false, "Search files"], ["view.tasks", "list-checks", false, "Tasks"],
+    // the bottom panel's Jobs tab and the Workflows view, as View › Jobs and View › Workflows open them
+    ["view.jobs", "clock", false, "Jobs"], ["view.workflows", "layers", active && active.kind === "workflows", "Workflows"]];
   if (clusterShown()) items.push(["view.cluster", "activity", active && (active.kind === "cluster" || active.kind === "job"), "Cluster"]);
   const html = items.map(([id, ic, on]) =>
     `<button class="icon-btn" data-cmd="${id}" aria-pressed="${!!on}" aria-label="${esc(registry.get(id).title)}">${icon(ic)}</button>`).join("") +
@@ -754,7 +761,7 @@ function renderToolbar() {
     else if (Array.isArray(g)) out.push(`<span class="tb-group">${g.map((id) => tbButton(id)).join("")}</span>`);
     else if (g.radio) out.push(`<span class="tb-group" role="radiogroup" aria-label="Tool">${g.radio.map((id) => tbButton(id, ' role="radio"')).join("")}</span>`);
     // the tooltip reads names and keys from the registry when it shows, so a rebinding shows at once
-    else if (g.split === "viewAlong") out.push(`<span class="tb-group"><button class="tb-btn-text" id="tb-along" data-tip="View along" data-tip-group="view.alongA,view.alongB,view.alongC,view.alongAStar,view.alongBStar,view.alongCStar" aria-haspopup="menu">${icon("view-a")}<span id="tb-along-label">a</span>${icon("chevron-down", "i chev")}</button></span>`);
+    else if (g.split === "viewAlong") out.push(`<span class="tb-group"><button class="tb-btn-text" id="tb-along" data-tip="View along, rotation mode and angle snap" data-tip-group="view.alongA,view.alongB,view.alongC,view.alongAStar,view.alongBStar,view.alongCStar" aria-haspopup="menu">${icon("view-a")}<span id="tb-along-label">a</span>${icon("chevron-down", "i chev")}</button></span>`);
     else if (g.split === "range") out.push(`<span class="tb-group"><button class="tb-btn-text" id="tb-range" data-tip="Display range" data-tip-cmd="view.rangeCycle" aria-haspopup="menu"><span id="tb-range-label">1×1×1</span>${icon("chevron-down", "i chev")}</button></span>`);
     else if (g.segment === "sym") out.push(`<span class="segment" role="radiogroup" aria-label="Symmetry mode"><button role="radio" data-cmd="build.symModeP1" aria-label="P1 mode">P1</button><button role="radio" data-cmd="build.symModeSym" aria-label="Symmetry-aware mode">Sym</button></span>`);
     else if (g.text) out.push(`<button class="tb-btn-text${g.primary ? " primary" : ""}" data-cmd="${g.text}">${icon(registry.get(g.text).icon)}<span>${esc(g.label)}</span></button>`);
@@ -765,7 +772,8 @@ function renderToolbar() {
     if (b) { run(b.dataset.cmd); return; }
     if (e.target.closest("#tb-along")) {
       const r = $("#tb-along").getBoundingClientRect();
-      openAt(MENUS[2].items[2].sub, r.left, r.bottom + 2, "View along");
+      // View along a, b, c, ..., then the rotation mode, its angle snap and the snap to the nearest axis
+      openAt([{ head: "View along" }, ...MENUS[2].items[2].sub, "-", ...ROTATION_MENU], r.left, r.bottom + 2, "View along");
     } else if (e.target.closest("#tb-range")) {
       const r = $("#tb-range").getBoundingClientRect();
       openAt(["view.range1", "view.range2", "view.range3", "view.rangeCustom"], r.left, r.bottom + 2, "Display range");
@@ -790,7 +798,12 @@ function renderToolbarState() {
   // the fourth dirty mark (spec §2.6): Save in the accent color
   const save = $('#toolbar [data-cmd="file.save"]');
   if (save) save.classList.toggle("accent", isDirty(active));
-  if ($("#tb-range-label")) $("#tb-range-label").textContent = DS.rangeLabel(viewDoc());
+  if ($("#tb-range-label")) {
+    // a SLAB or POLYMER has no period along its vacuum axes: the label says what is drawn (3×3×1)
+    const np = nonPeriodicAxes(), lab = DS.rangeLabel(viewDoc()), m = lab.split("×");
+    $("#tb-range-label").textContent = np.length && m.length === 3 ? m.map((x, k) => (np.includes(k) ? "1" : x)).join("×") : lab;
+    $("#tb-range").dataset.tip = np.length ? `Display range (${nonPeriodicText(np)})` : "Display range";
+  }
   renderActivity();
 }
 
@@ -824,7 +837,25 @@ const rangeCells = () => { const r = DS.rangeOf(viewDoc()); return r.hi.map((x, 
 function setRange(n) {
   const d = viewDoc();
   if (!d) return;
-  DS.setCells(d, Array.isArray(n) ? n.map((x) => Math.max(1, Math.min(10, x | 0))) : [n, n, n]);
+  const cells = Array.isArray(n) ? n.map((x) => Math.max(1, Math.min(10, x | 0))) : [n, n, n];
+  DS.setCells(d, cells);
+  // the range repeats periodic directions only: say so instead of drawing 3×3×1 for a 3×3×3 silently
+  const np = nonPeriodicAxes();
+  if (np.some((k) => cells[k] > 1)) toast(`${nonPeriodicText(np)}: the range repeats ${cells.map((x, k) => (np.includes(k) ? 1 : x)).join("×")}`, "info");
+}
+/* The lattice directions (0, 1, 2) the drawn structure has no period along: c of a SLAB, b and c of a POLYMER. */
+function nonPeriodicAxes() {
+  const d = viewDoc();
+  // a cube's periodicity is its header's cell (the server's meta.pbc): CRYSTAL writes a slab's c as the formal 500 Å
+  if (d && d.kind === "volume") { const m = d.meta, pbc = m && m.periodic && m.pbc; return pbc ? [0, 1, 2].filter((k) => !pbc[k]) : []; }
+  if (!d || !["structure", "trajectory"].includes(d.kind)) return [];
+  const s = structureOf(d), pbc = s && s.cell && s.pbc;
+  return pbc && pbc.some(Boolean) ? [0, 1, 2].filter((k) => !pbc[k]) : [];
+}
+function nonPeriodicText(np) {
+  const s = structureOf(viewDoc()), dim = (s && s.dimensionality) || (np.length === 1 ? "SLAB" : "POLYMER");
+  const ax = np.map((k) => "abc"[k]);
+  return `A ${dim} is not periodic along ${ax.join(" and ")}, so it is drawn once along ${ax.length > 1 ? "them" : "it"}`;
 }
 /* A display change of a document (this page, or the server's copy arriving): redraw it when it is on screen. */
 function displayChanged(doc) {
@@ -844,9 +875,35 @@ function syncBoundaryBox() {
 /** What the structure viewer draws: the classic views' checkboxes, Settings, and the document's display state. */
 function viewOpts() {
   const d = viewDoc(), r = DS.drawRange(d);
-  return { cell: optChecked("opt-cell"), boundary: !!viewSetting("showBoundary"), bonds: optChecked("opt-bonds"),
-    labels: optChecked("opt-labels") ? (labelMode() === "off" ? "both" : labelMode()) : "off", style: style(),
+  // the document's Style can choose the drawing (Space-filling: no bonds; Wireframe: thin sticks)
+  const draw = M().effDraw ? M().effDraw(style(), optChecked("opt-bonds")) : { style: style(), bonds: optChecked("opt-bonds") };
+  return { cell: optChecked("opt-cell"), boundary: !!viewSetting("showBoundary"), bonds: draw.bonds,
+    labels: optChecked("opt-labels") ? (labelMode() === "off" ? "both" : labelMode()) : "off", style: draw.style,
     range: r, box: DS.boxOf(r), bondedOutside: viewSetting("bondedOutside") || "off" };
+}
+/* The Magnetic style's data (1.1.7): a document's Mulliken spin moments from its run (/api/spins),
+ * fetched once per document: {state: "ok", values, max, source} when they match the drawn atoms, else
+ * {state: "none" | "mismatch", reason}. While loading: {state: "loading"}. */
+function atomSymbolsOf(d) {
+  if (!d) return null;
+  if (d.kind === "volume") { const u = volumeView && volumeView.atomsOf ? volumeView.atomsOf(d) : null; return u || null; }
+  const s = d.kind === "freq" ? d.structure : structureOf(d);
+  return s && s.symbols ? s.symbols : null;
+}
+function spinsOf(d) {
+  if (!d || !d.path) return { state: "none", reason: "This document has no file, so there is no run to read spin moments from" };
+  if (d.spins) return d.spins;
+  d.spins = { state: "loading", reason: "Reading the spin moments…" };
+  M().api("spins?" + M().q({ path: d.path })).then((r) => {
+    const syms = atomSymbolsOf(d);
+    if (r.state !== "ok") d.spins = { state: "none", reason: r.reason };
+    else if (r.closed) d.spins = { state: "none", reason: `${r.source} is a closed-shell run: every Mulliken spin moment is zero` };
+    else if (syms && (syms.length !== r.values.length || syms.some((x, k) => String(x).toLowerCase() !== String(r.symbols[k]).toLowerCase()))) {
+      d.spins = { state: "mismatch", reason: `The Mulliken spins in ${r.source} are for ${r.values.length} atoms, not the ${syms.length} drawn here` };
+    } else d.spins = { state: "ok", values: r.values, max: Math.max(0.1, ...r.values.map(Math.abs)), source: r.source };
+  }).catch((e) => { d.spins = { state: "none", reason: `No spin moments: ${e.message}` }; })
+    .finally(() => { if (d === viewDoc()) { redrawSoon(); if (displayPanel) displayPanel.refresh(); } });
+  return d.spins;
 }
 /* Labels are a setting (Off / Element / Index / Element+Index / Wyckoff); the
  * classic Labels checkbox mirrors "anything but Off". Shift+L cycles all five. */
@@ -1093,20 +1150,22 @@ document.addEventListener("mace-scene", () => { if (displayPanel) displayPanel.r
 function loadDisplayPanel() {
   if (displayPanel) return Promise.resolve(displayPanel);
   if (!displayPanelLoading) displayPanelLoading = import("./viewport/display_panel.js").then((m) => {
-    displayPanel = m.createDisplayPanel({ esc, icon, doc: () => viewDoc(), structure: () => structureOf(viewDoc()),
+    displayPanel = m.createDisplayPanel({ esc, icon, doc: () => viewDoc(), structure: () => structureOf(viewDoc()), spins: (d) => spinsOf(d),
       bonded: () => (E && E.scene() ? E.scene().bonded : null), cssColor: (k) => getComputedStyle(document.documentElement).getPropertyValue(k).trim(),
       boundaryLabel: () => pieces.boundary, park: (el) => parked.appendChild(el), saved: (m2) => toast(m2, "success") });
     return displayPanel;
   });
   return displayPanelLoading;
 }
-function appendDisplayGroups(host) {
-  const range = section("range", "Range & boundary", null, "This document");
+// the mode and volume views draw atoms too: their Rendering (Style and Lighting) without the range group
+function appendDisplayGroups(host, withRange = true) {
+  const range = withRange ? section("range", "Range & boundary", null, "This document") : null;
   const render = section("render", "Rendering", null, "This document", true);
-  host.appendChild(range); host.appendChild(render);
+  if (range) host.appendChild(range);
+  host.appendChild(render);
   const fill = (dp) => {
-    if (!range.isConnected) return;
-    $(".insp-body", range).replaceChildren(dp.range());
+    if (!render.isConnected) return;
+    if (range) $(".insp-body", range).replaceChildren(dp.range());
     $(".insp-body", render).replaceChildren(dp.render());
   };
   if (displayPanel) fill(displayPanel);
@@ -1198,8 +1257,9 @@ function renderInspector() {
   else if (k === "freq") {
     host.appendChild(section("mode", "Mode", pieces.freqOpts));
     if (active.path && M().scfSection) host.appendChild(section("scf", "SCF", M().scfSection(active.path)));
+    appendDisplayGroups(host, false);
   }
-  else if (k === "volume") host.appendChild(section("volume", "Volume", pieces.volumeOpts));
+  else if (k === "volume") { host.appendChild(section("volume", "Volume", pieces.volumeOpts)); appendDisplayGroups(host, false); }
   else if (k === "db") host.appendChild(section("material", "Selected material", pieces.dbDetail));
   else if (!lent.length) host.appendChild(section("none", "Inspector", PC.inspectorPlaceholder(active)));
   lent.forEach(([key, title, el, caption]) => host.appendChild(section(key, title, el, caption)));
@@ -2694,7 +2754,7 @@ function applySetting(k) {
     if (!PANE && booted) savePaletteDefault(settings.userValue(k));
   }
   // the plots redraw on mace-theme: the plot background, the presets, the DOS colors and the spin styling
-  if (k === "plots.surface" || /^plots\.(style|dos(Colors|Total)|spin(Colors|Up|Down|DownDash|Dos))/.test(k)) M().applyTheme(themePreview || settings.get("theme"));
+  if (k === "plots.surface" || k === "volume.mepColors" || /^plots\.(style|dos(Colors|Total)|spin(Colors|Up|Down|DownDash|Dos))/.test(k)) M().applyTheme(themePreview || settings.get("theme"));
   if (k === "background" || k === "backgroundColor") { M().syncSurfaces(); updateTriad(); }
   if (REDRAW_KEYS.has(k)) redrawSoon();
   if (DS.KEYS.has(k) && displayPanel) displayPanel.refresh();    // a default changed: documents without their own value follow it
@@ -2704,7 +2764,7 @@ function applySetting(k) {
 const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "radiusSet", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "labelSize",
   "background", "backgroundColor", "cellColor", "decimals.length", "decimals.angle", "decimals.coord",
   "displayLo", "displayHi", "showBoundary", "bondedOutside", "lightStrength", "lightDirection", "ambient", "outline",
-  "outlineWidth", "outlineColor", "ambientOcclusion"]);
+  "outlineWidth", "outlineColor", "ambientOcclusion", "shininess", "atomDraw", "atomColor", "atomRadii", "styleOutline"]);
 let redrawFrame = 0;
 function redrawSoon() {
   cancelAnimationFrame(redrawFrame);
@@ -2816,8 +2876,27 @@ function rotateView(axis, deg) {
   const v = mainViewer();
   if (!v) return;
   if (E && active && active.kind === "structure" && E.cam()) { E.cam().turn(axis, deg, Math.abs(deg) >= 45).then(updateTriad); return; }
-  v.rotate(deg, axis);
+  // the 3Dmol views turn about the screen's axes as the structure view does (a turntable: "y" about its up)
+  const p = rotationPrefs((k) => settings.get(k)), view = v.getView(), q = view.slice(4, 8);
+  if (p.mode === "axes" && axis === "y") v.maceUp = turntableUp(q, v.maceUp);
+  v.setView([...view.slice(0, 4), ...turnOrientation(q, axis, deg, { mode: p.mode, up: v.maceUp })]);
   v.render(); updateTriad();
+}
+/* The arrow keys' turn: the angle snap's step when one is on, else 15°. */
+const rotateStep = () => rotationPrefs((k) => settings.get(k)).step || 15;
+/* View › Snap View to Nearest Axis: the nearest of a, b, c, a*, b*, c* (a periodic view) and x, y, z. */
+function snapNearestAxis() {
+  const v = mainViewer();
+  if (!v) return;
+  const label = (t) => { if ($("#tb-along-label")) $("#tb-along-label").textContent = t; };
+  if (E && active && active.kind === "structure") { const r = E.snapNearest(); if (r) r.then((t) => { label(t); updateTriad(); }); return; }
+  let cell = null;
+  if (volumeActive()) cell = volumeView.cell();
+  else if (freqActive()) { const fd = freqView.doc(), s = fd && fd.structure; cell = s && s.cell && (!s.pbc || s.pbc.some(Boolean)) ? s.cell : null; }
+  else { const s = M().state.structure; cell = s && s.cell && (!s.pbc || s.pbc.some(Boolean)) ? s.cell : null; }
+  const view = v.getView(), r = nearestAxisView(view.slice(4, 8), cell);
+  v.setView([...view.slice(0, 4), ...r.q]);
+  v.render(); label(r.label); updateTriad();
 }
 function zoomView(f) { const v = mainViewer(); if (v) { v.zoom(f, reducedMotion() ? 0 : 120); v.render(); } }
 const reducedMotion = () => document.documentElement.dataset.motion === "reduce"
@@ -4443,7 +4522,13 @@ const S = {
   showBottom, viewAlong, resetView, toggleProjection, setting: (k) => viewSetting(k), set: (k, v) => settings.set(k, v),
   toggleSetting: (k) => settings.set(k, !settings.get(k)), optChecked, toggleOpt, labelMode, setLabels, cycleLabels,
   /* a per-document display value (Shift+P, Shift+A): the drawn document's override, never the default */
-  displayValue: (k) => viewSetting(k), toggleDisplay: (k) => { const d = viewDoc(); if (d) DS.set(d, k, !viewSetting(k)); },
+  displayValue: (k) => viewSetting(k), toggleDisplay: (k) => {
+    const d = viewDoc();
+    if (!d) return;
+    // a style value toggled (Shift+P: polyhedra) makes the document's style Custom, as an edit in the Inspector does
+    const style = DS.GROUPS.style.includes(k) && viewSetting("stylePreset") !== "custom";
+    DS.set(d, style ? { [k]: !viewSetting(k), stylePreset: "custom" } : { [k]: !viewSetting(k) });
+  },
   displayPanel: (group) => openDisplayGroup(group),
   range, setRange, rangeText: () => DS.rangeLabel(viewDoc()), style, setStyle, panelShown, togglePanel, toggleAllPanels, allPanelsHidden: () => !!layout.focus, cycleTheme, zoomUi, focusRegion, setAllSections,
   /** Can Expand All / Collapse All do anything? Two or more Inspector sections, or Calculation Setup open. */
@@ -4550,7 +4635,7 @@ const S = {
     .catch(() => toast("The periodic table could not be loaded", "error")),
   toSym: (ed) => toSym(ed),
   focusMenuBar: () => focusBar(), contextMenuForFocus: () => (sidebar && sidebar.menuForFocus()) || openForFocus(), sidebar: () => sidebar,
-  rotateView, zoomView, trajStep, trajPlay, trajPlaying: () => !!playTimer, trajLayout,
+  rotateView, rotateStep, snapNearestAxis, zoomView, trajStep, trajPlay, trajPlaying: () => !!playTimer, trajLayout,
   tabOf: (a) => (a && a.docId !== undefined ? docs.find((d) => d.id === a.docId) : active) || null,
   moveTab: (d, step) => { const r = moveDocBy(d, step); if (r) announce(`${d.title} moved ${step < 0 ? "left" : "right"}`); return r; },
   canMoveTab: (d, step) => !!d && docs.length > 1 && docs.indexOf(d) + step >= 0 && docs.indexOf(d) + step < docs.length,
@@ -4632,6 +4717,7 @@ async function boot() {
   settings.init(M().api);
   settings.setNotifier((m, kind) => toast(m, kind));
   M().setting = (k) => viewSetting(k);
+  M().docSpins = () => { const d = viewDoc(); if (!d || viewSetting("atomColor") !== "spin") return null; const sp = spinsOf(d); return sp.state === "ok" ? sp : null; };
   // the Structure card's "Not saved in the folder yet" for a dropped document (plan T9)
   M().untitledHint = (s) => (active && active.untitled && !active.path && active.dropped && active.kind === "structure" ? "Not saved in the folder yet" : "");
   // Inspector › Symmetry › Compute Now: spglib on a structure over 20,000 atoms, as a task (plan T4, R5)
@@ -4695,6 +4781,8 @@ async function boot() {
   window.__maceToast = (m, kind) => toast(m, kind);
   configureToasts({ infoSeconds: () => Number(settings.get("notifications.infoSeconds")) || 6, openHistory: () => showNotifications() });
   settings.onChange(applySetting);
+  // the 3Dmol views' drag (app.js): Settings › Viewport › Rotation and Angle snap, the camera's own rules
+  Object.assign(M(), { rotationPrefs: () => rotationPrefs((k) => settings.get(k)), dragOrientation, turntableUp });
   M().showTab("welcome");
   afterSwitch();
   performance.mark("mace:ready");

@@ -315,3 +315,55 @@ def find(path: Path, *, inside: Callable[[Path], Optional[str]], has_geometry: C
         if g:
             return answer("found", path, "the atoms in its header", [], _geometry_payload(g, {"kind": "cube", "path": str(path)}))
     return answer("none")
+
+
+def _last_spin_text(p: Path) -> Optional[str]:
+    """The text from the last "ALPHA-BETA ELECTRONS" line of an output to its end (memory-mapped:
+    a large output is never read whole), or None when it has none."""
+    import mmap
+    try:
+        with open(p, "rb") as fh:
+            if p.stat().st_size == 0:
+                return None
+            with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                # the block's own header: the line before "MULLIKEN POPULATION ANALYSIS" (SPINLOCK's
+                # "ALPHA-BETA ELECTRONS LOCKED TO ..." is not one)
+                end = len(mm)
+                for _ in range(10_000):
+                    i = mm.rfind(b"ALPHA-BETA ELECTRONS", 0, end)
+                    if i < 0:
+                        return None
+                    if re.match(rb"ALPHA-BETA ELECTRONS[ \t]*\r?\n[ \t]*MULLIKEN POPULATION ANALYSIS", mm[i:i + 200]):
+                        text = mm[i:i + 4_000_000].decode("utf-8", "replace")
+                        nxt = text.find("ALPHA-BETA ELECTRONS", 20)
+                        return text if nxt < 0 else text[:nxt]
+                    end = i
+                return None
+    except (OSError, ValueError):
+        return None
+
+
+def spins(path: Path, *, inside: Callable[[Path], Optional[str]]) -> Dict[str, Any]:
+    """/api/spins: the Mulliken spin moment of every atom (the Magnetic style), from the final
+    ALPHA-BETA Mulliken block of the run: ``path`` itself when it is an output, else the output
+    of the same stem beside it (as find's first tier). ``{"state": "ok", "source", "values",
+    "symbols", "closed"}`` or ``{"state": "none", "reason"}``."""
+    from mace.phonopy_bridge.parent import final_mulliken_spins
+    path = Path(path)
+    if path.suffix.lower() == ".out":
+        cands = [path]
+    else:
+        names = [f"{s}.out" for s in stems(path)] + [f"{path.stem}.out"]
+        cands = _uniq([path.parent / n for n in names if (path.parent / n).is_file() and inside(path.parent / n) is not None])
+    if not cands:
+        return {"state": "none", "reason": f"No CRYSTAL output named like {path.name} beside it: Magnetic needs the run's Mulliken spins"}
+    src = cands[0]
+    text = _last_spin_text(src)
+    rows = final_mulliken_spins(text) if text else None
+    if not rows:
+        return {"state": "none", "source": inside(src),
+                "reason": f"{src.name} has no ALPHA-BETA Mulliken analysis (a closed-shell run, or one that did not print it)"}
+    rows = sorted(rows, key=lambda r: r[0])
+    values = [round(r[2], 4) for r in rows]
+    return {"state": "ok", "source": inside(src), "values": values, "symbols": [r[1].capitalize() for r in rows],
+            "closed": all(abs(v) < 1e-3 for v in values)}

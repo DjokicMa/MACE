@@ -33,6 +33,33 @@ SI = "orb/si_g/si_g_00001_K000_real.molden"
 SLAB_ORB = "orb/slab/slab_f_00003_K200_real.molden"
 
 
+BULK_CELL = (8.0, 8.0, 20.0)            # bohr: a tall c that is still periodic (a slab's is the formal 500 A)
+
+
+def write_bulk_cube(path):
+    """A 3D-periodic CRYSTAL-style cube: the cell on the second comment line, two atoms near
+    the cell's center and a density that falls off well inside the cell."""
+    n = (16, 16, 32)
+    step = [BULK_CELL[k] / n[k] for k in range(3)]
+    atoms = [(8, (0.5, 0.5, 0.45)), (22, (0.5, 0.5, 0.6))]
+    g = np.indices(n).reshape(3, -1).T * step
+    rho = np.zeros(len(g))
+    for _, f in atoms:
+        c = np.array(f) * BULK_CELL
+        rho += np.exp(-((g - c) ** 2).sum(1) / (2 * 0.7 ** 2))
+    lines = [" Charge density - 3D GRID - GAUSSIAN CUBE FORMAT bulk",
+             "  {:.8f}  {:.8f}  {:.8f}  90.000000  90.000000  90.000000".format(*BULK_CELL),
+             "{:5d}  0.000000  0.000000  0.000000".format(len(atoms))]
+    lines += ["{:5d}  {:.6f}  {:.6f}  {:.6f}".format(n[k], *[step[k] if j == k else 0.0 for j in range(3)]) for k in range(3)]
+    lines += ["{:5d}  {:.6f}  {:.6f}  {:.6f}  {:.6f}".format(z, float(z), *(np.array(f) * BULK_CELL)) for z, f in atoms]
+    vals = rho.reshape(n)
+    for i in range(n[0]):
+        for j in range(n[1]):
+            row = vals[i, j]
+            lines += [" ".join("{:.5E}".format(x) for x in row[k:k + 6]) for k in range(0, n[2], 6)]
+    path.write_text("\n".join(lines) + "\n")
+
+
 @pytest.fixture(scope="module", params=["chromium", "firefox"])
 def app(request, tmp_path_factory):
     tmp = tmp_path_factory.mktemp("voltoolbar")
@@ -43,6 +70,7 @@ def app(request, tmp_path_factory):
         shutil.copyfile(CORPUS / f"{SLAB}_DENS.CUBE", root / "vol" / "slab_DENS.CUBE")
         shutil.copyfile(CORPUS / f"{MOL}_DENS.CUBE", root / "vol" / "mol_DENS.CUBE")
         shutil.copyfile(CORPUS / f"{MOL}_POT.CUBE", root / "vol" / "mol_POT.CUBE")
+    write_bulk_cube(root / "vol" / "bulk_DENS.cube")
     proc, base, _ = H.start_server(root, tmp / "xdg", MACE_GUI_TEST_HOOKS="1", MACE_GUI_MAX_WORKERS="2")
     try:
         drv = H.browser(request.param, width=1280, height=800)
@@ -213,7 +241,10 @@ def test_cube_supercell_replicates_the_surface_with_the_atoms(drv):
     # the slab is periodic in a and b: 2x2 cells, the c axis is the vacuum
     assert s["display"]["atoms"] == 4 * n == drawn_atoms(drv), s["display"]
     assert s["display"]["images"] == 4 and s["surfaces"] == 4 and s["vertices"] == 4 * v1
-    assert drv.execute_script("return document.getElementById('tb-range-label').textContent") == "2×2×2"
+    # the toolbar says what is drawn (2x2x1), the tooltip why, as the structure view does
+    assert drv.execute_script("return document.getElementById('tb-range-label').textContent") == "2×2×1"
+    assert "not periodic along c" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
+    assert on_screen(drv)["bad"] == 0
     # the surface of every image is where its atoms are: one surface vertex lies within 1.2 A of 99% of the drawn atoms
     near = drv.execute_script(f"""const V = window.__mace.volumeView.vertices(), A = {VV}.getModel().selectedAtoms({{}});
       let hit = 0; for (const a of A) {{ let best = 1e9;
@@ -232,6 +263,48 @@ def test_cube_supercell_replicates_the_surface_with_the_atoms(drv):
     assert drv.execute_script("return window.__mace.settings.get('showBoundary')") is True or drv.execute_script(
         "return document.getElementById('opt-boundary').checked")
     assert st(drv)["display"]["atoms"] >= off
+    assert not H.errors(drv), H.errors(drv)
+
+
+def on_screen(drv):
+    """The drawn atoms whose centers fall outside the volume view's canvas."""
+    return drv.execute_script(f"""const v = {VV}, r = v.getCanvas().getBoundingClientRect();
+      const A = v.getModel() ? v.getModel().selectedAtoms({{}}) : [];
+      const P = A.map((a) => v.modelToScreen({{x: a.x, y: a.y, z: a.z}}));
+      return {{n: P.length, bad: P.filter((p) => p.x < r.left || p.x > r.right || p.y < r.top || p.y > r.bottom).length}}""")
+
+
+def per_axis(drv, cell):
+    """The cells the drawn atoms and the isosurface vertices occupy along a, b and c (an orthogonal cell from 0)."""
+    return drv.execute_script(f"""const cell = arguments[0], V = window.__mace.volumeView.vertices(), A = {VV}.getModel().selectedAtoms({{}});
+      const cells = (pts) => [0, 1, 2].map((k) => new Set(pts.map((p) => Math.floor(p[k] / cell[k]))).size);
+      const vs = []; for (let i = 0; i < V.length; i += 3) vs.push([V[i], V[i + 1], V[i + 2]]);
+      return {{atoms: cells(A.map((a) => [a.x, a.y, a.z])), surfaces: cells(vs)}}""", cell)
+
+
+def test_bulk_cube_range_repeats_all_three_axes_and_fits(drv):
+    # 1.1.6: a new range kept the camera, so a 3x3x3 of a cube showed as the cells that fit (3x2, or 3x3x1)
+    open_vol(drv, "vol/bulk_DENS.cube")
+    s = st(drv)
+    assert s["periodic"] and s["surfaces"] == 1 and s["display"]["atoms"] == 2
+    cell = [x * 0.529177210903 for x in BULK_CELL]
+    for along in (None, "view.alongA"):
+        if along:
+            run(drv, "view.range1")
+            run(drv, along)
+        for n in (2, 3):
+            run(drv, f"view.range{n}")
+            s = st(drv)
+            assert s["display"]["images"] == n ** 3 and s["surfaces"] == n ** 3 and not s["display"]["capped"], s["display"]
+            assert s["display"]["atoms"] == 2 * n ** 3 == drawn_atoms(drv)
+            # the tall c is periodic: the label is the range, no note
+            assert drv.execute_script("return document.getElementById('tb-range-label').textContent") == f"{n}×{n}×{n}"
+            assert drv.execute_script("return document.getElementById('tb-range').dataset.tip") == "Display range"
+            c = per_axis(drv, cell)
+            assert c["atoms"] == [n, n, n] and c["surfaces"] == [n, n, n], c
+            # every cell is on screen (the camera follows the range)
+            o = on_screen(drv)
+            assert o["n"] == 2 * n ** 3 and o["bad"] == 0, (along, n, o)
     assert not H.errors(drv), H.errors(drv)
 
 
@@ -281,4 +354,6 @@ def test_slab_orbital_range_keeps_the_vacuum_axis_at_one(drv):
     run(drv, "view.range3")
     s = wait_orbital(drv, "s.orbital.cells[0] === 3")
     assert s["orbital"]["cells"] == [3, 3, 1] and s["display"]["atoms"] == s["atoms"]
+    assert drv.execute_script("return document.getElementById('tb-range-label').textContent") == "3×3×1"
+    assert "not periodic along c" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
     assert not H.errors(drv), H.errors(drv)

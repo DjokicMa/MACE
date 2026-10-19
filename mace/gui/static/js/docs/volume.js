@@ -39,7 +39,11 @@ export function createVolumeView(host, optsHost, H) {
   const signedOf = (d) => !!(d.meta && d.meta.signed);
   const defaults = (m) => ({ level: m.level, plus: true, minus: m.signed, opacity: m.type === "density" ? 0.75 : 0.85,
     wire: false, atoms: true, slice: false, axis: "c", index: null, contours: 12,
-    colorPath: null, range: "auto", vmin: null, vmax: null, reverse: (H.setting("volume.mepColors") || "cli") === "chemistry" });
+    colorPath: null, range: "auto", vmin: null, vmax: null, chem: null });
+  /* Potential colors (Settings › Viewport, mace plotting --potential-colors): chemistry (the default) red = negative,
+   * blue = positive; physics red = positive. A document's own choice (Color › Red = negative) over the setting. */
+  const isPot = (t) => String(t || "").startsWith("potential");
+  const chemOf = (d) => (d.opts.chem === null || d.opts.chem === undefined ? H.setting("volume.mepColors") !== "physics" : !!d.opts.chem);
 
   /* ---------------------------------------------------------------- data */
   async function loadVolume(d) {
@@ -163,12 +167,15 @@ export function createVolumeView(host, optsHost, H) {
     const css = M().cssVar;
     // spin: + blue and − red as the slices and mace plotting draw them, or the Maps & volumes preset's pair (B6)
     if (d.meta.type === "spin" || d.meta.type === "spin_difference") return M().volumeColors ? M().volumeColors() : [css("--plot-10"), css("--plot-1")];
+    // a potential: + blue, − red in chemistry colors (as spin); physics swaps them
+    if (isPot(d.meta.type) && !chemOf(d)) return [css("--vol-minus"), css("--vol-plus")];
     return [css("--vol-plus"), css("--vol-minus")];
   }
   function gradient(d) {
     const lo = d.opts.vmin, hi = d.opts.vmax;
-    // 3Dmol's RWB maps its first bound to red: the CLI (RdBu_r) puts red on the positive side
-    return d.opts.reverse ? new window.$3Dmol.Gradient.RWB(lo, hi) : new window.$3Dmol.Gradient.RWB(hi, lo);
+    // 3Dmol's RWB maps its first bound to red: chemistry colors put red on the negative side (the CLI's RdBu),
+    // physics on the positive side (RdBu_r)
+    return chemOf(d) ? new window.$3Dmol.Gradient.RWB(lo, hi) : new window.$3Dmol.Gradient.RWB(hi, lo);
   }
   function draw(fit = false) {
     const d = doc;
@@ -178,15 +185,24 @@ export function createVolumeView(host, optsHost, H) {
     shapes = [];
     const o = d.opts, m = d.meta, dd = display(d);
     lastDisplay = dd;
+    // a new display range of the same document (3×3×3 after 1×1×1): the kept camera cut the supercell to the
+    // cells that fit (a 3×3×3 showed as 3×2 rows, a slab's off screen), so the view is fitted again (the turn kept)
+    const rangeKey = JSON.stringify(dd.range);
+    const refit = !!view && d.rangeKey !== undefined && d.rangeKey !== rangeKey;
+    d.rangeKey = rangeKey;
     if (o.atoms && dd.list.n) {
       const { list, s } = dd, org = dd.origin;
       const xyz = [String(list.n), "atoms"].concat(Array.from({ length: list.n }, (_, k) =>
         `${s.symbols[list.base[k]]} ${(list.cart[3 * k] + org[0]).toFixed(5)} ${(list.cart[3 * k + 1] + org[1]).toFixed(5)} ${(list.cart[3 * k + 2] + org[2]).toFixed(5)}`)).join("\n") + "\n";
       const model = vw.addModel(xyz, "xyz");
-      const cs = M().colorScheme();
-      // bonds are the sticks 3Dmol finds between the drawn atoms (the periodic images too); off: the atoms alone
-      model.setStyle({}, dd.bonds ? { sphere: { scale: 0.25, colorscheme: cs }, stick: { radius: 0.1, colorscheme: cs } }
-        : { sphere: { scale: 0.25, colorscheme: cs } });
+      // each drawn atom's site (the Magnetic style colors by it)
+      model.selectedAtoms({}).forEach((a, k) => { a.properties = { ...(a.properties || {}), base: list.base[k] }; });
+      const cs = M().colorSpec ? M().colorSpec() : { colorscheme: M().colorScheme() };
+      // bonds are the sticks 3Dmol finds between the drawn atoms (the periodic images too); off: the atoms alone.
+      // The document's Style: space-filling spheres or thin sticks; otherwise the small balls that keep a surface in view
+      const draw = H.viewOpts ? H.viewOpts().style : "ballstick";
+      model.setStyle({}, draw === "spacefill" || draw === "stick" ? M().styleFor(draw, dd.bonds)
+        : dd.bonds ? { sphere: { scale: 0.25, ...cs }, stick: { radius: 0.1, ...cs } } : { sphere: { scale: 0.25, ...cs } });
       if (dd.labels !== "off") {
         const size = Number(H.setting("labelSize")) || 12;
         for (let k = 0; k < list.n; k++) {
@@ -224,12 +240,12 @@ export function createVolumeView(host, optsHost, H) {
     window.__maceVolumeStats = { ...stats };
     // the first view fits the atoms and the surfaces; the cell (a slab's c spans its vacuum) and the plane come after
     if (view) vw.setView(view);
-    else {
-      vw.zoomTo(); vw.zoom(0.9);
-      // the rotation center: the cell's center (a slab's at its atoms' mid-height), else the atoms' middle
+    if (!view || refit) {
+      vw.zoomTo(); vw.zoom(0.9);                          // zoomTo keeps the turn (Reset View clears it first)
+      // the rotation center: the drawn cells' center (a slab's at its atoms' mid-height), else the atoms' middle
       const P = M().pivotOf, cart = m.atoms.cart || [];
       const pv = !P ? null : m.periodic && m.lattice
-        ? P({ cell: m.lattice, pbc: m.pbc || [true, true, true], origin: m.cell_origin || m.origin || [0, 0, 0] }, null, cart)
+        ? P(dd.box && dd.box.cell ? dd.box : { cell: m.lattice, pbc: m.pbc || [true, true, true], origin: m.cell_origin || m.origin || [0, 0, 0] }, null, cart)
         : cart.length ? P({ pbc: [false, false, false] }, null, cart) : null;
       // an orbital's box (a supercell of 2x2x2 cells and more) fills the view: zoomTo on everything left a
       // crystal's box at ~15% of the view
@@ -337,11 +353,11 @@ export function createVolumeView(host, optsHost, H) {
     const bar = $(".vv-bar");
     if (!d.colorVd || d.opts.vmin === null) { bar.hidden = true; return; }
     bar.hidden = false;
-    const css = M().cssVar, red = css("--mep-pos"), white = css("--mep-mid"), blue = css("--mep-neg");
-    const [left, right] = d.opts.reverse ? [red, blue] : [blue, red];
+    const css = M().cssVar, red = css("--mep-red"), white = css("--mep-mid"), blue = css("--mep-blue"), chem = chemOf(d);
+    const [left, right] = chem ? [red, blue] : [blue, red];
     bar.innerHTML = `<div class="vv-grad" style="background: linear-gradient(90deg, ${left}, ${white}, ${right})"></div>
       <div class="vv-ticks mono"><span>${d.opts.vmin.toExponential(2)}</span><span>0</span><span>${d.opts.vmax.toExponential(2)}</span></div>
-      <div class="vv-legend small">Potential (a.u.) · ${d.opts.reverse ? "red = negative (electron-rich) · blue = positive (electron-poor)"
+      <div class="vv-legend small">Potential (a.u.) · ${chem ? "red = negative (electron-rich) · blue = positive (electron-poor)"
         : "red = positive (electron-poor) · blue = negative (electron-rich)"}</div>`;
   }
 
@@ -370,9 +386,9 @@ export function createVolumeView(host, optsHost, H) {
     const signed = signedOf(d);
     const zmax = signed ? Math.max(...r.cart.flat().filter((x) => x !== null).map(Math.abs)) : null;
     // the Maps & volumes preset's colormap: signed + blue / − red (plotly.js RdBu reversed), as the 3D view and
-    // mace plotting; a potential with Potential colors "cli" red = + (B6)
+    // mace plotting; a potential in physics colors (Potential colors) the other way round: red = +
     const sc = M().mapScale ? M().mapScale(signed) : { colorscale: signed ? "RdBu" : "Viridis", reversescale: signed, contours: "both" };
-    if (signed && d.meta.type === "potential" && sc.colorscale === "RdBu") sc.reversescale = d.opts.reverse ? true : false;
+    if (signed && isPot(d.meta.type) && !chemOf(d)) sc.reversescale = !sc.reversescale;
     const trace = { type: "contour", x: r.x, y: r.y, z: transpose(r.cart), colorscale: sc.colorscale, reversescale: sc.reversescale,
       ncontours: d.opts.contours, contours: { coloring: sc.contours === "lines" ? "lines" : "heatmap", showlines: sc.contours !== "filled" }, line: { width: 0.5 },
       zmid: signed ? 0 : undefined, zmin: signed ? -zmax : undefined, zmax: signed ? zmax : undefined,
@@ -435,8 +451,10 @@ export function createVolumeView(host, optsHost, H) {
         <div class="po-row"><span>Range</span><span class="segment"><button data-vo-range="auto" aria-pressed="${o.range === "auto"}">Auto</button><button data-vo-range="custom" aria-pressed="${o.range === "custom"}">Custom</button></span></div>
         <label class="po-row"><span>Min</span><input type="number" id="vo-vmin" step="any" value="${o.vmin}"${o.range === "auto" ? " disabled" : ""}></label>
         <label class="po-row"><span>Max</span><input type="number" id="vo-vmax" step="any" value="${o.vmax}"${o.range === "auto" ? " disabled" : ""}></label>
-        <label class="chk po-row"><input type="checkbox" id="vo-reverse"${o.reverse ? " checked" : ""}> Reverse Colors (red = negative)</label>
-        <div class="po-acts"><button class="tb-btn-text" data-vo="resetRange">${icon("rotate-ccw")}<span>Reset Range</span></button></div>` : ""}
+        <label class="chk po-row"><input type="checkbox" id="vo-chem"${chemOf(d) ? " checked" : ""}> Red = negative (chemistry colors)</label>
+        <div class="po-acts"><button class="tb-btn-text" data-vo="resetRange">${icon("rotate-ccw")}<span>Reset Range</span></button></div>`
+        : isPot(m.type) && signedOf(d) ? `<div class="po-h">Color</div>
+        <label class="chk po-row"><input type="checkbox" id="vo-chem"${chemOf(d) ? " checked" : ""}> Red = negative (chemistry colors)</label>` : ""}
       <div class="po-h">Statistics (full grid)</div>
       <p class="vo-stat mono">min ${fmtv(st.min)} · max ${fmtv(st.max)}</p>${integral}
       ${orb ? `<div class="po-h">Orbital</div>${m.orbital.levels.map((l) => `<p class="vo-stat mono">MO ${l.n}: ${l.e_ev.toFixed(3)} eV · occupation ${Number(l.occ).toFixed(3)}</p>`).join("")}
@@ -469,7 +487,7 @@ export function createVolumeView(host, optsHost, H) {
     else if (t.id === "vo-wire") o.wire = t.checked;
     else if (t.id === "vo-atoms") o.atoms = t.checked;
     else if (t.id === "vo-cell") { H.setSetting("showCell", t.checked); return; }      // the toolbar's Show Unit Cell: one setting
-    else if (t.id === "vo-reverse") o.reverse = t.checked;
+    else if (t.id === "vo-chem") { o.chem = t.checked; if (o.slice && d.slice) plotSlice(d).catch(() => {}); }
     else if (t.id === "vo-vmin" || t.id === "vo-vmax") { const x = Number(t.value); if (Number.isFinite(x)) o[t.id === "vo-vmin" ? "vmin" : "vmax"] = x; }
     else if (t.id === "vo-contours") { o.contours = Math.max(2, Math.min(60, Number(t.value) || 12)); if (o.slice) loadSlice(d).catch((er) => toast(er.message, "error")); return; }
     else if (t.id === "vo-slice" || t.id === "vo-axis") {
@@ -613,6 +631,8 @@ export function createVolumeView(host, optsHost, H) {
   }
 
   return {
+    /** The element of each atom the view draws (its sites, in order), or null before the grid is read. */
+    atomsOf(d) { if (!d || !d.meta || !G) return null; const u = unitStructure(d); return u ? u.symbols : (d.meta.atoms && d.meta.atoms.symbols) || null; },
     async open(d) {
       doc = d;
       $(".vv-title").textContent = d.title;
@@ -687,7 +707,7 @@ export function createVolumeView(host, optsHost, H) {
     cell: () => { const m = doc && doc.meta; return m && m.periodic && m.lattice && G && G.reciprocal(m.lattice) ? m.lattice : null; },
     state: () => doc && doc.meta && { path: doc.path, type: doc.meta.type, level: doc.opts.level, plus: doc.opts.plus, minus: doc.opts.minus,
       surfaces: stats.surfaces, vertices: stats.vertices, shape: doc.meta.shape, stride: doc.meta.stride, slice: doc.slice ? { axis: doc.slice.axis, index: doc.slice.index } : null,
-      color: doc.colorPath || null, vmin: doc.opts.vmin, vmax: doc.opts.vmax, reverse: doc.opts.reverse, stats: doc.meta.stats, combo: !!doc.combo,
+      color: doc.colorPath || null, vmin: doc.opts.vmin, vmax: doc.opts.vmax, chem: chemOf(doc), stats: doc.meta.stats, combo: !!doc.combo,
       display: lastDisplay && { atoms: lastDisplay.list.n, images: lastDisplay.images, surfaces: lastDisplay.shifts.length, capped: lastDisplay.capped,
         cell: lastDisplay.cell, bonds: lastDisplay.bonds, labels: lastDisplay.labels, range: lastDisplay.range, box: lastDisplay.box },
       signed: !!doc.meta.signed, defaultLevel: doc.meta.level, atoms: doc.meta.atoms.numbers.length, periodic: !!doc.meta.periodic,
@@ -697,6 +717,8 @@ export function createVolumeView(host, optsHost, H) {
     // the part of the view the picture covers, for the tests
     drawnSpan: () => { if (!viewer) return null; viewer.render(); return drawnSpan(viewer); },
     gradientHex: (x) => (doc && doc.colorVd ? gradient(doc).valueToHex(x) : null),
+    /** The [+, −] isosurface colors drawn (CSS colors), for the tests. */
+    signColors: () => (doc && doc.meta ? colors(doc) : null),
     viewer: () => viewer,
   };
 }

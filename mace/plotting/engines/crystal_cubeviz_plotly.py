@@ -851,15 +851,15 @@ def get_plotly_colorscale(data_type: str, cmap: Optional[str] = None):
         return cmap
     
     # signed maps (B6): plotly's RdBu runs red (low) to blue (high), so + is blue for spin, as the
-    # isosurfaces; a potential reversed (RdBu_r): + red, as its captions and the GUI's "cli" colors
+    # isosurfaces; a potential in the Potential colors (potential_colorscale: chemistry red = -, the default)
+    if str(data_type or '').startswith('potential'):
+        return potential_colorscale()
     colorscales = {
         'density': 'Viridis',
         'spin': 'RdBu',
-        'potential': 'RdBu_r',
         'spin_difference': 'RdBu',
         'density_difference': 'RdBu',
         'difference': 'RdBu',
-        'potential_difference': 'RdBu_r',
     }
     return colorscales.get(data_type, 'Viridis')
 
@@ -1956,8 +1956,8 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
 
     # Choose colorscale based on color CUBE type
     if color_cube.is_diverging_data():
-        # a potential: red = + (RdBu_r); spin or a difference: + blue (RdBu), as the isosurfaces (B6)
-        colorscale = 'RdBu_r' if str(color_cube.data_type).startswith('potential') else 'RdBu'
+        # a potential in the Potential colors (chemistry: red = -, RdBu); spin or a difference: + blue (RdBu) (B6)
+        colorscale = potential_colorscale() if str(color_cube.data_type).startswith('potential') else 'RdBu'
         colorbar_title = f"{color_cube.get_data_type_label()}"
     else:
         colorscale = 'Viridis'
@@ -2035,7 +2035,7 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
     # Add interpretation annotation for potential
     if color_cube.data_type == 'potential':
         fig.add_annotation(
-            text='<b>Blue:</b> Negative potential (e⁻-rich) | <b>Red:</b> Positive potential (e⁻-poor)',
+            text=_potential_caption(rdbu=True),
             xref='paper', yref='paper',
             x=0.5, y=1.02,
             showarrow=False,
@@ -2048,7 +2048,7 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
         )
     elif color_cube.data_type == 'spin':
         fig.add_annotation(
-            text='<b>Blue:</b> Spin-down excess (β > α) | <b>Red:</b> Spin-up excess (α > β)',
+            text='<b>Red:</b> Spin-down excess (β > α) | <b>Blue:</b> Spin-up excess (α > β)',
             xref='paper', yref='paper',
             x=0.5, y=1.02,
             showarrow=False,
@@ -2127,13 +2127,43 @@ def transform_vertices_optimized(verts, cube: CubeFile, bohr_to_ang, data_shape,
 
 
 # The sign colors of spin and difference volumes (B6): + blue, - red in every renderer (the GUI's 3D
-# view and slices, these isosurfaces and slices), the captions saying so; a potential keeps red = +
-# (positive potential, electron-poor), as its captions and the GUI's "cli" potential colors.
+# view and slices, these isosurfaces and slices), the captions saying so.
 # mace plotting --style sets the pair (presets.py "iso": VESTA-like yellow/cyan, ...).
 ISO = {"plus": "#2563eb", "minus": "#dc2626", "plus_word": "Blue", "minus_word": "Red"}
 _ISO_WORDS = {"default": ("Blue", "Red"), "presentation": ("Blue", "Red"), "publication": ("Blue", "Vermilion"),
               "colorblind": ("Blue", "Vermilion"), "vesta": ("Yellow", "Cyan"), "grayscale": ("Dark gray", "Light gray")}
-POTENTIAL = {"plus": "#b2182b", "minus": "#2166ac", "plus_word": "Red", "minus_word": "Blue"}
+# Potential colors (mace plotting --potential-colors, [plots] potential_colors; the GUI's Settings ›
+# Viewport › Potential colors): "chemistry" (the default, as GaussView, VMD and most papers draw an
+# electrostatic potential): red = negative (electron-rich), blue = positive, the same pair as spin
+# (+ blue); "physics": red = positive, the pair swapped.
+POTENTIAL_COLOR_CHOICES = ("chemistry", "physics")
+_POTENTIAL = {"scheme": "chemistry"}
+
+
+def use_potential_colors(scheme):
+    """Set the potential sign convention ("chemistry" or "physics"; anything else: chemistry)."""
+    _POTENTIAL["scheme"] = scheme if scheme in POTENTIAL_COLOR_CHOICES else "chemistry"
+
+
+def potential_colorscale():
+    """The diverging colorscale of a potential: RdBu (red low) in chemistry, RdBu_r (red high) in physics."""
+    return 'RdBu_r' if _POTENTIAL["scheme"] == "physics" else 'RdBu'
+
+
+def _potential_caption(has_pos=True, has_neg=True, rdbu=False):
+    """A potential figure's legend, naming the colors drawn: the isosurfaces' sign pair, or
+    (``rdbu``) the red-blue colorscale of a surface colored by the potential."""
+    if rdbu:
+        pw, mw = ('Red', 'Blue') if _POTENTIAL["scheme"] == "physics" else ('Blue', 'Red')
+    else:
+        _p, _m, pw, mw = sign_colors("potential")
+    pos = f'<b>{pw} (+):</b> Positive potential (e⁻-poor)'
+    neg = f'<b>{mw} (−):</b> Negative potential (e⁻-rich)'
+    if has_pos and has_neg:
+        return f'{neg} | {pos}'
+    if has_pos:
+        return f'{pos} | ⚠️ <i>No negative values in data</i>'
+    return f'{neg} | ⚠️ <i>No positive values in data</i>'
 
 
 def use_style(style):
@@ -2149,8 +2179,10 @@ def use_style(style):
 
 
 def sign_colors(data_type):
-    """(+ color, - color, + word, - word) of a signed volume."""
-    c = POTENTIAL if str(data_type or "").startswith("potential") else ISO
+    """(+ color, - color, + word, - word) of a signed volume. A potential in physics colors swaps the pair."""
+    c = ISO
+    if str(data_type or "").startswith("potential") and _POTENTIAL["scheme"] == "physics":
+        return c["minus"], c["plus"], c["minus_word"], c["plus_word"]
     return c["plus"], c["minus"], c["plus_word"], c["minus_word"]
 
 
@@ -2748,12 +2780,7 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
     # Add interpretation labels for spin/potential
     _pc, _mc, PW, MW = sign_colors(cube.data_type)
     if cube.data_type == 'potential':
-        if can_show_symmetric:
-            label_text = '<b>Red (+):</b> Positive potential (e⁻-poor) | <b>Blue (−):</b> Negative potential (e⁻-rich)'
-        elif data_has_positive:
-            label_text = '<b>Red (+):</b> Positive potential (e⁻-poor) | ⚠️ <i>No negative values in data</i>'
-        else:
-            label_text = '<b>Blue (−):</b> Negative potential (e⁻-rich) | ⚠️ <i>No positive values in data</i>'
+        label_text = _potential_caption(can_show_symmetric or data_has_positive, can_show_symmetric or not data_has_positive)
         fig.add_annotation(
             text=label_text,
             xref='paper', yref='paper',
@@ -3666,55 +3693,22 @@ def plot_slice_browser_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optio
         borderwidth=1
     )
 
-    # NEW: Add spin/potential color legend annotations
-    if cube.data_type == 'spin':
-        # Add spin up/down labels
-        fig.add_annotation(
-            text="<b>Blue = Spin Down ↓</b>",
-            xref="paper", yref="paper",
-            x=1.0, y=0.35,
-            xanchor="left",
-            showarrow=False,
-            bgcolor="rgba(0, 0, 255, 0.2)",
-            bordercolor="blue",
-            borderwidth=2,
-            font=dict(size=12, color="blue")
-        )
-        fig.add_annotation(
-            text="<b>Red = Spin Up ↑</b>",
-            xref="paper", yref="paper",
-            x=1.0, y=0.30,
-            xanchor="left",
-            showarrow=False,
-            bgcolor="rgba(255, 0, 0, 0.2)",
-            bordercolor="red",
-            borderwidth=2,
-            font=dict(size=12, color="red")
-        )
-    elif cube.data_type == 'potential':
-        # Add positive/negative labels
-        fig.add_annotation(
-            text="<b>Blue = Negative</b>",
-            xref="paper", yref="paper",
-            x=1.0, y=0.35,
-            xanchor="left",
-            showarrow=False,
-            bgcolor="rgba(0, 0, 255, 0.2)",
-            bordercolor="blue",
-            borderwidth=2,
-            font=dict(size=12, color="blue")
-        )
-        fig.add_annotation(
-            text="<b>Red = Positive</b>",
-            xref="paper", yref="paper",
-            x=1.0, y=0.30,
-            xanchor="left",
-            showarrow=False,
-            bgcolor="rgba(255, 0, 0, 0.2)",
-            bordercolor="red",
-            borderwidth=2,
-            font=dict(size=12, color="red")
-        )
+    # the sign legend of a spin or potential slice: the words and colors drawn (sign_colors)
+    if cube.data_type in ('spin', 'potential'):
+        pc, mc, pw, mw = sign_colors(cube.data_type)
+        words = (('Spin Up ↑', 'Spin Down ↓') if cube.data_type == 'spin' else ('Positive', 'Negative'))
+        for k, (word, color, what) in enumerate(((mw, mc, words[1]), (pw, pc, words[0]))):
+            fig.add_annotation(
+                text=f"<b>{word} = {what}</b>",
+                xref="paper", yref="paper",
+                x=1.0, y=0.35 - 0.05 * k,
+                xanchor="left",
+                showarrow=False,
+                bgcolor="rgba(255, 255, 255, 0.85)",
+                bordercolor=color,
+                borderwidth=2,
+                font=dict(size=12, color=color)
+            )
 
     # NOTE: Hexagonal lattice warning removed - alignment is now fixed!
     # X/Y axis slicing now works correctly for non-orthogonal lattices
@@ -4341,6 +4335,9 @@ Examples:
     parser.add_argument('--style', default='default',
                        help='Plot style (mace plotting --style): the sign colors of spin and difference '
                             'isosurfaces (vesta: yellow/cyan)')
+    parser.add_argument('--potential-colors', choices=list(POTENTIAL_COLOR_CHOICES), default='chemistry',
+                       help='Electrostatic potential colors: chemistry (default: red = negative, electron-rich; '
+                            'blue = positive) or physics (red = positive)')
     parser.add_argument('--no-title', action='store_true', help='Suppress auto-generated title')
     parser.add_argument('--no-axes', action='store_true', help='Hide 3D axes')
     parser.add_argument('--no-colorbar', action='store_true', help='Hide colorbars (for composite panels)')
@@ -4396,6 +4393,7 @@ Examples:
         except ValueError as e:
             parser.error(str(e))
     use_style(getattr(args, 'style', 'default'))
+    use_potential_colors(getattr(args, 'potential_colors', 'chemistry'))
 
     # DUAL CUBE MODE: Handle before normal file detection
     if args.shape_cube and args.color_cube:

@@ -1781,7 +1781,7 @@ ATOM_MENU = ["Select Equivalents", "Select Element (Mg)", "Select Neighbors", "-
              "Delete", "-", "Vacancy Here", "Substitute…", "Antisite…", "-", "Measure from Here", "Center View Here", "-", "Copy Coordinates (Fractional)",
              "Copy Coordinates (Cartesian)", "-", "Properties"]
 # Export Element Legend… (1.1.6) in both
-EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…",
+EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Snap View to Nearest Axis", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…",
               "Export Element Legend…"]
 EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Compare With Active", "Plot", "Compare Convergence", "Plot Gallery",
                  "Export Element Legend…", "-",

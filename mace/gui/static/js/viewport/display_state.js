@@ -3,29 +3,30 @@
  * a document stores only its overrides (docprefs.js, kind "display"), so a
  * changed default applies at once to every document that has not changed
  * that value, and Reset makes a document follow the default again. The
- * Display section's Cell, Bonds, Labels, style and colors stay global.
+ * Display section's Cell, Bonds, Labels, atom style and color scheme stay
+ * global; a document's Style preset can override the drawing and colors.
  * Nothing here reaches a deck, a CIF or a settings file. */
 import * as docprefs from "../docprefs.js";
 import * as settings from "../settings.js";
 
+import { LIGHTING, STYLES, LIGHTING_KEYS, STYLE_KEYS } from "./presets.js";
+
+/* range: Range & boundary; render: the lighting (its preset is renderPreset, the
+ * name it had when it was the only preset, so saved documents keep theirs); style:
+ * how atoms are drawn and colored (stylePreset). */
 export const GROUPS = {
-  range: ["displayLo", "displayHi", "showBoundary", "bondedOutside", "showPolyhedra", "atomScale", "bondRadius"],
-  render: ["renderPreset", "depthCue", "lightStrength", "lightDirection", "ambient", "outline", "outlineWidth",
-    "outlineColor", "ambientOcclusion", "background", "backgroundColor"],
+  range: ["displayLo", "displayHi", "showBoundary", "bondedOutside"],
+  render: ["renderPreset", ...LIGHTING_KEYS],
+  style: ["stylePreset", ...STYLE_KEYS],
 };
-export const KEYS = new Set([...GROUPS.range, ...GROUPS.render]);
+export const KEYS = new Set([...GROUPS.range, ...GROUPS.render, ...GROUPS.style]);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/* The presets of the Rendering group: Default is exactly the look before 1.1.5
- * (one light at 3Dmol's direction, no ambient, no outline) with subtle depth cueing. */
-export const PRESETS = {
-  default: { lightStrength: 1, lightDirection: "front", ambient: 0, depthCue: 0.15, outline: false, ambientOcclusion: 0, background: "theme" },
-  flat: { lightStrength: 0.8, lightDirection: "front", ambient: 0.35, depthCue: 0, outline: false, ambientOcclusion: 0, background: "theme" },
-  publication: { lightStrength: 1, lightDirection: "front", ambient: 0.2, depthCue: 0, outline: true, outlineWidth: 0.1,
-    ambientOcclusion: 0.5, background: "white" },
-  presentation: { lightStrength: 1.2, lightDirection: "front", ambient: 0.15, depthCue: 0.25, outline: false,
-    ambientOcclusion: 0, background: "black" },
-};
+/* The presets of each dropdown ({id: values}, viewport/presets.js): Default lighting is
+ * exactly the look before 1.1.5 (one light at 3Dmol's direction, no ambient, no outline)
+ * with subtle depth cueing; Default style is the ball and stick drawn before 1.1.7. */
+export const PRESETS = Object.fromEntries(LIGHTING.map((p) => [p.id, p.values]));
+export const STYLE_PRESETS = Object.fromEntries(STYLES.map((p) => [p.id, p.values]));
 
 export function defaults() {
   const o = {};
@@ -36,7 +37,11 @@ export function defaults() {
 export function of(doc) {
   const d = defaults();
   if (!doc) return d;
-  return { ...d, ...docprefs.get("display", doc) };
+  const o = docprefs.get("display", doc);
+  // saved before the Style dropdown (1.1.7): a document's own atom size, bond radius or
+  // polyhedra and no style preset is a Custom style, not Default
+  if (!("stylePreset" in o) && STYLE_KEYS.some((k) => k in o)) o.stylePreset = "custom";
+  return { ...d, ...o };
 }
 export function overrides(doc) { return doc ? docprefs.get("display", doc) : {}; }
 export const isOverride = (doc, k) => !!doc && k in docprefs.get("display", doc);

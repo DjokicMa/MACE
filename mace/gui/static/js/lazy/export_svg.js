@@ -76,9 +76,12 @@ export async function sceneGroup(X, { cell = true } = {}) {
   const atoms = new Array(d.n), lines = [];
   const R = sc.drawnRadii, colorOf = new Map();
   const fill = (sym) => { if (!colorOf.has(sym)) colorOf.set(sym, X.M.elementColor(sym)); return colorOf.get(sym); };
+  // the Magnetic style colors each atom by its spin moment (a colorfunc of its site), as the view does
+  const spec = X.M.colorSpec ? X.M.colorSpec() : null, byAtom = spec && spec.colorfunc;
   for (let i = 0; i < d.n; i++) {
     const b = d.base[i], sym = s.symbols[b];
-    atoms[i] = { u: uv[2 * i], v: uv[2 * i + 1], r: R[i] * k, z: depth(d.cart[3 * i], d.cart[3 * i + 1], d.cart[3 * i + 2]), fill: fill(sym), opacity: 1, title: `${sym}${b + 1}` };
+    const f = byAtom ? byAtom({ serial: b + 1, properties: { base: b } }) : fill(sym);
+    atoms[i] = { u: uv[2 * i], v: uv[2 * i + 1], r: R[i] * k, z: depth(d.cart[3 * i], d.cart[3 * i + 1], d.cart[3 * i + 2]), fill: f, opacity: 1, title: `${sym}${b + 1}` };
     if (i % CHUNK === CHUNK - 1) await yieldNow();
   }
   const p = sc.pairs, bw = 2 * (Number(X.setting("bondRadius")) || 0.12) * k;

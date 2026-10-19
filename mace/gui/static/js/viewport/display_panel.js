@@ -3,8 +3,15 @@
  * Settings › Viewport defaults behind them. A value that differs from the
  * default shows a dot after its label (click: back to the default); each
  * group has Reset and Save as Default. Changes are live: inputs settle for
- * 120 ms, the view redraws at most once per frame. */
+ * 120 ms, the view redraws at most once per frame.
+ *
+ * Rendering holds two dropdowns (1.1.7, viewport/presets.js): Style (how
+ * atoms are drawn and colored) and Lighting. Each applies only its own keys,
+ * so they combine freely; each has a Custom, the user's own look, saved
+ * (Settings styleCustom / renderCustom) whenever one of its values is edited. */
 import * as DS from "./display_state.js";
+import { LIGHTING, STYLES, options as presetOptions, byId } from "./presets.js";
+import * as settings from "../settings.js";
 import * as G from "../geom/core.js";
 import { autoOutline } from "./rendering.js";
 
@@ -18,6 +25,33 @@ export function createDisplayPanel(deps) {
   // the swatch of an unset outline color: what is drawn (rendering.js autoOutline)
   const autoOutlineHex = () => autoOutline(val("background"), val("backgroundColor"), deps.cssColor("--text"));
   let rangeEl = null, renderEl = null, timer = 0;
+  // the note under a dropdown after Custom was chosen with no custom look saved yet (cleared by the next edit)
+  const customNote = { render: "", style: "" };
+  // each dropdown's preset key, its Custom's setting, and the keys its presets and Custom set
+  const PRESET = {
+    render: { key: "renderPreset", saved: "renderCustom", table: DS.PRESETS, keys: DS.GROUPS.render.filter((k) => k !== "renderPreset") },
+    style: { key: "stylePreset", saved: "styleCustom", table: DS.STYLE_PRESETS, keys: DS.GROUPS.style.filter((k) => k !== "stylePreset") },
+  };
+  const groupOf = (k) => (PRESET.render.keys.includes(k) ? "render" : PRESET.style.keys.includes(k) ? "style" : null);
+  // Custom is the user's own look: saved whenever one of its values is edited,
+  // so choosing Custom again after a named preset brings it back
+  const savedCustom = (g) => { const c = settings.get(PRESET[g].saved); return c && typeof c === "object" ? c : null; };
+  function rememberCustom(g) {
+    const v = DS.of(doc());
+    settings.set(PRESET[g].saved, Object.fromEntries(PRESET[g].keys.map((k) => [k, v[k]])));
+  }
+  /* Why a style cannot apply to this document ("" when it can): polyhedra are the structure view's;
+   * Magnetic needs the run's Mulliken spin moments for exactly the drawn atoms. */
+  const VIEW_NAME = { trajectory: "the optimization view", freq: "the mode view", volume: "the volume view" };
+  function unavailable(p, d) {
+    if (!p || !p.needs || !d) return "";
+    if (p.needs === "polyhedra" && d.kind !== "structure") return `Polyhedra are drawn in the structure view only, not in ${VIEW_NAME[d.kind] || "this view"}`;
+    if (p.needs === "spins") {
+      const sp = deps.spins ? deps.spins(d) : { state: "none", reason: "No spin moments" };
+      return sp.state === "ok" ? "" : sp.reason || "No spin moments";
+    }
+    return "";
+  }
 
   const dot = (k) => (DS.isOverride(doc(), k)
     ? `<button type="button" class="ovr-dot" data-unset="${k}" title="Changed for this document. Click to use the default." aria-label="Use the default for this value"></button>` : "");
@@ -59,21 +93,45 @@ export function createDisplayPanel(deps) {
         <select class="field" id="dp-bondedOutside" data-k="bondedOutside" title="Draw atoms outside the range that are bonded to atoms inside it (one shell), or complete every discrete molecule that crosses the range.">
         ${[["off", "None"], ["neighbors", "Bonded Neighbors"], ["molecules", "Whole Molecules"]].map(([o, t]) => `<option value="${o}"${val("bondedOutside") === o ? " selected" : ""}>${t}</option>`).join("")}</select></div>
       <p class="insp-hint dp-bonded-note"${note ? "" : " hidden"}>${esc(note)}</p>
-      <div class="ins-row dp-row" data-key="showPolyhedra"><label class="tog"><input type="checkbox" data-k="showPolyhedra"${val("showPolyhedra") ? " checked" : ""}><span>Polyhedra</span></label>${dot("showPolyhedra")}</div>
-      ${slider("atomScale", "Atom Size", 0.1, 1, 0.05)}${slider("bondRadius", "Bond Radius", 0.03, 0.4, 0.01)}
       <div class="ins-row end dp-foot"><button type="button" class="tb-btn-text sm" data-reset-group="range">Reset</button>
         <button type="button" class="tb-btn-text sm" data-save-group="range">Save as Default</button></div></div>`;
   }
 
-  /* ---------------------------------------------------------------- Rendering */
+  /* ---------------------------------------------------------------- Rendering: Style, then Lighting */
+  function presetSelect(g, label, table) {
+    const k = PRESET[g].key, cur = val(k), d = doc();
+    const opts = presetOptions(table).map(([o, t]) => {
+      const p = byId(table, o), why = unavailable(p, d), help = p ? p.help : `Your own ${g === "style" ? "style" : "lighting"}: edit any value below and it is kept as Custom`;
+      return `<option value="${o}"${cur === o ? " selected" : ""}${why ? " disabled" : ""} title="${esc(why || help)}">${esc(t)}${why ? " (unavailable)" : ""}</option>`;
+    }).join("");
+    const curP = byId(table, cur);
+    return `<div class="ins-row dp-row" data-key="${k}">${lab(k, label, `dp-${k}`)}
+        <select class="field" id="dp-${k}" data-k="${k}" title="${esc(`${curP ? curP.help + ". " : ""}Custom is your own look: edit any value below and it is kept as Custom; choose Custom to bring it back`)}">${opts}</select></div>`;
+  }
+  function styleHtml() {
+    const d = doc(), why = table => table.map((p) => [p, unavailable(p, d)]).filter(([, w]) => w);
+    const cur = byId(STYLES, val("stylePreset")), curWhy = unavailable(cur, d);
+    // what a grayed-out style needs, said once under the dropdown (the options' tooltips say it too)
+    const notes = why(STYLES).map(([p, w]) => `${p.label}: ${w}`);
+    const sp = val("atomColor") === "spin" && d && deps.spins ? deps.spins(d) : null;
+    const info = curWhy ? `${cur.label} cannot apply here: ${curWhy}.` : sp && sp.state === "ok"
+      ? `Colored by the Mulliken spin moments in ${sp.source}: blue spin down, white none, red spin up (±${+sp.max.toFixed(2)} μB at full color).` : "";
+    return `<div class="dp-group" data-group="style">
+      ${presetSelect("style", "Style", STYLES)}
+      <p class="insp-hint dp-style-custom-note"${customNote.style ? "" : " hidden"}>${esc(customNote.style)}</p>
+      <p class="insp-hint dp-style-info"${info ? "" : " hidden"}>${esc(info)}</p>
+      <p class="insp-hint dp-style-na"${notes.length && !curWhy ? "" : " hidden"}>${esc(notes.join(". "))}${notes.length ? "." : ""}</p>
+      ${!d || d.kind === "structure" ? `<div class="ins-row dp-row" data-key="showPolyhedra"><label class="tog"><input type="checkbox" data-k="showPolyhedra"${val("showPolyhedra") ? " checked" : ""}><span>Polyhedra</span></label>${dot("showPolyhedra")}</div>` : ""}
+      ${slider("atomScale", "Atom Size", 0.1, 1, 0.05)}${slider("bondRadius", "Bond Radius", 0.03, 0.4, 0.01)}
+      <div class="ins-row end dp-foot"><button type="button" class="tb-btn-text sm" data-reset-group="style">Reset</button>
+        <button type="button" class="tb-btn-text sm" data-save-group="style">Save as Default</button></div></div>`;
+  }
   function renderHtml() {
-    const preset = val("renderPreset");
     const dir = val("lightDirection");
     const bg = val("background");
-    return `<div class="dp-group" data-group="render">
-      <div class="ins-row dp-row" data-key="renderPreset">${lab("renderPreset", "Preset", "dp-renderPreset")}
-        <select class="field" id="dp-renderPreset" data-k="renderPreset">${[["default", "Default"], ["flat", "Flat"], ["publication", "Publication"], ["presentation", "Presentation"], ["custom", "Custom"]]
-          .map(([o, t]) => `<option value="${o}"${preset === o ? " selected" : ""}${o === "custom" && preset !== "custom" ? " disabled" : ""}>${t}</option>`).join("")}</select></div>
+    return styleHtml() + `<div class="dp-group" data-group="render">
+      ${presetSelect("render", "Lighting", LIGHTING)}
+      <p class="insp-hint dp-custom-note"${customNote.render ? "" : " hidden"}>${esc(customNote.render)}</p>
       ${slider("depthCue", "Depth Cueing", 0, 1, 0.05, true)}
       <p class="insp-hint">How much the farthest atoms fade toward the background. 0 is off.</p>
       ${slider("lightStrength", "Light Strength", 0.3, 1.6, 0.05)}
@@ -82,6 +140,8 @@ export function createDisplayPanel(deps) {
       <p class="insp-hint dp-dir-note" hidden></p>
       ${slider("ambient", "Ambient Light", 0, 0.6, 0.05, true)}
       <p class="insp-hint">Light from all directions: lifts the shaded side of every atom.</p>
+      ${slider("shininess", "Shininess", 0, 1, 0.05, true)}
+      <p class="insp-hint">A glossy highlight on every atom.</p>
       ${slider("ambientOcclusion", "Ambient Occlusion", 0, 1, 0.05)}
       <p class="insp-hint dp-ao-note">Darkens creases and contacts between atoms. Costs frame time on large structures.</p>
       <div class="ins-row dp-row" data-key="outline"><label class="tog"><input type="checkbox" data-k="outline"${val("outline") ? " checked" : ""}><span>Outline</span></label>${dot("outline")}</div>
@@ -102,7 +162,7 @@ export function createDisplayPanel(deps) {
     el.addEventListener("input", (e) => {
       const t = e.target;
       if (t.type === "range" && t.dataset.k) {
-        const k = t.dataset.k, pct = ["depthCue", "ambient"].includes(k);
+        const k = t.dataset.k, pct = ["depthCue", "ambient", "shininess"].includes(k);
         t.nextElementSibling.textContent = pct ? Math.round(t.value * 100) + "%" : NUM(t.value);
         clearTimeout(timer);
         timer = setTimeout(() => edit(k, Number(t.value)), 120);
@@ -115,7 +175,8 @@ export function createDisplayPanel(deps) {
       if (!k) return;
       if (t.type === "checkbox") edit(k, t.checked);
       else if (t.type === "range") { clearTimeout(timer); edit(k, Number(t.value)); }
-      else if (k === "renderPreset") applyPreset(t.value);
+      else if (k === "renderPreset") applyPreset("render", t.value);
+      else if (k === "stylePreset") applyPreset("style", t.value);
       else edit(k, t.value);
     });
     el.addEventListener("click", (e) => {
@@ -147,14 +208,29 @@ export function createDisplayPanel(deps) {
   function edit(k, v) {
     const d = doc();
     if (!d) return;
-    // a rendering field edited after a preset: the preset becomes Custom
-    if (DS.GROUPS.render.includes(k) && k !== "renderPreset" && val("renderPreset") !== "custom") DS.set(d, { [k]: v, renderPreset: "custom" });
+    // a style or lighting field edited after a preset: that dropdown becomes Custom
+    const g = groupOf(k), pk = g && PRESET[g].key;
+    if (g) customNote[g] = "";
+    if (g && val(pk) !== "custom") DS.set(d, { [k]: v, [pk]: "custom" });
     else DS.set(d, k, v);
+    if (g) rememberCustom(g);
   }
-  function applyPreset(name) {
+  function applyPreset(g, name) {
     const d = doc();
-    if (!d || !DS.PRESETS[name]) return;
-    DS.set(d, { ...DS.PRESETS[name], renderPreset: name });
+    if (!d) return;
+    const P = PRESET[g];
+    if (name === "custom") {
+      // the saved custom look; none yet: Custom starts from what is drawn now, and says so
+      const c = savedCustom(g);
+      const pairs = c ? Object.fromEntries(P.keys.filter((k) => k in c).map((k) => [k, c[k]])) : {};
+      customNote[g] = c ? "" : `No custom ${g === "style" ? "style" : "look"} saved yet: Custom starts from the current view. Change any value below to make it yours.`;
+      DS.set(d, { ...pairs, [P.key]: "custom" });
+      if (!c && renderEl) refresh();          // the values did not change: show the note anyway
+      return;
+    }
+    if (!P.table[name]) return;
+    customNote[g] = "";
+    DS.set(d, { ...P.table[name], [P.key]: name });
   }
   function lightDirection(dir) {
     const d = doc();
@@ -164,7 +240,9 @@ export function createDisplayPanel(deps) {
     // an off-axis light leaves a dark crescent without some ambient light
     if (dir !== "front" && Number(val("ambient")) < 0.15) { pairs.ambient = 0.15; raised = true; }
     if (val("renderPreset") !== "custom") pairs.renderPreset = "custom";
+    customNote.render = "";
     DS.set(d, pairs);
+    rememberCustom("render");
     const n = renderEl && renderEl.querySelector(".dp-dir-note");
     if (n) { n.hidden = !raised; n.textContent = raised ? "Ambient raised to 15% so the shaded side stays visible" : ""; }
   }

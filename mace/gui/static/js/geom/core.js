@@ -443,21 +443,29 @@ export function convexHull(pts, eps = 1e-6) {
   for (const fct of facets) for (let k = 1; k + 1 < fct.ring.length; k++) triangles.push([fct.ring[0], fct.ring[k], fct.ring[k + 1]]);
   return { facets, triangles };
 }
-/** Coordination polyhedra (plan B9): for each drawn atom whose base atom is a
- * center (CN 4-12, every bonded neighbor of another element; metals only when
- * the structure has metal centers), its neighbors' hull, translated to where
+/* Pauling electronegativities by atomic number (0: none; the noble gases are never centers). */
+export const PAULING = [0,
+  2.2, 0, 0.98, 1.57, 2.04, 2.55, 3.04, 3.44, 3.98, 0, 0.93, 1.31, 1.61, 1.9, 2.19, 2.58, 3.16, 0,
+  0.82, 1, 1.36, 1.54, 1.63, 1.66, 1.55, 1.83, 1.88, 1.91, 1.9, 1.65, 1.81, 2.01, 2.18, 2.55, 2.96, 3,
+  0.82, 0.95, 1.22, 1.33, 1.6, 2.16, 1.9, 2.2, 2.28, 2.2, 1.93, 1.69, 1.78, 1.96, 2.05, 2.1, 2.66, 2.6,
+  0.79, 0.89, 1.1, 1.12, 1.13, 1.14, 1.13, 1.17, 1.2, 1.2, 1.1, 1.22, 1.23, 1.24, 1.25, 1.1, 1.27,
+  1.3, 1.5, 2.36, 1.9, 2.2, 2.2, 2.28, 2.54, 2, 1.62, 2.33, 2.02, 2, 2.2, 2.2,
+  0.7, 0.9, 1.1, 1.3, 1.5, 1.38, 1.36, 1.28, 1.3, 1.3];
+/** Coordination polyhedra (plan B9; the Polyhedral style, 1.1.7): for each drawn atom whose base atom
+ * is a center (CN 4-12, every bonded neighbor more electronegative: Ti and Pb in TiPbO3, Mg in MgO,
+ * S in a sulfonyl group; never Si in Si or C in graphene), its neighbors' hull, translated to where
  * the atom is drawn. One mesh per center element: flat-shaded triangles
  * (positions and normals, three vertices each) and the edges as pairs. */
 export function polyhedra(cell, frac, z, radii, metal, tol, dispCart, dispBase, only = null) {
   const C = rows(cell), n = radii.length;
   const adj = bondedShells(C, frac, radii, metal, tol);
   let center = new Uint8Array(n);
+  const en = (zz) => PAULING[zz] || 0;
   for (let i = 0; i < n; i++) {
     const nb = adj[i];
-    if (nb.length >= 4 && nb.length <= 12 && nb.every((x) => z[x.j] !== z[i])) center[i] = 1;
+    if (nb.length >= 4 && nb.length <= 12 && en(z[i]) > 0 && nb.every((x) => en(z[x.j]) > en(z[i]))) center[i] = 1;
   }
   if (only && only.length) { const set = new Set(only); for (let i = 0; i < n; i++) center[i] = center[i] && set.has(z[i]) ? 1 : 0; }
-  else if ([...center.keys()].some((i) => center[i] && metal[i])) for (let i = 0; i < n; i++) if (!metal[i]) center[i] = 0;
   const hulls = new Map();
   const hullOf = (i) => {
     if (!hulls.has(i)) {

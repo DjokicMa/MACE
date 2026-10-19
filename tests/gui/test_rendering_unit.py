@@ -23,10 +23,10 @@ def guards():
 def test_every_guard_is_in_the_vendored_3dmol():
     vendored = (STATIC / "vendor" / "3dmol" / "3Dmol-min.js").read_text()
     g = guards()
-    assert len(g) == 4, g
+    assert len(g) == 5, g
     for old, new in g:
         assert old in vendored, f"3Dmol changed: {old!r} is gone (update viewport/rendering.js GUARDS)"
-        assert "maceAmbient" in new
+        assert "maceAmbient" in new or "maceSpec" in new
 
 
 @pytest.fixture(scope="module")

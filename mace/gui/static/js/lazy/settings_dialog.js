@@ -9,6 +9,7 @@
  * file, its warnings and its command-line values (settings.js has the layers). */
 import { loadCss } from "./lazy_util.js";
 import { SECTIONS, SCHEMA, P3 } from "./settings_schema.js";
+import { LIGHTING, STYLES, LIGHTING_KEYS, STYLE_KEYS, byId } from "../viewport/presets.js";
 
 export { SECTIONS, SCHEMA };
 
@@ -156,6 +157,9 @@ function rowHtml(r, sectionNote = false) {
   } else if (r.control === "triple" || r.control === "pair") {
     ctl = `<span class="set-num"><input type="text" class="field" id="${id}" data-key="${r.key}" value="${esc((v || []).join(", "))}"` +
       ` spellcheck="false" inputmode="decimal" aria-describedby="${err}">${r.unit ? `<span class="unit">${esc(r.unit)}</span>` : ""}</span>`;
+  } else if (r.control === "saved") {
+    // a value the app keeps for you (no field to type in): what is saved, and Reset forgets it
+    ctl = `<output class="set-saved muted small" id="${id}">${esc(r.summary(v))}</output>`;
   } else if (r.control === "list") {
     ctl = `<textarea class="field set-list" id="${id}" data-key="${r.key}" rows="3" spellcheck="false" aria-describedby="${err}">${esc((v || []).join("\n"))}</textarea>`;
   } else {
@@ -306,7 +310,16 @@ function onChange(e) {
   if (!k) return;
   const r = SCHEMA.find((x) => x.key === k);
   if (t.type === "checkbox") H.settings.set(k, t.checked);
-  else if (t.tagName === "SELECT" || t.type === "range") H.settings.set(k, typed(r, t.value));
+  else if (t.tagName === "SELECT" || t.type === "range") {
+    H.settings.set(k, typed(r, t.value));
+    // a Lighting or Style preset chosen as the default: its values become the defaults too (Custom: the saved look)
+    const which = k === "renderPreset" ? [LIGHTING, LIGHTING_KEYS, "renderCustom"] : k === "stylePreset" ? [STYLES, STYLE_KEYS, "styleCustom"] : null;
+    if (which) {
+      const p = byId(which[0], t.value), saved = H.settings.get(which[2]);
+      const vals = p ? p.values : saved && typeof saved === "object" ? saved : {};
+      for (const key of which[1]) if (key in vals) H.settings.set(key, vals[key]);
+    }
+  }
   else if (t.type === "color") H.settings.set(k, t.value);
 }
 let inputFrame = 0;

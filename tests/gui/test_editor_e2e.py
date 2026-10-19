@@ -260,14 +260,37 @@ def test_right_drag_orbits_middle_pans_wheel_zooms_to_cursor(fresh):
     time.sleep(0.2)
     s = drv.execute_script("return window.__mace.viewport.camera().screenOf(arguments[0])", p0)
     assert abs(s[0] - 360) < 2 and abs(s[1] - 240) < 2, s
-    # the wheel zooms toward the cursor: the point under it stays within 2 px
-    p1 = _model_point_under(drv, 420, 150)
-    z0 = drv.execute_script(view)[3]
-    H.wheel(drv, 420, 150, -200)
+    # Zoom toward › Mouse pointer: the wheel zooms toward the cursor, the point under it stays within 2 px
+    drv.execute_script("window.__mace.settings.set('viewport.zoomToward', 'pointer')")
+    try:
+        p1 = _model_point_under(drv, 420, 150)
+        z0 = drv.execute_script(view)[3]
+        H.wheel(drv, 420, 150, -200)
+        time.sleep(0.3)
+        assert drv.execute_script(view)[3] != z0
+        s = drv.execute_script("return window.__mace.viewport.camera().screenOf(arguments[0])", p1)
+        assert abs(s[0] - 420) <= 2 and abs(s[1] - 150) <= 2, s
+    finally:
+        drv.execute_script("window.__mace.settings.set('viewport.zoomToward', 'center')")
+    no_errors(drv)
+
+
+def test_wheel_up_zooms_in_and_invert_scroll_zoom_flips_it(fresh):
+    drv = fresh[0]
+    open_doc(drv, "structures/MgO.cif")
+
+    def spacing():
+        a, b = H.atom_screen(drv, 0), H.atom_screen(drv, 1)
+        return math.hypot(a["x"] - b["x"], a["y"] - b["y"])
+    s0 = spacing()
+    H.wheel(drv, 400, 300, -200)              # scrolling up: toward the structure
     time.sleep(0.3)
-    assert drv.execute_script(view)[3] != z0
-    s = drv.execute_script("return window.__mace.viewport.camera().screenOf(arguments[0])", p1)
-    assert abs(s[0] - 420) <= 2 and abs(s[1] - 150) <= 2, s
+    s1 = spacing()
+    assert s1 > s0 * 1.05, (s0, s1)
+    drv.execute_script("window.__mace.settings.set('invertWheelZoom', true)")    # applies live
+    H.wheel(drv, 400, 300, -200)
+    time.sleep(0.3)
+    assert spacing() < s1 / 1.05
     no_errors(drv)
 
 

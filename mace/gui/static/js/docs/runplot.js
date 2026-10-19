@@ -513,13 +513,22 @@ export function createRunPlot(host, H) {
     if (c && doc) set({ relTo: c.dataset.cellmode }, c.dataset.cellmode === "first" ? "% from first" : "Absolute");
   });
   $(".rp-tabs").addEventListener("keydown", (e) => {
-    const tabs = [...host.querySelectorAll("[data-tab]")], k = tabs.indexOf(document.activeElement);
+    const tabs = [...host.querySelectorAll("[data-tab]")].filter((b) => !b.hidden), k = tabs.indexOf(document.activeElement);
     if (k < 0 || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
     e.preventDefault();
     const n = tabs[(k + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     n.focus(); showTab(n.dataset.tab);
   });
+  /* A single-point run has one geometry and no optimization points: only its SCF
+   * tab. Energy, Convergence, Cell and Tracked follow a geometry along the run. */
+  const singlePoint = () => !!(doc && doc.run && !doc.compare && doc.run.conv && !doc.run.conv.is_opt);
+  function syncTabs() {
+    const sp = singlePoint();
+    host.querySelectorAll("[data-tab]").forEach((b) => { b.hidden = sp && b.dataset.tab !== "scf"; });
+    if (sp && doc.tab !== "scf") showTab("scf");
+  }
   function showTab(t) {
+    if (singlePoint() && t !== "scf") t = "scf";
     doc.tab = t;
     persist(doc);
     host.querySelectorAll("[data-tab]").forEach((b) => { const on = b.dataset.tab === t; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; });
@@ -594,6 +603,7 @@ export function createRunPlot(host, H) {
       doc.run = await runData(doc.runPath);
       if (doc.compare) doc.other = await runData(doc.compare);
       await retrack();
+      syncTabs();
       if (doc.tab === "scf") $(".rp-tabopts").innerHTML = scfPicker();
       livePoll();
       if (kit) kit.refresh();          // the features follow the data (Segments only for a run with FINALRUN restarts)

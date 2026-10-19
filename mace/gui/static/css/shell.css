@@ -224,6 +224,8 @@ html.pane-side #overlay-layer { zoom: 1; --ovz: 1; }
 .dp .ins-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: var(--h-control); }
 .dp .ins-row.end { justify-content: flex-end; }
 .dp-sub { font-weight: 600; margin: var(--s-2) 0 var(--s-1); display: flex; align-items: center; gap: var(--s-1); }
+/* Rendering: the Style group, then the Lighting group under a rule */
+.dp-group[data-group="style"] + .dp-group[data-group="render"] { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--border); }
 .dp-axis { justify-content: flex-start !important; }
 .dp-axis label { display: inline-flex; align-items: center; gap: 4px; }
 .dp-ax { width: 1.2em; font-weight: 600; }
@@ -449,7 +451,11 @@ dialog.palette::backdrop { background: var(--overlay); }
 .views #tab-opt #opt-viewers { min-height: 150px; }
 .views #tab-opt .viewer-toolbar { gap: 6px 14px; padding: 5px 12px; }
 .views #tab-opt .viewer-toolbar .slider input { width: 96px; }
-.views #tab-opt #o-legend { display: block; line-height: 16px; padding: 4px 12px 5px; }
+/* the readouts keep their width while a slider drags: "0 · initial" and "12 · OPT point" never reflow the toolbar */
+#o-frame-out { min-width: 14ch; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#o-scale-out { min-width: 6ch; font-variant-numeric: tabular-nums; }
+/* two lines kept (the key and the Cell line): frame 0 has only a one-line note, and the toolbar above must not jump as the Frame slider crosses it */
+.views #tab-opt #o-legend { display: block; line-height: 16px; padding: 4px 12px 5px; min-height: calc(2 * 16px + 9px); }
 .views #tab-opt #o-legend > * { margin-right: 14px; }
 .views #tab-opt #o-legend > :last-child { margin-right: 0; }
 .views #tab-opt #o-legend .lg-seq { vertical-align: middle; }

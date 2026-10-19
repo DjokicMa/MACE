@@ -7,6 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading
+
+- **Electrostatic potential figures flip their colors.** Potentials are now
+  drawn in the chemistry convention by default: red = negative
+  (electron-rich), blue = positive (electron-poor). A potential drawn before
+  with red = positive (POT3 cube isosurfaces and slices from `mace plotting`,
+  surfaces colored by a potential, the GUI's volume slices) now shows the
+  opposite colors, and so do figures re-rendered from old scripts. To get the
+  old colors: Settings › Viewport › Potential colors › **Physics (red +,
+  blue −)** in the GUI, `mace plotting --cube ... --potential-colors physics`,
+  or `[plots] potential_colors = "physics"` in a `mace-folder.toml`. A saved
+  Potential colors of 1.1.6 ("Red = positive", which was the default) reads as
+  the new default; a folder's `[viewer] potential_colors` reads as
+  `[plots] potential_colors` (`"cli"` as `"physics"`), with a note.
+
+### Fixed
+
+- **GUI: a fort.34 with symmetry operators opens, and so does the EXTERNAL deck
+  that reads it.** CRYSTAL writes a fort.34 (.f34, .gui, .ext) as its symmetry
+  operators plus the asymmetric unit; ase's reader refuses anything beyond P1
+  ("High symmetry geometry is not allowed."). MACE now expands the asymmetric
+  unit with the operators itself (bulk, slab, polymer, and molecule; checked
+  against the final geometry of corpus OPT outputs), a damaged file says which
+  record is wrong, and the error notice names the file once.
+- **GUI: a single-point output is no longer presented as an optimization.**
+  Its Run Analysis shows only the SCF tab (Energy, Convergence, Cell and
+  Tracked plotted empty optimization axes), Optimization Trajectory,
+  Convergence Criteria, Cell Along the Run and Track Measurement say why
+  they are off, the Inspector calls its geometry "single-point" instead of
+  "initial", and an SP whose geometry CRYSTAL printed more than once opens
+  as one structure instead of a trajectory.
+- **GUI: Build › Supercell (and the other builders) work on outputs with long
+  workflow names.** The default name was the whole file stem, past the 61
+  characters a name may have (or with characters such as `,` and `^`), so
+  Create stayed disabled; the stem is now shortened and cleaned.
+- **GUI: a 2×2×2 or 3×3×3 display range shows all three directions.** The
+  camera kept the 1×1×1 zoom, so in a wide viewport the cells along c were
+  cut off and the range looked like 2×2×1. A new range now refits an
+  untouched view (a turned view zooms out to fit, its orientation kept). A
+  SLAB or POLYMER still repeats only its periodic directions, and the toolbar
+  now says so (3×3×1, with a note) instead of showing 3×3×3. The cube and
+  orbital views do the same: a new range refits the camera around all the
+  repeated isosurfaces and atoms (it kept the 1×1×1 view, so a 3×3×3 cube
+  showed only the cells that fit), and a slab cube or orbital, whose
+  periodicity comes from the cell in its header, shows 3×3×1 with the note.
+- GUI: a band + DOS plot's Style ▾ menu and Plot options › Style now both offer
+  the band settings and the DOS settings, in Bands and DOS groups, whichever of
+  the BAND.DAT and DOSS.DAT you opened. A DOSS.DAT alone no longer shows band
+  settings.
+- GUI: the Style ▾ menu and Plot options › Style draw one shared list of
+  controls, so the menu now also has Band color, the custom spin colors and
+  the DOS smoothing σ.
+- **GUI: the OPT view's Frame slider stays put while you drag it.** Crossing
+  frame 0 hid the Δr choice and the legend's Cell line, which reflowed the
+  toolbar and moved the slider under the pointer. Δr now keeps its place
+  (hidden and disabled at frame 0), the legend keeps two lines, and the frame
+  and Arrow × readouts keep their width. The sliders of the FREQ and volume
+  options (Amplitude, Level, Opacity and the others) no longer resize as their
+  value's readout grows.
+- **GUI: the Rendering preset Custom is no longer grayed out.** It could only
+  be reached by editing a value. Custom is now selectable at any time: it is
+  your own look, kept (and saved) whenever you edit a rendering value, and
+  choosing it again after another preset brings it back. With none saved yet,
+  it starts from the current view and a note says so.
+- GUI: a fast scroll down in a run, mode or volume view in Firefox no longer
+  zooms the wrong way or blanks the view (the zoom step read Firefox's legacy
+  wheelDelta before the standard deltaY, and its formula divides by zero at
+  −600).
+
+### Added
+
+- **GUI: rotation modes for the 3D views.** Settings › Viewport ›
+  **Rotation**: Free (the trackball, as before) or **Turntable**, which
+  turns about the structure's up and the screen's horizontal
+  axis, so the structure stays upright with no roll however you drag. **Angle
+  snap** (Off, 15°, 30°, 45°, 90°) turns a drag in whole steps, and the arrow
+  keys then turn by one step. **Snap View to Nearest Axis** (key 0) lines the
+  view up with the nearest of a, b, c, a\*, b\*, c\*, x, y, z. All of them
+  in the toolbar's View Along ▾ menu and View › Rotation and Zoom, live in the
+  structure view and in the run, mode and volume views, and saved.
+- **GUI: Zoom toward.** Settings › Viewport › **Zoom toward**: View center
+  (the rotation center stays put) or **Mouse pointer** (the point under the
+  pointer stays under it, as map apps zoom), in the structure view and the
+  run, mode and volume views alike, with Invert scroll zoom in both; also in
+  the View Along ▾ menu.
+- **GUI: Style presets for the 3D view.** Inspector › Rendering has a new
+  **Style** dropdown beside Lighting: Default, VESTA-like (VESTA's radii,
+  colors and bond thickness whatever Settings choose), Space-filling (van der
+  Waals spheres, no bonds), Wireframe / sticks (for big cells and
+  supercells), Grayscale print (element colors as grays of the same
+  lightness, with outlines), Polyhedral (translucent coordination polyhedra
+  around cations with 4 to 12 more electronegative neighbors, built from the
+  drawn periodic images) and Magnetic (atoms colored by their Mulliken spin
+  moment from the run, blue down, white none, red up, with a legend), plus
+  Custom. A style that cannot apply (Magnetic without a spin-polarized run,
+  Polyhedral outside the structure view) is grayed out with the reason.
+  Per document, with Reset, Save as Default and a Settings › Viewport default.
+- **GUI: Glossy dark lighting.** The Rendering preset is now the **Lighting**
+  dropdown, with a new Glossy dark (black background, shiny atoms, strong
+  depth cueing, for slides) and a Shininess slider. Saved documents keep
+  their preset as their lighting; any lighting combines with any style.
+- **GUI: Jobs and Workflows buttons in the activity bar.** They open the
+  bottom panel's Jobs tab and the Workflows view, as View › Jobs and View ›
+  Workflows do, with a tooltip and keyboard access like the other buttons.
+
+### Changed
+
+- **GUI: scrolling up zooms in, toward the structure, in every 3D view.** The
+  run and comparison views (OPT, FREQ, volumes and the others drawn by 3Dmol)
+  zoomed out on scrolling up, the opposite of the structure viewport. A new
+  Settings › Viewport › Invert scroll zoom flips the direction in all of them;
+  it applies at once and is saved.
+- **GUI: the structure view's wheel now zooms toward the view center by
+  default**, as the run, mode and volume views always did, so the rotation
+  center stays in the middle; Settings › Viewport › Zoom toward › Mouse
+  pointer brings back zooming toward the pointer (now in every view).
+- GUI: the arrow keys turn the run, mode and volume views about the screen's
+  axes, as in the structure view (they turned about the model's own x and y,
+  so Left and Right went a different way once the view was turned).
+- **Electrostatic potentials follow the chemistry convention: red = negative,
+  blue = positive** (as GaussView, VMD, Jmol and most papers), in the GUI and
+  `mace plotting` alike: POT3 cube isosurfaces and slices, POTM/CLAS fort.25
+  2D maps, and surfaces colored by a potential. Every legend and caption names
+  the colors drawn ("Red (−): Negative potential (e⁻-rich) | Blue (+): ...").
+  The old physics colors (red = positive) are one choice away: Settings ›
+  Viewport › Potential colors (Chemistry | Physics), `mace plotting
+  --potential-colors chemistry|physics`, or `[plots] potential_colors`; a
+  volume's own Color › Red = negative overrides the setting for that view.
+  Spin densities and differences keep + blue, − red. See Upgrading.
+
 ## [1.1.6] - 2026-10-17
 
 This is the 1.1.6 preview, tagged `v1.1.6-preview`. The final 1.1.6 will be

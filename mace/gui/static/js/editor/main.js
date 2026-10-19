@@ -3,7 +3,7 @@
  * The shell hands over `S` (its API); this module gives back the editor's. */
 import * as G from "../geom/core.js";
 import * as W from "../geom/client.js";
-import { createCamera } from "../viewport/camera.js";
+import { createCamera, rotationPrefs } from "../viewport/camera.js";
 import { createScene } from "../viewport/scene.js";
 import { attachPointer } from "../viewport/pointer.js";
 import { EditorDoc } from "./doc.js";
@@ -52,10 +52,21 @@ export function init(S) {
     // (the triad did, a frame later) shrank the first structure to a fraction
     // of the view, a fifth at 1920x1080
     if (v.setProjection) v.setProjection(S.setting("projection") === "perspective" ? "perspective" : "orthographic");
-    cam = createCamera(v, { reducedMotion: S.reducedMotion, duration: () => S.reducedMotion() ? 0 : 200 });
+    cam = createCamera(v, { reducedMotion: S.reducedMotion, duration: () => S.reducedMotion() ? 0 : 200,
+      rotation: () => rotationPrefs(S.setting) });
     scene = createScene(v, {
       M, setting: S.setting, opts: S.viewOpts, cam: () => cam, showMeasurements: () => S.measurementsShown(),
       setRadius: (r) => cam.setRadius(r),
+      // the display range changed: an untouched default view is fitted again; a view the user turned
+      // keeps its orientation and zooms out (and recenters) until the whole range shows
+      refit: (s, disp, opts) => {
+        if (v.visible && !v.visible()) return;
+        const now = v.getView();
+        if (fitted && fitted.structure === s && now.every((x, k) => Math.abs(x - fitted.view[k]) <= 1e-7)) fitDrawn(s, disp, opts);
+        else fitInclude([], null);
+        cam.invalidate();
+        document.dispatchEvent(new CustomEvent("mace-camera", { detail: v }));
+      },
       fit: (s, disp, opts) => {
         // the first structure is drawn while its viewer is still hidden (the
         // welcome screen goes a frame later): the fit waits for the viewer to show
@@ -83,6 +94,8 @@ export function init(S) {
     ptr = attachPointer(el, {
       scene, cam: () => cam, tool: S.tool, isMac: S.isMac, cssVar: M.cssVar,
       active: () => !!scene.doc,
+      invertWheel: () => S.setting("invertWheelZoom") === true,
+      zoomToward: () => S.setting("viewport.zoomToward"),
       pivot: (on) => { if (v.showPivot) v.showPivot(on); },
       focus: () => { const w = el.closest(".viewer-wrap"); if (w && document.activeElement !== w) w.focus({ preventScroll: true }); },
       select: (indices, mode) => { const d = scene.doc; if (d && !d.viewOnly) select(d, indices, mode); },
@@ -369,6 +382,13 @@ export function init(S) {
     const s = d.structure, dir = G.alongDirection(s.cell, which);
     return cam.along(dir, G.upVector(s.cell, dir));
   }
+  /** View › Snap View to Nearest Axis: the nearest of a, b, c, a*, b*, c* (a periodic structure) and x, y, z. */
+  function snapNearest() {
+    const d = scene && scene.doc;
+    if (!d || !cam) return null;
+    const s = d.structure, periodic = s.cell && (!s.pbc || s.pbc.some(Boolean));
+    return cam.snapNearest(periodic ? s.cell : null);
+  }
   function frameSelection() {
     const d = scene && scene.doc, disp = scene && scene.display;
     if (!d || !disp) return;
@@ -540,7 +560,7 @@ export function init(S) {
 
   return {
     bench,
-    attach, edOf, draw, select, neighbors, fragment, viewAlong, frameSelection, pivotOn, viewport, wyckoff,
+    attach, edOf, draw, select, neighbors, fragment, viewAlong, snapNearest, frameSelection, pivotOn, viewport, wyckoff,
     run, has: (id) => !!handlers[id], editing, api, structureChanged, stateChanged, inspector, tools, selectWithin,
     chip: (tool, e) => (tool === "measure" ? `${e && e.waiting ? "Applying… · " : ""}Measure · ${measure.pending
       ? `${measure.pending} atom${measure.pending === 1 ? "" : "s"}: click the next` : "click 2, 3 or 4 atoms (distance, angle, dihedral)"}` +

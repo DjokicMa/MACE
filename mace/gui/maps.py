@@ -157,7 +157,9 @@ def map_payload(path: Path) -> Dict[str, Any]:
         flat = [v for col in b["values"] for v in col]
         sin = math.sqrt(max(0.0, 1 - b["cosxy"] ** 2))
         label, unit = _label(kinds, k, len(blocks))
-        out.append({"label": label, "unit": unit,
+        # POTM / CLAS: drawn in the Potential colors (chemistry: red = negative)
+        potential = k < len(kinds) and kinds[k]["keyword"] in _KEYWORD_LABEL
+        out.append({"label": label, "unit": unit, "potential": potential,
                     "nrow": b["nrow"], "ncol": b["ncol"], "dx": b["dx"], "dy": b["dy"], "cosxy": b["cosxy"],
                     "x": [i * b["dx"] for i in range(b["nrow"])], "y": [j * b["dy"] * sin for j in range(b["ncol"])],
                     "values": b["values"], "min": min(flat), "max": max(flat), "A": b["A"], "B": b["B"], "C": b["C"],

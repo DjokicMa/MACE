@@ -2,6 +2,7 @@
  * sections, the search and the reset links. Every key in settings.js
  * DEFAULTS appears here once, except keymap (the Keyboard section). */
 import { THEMES, groupLabel } from "../themes.js";
+import { LIGHTING, STYLES, options as presetOptions } from "../viewport/presets.js";
 
 export const P3 = "Not used in this version yet";
 const opts = (...xs) => xs.map((x) => (Array.isArray(x) ? x : [x, x]));
@@ -20,7 +21,7 @@ export const SCHEMA = [
   ["appearance", "plots.surface", "Plot background", "segmented", { options: opts(["theme", "Follow theme"], ["light", "Light"], ["dark", "Dark"]),
     help: "A light or dark plot in any theme (band, DOS, runs, spectra, volume slices, Gallery); exports match. The 3D view's own: Viewport › Background" }],
   ["appearance", "plots.style", "Plot style", "select", { options: PRESET_OPTIONS.filter(([k]) => k !== "vesta").concat([["vesta", "VESTA-like (maps and volumes)"]]),
-    help: "The look of every plot (exports match), or of each family below. Publication: Okabe–Ito after black, black frame, ticks outside, no grid, heavier lines. VESTA-like: VESTA's section map and yellow/cyan isosurfaces (maps and volumes; other plots draw Default). Presentation: large text, thick lines. Print grayscale: black and grays, told apart by line style and markers. Colorblind safe: Okabe–Ito, cividis maps. mace plotting --style draws the same. White figures: Plot background Light (and Viewport › Rendering preset Publication for the 3D view)" }],
+    help: "The look of every plot (exports match), or of each family below. Publication: Okabe–Ito after black, black frame, ticks outside, no grid, heavier lines. VESTA-like: VESTA's section map and yellow/cyan isosurfaces (maps and volumes; other plots draw Default). Presentation: large text, thick lines. Print grayscale: black and grays, told apart by line style and markers. Colorblind safe: Okabe–Ito, cividis maps. mace plotting --style draws the same. White figures: Plot background Light (and Viewport › Lighting preset Publication for the 3D view)" }],
   ...FAMILY_ROWS.map(([f, label, vesta]) => ["appearance", `plots.style.${f}`, label, "select", { options: [["same", "Same as Plot style"], ...PRESET_OPTIONS.filter(([k]) => vesta || k !== "vesta")],
     help: f === "maps" ? "2D maps (fort.25), volume slices and isosurfaces" : f === "band" ? "Band structures, DOS, BOLTZTRA data, and the Gallery's band and DOS panes" : f === "spectra" ? "IR and Raman spectra, the FREQ sticks" : "SCF and optimization charts, Compare Convergence" }]),
   ["appearance", "density", "Density", "segmented", { options: opts(["compact", "Compact"], ["comfortable", "Comfortable"]), help: "Rows of 24 or 28 px" }],
@@ -47,6 +48,13 @@ export const SCHEMA = [
   ["viewport", "quality", "Quality", "select", { options: opts(["auto", "Auto"], ["low", "Low"], ["medium", "Medium"], ["high", "High"]),
     help: "Level of detail: limits of 2k / 20k / 200k drawn atoms, halved (Low) or doubled (High)" }],
   ["viewport", "antialias", "Antialiasing", "check", { help: "Applies to views created after a reload" }],
+  ["viewport", "viewport.rotation", "Rotation", "segmented", { options: opts(["free", "Free"], ["axes", "Turntable"]),
+    help: "Free: a drag turns about any axis (trackball). Turntable: a horizontal drag turns about the structure's up, a vertical one about the screen's horizontal axis, so the structure stays upright (no roll). Every 3D view; also the toolbar's Rotation menu" }],
+  ["viewport", "viewport.angleSnap", "Angle snap", "segmented", { options: opts(["off", "Off"], ["15", "15°"], ["30", "30°"], ["45", "45°"], ["90", "90°"]),
+    help: "On: a drag turns the view in whole steps (summed from where the drag began), and the arrow keys turn by one step. View › Snap View to Nearest Axis (0) lines the view up with a, b, c, a*, b*, c* or x, y, z" }],
+  ["viewport", "viewport.zoomToward", "Zoom toward", "segmented", { options: opts(["center", "View center"], ["pointer", "Mouse pointer"]),
+    help: "View center: the wheel zooms toward the middle of the view, the rotation center, which stays put. Mouse pointer: the point under the pointer stays under it, as in map apps (the rotation center moves with it). Every 3D view" }],
+  ["viewport", "invertWheelZoom", "Invert scroll zoom", "check", { help: "Off: scrolling up zooms in, toward the structure, as in VESTA. On: scrolling up zooms out. Applies to every 3D view" }],
   ["viewport", "showAxes", "Axis triad", "check"],
   ["viewport", "showCell", "Unit cell", "check"],
   ["viewport", "showBoundary", "Boundary atoms", "check"],
@@ -56,11 +64,26 @@ export const SCHEMA = [
   ["viewport", "bondedOutside", "Bonded atoms outside", "select", { options: opts(["off", "None"], ["neighbors", "Bonded neighbors"], ["molecules", "Whole molecules"]),
     help: "Draw atoms outside the range bonded to atoms inside it (one shell), or complete every discrete molecule" }],
   ["viewport", "depthCue", "Depth cueing", "range", { min: 0, max: 1, step: 0.05, help: "How much the farthest atoms fade toward the background. 0 is off." }],
-  ["viewport", "renderPreset", "Rendering preset", "select", { options: opts(["default", "Default"], ["flat", "Flat"], ["publication", "Publication"], ["presentation", "Presentation"], ["custom", "Custom"]),
-    help: "The look new documents start with (Inspector › Rendering sets the values below)" }],
+  ["viewport", "renderPreset", "Lighting preset", "select", { options: presetOptions(LIGHTING),
+    help: `The lighting new documents start with (${LIGHTING.map((p) => p.label).join(", ")}); choosing one sets the values below. Each document's own: Inspector › Rendering › Lighting` }],
+  ["viewport", "renderCustom", "Custom lighting", "saved", { summary: (v) => (v && typeof v === "object"
+    ? `Saved: light ${v.lightStrength}, ${v.lightDirection}, ambient ${v.ambient}, depth cueing ${v.depthCue}${v.shininess ? `, shininess ${v.shininess}` : ""}${v.outline ? ", outline" : ""}, ${v.background} background`
+    : "None saved yet"), help: "What the Lighting preset Custom brings back, kept whenever you edit a lighting value in the Inspector. Reset forgets it." }],
+  ["viewport", "stylePreset", "Style preset", "select", { options: presetOptions(STYLES),
+    help: `How new documents draw and color atoms (${STYLES.map((p) => p.label).join(", ")}); choosing one sets the values below. Each document's own: Inspector › Rendering › Style` }],
+  ["viewport", "styleCustom", "Custom style", "saved", { summary: (v) => (v && typeof v === "object"
+    ? `Saved: ${v.atomDraw === "auto" ? "Display style" : v.atomDraw}, ${v.atomColor} colors, atom scale ${v.atomScale}, sticks ${v.bondRadius} Å${v.showPolyhedra ? ", polyhedra" : ""}${v.styleOutline ? ", outline" : ""}`
+    : "None saved yet"), help: "What the Style preset Custom brings back, kept whenever you edit a style value in the Inspector. Reset forgets it." }],
+  ["viewport", "atomDraw", "Atom drawing", "select", { options: opts(["auto", "Display style"], ["ballstick", "Ball and stick"], ["spacefill", "Space-filling"], ["sticks", "Thin sticks"]),
+    help: "Display style: the atom style of Inspector › Display" }],
+  ["viewport", "atomColor", "Atom colors", "select", { options: opts(["scheme", "Color scheme"], ["vesta", "VESTA"], ["gray", "Grayscale"], ["spin", "Spin moment"]),
+    help: "Color scheme: the one above. Spin moment: Mulliken spins of the matching run (blue down, red up)" }],
+  ["viewport", "atomRadii", "Atom radii", "select", { options: opts(["auto", "Radii setting"], ["atomic", "Atomic"], ["vdw", "van der Waals"]), help: "Radii setting: Radii above" }],
+  ["viewport", "styleOutline", "Style outline", "check", { help: "Outlines whatever the lighting (Grayscale print)" }],
   ["viewport", "lightStrength", "Light strength", "range", { min: 0.3, max: 1.6, step: 0.05 }],
   ["viewport", "lightDirection", "Light direction", "segmented", { options: opts(["front", "Front"], ["upper-left", "Upper Left"], ["top", "Top"]) }],
   ["viewport", "ambient", "Ambient light", "range", { min: 0, max: 0.6, step: 0.05, help: "Light from all directions: lifts the shaded side of every atom" }],
+  ["viewport", "shininess", "Shininess", "range", { min: 0, max: 1, step: 0.05, help: "A specular highlight on every atom (Glossy dark)" }],
   ["viewport", "ambientOcclusion", "Ambient occlusion", "range", { min: 0, max: 1, step: 0.05, help: "Darkens creases and contacts between atoms; costs frame time on large structures" }],
   ["viewport", "outline", "Outline", "check"],
   ["viewport", "outlineWidth", "Outline width", "range", { min: 0.02, max: 0.3, step: 0.01 }],
@@ -132,8 +155,8 @@ export const SCHEMA = [
     help: "Information and success notices close after this; warnings and errors stay until closed" }],
   ["viewport", "volume.quality", "Volume quality", "segmented", { options: opts(["low", "Low"], ["medium", "Medium"], ["high", "High"]),
     help: "Grid points sent to the 3D view: 0.25 M, 1 M or 2 M (statistics always use the full grid)" }],
-  ["viewport", "volume.mepColors", "Potential colors", "segmented", { options: opts(["cli", "Red = positive"], ["chemistry", "Red = negative"]),
-    help: "Red = positive matches mace plotting --cube; red = negative is the usual chemistry convention" }],
+  ["viewport", "volume.mepColors", "Potential colors", "segmented", { options: opts(["chemistry", "Chemistry (red −, blue +)"], ["physics", "Physics (red +, blue −)"]),
+    help: "Electrostatic potential isosurfaces, slices, 2D maps and potential-colored surfaces. Chemistry: red = negative (electron-rich), as GaussView and VMD. Same as mace plotting --potential-colors. Spin and difference volumes stay + blue, − red" }],
   ["files", "spectra.lineShape", "IR line shape", "segmented", { options: opts(["lorentzian", "Lorentzian"], ["gaussian", "Gaussian"]),
     help: "Spectra broadened from the modes; CRYSTAL's IRSPEC default is Lorentzian" }],
   ["editor", "structure.vacuumGap", "Vacuum gap", "number", { min: 2, max: 100, step: "any", unit: "Å",
