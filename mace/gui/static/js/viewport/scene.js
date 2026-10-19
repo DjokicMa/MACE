@@ -29,9 +29,9 @@ export function createScene(v, deps) {
   };
   /** The radius 3Dmol draws an atom with, in Å, for the current style. */
   function atomRadius(sym, style, bonds) {
-    if (style === "stick") return deps.setting("atomDraw") === "sticks" ? Math.max(0.1, Number(deps.setting("bondRadius")) || 0.06) : 0.16;
+    if (style === "stick") return Math.max(0.1, M.stickRadius());
     if (style === "wireframe") return 0.1 * vdw(sym);
-    if (style === "spacefill") return 0.95 * vdw(sym);
+    if (style === "spacefill") return M.spaceScale() * vdw(sym);
     return M.sphereScale(bonds) * vdw(sym);
   }
   function styleObj(style, bonds, level) {
@@ -239,6 +239,8 @@ export function createScene(v, deps) {
       bonded = { added: r.added, extended: r.extended, allExtended: r.allExtended, truncated: r.truncated, mode: opts.bondedOutside };
       disp = r;
     }
+    // more than one cell along a vacuum axis (a slab's c): copies at the Vacuum spacing (display only)
+    disp = G.repeatList(disp, G.vacuumOffsets(s.cell, s.pbc, disp.cart, opts.range, opts.vacuum).offsets);
     lod = G.lodLevel(disp.n, deps.setting("quality") || "auto");
     v.maceLod = lod;           // the Rendering group turns ambient occlusion off at LOD 3 and above
     radiiPx = null; projCache = null; hovered = -1;
@@ -447,7 +449,7 @@ export function createScene(v, deps) {
     for (const [i, p] of moved) atoms.push({ elem: s.symbols[i], x: p[0], y: p[1], z: p[2], bonds: [], index: atoms.length, serial: i + 1 });
     const m = v.addModel();
     m.addAtoms(atoms);
-    m.setStyle({}, { sphere: { scale: deps.opts().style === "spacefill" ? 0.95 : M.sphereScale(!!pairs), colorscheme: M.styleFor("ballstick", true).sphere.colorscheme } });
+    m.setStyle({}, { sphere: { scale: deps.opts().style === "spacefill" ? M.spaceScale() : M.sphereScale(!!pairs), colorscheme: M.styleFor("ballstick", true).sphere.colorscheme } });
     layer.drag = m;
     restyle(new Set(moved.map(([i]) => i)));
     v.render();

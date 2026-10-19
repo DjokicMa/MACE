@@ -851,6 +851,52 @@ export function displayList(s, range = [1, 1, 1], boundary = true, tol = 0.02) {
     cart: Float64Array.from(cart), n: base.length };
 }
 
+/* ---------------------------------------------------------------- repeats along non-periodic axes (display only) */
+/** The cart offsets that repeat what is drawn along the non-periodic axes the range asks more than one cell of
+ * (a slab's c, a polymer's b and c, a molecule's x, y, z), and the display vector of each such axis. vac.mode:
+ * "cell" (own[k], the cell's own extent, when given; else the atoms' height + 10 Å; a molecule's + vac.gap),
+ * "gap" (the atoms' height + vac.gap) or "crystal" (500 Å). cart: the drawn atoms, flat. */
+export function vacuumOffsets(cell, pbc, cart, range, vac = {}, own = null) {
+  pbc = pbc || [true, true, true];
+  const cnt = [0, 1, 2].map((k) => (pbc[k] ? 1 : Math.max(1, Math.min(10, Array.isArray(range) ? range[k] | 0 : Math.round(range.hi[k] - range.lo[k])))));
+  if (cnt.every((x) => x === 1)) return { offsets: [[0, 0, 0]], vecs: [null, null, null], cnt };
+  const C = cell && pbc.some(Boolean) ? rows(cell) : null, R = C ? reciprocal(C) : null, gap = Number.isFinite(+vac.gap) ? +vac.gap : 10;
+  const vecs = [0, 1, 2].map((k) => {
+    if (cnt[k] === 1) return null;
+    const dir = R ? C[k] : [0, 1, 2].map((j) => +(j === k)), nr = R ? R[k] : dir;
+    const u = dir.map((x) => x / norm3(dir)), nu = nr.map((x) => x / norm3(nr)), cos = Math.abs(dot3(u, nu)) || 1;
+    if (vac.mode === "crystal") return u.map((x) => x * 500);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i + 2 < cart.length; i += 3) { const p = nu[0] * cart[i] + nu[1] * cart[i + 1] + nu[2] * cart[i + 2]; lo = Math.min(lo, p); hi = Math.max(hi, p); }
+    const h = hi > lo ? hi - lo : 0;
+    if (vac.mode !== "gap" && own && own[k]) return own[k].slice();
+    // a structure's own c (a slab built with its vacuum) when it holds the atoms and is not CRYSTAL's formal 500 Å
+    const ch = R ? norm3(C[k]) * cos : 0;
+    if (vac.mode !== "gap" && !own && ch > h && ch < 499) return C[k].slice();
+    return u.map((x) => (x * (h + (vac.mode === "gap" || !R ? gap : 10))) / cos);
+  });
+  const offsets = [];
+  for (let a = 0; a < cnt[0]; a++) for (let b = 0; b < cnt[1]; b++) for (let c = 0; c < cnt[2]; c++) {
+    const i = [a, b, c];
+    offsets.push([0, 1, 2].map((j) => i.reduce((t, x, k) => t + (x && vecs[k] ? x * vecs[k][j] : 0), 0)));
+  }
+  return { offsets, vecs, cnt };
+}
+/** A display list repeated by cart offsets (the first [0, 0, 0]): the copies are images. */
+export function repeatList(list, offsets) {
+  if (offsets.length < 2) return list;
+  const n = list.n, N = n * offsets.length, cart = new Float64Array(3 * N), base = new Int32Array(N), image = new Uint8Array(N);
+  const shift = list.shift ? new Int16Array(3 * N) : null;
+  offsets.forEach((o, r) => {
+    for (let i = 0; i < n; i++) {
+      const t = r * n + i;
+      base[t] = list.base[i]; image[t] = r ? 1 : list.image[i];
+      for (let j = 0; j < 3; j++) { cart[3 * t + j] = list.cart[3 * i + j] + o[j]; if (shift) shift[3 * t + j] = list.shift[3 * i + j]; }
+    }
+  });
+  return { ...list, base, image, cart, n: N, ...(shift ? { shift } : {}) };
+}
+
 /* ---------------------------------------------------------------- display range, bonded atoms (polish A4) */
 export const RANGE_MIN = -5, RANGE_MAX = 10, RANGE_SPAN = 0.05;
 /** {lo, hi} clamped to [-5, 10] with hi - lo >= 0.05 on every axis. */

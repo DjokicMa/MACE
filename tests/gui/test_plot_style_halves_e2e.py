@@ -22,14 +22,15 @@ pytest.importorskip("plotly")
 
 FE = H.REPO_ROOT / "tests" / "data" / "spin_fe"
 KEYS = ["plots.style", "plots.style.band", "plots.spinColors", "plots.spinUp", "plots.spinDown", "plots.spinDownDash",
-        "plots.dosColors", "plots.spinDos", "plots.dosTotal", "plots.dosSmooth", "theme"]
+        "plots.dosColors", "plots.spinDos", "plots.dosTotal", "plots.dosSmooth", "plots.background", "plots.backgroundColor", "theme"]
 PAIR_BAND, PAIR_DOS = "fe/fe_band.BAND.DAT", "fe/fe_doss.DOSS.DAT"
 BAND_ALONE, DOS_ALONE = "bandonly/fe_band.BAND.DAT", "dosonly/fe_doss.DOSS.DAT"
 BANDS = {"po-spinc", "po-bdash"}
 DOS = {"po-dosc", "po-dspin", "po-dtotal", "po-dsmooth"}
 # the Style menu's value prefix of each Inspector control (plot.js styleControls)
 MENU = {"po-style": "style", "po-spinc": "spin", "po-bdash": "bdash", "po-dosc": "dos", "po-dspin": "dspin",
-        "po-dtotal": "dtotal", "po-dsmooth": "dsmooth", "po-bandc": "bandc", "po-spinup": "spinup", "po-spindn": "spindn"}
+        "po-dtotal": "dtotal", "po-dsmooth": "dsmooth", "po-bandc": "bandc", "po-spinup": "spinup", "po-spindn": "spindn",
+        "po-bg": "bg", "po-bgc": "bgc"}
 
 
 @pytest.fixture(scope="module", params=["firefox", "chromium"])
@@ -208,4 +209,30 @@ def test_each_half_is_styled_from_the_dos_files_view(drv):
     assert S == {"c": "custom", "up": "#00aa00", "d": "solid", "dc": "total"}, S
     f = drv.execute_script(FIG)
     assert f["opts"]["spin_colors"] is None and f["opts"]["dos_colors"] is None and f["by"]["up"]["color"] == "#00aa00"
+    U.no_errors(drv)
+
+
+BG = """const p = document.querySelector('#plot-host .pv-plot'), lum = (x) => { const c = document.createElement('canvas').getContext('2d');
+  c.fillStyle = x; const n = parseInt(c.fillStyle.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+  return {paper: p._fullLayout.paper_bgcolor, plot: p._fullLayout.plot_bgcolor, tick: lum(p._fullLayout.xaxis.tickfont.color),
+          surface: p.getAttribute('data-plot-surface'), opts: window.__mace.plotView.state().opts}"""
+
+
+def test_plot_background_black_custom_theme(drv):
+    """Plot options › Style › Background, as the 3D view's: Black draws light text, a light Custom color dark text, Theme as before"""
+    open_plot(drv, BAND_ALONE)
+    theme = drv.execute_script(BG)
+    assert theme["surface"] is None, theme
+    change(drv, "po-bg", "black")
+    b = drv.execute_script(BG)
+    assert b["paper"] == b["plot"] == "#000000" and b["tick"] > 0.5 and b["surface"] == "dark", b
+    assert "bg" in style_menu(drv)["plot"]
+    change(drv, "po-bg", "custom")
+    change(drv, "po-bgc", "#ffffcc")
+    c = drv.execute_script(BG)
+    assert c["paper"] == c["plot"] == "#ffffcc" and c["tick"] < 0.5 and c["surface"] == "light", c
+    assert c["opts"]["background"] == "custom" and c["opts"]["background_color"] == "#ffffcc"
+    change(drv, "po-bg", "")
+    t = drv.execute_script(BG)
+    assert t["paper"] == theme["paper"] and t["surface"] is None and t["opts"]["background"] is None, (t, theme)
     U.no_errors(drv)

@@ -175,21 +175,23 @@ function plotPreset(family) {
 const presetOf = (family) => { const pp = PP(); return pp ? pp.get(plotPreset(family), family || "band") : null; };
 const plotTone = () => (document.documentElement.getAttribute("data-plot-tone") === "dark" ? "dark" : "light");
 const probes = {};
-function probeVar(kind, name, preset) {
+function probeVar(kind, name, preset, surface) {
   syncSurfaces();
-  const k = preset ? `${kind}:${preset}` : kind;
+  const k = (preset ? `${kind}:${preset}` : kind) + (surface ? `@${surface}` : "");
   let el = probes[k];
   if (!el || !el.isConnected) {
     el = probes[k] = document.createElement("div"); el.className = `${kind}-probe`; el.hidden = true;
     if (preset) el.setAttribute("data-plot-preset", preset);
+    // a plot's own light or dark background (Plot options › Background): its tokens and tone
+    if (surface) { el.setAttribute("data-plot-surface", surface); el.setAttribute("data-plot-tone", surface); }
     document.body.appendChild(el);
   }
   return getComputedStyle(el).getPropertyValue(name).trim();
 }
 /* a token as a plot of `family` draws it: its preset's series (tokens.css), on the theme's or the forced surface */
-const plotVar = (name, family) => probeVar("plot", name, plotPreset(family));
+const plotVar = (name, family, surface) => probeVar("plot", name, plotPreset(family), surface);
 /* a token as a plot in preset `pid` draws it (a plot's own Plot style, Plot options › Style) */
-const plotVarIn = (name, pid) => probeVar("plot", name, pid || "default");
+const plotVarIn = (name, pid, surface) => probeVar("plot", name, pid || "default", surface);
 const vpVar = (name) => probeVar("vp", name);
 /** A Plotly layout's paper and plot colors: see-through on the theme's own surface, else the forced one (exports match). */
 function plotPaper() {
@@ -225,13 +227,13 @@ const mapScale = (signed) => { const pp = PP(); return pp ? pp.mapScale(plotPres
  * Presentation: larger text, thicker lines and frame. Print grayscale: Publication's frame, and the series
  * of spectra and run charts told apart by line style and markers. The series colors come from tokens.css. */
 const isPublication = (family) => plotPreset(family) === "publication";
-function styleFigure(traces, layout, family, pid = null) {
+function styleFigure(traces, layout, family, pid = null, surface = null) {
   const pp = PP();
   if (!pp || !pp.styleFigure) return { traces, layout };
   // js/plotpresets.js styleFigure (mace/plotting/plotly_bands.py style_figure draws mace plotting's the same way);
   // pid: a plot's own preset (Plot options › Style) over its family's
   const id = pid ? pp.resolveId(pid, family) : plotPreset(family);
-  return pp.styleFigure(traces, layout, family, id, (n) => (pid ? plotVarIn(n, id) : plotVar(n, family)));
+  return pp.styleFigure(traces, layout, family, id, (n) => (pid ? plotVarIn(n, id, surface) : plotVar(n, family, surface)));
 }
 function store(key, val) {
   try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); }
@@ -1080,12 +1082,16 @@ function sphereScale(bonds) {
   const f = state.radii ? state.radii.factor(radiusSet(), bonds) : (bonds ? 0.7 : 0.95);
   return round6(num("atomScale", 0.4) * f);
 }
+/* Space-filling and the Display section's Stick style follow the Atom size and Bond radius sliders too:
+ * at the defaults (0.40, 0.12 Å) they draw 0.95 × van der Waals and 0.16 Å sticks, as before. */
+const spaceScale = () => round6(0.95 * num("atomScale", 0.4) / 0.4);
+const stickRadius = () => (setting("atomDraw", "auto") === "sticks" ? num("bondRadius", 0.06) : round6(0.16 * num("bondRadius", 0.12) / 0.12));
 function styleFor(kind, bonds, opacity = 1) {
   applyRadii();                         // the drawn document's radii (its style can choose them)
   const cs = colorSpec();
-  if (kind === "spacefill") return { sphere: { scale: 0.95, ...cs, opacity } };
-  // Wireframe / sticks: the style's thin bond radius; the Display section's Stick style its own 0.16 Å
-  if (kind === "stick") return { stick: { radius: setting("atomDraw", "auto") === "sticks" ? num("bondRadius", 0.06) : 0.16, ...cs, opacity } };
+  if (kind === "spacefill") return { sphere: { scale: spaceScale(), ...cs, opacity } };
+  // Wireframe / sticks: the style's thin bond radius; the Display section's Stick style 0.16 Å at the default
+  if (kind === "stick") return { stick: { radius: stickRadius(), ...cs, opacity } };
   return bonds ? { sphere: { scale: sphereScale(true), ...cs, opacity }, stick: { radius: num("bondRadius", 0.12), ...cs, opacity } }
                : { sphere: { scale: sphereScale(false), ...cs, opacity } };
 }
@@ -2426,7 +2432,7 @@ async function start() {
   document.dispatchEvent(new CustomEvent("mace-app-ready", { detail: state.info || null }));
 }
 window.addEventListener("resize", () => Object.values(state.viewers).forEach((v) => v && (v.resize(), v.render())));
-window.MACE = { isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, plotVar, plotVarIn, plotTone, vpVar, plotPaper, styleFigure, isPublication, plotPreset, presetOf, spinStyle, volumeColors, mapScale, elementColors: () => currentPalette(), syncSurfaces, store, viewer, openFile, load3Dmol,
+window.MACE = { spaceScale, stickRadius, isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, plotVar, plotVarIn, plotTone, vpVar, plotPaper, styleFigure, isPublication, plotPreset, presetOf, spinStyle, volumeColors, mapScale, elementColors: () => currentPalette(), syncSurfaces, store, viewer, openFile, load3Dmol,
   loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, energyTSV, scfTSV, drawScf, scfSection, displayAtoms, bondsFor, addModel,
   drawCell, axisLabels, fitView, fitPoints, styleFor, colorSpec, effDraw, elementColor, showTab, state, highlightDeck,
   colorScheme, paletteMap, paletteIds, paletteLabel, setPalettes, setPaletteDraft, fillColorOptions,

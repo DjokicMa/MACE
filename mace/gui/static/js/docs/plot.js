@@ -24,8 +24,28 @@ export function createPlotView(host, optsHost, H) {
   // a plot's own Plot style (Plot options › Style) over its family's (Settings › Appearance › Plot style)
   const ownPreset = (fam) => { const s = doc && doc.opts && doc.opts.style, pp = H.presets ? H.presets() : null; return s && pp ? pp.resolveId(s, fam) : null; };
   const presetOf = (fam) => ownPreset(fam) || (H.plotPreset ? H.plotPreset(fam) : "default");
-  const tokenOf = (fam) => (n) => { const pid = ownPreset(fam); return pid && H.plotVarIn ? H.plotVarIn(n, pid) : H.plotVar ? H.plotVar(n, fam) : H.cssVar(n); };
-  const cssVar = (n) => tokenOf(familyOf(doc))(n), paper = () => (H.plotPaper ? H.plotPaper() : { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)" });
+  /* a plot's background (Plot options › Style › Background, else Settings › Plots › Background), as the 3D
+     view's: theme, white, black or a custom color; its lightness gives the plot the light or dark tokens */
+  const HEX = /^#[0-9a-f]{6}$/i;
+  const bgOf = (d) => { const o = (d && d.opts) || {}; return { mode: o.background || setting("plots.background", "theme"), color: o.background_color || setting("plots.backgroundColor", "") }; };
+  const bgHex = (d) => {
+    const b = bgOf(d);
+    if (b.mode === "white") return H.cssVar("--viewport-white");
+    if (b.mode === "black") return H.cssVar("--viewport-black");
+    if (b.mode === "custom") return HEX.test(b.color) ? b.color : H.cssVar("--viewport-white");
+    return "";
+  };
+  const surfaceOf = (d) => { const h = bgHex(d); if (!HEX.test(h)) return null; const n = parseInt(h.slice(1), 16);
+    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.5 ? "light" : "dark"; };
+  const tokenOf = (fam) => (n) => { const pid = ownPreset(fam), sf = surfaceOf(doc); return pid && H.plotVarIn ? H.plotVarIn(n, pid, sf) : H.plotVar ? H.plotVar(n, fam, sf) : H.cssVar(n); };
+  const cssVar = (n) => tokenOf(familyOf(doc))(n);
+  const paper = () => {
+    const h = bgHex(doc), sf = surfaceOf(doc);
+    if (sf) el.setAttribute("data-plot-surface", sf); else el.removeAttribute("data-plot-surface");
+    return h ? { paper_bgcolor: h, plot_bgcolor: h } : H.plotPaper ? H.plotPaper() : { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)" };
+  };
+  // the plot's own options that Make This the Default, Follow Settings and the style marks cover: the presets' and the background
+  const styleNames = () => (H.presets ? H.presets().STYLE_OPTIONS.map((x) => x.name) : []).concat(["background", "background_color"]);
   host.innerHTML = `<div class="pv" tabindex="-1">
     <div class="pv-head"><div class="pv-title"></div><div class="pv-chips"></div><div class="pv-acts"></div></div>
     <div class="pv-note muted small"></div>
@@ -81,12 +101,12 @@ export function createPlotView(host, optsHost, H) {
   // the plots of plan E (a fort.25 map, Compare Convergence, BOLTZTRA data) keep their own options only
   const isOwn = (d) => d.kind === "map" || d.kind === "convergence" || d.kind === "transport";
   const defaultsFor = (d) => {
-    if (isOwn(d)) return { ...(d.kind === "map" ? DEFAULTS.map : d.kind === "convergence" ? DEFAULTS.convergence : DEFAULTS.transport) };
+    if (isOwn(d)) return { background: null, background_color: null, ...(d.kind === "map" ? DEFAULTS.map : d.kind === "convergence" ? DEFAULTS.convergence : DEFAULTS.transport) };
     const own = d.source === "modes" ? { ...DEFAULTS.modes, shape: H.lineShape ? H.lineShape(d.kind) : "lorentzian" } : isSpec(d) ? DEFAULTS.spectrum : DEFAULTS.bands;
     // band/DOS: Settings' energy window and Fermi shift (a folder's mace-folder.toml [plots] may set them)
     const win = own === DEFAULTS.bands ? setting("plots.energyWindow", null) : null;
     const band = Array.isArray(win) && win.length === 2 ? { emin: Number(win[0]), emax: Number(win[1]), shift: Number(setting("plots.fermiShift", 0)) || 0 } : {};
-    return { ...own, ...band, ylog: false, xlog: false, xr: null, yr: null,
+    return { ...own, ...band, background: null, background_color: null, ylog: false, xlog: false, xr: null, yr: null,
       unit: isSpec(d) ? "cm-1" : setting("energyUnit", "eV"), width: Number(setting("plots.lineWidth", 1.5)) || 1.5 };   // Settings › Plots › Line width (1.5)
   };
   const key = (d) => `mace.gui.plot.${H.dirHash()}.${d.path}${d.source ? `|${d.source}|${d.kind}` : ""}`;
@@ -458,7 +478,7 @@ export function createPlotView(host, optsHost, H) {
       const sig = `${doc.path}${isZt(doc) ? "|zt" : ""}|${Object.keys(fig.layout).filter((k) => /^[xy]axis/.test(k)).sort().join(",")}`;
       const config = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d"], edits: { shapePosition: true } };
       // Settings › Appearance › Plot style (app.js styleFigure): the screen and the PNG/SVG exports alike
-      if (H.styleFigure) H.styleFigure(fig.traces, fig.layout, familyOf(doc), (doc.opts && doc.opts.style) || null);
+      if (H.styleFigure) H.styleFigure(fig.traces, fig.layout, familyOf(doc), (doc.opts && doc.opts.style) || null, surfaceOf(doc));
       const bw = $(".pv-bword");
       if (bw && isBandDos(doc)) bw.textContent = BF.dashWord(envOf(doc.opts).look.spin_down_style || "dash");
       // the styled top margin is the base fitLegends adds the legends to (never the fitted one: that grows on every redraw)
@@ -677,6 +697,10 @@ export function createPlotView(host, optsHost, H) {
       apply: (v) => [{ [name]: v || null }, `${label} ${v ? word(v) : "as Settings"}`] });
     const groups = [{ key: "plot", head: "Plot style", ctrls: [choose("po-style", "style", "style", "Plot style", o.style, look.style,
       pp.SHARED.order.filter((id) => pp.SHARED.presets[id].families.includes(fam)).map((id) => [id, PRESET_LABEL(id)]), PRESET_LABEL(base.style), PRESET_LABEL)] }];
+    const BG = { theme: "Theme", white: "White", black: "Black", custom: "Custom" }, bg = bgOf(d);
+    groups[0].ctrls.push(choose("po-bg", "bg", "background", "Background", o.background, bg.mode, Object.entries(BG), BG[setting("plots.background", "theme")] || "Theme", (v) => BG[v] || v));
+    if (bg.mode === "custom") groups[0].ctrls.push({ id: "po-bgc", mv: "bgc", type: "color", label: "Background color", current: bgHex(d),
+      apply: (v) => [{ background: "custom", background_color: v }, `Background ${v}`, "opt:po-bgc"] });
     if (!isBandDos(d)) return groups;
     const data = d.data || {}, band = data.band, dos = data.dos;
     if (!band && !dos) return groups;
@@ -735,7 +759,7 @@ export function createPlotView(host, optsHost, H) {
       h += `<div class="po-sgroup" role="group" aria-label="${esc(g.head)}" data-group="${g.key}">` +
         (g.key === "plot" ? "" : `<div class="po-h po-sub">${esc(g.head)}</div>`) + g.ctrls.map(ctrl).join("") + "</div>";
     }
-    const own = pp.STYLE_OPTIONS.some((x) => doc.opts[x.name] !== null && doc.opts[x.name] !== undefined);
+    const own = styleNames().some((n) => doc.opts[n] !== null && doc.opts[n] !== undefined);
     h += `<div class="po-acts"><button class="tb-btn-text" data-po="default"${own ? "" : " disabled"} title="Save this plot's style as the default of every plot (Settings)">Make This the Default</button></div></div>`;
     return h;
   }
@@ -761,7 +785,8 @@ export function createPlotView(host, optsHost, H) {
       set("plots.dosTotal", look.dos_total !== false);
       set("plots.dosSmooth", Number(look.dos_smooth) || 0);
     }
-    const clear = Object.fromEntries((H.presets ? H.presets().STYLE_OPTIONS : []).map((x) => [x.name, null]).filter(([k]) => k in doc.opts));
+    if (doc.opts.background) { const b = bgOf(doc); set("plots.background", b.mode); if (b.mode === "custom") set("plots.backgroundColor", bgHex(doc)); }
+    const clear = Object.fromEntries(styleNames().map((n) => [n, null]).filter(([k]) => k in doc.opts));
     setOpt(doc, clear, "Style saved as the default");
     toast("This plot's style is the default now (Settings)", "success");
   }
@@ -774,7 +799,7 @@ export function createPlotView(host, optsHost, H) {
       if (k) items.push("-", { head: g.head, group: g.key });
       for (const c of g.ctrls) {
         if (c.type === "select" || c.type === "number") {
-          if (c.type === "number" || g.key !== "plot") items.push({ head: c.label });
+          if (c.type === "number" || g.key !== "plot" || c !== g.ctrls[0]) items.push({ head: c.label });
           else items.push({ head: g.head, group: g.key });
           c.choices.forEach(([v, t]) => items.push({ v: `${c.mv}:${v}`, label: t, checked: String(c.current) === String(v) }));
         } else if (c.type === "toggle") items.push({ v: c.mv, label: c.label, checked: !!c.current, toggle: true });
@@ -801,7 +826,7 @@ export function createPlotView(host, optsHost, H) {
     if (!doc) return;
     const at = v.indexOf(":"), k = at < 0 ? v : v.slice(0, at), val = at < 0 ? null : v.slice(at + 1);
     if (k === "settings") {
-      const clear = Object.fromEntries((H.presets ? H.presets().STYLE_OPTIONS : []).map((x) => [x.name, null]).filter(([n]) => n in doc.opts));
+      const clear = Object.fromEntries(styleNames().map((n) => [n, null]).filter(([k]) => k in doc.opts));
       setOpt(doc, clear, "Style as Settings");
       return;
     }

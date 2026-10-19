@@ -48,6 +48,8 @@ export const DEFAULTS = Object.freeze({
   "viewport.rotation": "free", "viewport.angleSnap": "off",
   // ... and where the wheel zooms: toward the view center (the rotation center) or the mouse pointer
   "viewport.zoomToward": "center",
+  // repeats along a non-periodic axis (a slab's c): the cell's extent, the atoms' + a gap (Å), or CRYSTAL's 500 Å
+  "viewport.vacuumMode": "cell", "viewport.vacuumGap": 10,
   // polish A3/A6: the defaults of every document's Range & boundary and Rendering groups
   displayLo: [0, 0, 0], displayHi: [1, 1, 1], bondedOutside: "off", lightStrength: 1, lightDirection: "front", ambient: 0,
   outline: false, outlineWidth: 0.1, outlineColor: "", ambientOcclusion: 0, renderPreset: "default", renderCustom: null, shininess: 0,
@@ -65,7 +67,7 @@ export const DEFAULTS = Object.freeze({
   // spec §9: 0 workers = auto (a quarter of the cores, at most 8); the cache cap in MB; the GPU future code may use
   max_workers: 0, cache_mb: 512, gpu_device: "0",
   // Plots and run analysis (PLAN_analysis C3): defaults for newly opened plots; a plot's own choices are kept per document
-  "plots.relTo": "final", "plots.segments": "continuous", "plots.logDeltaE": false, "plots.per": "cell", "plots.lineWidth": 1.5, "plots.exportScale": 2,
+  "plots.relTo": "final", "plots.segments": "continuous", "plots.logDeltaE": false, "plots.per": "cell", "plots.lineWidth": 1.5, "plots.background": "theme", "plots.backgroundColor": "", "plots.exportScale": 2,
   "analysis.imagNoiseCm": 20,
   // Live files and databases (C17, C18) and File History (C20)
   "database.refreshSeconds": 30, "files.liveMinutes": 10,

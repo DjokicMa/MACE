@@ -284,6 +284,7 @@ async function activate(d) {
 let lastActive = null;
 function afterSwitch() {
   syncBoundaryBox();
+  syncStyleBox();
   showPanelFor(active);
   // the bottom panel follows the document: atoms for a structure, the
   // timeline for a run, tasks for a plot, nothing for the database
@@ -801,8 +802,11 @@ function renderToolbarState() {
   if ($("#tb-range-label")) {
     // a SLAB or POLYMER has no period along its vacuum axes: the label says what is drawn (3×3×1)
     const np = nonPeriodicAxes(), lab = DS.rangeLabel(viewDoc()), m = lab.split("×");
-    $("#tb-range-label").textContent = np.length && m.length === 3 ? m.map((x, k) => (np.includes(k) ? "1" : x)).join("×") : lab;
-    $("#tb-range").dataset.tip = np.length ? `Display range (${nonPeriodicText(np)})` : "Display range";
+    // the label is what is drawn: a SLAB's c is 1 unless the user asked for more (then the tooltip names the spacing)
+    $("#tb-range-label").textContent = lab;
+    const rep = np.filter((k) => Number(m[k]) > 1);
+    $("#tb-range").dataset.tip = rep.length ? `Display range (${rep.map((k) => "abc"[k]).join(", ")} repeated at the ${vacuumText()} vacuum spacing)`
+      : np.length ? `Display range (${nonPeriodicText(np)})` : "Display range";
   }
   renderActivity();
 }
@@ -830,27 +834,38 @@ function viewSetting(k) { return DS.KEYS.has(k) ? DS.of(viewDoc())[k] : settings
  * Range & boundary). range() is n for a cube from 0, 0 for anything else; the
  * classic views' 2×2×2 checkbox mirrors "2". */
 const range = () => {
-  const r = DS.rangeOf(viewDoc());
+  const r = DS.rangeOf(viewDoc()), np = nonPeriodicAxes(), per = [0, 1, 2].filter((k) => !np.includes(k));
+  // n×n×1 of a SLAB is the n preset (its c stays 1)
+  if (per.length && np.every((k) => r.lo[k] === 0 && r.hi[k] === 1)) {
+    const h = r.hi[per[0]];
+    return per.every((k) => r.lo[k] === 0 && r.hi[k] === h) && Number.isInteger(h) ? h : 0;
+  }
   return r.lo.every((x) => x === 0) && r.hi.every((x) => x === r.hi[0] && Number.isInteger(x)) ? r.hi[0] : 0;
 };
 const rangeCells = () => { const r = DS.rangeOf(viewDoc()); return r.hi.map((x, k) => Math.max(1, Math.round(x - r.lo[k]))); };
 function setRange(n) {
   const d = viewDoc();
   if (!d) return;
-  const cells = Array.isArray(n) ? n.map((x) => Math.max(1, Math.min(10, x | 0))) : [n, n, n];
-  DS.setCells(d, cells);
-  // the range repeats periodic directions only: say so instead of drawing 3×3×1 for a 3×3×3 silently
+  // n×n×n repeats the periodic directions only (say so); n1×n2×n3 with more than 1 along a vacuum axis repeats it
+  // at the Vacuum spacing (Settings › Viewport)
   const np = nonPeriodicAxes();
-  if (np.some((k) => cells[k] > 1)) toast(`${nonPeriodicText(np)}: the range repeats ${cells.map((x, k) => (np.includes(k) ? 1 : x)).join("×")}`, "info");
+  const cells = Array.isArray(n) ? n.map((x) => Math.max(1, Math.min(10, x | 0))) : [0, 1, 2].map((k) => (np.includes(k) ? 1 : n));
+  DS.setCells(d, cells);
+  if (!Array.isArray(n) && n > 1 && np.length) toast(`${nonPeriodicText(np)}: the range repeats ${cells.join("×")} (a custom range repeats it at the vacuum spacing)`, "info");
 }
 /* The lattice directions (0, 1, 2) the drawn structure has no period along: c of a SLAB, b and c of a POLYMER. */
 function nonPeriodicAxes() {
   const d = viewDoc();
   // a cube's periodicity is its header's cell (the server's meta.pbc): CRYSTAL writes a slab's c as the formal 500 Å
-  if (d && d.kind === "volume") { const m = d.meta, pbc = m && m.periodic && m.pbc; return pbc ? [0, 1, 2].filter((k) => !pbc[k]) : []; }
+  if (d && d.kind === "volume") { const m = d.meta, pbc = m && m.pbc; return pbc ? [0, 1, 2].filter((k) => !pbc[k]) : []; }
   if (!d || !["structure", "trajectory"].includes(d.kind)) return [];
   const s = structureOf(d), pbc = s && s.cell && s.pbc;
-  return pbc && pbc.some(Boolean) ? [0, 1, 2].filter((k) => !pbc[k]) : [];
+  // a molecule (no periodic direction) is drawn once along x, y and z
+  return pbc ? [0, 1, 2].filter((k) => !pbc[k]) : s && s.pbc ? [0, 1, 2] : [];
+}
+function vacuumText() {
+  const mode = settings.get("viewport.vacuumMode") || "cell";
+  return mode === "gap" ? `${+settings.get("viewport.vacuumGap") || 10} Å gap` : mode === "crystal" ? "CRYSTAL (500 Å)" : "Cell";
 }
 function nonPeriodicText(np) {
   const s = structureOf(viewDoc()), dim = (s && s.dimensionality) || (np.length === 1 ? "SLAB" : "POLYMER");
@@ -862,6 +877,7 @@ function displayChanged(doc) {
   const box = optEl("opt-super");
   if (box && box.checked !== (range() === 2)) box.checked = range() === 2;
   syncBoundaryBox();
+  syncStyleBox();
   if (doc && doc !== viewDoc()) return;
   redrawSoon();
   if (displayPanel) displayPanel.refresh();
@@ -872,6 +888,17 @@ function syncBoundaryBox() {
   const el = optEl("opt-boundary"), want = !!viewSetting("showBoundary");
   if (el && el.checked !== want) el.checked = want;
 }
+/* The Display section's Atom style shows what the drawn document's Style draws (a style that sets
+ * atomDraw: Space-filling, Wireframe, VESTA-like); the select's own choice (all documents) is kept in
+ * data-base and comes back when the style follows the Display section again. */
+const DRAW_OPT = { spacefill: "spacefill", sticks: "stick", ballstick: "ballstick" };
+function syncStyleBox() {
+  const el = optEl("opt-style");
+  if (!el) return;
+  if (el.dataset.base === undefined) el.dataset.base = el.value;
+  const want = DRAW_OPT[viewSetting("atomDraw")] || el.dataset.base;
+  if (el.value !== want) el.value = want;
+}
 /** What the structure viewer draws: the classic views' checkboxes, Settings, and the document's display state. */
 function viewOpts() {
   const d = viewDoc(), r = DS.drawRange(d);
@@ -879,7 +906,8 @@ function viewOpts() {
   const draw = M().effDraw ? M().effDraw(style(), optChecked("opt-bonds")) : { style: style(), bonds: optChecked("opt-bonds") };
   return { cell: optChecked("opt-cell"), boundary: !!viewSetting("showBoundary"), bonds: draw.bonds,
     labels: optChecked("opt-labels") ? (labelMode() === "off" ? "both" : labelMode()) : "off", style: draw.style,
-    range: r, box: DS.boxOf(r), bondedOutside: viewSetting("bondedOutside") || "off" };
+    range: r, box: DS.boxOf(r), bondedOutside: viewSetting("bondedOutside") || "off",
+    vacuum: { mode: settings.get("viewport.vacuumMode") || "cell", gap: Number(settings.get("viewport.vacuumGap")) || 10 } };
 }
 /* The Magnetic style's data (1.1.7): a document's Mulliken spin moments from its run (/api/spins),
  * fetched once per document: {state: "ok", values, max, source} when they match the drawn atoms, else
@@ -2764,7 +2792,8 @@ function applySetting(k) {
 const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "radiusSet", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "labelSize",
   "background", "backgroundColor", "cellColor", "decimals.length", "decimals.angle", "decimals.coord",
   "displayLo", "displayHi", "showBoundary", "bondedOutside", "lightStrength", "lightDirection", "ambient", "outline",
-  "outlineWidth", "outlineColor", "ambientOcclusion", "shininess", "atomDraw", "atomColor", "atomRadii", "styleOutline"]);
+  "outlineWidth", "outlineColor", "ambientOcclusion", "shininess", "atomDraw", "atomColor", "atomRadii", "styleOutline",
+  "viewport.vacuumMode", "viewport.vacuumGap"]);
 let redrawFrame = 0;
 function redrawSoon() {
   cancelAnimationFrame(redrawFrame);
@@ -2779,6 +2808,12 @@ function mirrorClassicControls() {
   on("opt-super", () => setRange(optChecked("opt-super") ? 2 : 1));
   on("opt-labels", () => { if (optChecked("opt-labels") !== (settings.get("labels") !== "off")) settings.set("labels", optChecked("opt-labels") ? "both" : "off"); });
   on("opt-colors", () => settings.set("colorScheme", optEl("opt-colors").value));
+  // an atom style picked while the document's Style draws its own: the style follows the Display section, as Custom
+  on("opt-style", () => {
+    optEl("opt-style").dataset.base = optEl("opt-style").value;
+    const d = viewDoc();
+    if (d && DRAW_OPT[viewSetting("atomDraw")]) DS.set(d, { atomDraw: "auto", ...(viewSetting("stylePreset") !== "custom" ? { stylePreset: "custom" } : {}) });
+  });
 }
 /* ================================================================ themes and element colors (1.1.6) */
 let themePreview = null, booted = false, paneTimer = 0;
@@ -2974,7 +3009,7 @@ function plotViewer() {
   if (!plotViewLoading) plotViewLoading = Promise.all([import("./docs/plot.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
     await lu.loadCss(new URL("./docs/plot.js", import.meta.url).href, "../../css/plot.css");
     plotView = m.createPlotView($("#plot-host"), pieces.plotOpts, { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
-      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f, s) => M().plotVar(n, f, s), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid, s) => M().styleFigure(t, l, f, pid, s), plotVarIn: (n, pid, s) => M().plotVarIn(n, pid, s), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
       plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
       exportImage: (X) => lazy("export_image").then((m) => m.open(H, { ...X, view: "plot", viewState: { projection: "orthographic" } })),
       openPath: (p) => openDoc(p),
@@ -3004,7 +3039,7 @@ function runViewer() {
   if (!runViewLoading) runViewLoading = Promise.all([import("./docs/runplot.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
     await lu.loadCss(new URL("./docs/runplot.js", import.meta.url).href, "../../css/plot.css");
     runView = m.createRunPlot($("#runplot-host"), { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
-      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f, s) => M().plotVar(n, f, s), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid, s) => M().styleFigure(t, l, f, pid, s), plotVarIn: (n, pid, s) => M().plotVarIn(n, pid, s), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
       plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
       download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k),
       expandSummary: (r) => M().expandSummary(r), selectFrame: (p, k) => M().selectFrame(p, k), frameOf: (p) => M().frameOf(p),
@@ -3288,7 +3323,7 @@ function galleryViewer() {
   if (!galleryLoading) galleryLoading = Promise.all([import("./docs/gallery.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
     await lu.loadCss(new URL("./docs/gallery.js", import.meta.url).href, "../../css/gallery.css");
     galleryView = m.createGallery($("#gallery-host"), { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
-      cssVar: (n) => M().cssVar(n), plotVar: (n, f) => M().plotVar(n, f), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid) => M().styleFigure(t, l, f, pid), plotVarIn: (n, pid) => M().plotVarIn(n, pid), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f, s) => M().plotVar(n, f, s), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid, s) => M().styleFigure(t, l, f, pid, s), plotVarIn: (n, pid, s) => M().plotVarIn(n, pid, s), plotTone: () => M().plotTone(), isPublication: (f) => M().isPublication(f),
       plotPreset: (f) => M().plotPreset(f), spinStyle: (f) => M().spinStyle(f), elementColors: () => M().elementColors(), presets: () => window.MACE_PRESETS, loadPlotly: () => M().loadPlotly(), apiTask: (p, b, u, x) => apiTask(p, b, u, x),
       download: (b, n) => download(b, n), copyText: (t, m) => copyText(t, m), openPath: (p) => openDoc(p),
       setting: (k) => settings.get(k), folderFile: () => settings.folderInfo().file, sets: () => gallerySets(), retitle: () => { renderTabs(); updateTitle(); } });

@@ -432,8 +432,9 @@
  * stick spectrum) or the viewer, and to a hidden probe that app.js reads (plotVar, vpVar). The
  * aliases of :root are set again: a var() in a custom property resolves where it is declared.
  * "Follow theme" and a background of the theme's own lightness set no attribute: the theme's tokens. */
-/* forced light */
+/* forced light (data-plot-surface on one plot and its probe: Plot options › Background) */
 :root[data-plot-surface="light"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:root :is(.js-plotly-plot, .plot-probe)[data-plot-surface="light"],
 :root[data-vp-surface="light"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
   --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4; --border: #e3e6eb; --border-strong: #848b97;
   --text: #15181e; --text-2: #545b67; --text-3: #636a76; --accent: #2563eb; --accent-hover: #1d4ed8; --accent-soft: #ebf2ff;
@@ -453,6 +454,7 @@
 }
 /* forced dark */
 :root[data-plot-surface="dark"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:root :is(.js-plotly-plot, .plot-probe)[data-plot-surface="dark"],
 :root[data-vp-surface="dark"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
   --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833; --border: #2a303b; --border-strong: #6b7383;
   --text: #e7e9ee; --text-2: #aab2be; --text-3: #8f97a4; --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47;
@@ -472,6 +474,7 @@
 }
 /* the high-contrast themes keep AAA on a forced surface */
 :root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-plot-surface="light"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"]):root :is(.js-plotly-plot, .plot-probe)[data-plot-surface="light"],
 :root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-vp-surface="light"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
   --surface: #ffffff; --surface-2: #f5f5f5; --surface-3: #ebebeb; --border: #595959; --border-strong: #000000;
   --text: #000000; --text-2: #1f1f1f; --text-3: #333333; --accent: #0033a0; --accent-soft: #e6eeff; --on-accent: #ffffff;
@@ -482,6 +485,7 @@
   --plot-6: #00636b; --plot-7: #b34700; --plot-8: #000000; --plot-9: #5c5c5c; --plot-10: #a3005c;
 }
 :root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-plot-surface="dark"] :is(.js-plotly-plot, .fm-spec, .plot-probe),
+:root:is([data-theme="hc-light"], [data-theme="hc-dark"]):root :is(.js-plotly-plot, .plot-probe)[data-plot-surface="dark"],
 :root:is([data-theme="hc-light"], [data-theme="hc-dark"])[data-vp-surface="dark"] :is(.viewer-wrap, .fv-view, .vv-view, .vp-probe) {
   --surface: #0a0a0a; --surface-2: #141414; --surface-3: #1f1f1f; --border: #8c8c8c; --border-strong: #ffffff;
   --text: #ffffff; --text-2: #e6e6e6; --text-3: #cccccc; --accent: #8cc4ff; --accent-soft: #0d2347; --on-accent: #000000;
@@ -519,29 +523,35 @@
  * - Colorblind safe: Okabe–Ito from its blue (the same hues, without the ink first);
  * - Print grayscale: black and grays (told apart by line style and markers, styleFigure).
  * Every series reads on tinted paper too (2:1, 3:1 in the high-contrast themes: the test). */
+:root:root:root .plot-probe[data-plot-tone="light"][data-plot-preset="publication"],
 :root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="publication"] {
   --plot-ink: #000000;
   --plot-1: #000000; --plot-2: #0072b2; --plot-3: #d55e00; --plot-4: #009e73; --plot-5: #cc79a7;
   --plot-6: #c98500; --plot-7: #3d9ad1; --plot-8: #999933; --plot-9: #666666; --plot-10: #882255;
 }
+:root:root:root .plot-probe[data-plot-tone="dark"][data-plot-preset="publication"],
 :root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="publication"] {
   --plot-ink: #ffffff;
   --plot-1: #ffffff; --plot-2: #56b4e9; --plot-3: #e8803a; --plot-4: #2fbf8f; --plot-5: #cc79a7;
   --plot-6: #e69f00; --plot-7: #8fd0f5; --plot-8: #f0e442; --plot-9: #a6a6a6; --plot-10: #e07fb0;
 }
+:root:root:root .plot-probe[data-plot-tone="light"][data-plot-preset="colorblind"],
 :root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="colorblind"] {
   --plot-1: #0072b2; --plot-2: #d55e00; --plot-3: #009e73; --plot-4: #cc79a7; --plot-5: #c98500;
   --plot-6: #3d9ad1; --plot-7: #000000; --plot-8: #999933; --plot-9: #666666; --plot-10: #882255;
 }
+:root:root:root .plot-probe[data-plot-tone="dark"][data-plot-preset="colorblind"],
 :root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="colorblind"] {
   --plot-1: #56b4e9; --plot-2: #e8803a; --plot-3: #2fbf8f; --plot-4: #cc79a7; --plot-5: #e69f00;
   --plot-6: #8fd0f5; --plot-7: #ffffff; --plot-8: #f0e442; --plot-9: #a6a6a6; --plot-10: #e07fb0;
 }
+:root:root:root .plot-probe[data-plot-tone="light"][data-plot-preset="grayscale"],
 :root[data-plot-tone="light"] :is(.plot-probe, .fm-spec)[data-plot-preset="grayscale"] {
   --plot-ink: #000000;
   --plot-1: #000000; --plot-2: #4d4d4d; --plot-3: #767676; --plot-4: #262626; --plot-5: #626262;
   --plot-6: #3a3a3a; --plot-7: #555555; --plot-8: #6e6e6e; --plot-9: #1a1a1a; --plot-10: #808080;
 }
+:root:root:root .plot-probe[data-plot-tone="dark"][data-plot-preset="grayscale"],
 :root[data-plot-tone="dark"] :is(.plot-probe, .fm-spec)[data-plot-preset="grayscale"] {
   --plot-ink: #ffffff;
   --plot-1: #ffffff; --plot-2: #bdbdbd; --plot-3: #8c8c8c; --plot-4: #e0e0e0; --plot-5: #a6a6a6;

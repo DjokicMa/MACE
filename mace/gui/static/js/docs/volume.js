@@ -130,7 +130,7 @@ export function createVolumeView(host, optsHost, H) {
       out.list = { n, base: Int32Array.from({ length: n }, (_, i) => i), image: new Uint8Array(n), cart: Float64Array.from(cart.flat()) };
       out.box = out.cell ? { cell: m.lattice, pbc, origin: org } : null;
       out.cell = !!out.box && out.cell;
-      return out;
+      return vacuumRepeat(out, d, vo);
     }
     const orbital = !!d.orbitals;
     const range = orbital ? cellsOf(vo.range || [1, 1, 1]).map((x, k) => (pbc[k] ? x : 1)) : (vo.range || [1, 1, 1]);
@@ -159,6 +159,22 @@ export function createVolumeView(host, optsHost, H) {
       out.capped = shifts.length > IMAGES_MAX;
       out.shifts = shifts.slice(0, IMAGES_MAX);
     }
+    return vacuumRepeat(out, d, vo);
+  }
+  /** More than one cell along a non-periodic axis (a slab cube's c, a molecule's x, y, z): the atoms and the
+   * surfaces again at the Vacuum spacing's display vector (Cell: the cube's box along that axis). */
+  function vacuumRepeat(out, d, vo) {
+    const m = d.meta, pbc = m.pbc || [false, false, false], V = m.full_voxels, N = m.full_shape;
+    const own = V && N ? V.map((r, k) => r.map((x) => x * N[k])) : null;
+    const { offsets } = G.vacuumOffsets(m.periodic ? m.lattice : null, pbc, out.list.cart, vo.range || [1, 1, 1], vo.vacuum, own);
+    if (offsets.length < 2) return out;
+    out.range = (Array.isArray(vo.range) ? vo.range : [1, 1, 1]).slice();
+    if (!out.tooMany) out.list = G.repeatList(out.list, offsets);
+    const all = [];
+    offsets.forEach((o) => out.shifts.forEach((t) => all.push([0, 1, 2].map((j) => t[j] + o[j]))));
+    out.images = Math.max(out.images, 1) * offsets.length;
+    out.capped = all.length > IMAGES_MAX;
+    out.shifts = all.slice(0, IMAGES_MAX);
     return out;
   }
 
@@ -243,7 +259,9 @@ export function createVolumeView(host, optsHost, H) {
     if (!view || refit) {
       vw.zoomTo(); vw.zoom(0.9);                          // zoomTo keeps the turn (Reset View clears it first)
       // the rotation center: the drawn cells' center (a slab's at its atoms' mid-height), else the atoms' middle
-      const P = M().pivotOf, cart = m.atoms.cart || [];
+      // (atoms repeated along a vacuum axis: the middle of the drawn ones there)
+      const L = dd.list, rep = L && L.n && L.n > (m.atoms.cart || []).length, o0 = dd.origin || [0, 0, 0];
+      const P = M().pivotOf, cart = rep ? Array.from({ length: L.n }, (_, i) => [0, 1, 2].map((j) => L.cart[3 * i + j] + o0[j])) : m.atoms.cart || [];
       const pv = !P ? null : m.periodic && m.lattice
         ? P(dd.box && dd.box.cell ? dd.box : { cell: m.lattice, pbc: m.pbc || [true, true, true], origin: m.cell_origin || m.origin || [0, 0, 0] }, null, cart)
         : cart.length ? P({ pbc: [false, false, false] }, null, cart) : null;

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GUI: Atom size and Bond radius resize every style, and a style shows in the Display
+  section.** Space-filling and the Display section's Stick style drew fixed sizes (0.95,
+  0.16 Å) whatever the sliders said; they now scale with them (unchanged at the defaults).
+  Choosing a style sets the Display section's Atom style to what it draws; picking another
+  atom style afterwards makes the style Custom, as editing a value in Settings › Viewport
+  now makes its Style or Lighting preset Custom.
+
 - **GUI: a fort.34 with symmetry operators opens, and so does the EXTERNAL deck
   that reads it.** CRYSTAL writes a fort.34 (.f34, .gui, .ext) as its symmetry
   operators plus the asymmetric unit; ase's reader refuses anything beyond P1
@@ -78,6 +85,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GUI: plot background.** Plot options › Style › Background (and the
+  Style ▾ menu) sets a plot's background as the 3D view's: Theme, White, Black
+  or a Custom color, with light or dark text and grid to match; Make This the
+  Default and Settings › Plots › Background set every plot's. PNG/SVG exports
+  follow it; `mace plotting` and the Publication Figure keep white.
+- **GUI: repeat along a non-periodic axis.** A custom display range of more
+  than 1 along a slab's c (a polymer's b and c, a molecule's x, y, z) repeats
+  the atoms and a cube's or orbital's isosurfaces at Settings › Viewport ›
+  **Vacuum spacing**: Cell (default), Gap (10 Å, editable) or CRYSTAL (500 Å).
+  The presets still keep that axis at 1; the Inspector shows the real cell.
 - **GUI: rotation modes for the 3D views.** Settings › Viewport ›
   **Rotation**: Free (the trackball, as before) or **Turntable**, which
   turns about the structure's up and the screen's horizontal

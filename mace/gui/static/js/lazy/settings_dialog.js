@@ -309,6 +309,7 @@ function onChange(e) {
   const t = e.target, k = t.dataset.key;
   if (!k) return;
   const r = SCHEMA.find((x) => x.key === k);
+  presetEdited(k);
   if (t.type === "checkbox") H.settings.set(k, t.checked);
   else if (t.tagName === "SELECT" || t.type === "range") {
     H.settings.set(k, typed(r, t.value));
@@ -322,6 +323,11 @@ function onChange(e) {
   }
   else if (t.type === "color") H.settings.set(k, t.value);
 }
+/* A style or lighting value edited here: the Style or Lighting preset above becomes Custom (as in the Inspector). */
+function presetEdited(k) {
+  const pk = STYLE_KEYS.includes(k) ? "stylePreset" : LIGHTING_KEYS.includes(k) ? "renderPreset" : null;
+  if (pk && H.settings.get(pk) !== "custom") H.settings.set(pk, "custom");
+}
 let inputFrame = 0;
 function onInput(e) {
   const t = e.target;
@@ -329,7 +335,7 @@ function onInput(e) {
   const r = SCHEMA.find((x) => x.key === t.dataset.key);
   t.nextElementSibling.textContent = fmtNum(t.value, r);
   cancelAnimationFrame(inputFrame);   // live preview, one per frame
-  inputFrame = requestAnimationFrame(() => H.settings.set(r.key, Number(t.value)));
+  inputFrame = requestAnimationFrame(() => { presetEdited(r.key); H.settings.set(r.key, Number(t.value)); });
 }
 function commit(t) {
   const k = t.dataset.key, r = SCHEMA.find((x) => x.key === k);

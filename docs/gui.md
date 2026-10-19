@@ -1273,6 +1273,8 @@ plot's toolbar, next to Export, has the same controls in the same groups one
 click away (a color opens the color picker), **Follow Settings**, and
 **Copy CLI Command**.
 
+**Background** (in Style, and Settings › Plots) is Theme, White, Black or a Custom color, as the 3D view's; text and grid turn light or dark to match, PNG/SVG exports follow it, `mace plotting` keeps white.
+
 **Copy CLI Command** (Style ▾ and Export ▾) copies the `mace plotting` command
 that draws the plot on screen: `--band`, `--dos`, or `--band-dos` when the
 plot shows both, with the file, `--e-lower`/`--e-upper`, `--fermi-shift`,
@@ -3263,6 +3265,7 @@ style and colors) stays the same for all documents ("All documents").
   the range. The estimate below says how many atoms that draws; a range of
   more than 200 000 atoms is refused. View › Display Range › Custom… (and the
   toolbar's range menu) takes the same from and to values.
+  A custom range of more than one cell along a non-periodic axis repeats it at Settings › Viewport › **Vacuum spacing** (display only): **Cell** (a cube's box, a slab's built vacuum, else the atoms + 10 Å), **Gap** (the atoms + **Vacuum gap**, 10 Å) or **CRYSTAL (500 Å)**; a molecule repeats along x, y and z.
 - **Boundary Atoms**: also draw the atoms on the faces, edges and corners of
   the range (Shift+A).
 - **Bonded Atoms Outside**: **Bonded Neighbors** adds the atoms bonded to the
