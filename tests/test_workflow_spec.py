@@ -195,7 +195,7 @@ def test_cif_first_step_settings_file_is_the_conversion_config(tmp_path):
     ({"inputs": {"type": "d12", "files": ["mat_opt.d12"]}, "template": "opt_sp",
       "steps": {"BAND_3": {}}}, "not in the sequence"),
     ({"inputs": {"type": "d12", "files": ["mat_opt.d12"]}, "template": "opt_sp",
-      "steps": {"SP_2": {"overrides": {"d3_config": {}}}}}, "not read for a SP step"),
+      "steps": {"SP_2": {"overrides": {"d3_config": {}}}}}, "not read for an SP step"),
     ({"inputs": {"type": "d12", "files": ["mat_opt.d12"]}, "template": "opt_sp",
       "steps": {"OPT_1": {"overrides": {"optimization_settings": {}}}}}, "runs the decks as they are"),
     ({"inputs": {"type": "d12", "files": ["mat_opt.d12"]}, "template": "opt_sp",

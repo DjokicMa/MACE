@@ -114,7 +114,7 @@ def test_scf_and_opt_panes(demo):
     ys = pl["series"][0]["y"]
     assert len(ys) > 3 and all(y > 0 for y in ys) and ys[-1] < ys[0]       # |ΔE| falls along the SCF
     op = G.pane(demo / "outputs" / "Ag2Br3_opt_unfinished.out", "opt")
-    assert op["error"] is None and op["panels"][0]["ylabel"] == "E − E(final) (meV)"
+    assert op["error"] is None and op["panels"][0]["ylabel"] == "E − E<sub>final</sub> (meV)"
 
 
 def test_unreadable_file_is_an_error_in_its_pane(tmp_path):
@@ -418,7 +418,8 @@ def test_closed_shell_band_pane_is_neutral_and_the_legend_is_grouped(bands, tmp_
     assert band["closed"] is True and dos["dos_side"] == "one"
     fig, ax = plt.subplots()
     try:
-        info = G._draw_panel(ax, band, None, False, "default", {"spin_colors": "blue-red"})
+        # Band style ink: the neutral color, not spin up's (single, the default, is the pair's first color)
+        info = G._draw_panel(ax, band, None, False, "default", {"spin_colors": "blue-red", "band_style": "ink"})
         assert {to_hex(ln.get_color()) for ln in ax.get_lines() if len(ln.get_xdata()) > 2} == {info["bands"]}
         assert info["bands"] != P.spin_colors("default", "band", scheme="blue-red")["up"]
     finally:
@@ -455,7 +456,7 @@ def test_closed_shell_panes_take_the_band_color(bands):
             assert {to_hex(ln.get_color()) for ln in a1.get_lines() if len(ln.get_xdata()) > 2} == {"#2e8b57"}
             G._draw_panel(a2, dos, None, False, style, {"band_color": "#2E8B57"})
             assert "#2e8b57" in {to_hex(ln.get_color()) for ln in a2.get_lines()}
-            plain = G._draw_panel(a1, band, None, False, style, {"band_color": None})
+            plain = G._draw_panel(a1, band, None, False, style, {"band_color": None, "band_style": "ink"})
             ink = "#000000" if style == "publication" else "#222222"
             assert plain["bands"] == P.band_color(style, "band", "light", None, ink)
         finally:

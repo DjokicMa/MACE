@@ -117,12 +117,12 @@ def test_dos_colors_flag_picks_the_lines(dia, tmp_path):
     p, log = _plotting(["--dos", f"{DIA}_doss.DOSS.DAT", "-o", str(tmp_path / "nt"), "--format", "svg",
                         "--dos-colors", "orbital", "--no-dos-total"], dia)
     assert p.returncode == 0
-    # the total's light neutral fill (1.1.6 N1: the plot ink at presets.neutral_fill's opacity)
+    # the total's light neutral fill (1.1.6 N1: the total's color at presets.neutral_fill's opacity; the total
+    # is in the Band style's color, Auto = Single = the spin pair's first color, as the GUI draws it)
     fills = lambda n: set(re.findall(r"fill:\s*(#[0-9a-f]{6}); fill-opacity:\s*([0-9.]+)",  # noqa: E731
                                      (tmp_path / n / f"{DIA}.DOSS.svg").read_text()))
-    from mace.plotting.plotly_bands import tokens
-    ink = tokens("default")["--plot-ink"]
-    want = (ink, presets.neutral_fill(ink, "default").rsplit(",", 1)[1].rstrip(")"))
+    first = presets.SPIN_COLORS["light"]["up"]
+    want = (first, presets.neutral_fill(first, "default").rsplit(",", 1)[1].rstrip(")"))
     assert want in fills("orbital") and want not in fills("nt")
 
 
@@ -213,6 +213,7 @@ def _low_color(fig):
 def test_potential_colors_chemistry_default_and_physics(tmp_path):
     """Electrostatic potential: chemistry colors by default (red = negative, blue = positive) in the
     slices and isosurfaces, captions naming what is drawn; --potential-colors physics: red = positive."""
+    pytest.importorskip("plotly")                   # the engine imports without plotly; the figures need it
     E = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly", reason="the cube engine imports plotly")
     import contextlib
     import io

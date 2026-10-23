@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, find_data
 from mace.workflow import guessp_chain
 from mace.workflow.engine import WorkflowEngine
 
@@ -331,6 +331,30 @@ def test_real_follow_up_decks_are_recognized_as_the_same_system(tmp_path, name, 
     assert with_guessp.count("GUESSP") == 1
     assert with_guessp[with_guessp.index("GUESSP") + 1] == "SCFDIR"
     assert [l for l in with_guessp if l != "GUESSP"] == child.splitlines()
+
+
+@pytest.mark.parametrize("calc_type, record", [("ELASTIC", "ELASTCON"), ("EOS", "EOS"), ("QHA", "QHA"),
+                                               ("CPHF", "CPHF")])
+def test_a_module_deck_restarts_from_its_parent(tmp_path, calc_type, record):
+    """Review 1.1.6 E6: the module block after the atom list (ELASTCON, EOS, QHA, CPHF) was read as part of
+    the structure, and the module deck was refused with "the symmetry or the atom list differs". Its first
+    SCF is on the deck's own structure, which is all GUESSP asks (p. 114); the manual recommends GUESSP for
+    a CPHF run (p. 275). The real diamond OPT and the decks mace opt2d12 writes from it."""
+    src = find_data("OPT/1_dia_opt_BULK_OPTGEOM.out")
+    for ext in (".out", ".d12"):
+        shutil.copy(src.with_suffix(ext), tmp_path)
+    name = src.stem
+    args = [sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d12", "--out-file", f"{name}.out",
+            "--d12-file", f"{name}.d12", "--non-interactive", "--calc-type", calc_type]
+    result = subprocess.run(args, cwd=tmp_path, input="", capture_output=True, text=True, timeout=300)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+    kids = [p for p in tmp_path.glob("*.d12") if p.name != f"{name}.d12"]
+    assert len(kids) == 1, sorted(p.name for p in tmp_path.iterdir())
+    child = kids[0].read_text()
+    assert record in [line.strip() for line in child.splitlines()]
+    parent = src.with_suffix(".d12").read_text()
+    assert guessp_chain.geometry_frame(child) == guessp_chain.geometry_frame(parent)
+    assert guessp_chain.refusal(parent, child) is None
 
 
 # ---------------------------------------------------------------------------

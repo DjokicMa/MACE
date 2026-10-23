@@ -32,7 +32,7 @@ for everything MACE runs or bundles; cite the ones you used.
   simulation environment - a Python library for working with atoms, J. Phys.:
   Condens. Matter 29, 273002 (2017), doi:10.1088/1361-648X/aa680e.
 
-## Phonons (`mace phonopy`)
+## Phonons (phonopy)
 
 - **phonopy**: A. Togo, L. Chaput, T. Tadano and I. Tanaka, Implementation
   strategies in phonopy and phono3py, J. Phys.: Condens. Matter 35, 353001
@@ -58,10 +58,17 @@ ML potential (MACE-MPA-0 or CHGNet) and its training data. The references
 are in [preopt.md](preopt.md#citations); the CLI prints the one for the
 method it ran, and the GUI's **Copy citation** copies it.
 
+## Topology (`mace analyze topology`, the GUI's Topology tab)
+
+- **RCSR**, whose net symbols and bundled list of 3-periodic nets identify
+  the topology: M. O'Keeffe, M. A. Peskov, S. J. Ramsden and O. M. Yaghi, The
+  Reticular Chemistry Structure Resource (RCSR) Database of, and Symbols for,
+  Crystal Nets, Acc. Chem. Res. 41, 1782 (2008), doi:10.1021/ar800124u.
+
 ## The GUI's 3D views
 
 - **3Dmol.js**: N. Rego and D. Koes, 3Dmol.js: molecular visualization with
   WebGL, Bioinformatics 31, 1322 (2015), doi:10.1093/bioinformatics/btu829.
 
-The licenses of the code MACE ships (3Dmol.js, the Lucide icons, the element
-colors) are listed in the [README](../README.md#license).
+The licenses of the code and data MACE ships (3Dmol.js, the Lucide icons, the
+element colors, the RCSR nets) are listed in the [README](../README.md#license).

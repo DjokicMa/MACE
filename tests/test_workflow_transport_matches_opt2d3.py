@@ -32,6 +32,10 @@ def _stage(d):
     if PARENT.with_suffix(".d12").exists():
         shutil.copy(PARENT.with_suffix(".d12"), d / PARENT.with_suffix(".d12").name)
     (d / PARENT.with_suffix(".f9").name).write_text("wavefunction placeholder\n")
+    # TRANSPORT's ranges are placed around the parent's E_F: an SCF prints its top of the valence bands,
+    # this trimmed fixture does not (without one both routes refuse the deck: test_fermi_relative_ranges)
+    with open(d / PARENT.name, "a") as fh:
+        fh.write("\n TOP OF VALENCE BANDS -    BAND     20; K    1; EIG -2.0000000E-01 AU\n")
     return d / PARENT.name
 
 

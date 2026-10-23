@@ -63,6 +63,8 @@ Extract, analyze, plot and query. `mace help results` prints this group.
 |---|---|---|
 | `mace analyze` | Outputs into materials.db (gaps, energies); --convergence FILE | [MACE commands](../DOCUMENTATION.md#mace-commands-primary-interface) |
 | `mace plotting` | Plots - bands, DOS, structures, cube volumetrics, FREQ, IR/Raman | [MACE commands](../DOCUMENTATION.md#mace-commands-primary-interface) |
+| `mace animate` | GIF/WebM/MP4 of a FREQ mode, OPT steps, an MD run or a NEB path (`mace animate --help`) | [GUI: Export Animation](gui.md#cube-slices-print-patterns-and-animations-116) |
+| `mace slice` | A cube's plane - grid, Miller (hkl) or normal to [uvw]; PNG/SVG/CSV (`mace slice --help`) | [GUI: Volume slices](gui.md#cube-slices-print-patterns-and-animations-116) |
 | `mace database` | Query materials.db - search, compare, export (CSV, Excel, ...) | [Material tracking](../DOCUMENTATION.md#material-tracking-system) |
 
 ### Special systems and structure tools
@@ -72,10 +74,13 @@ Extract, analyze, plot and query. `mace help results` prints this group.
 | Command | What it is for | More |
 |---|---|---|
 | `mace preopt` | A better starting geometry for a CIF/D12 (springs, GFN-FF, ML) | [preopt.md](preopt.md) |
-| `mace mlip` | ML potentials for preopt - list, set up the environment, fetch | [preopt.md](preopt.md#ml-potentials) |
+| `mace supercell` | Supercells of any structure; slabs/molecules at a vacuum spacing | [GUI: Vacuum and supercells](gui.md#slabs-polymers-and-molecules-116) |
+| `mace mlip` | ML potentials for preopt - list, install, set up, fetch weights | [preopt.md](preopt.md#ml-potentials) |
+| `mace calc` | UFF/UFF4MOF, EQeq, xTB, DFTB+, ML potentials - SP, OPT, FREQ, MD | [calculators.md](calculators.md) |
 | `mace defects` | Point-defect deck sets (charge states, calibration) and analysis | [defects/README.md](defects/README.md) |
 | `mace ions` | Charged systems - CHEMOD/DOPING/SPIN for ions and charged cells | [MACE commands](../DOCUMENTATION.md#mace-commands-primary-interface) |
-| `mace phonopy` | Phonons with phonopy - displaced supercells, then bands and DOS | [Phonons with phonopy](../DOCUMENTATION.md#phonons-with-phonopy-mace-phonopy) |
+| `mace tau` | Transport relaxation time from deformation potentials (BOLTZTRA) | [Transport relaxation time](../DOCUMENTATION.md#transport-relaxation-time-mace-tau) |
+| `mace transform` | Rotate or move atoms by exact angles and offsets (the GUI gizmos) | [GUI: Rotate and Move gizmos](gui.md#rotate-and-move-gizmos-116) |
 
 ### GUI
 
@@ -84,6 +89,7 @@ Extract, analyze, plot and query. `mace help results` prints this group.
 | Command | What it is for | More |
 |---|---|---|
 | `mace gui` | The MACE GUI in your browser - structures, plots, database, setup; `--slurm`: run it as a SLURM batch job on a compute node ([details](gui.md#run-it-as-a-slurm-job)); `connect`: start it on a cluster node from your computer (with `--slurm` too); `login-url`: a new one-time sign-in link for a running GUI; `diagnostics`: the server's part of a bug report (no GUI needed) | [gui.md](gui.md) |
+| `mace mcp` | Serve MACE's tools (structures, decks, jobs, outputs, materials.db) to MCP agents and clients over stdin/stdout; `--read-only`, `--root DIR`, `--list-tools`, `--config` | [mcp.md](mcp.md) |
 
 ### Setup and information
 
@@ -92,6 +98,7 @@ Run `mace site` first on a new cluster. `mace help setup` prints this group.
 | Command | What it is for | More |
 |---|---|---|
 | `mace site` | Show job-script site settings (--init, check, set/unset, suggest) | [Site settings](#site-settings-mace-site-sitetoml) |
+| `mace examples` | Example inputs and outputs - 5 material archetypes | [gui.md](gui.md#example-suite-examplessuite) |
 | `mace help` | This list, one group (mace help monitoring) or one command | `mace help --help` |
 | `mace version` | Show the MACE version (same as --version) | `mace version --help` |
 | `mace update` | Update MACE (and a cluster's) to a release, preview or main (docs/update.md) | `mace update --help` |
@@ -189,7 +196,21 @@ submit` with the plan for decks (see mace submit):
   `use_dispersion`; without `use_dispersion` the step keeps its parent's D3
   when the new functional has D3 parameters, so HSE06 on a B3LYP-D3 parent is
   HSE06-D3, and `"use_dispersion": false` drops it, as in the GUI's workflow
-  builder), `optimization_settings`, `optimization_type`,
+  builder), `basis_modifications` (`new_basis`: an internal set's name, or
+  with `"basis_set_type": "EXTERNAL"` a basis library such as
+  `full.basis.triplezeta` or a directory; either kind on any step, whatever
+  its parent had),
+  `tolerance_modifications` (`TOLINTEG`, `TOLDEE`), `grid_modifications`
+  (`{"new_grid": "XXLGRID"}`) and `scf_modifications` (`MAXCYCLE`,
+  `FMIXING` in percent, `METHOD` DIIS/BROYDEN/ANDERSON, `LEVSHIFT`
+  `[ISHIFT, ILOCK]` or `null` for none, `SMEAR` in hartree or `null`,
+  `SPINLOCK`, `TOLDEE`, `SPIN` true/false; a key left out keeps the
+  parent's record, and a MAXCYCLE set on a FREQ step is written as set, with
+  a warning under 200) and `kpoint_modifications` (`{"new_k_points": "8 16"}`:
+  the step's SHRINK, `"IS ISP"`, `"IS1 IS2 IS3"` per axis or `"auto"`; see
+  [the k-point mesh of a follow-up deck](#mace-opt2d12); left out, the step
+  keeps its parent's mesh)
+  for OPT, SP and FREQ steps, `optimization_settings`, `optimization_type`,
   `frequency_settings` for d12 steps, `d3_config`/`d3_settings` for
   BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL/ORBITALS, and on SP steps the SOC keys
   (`soc`, `soc_ecp`, `soc_basis`, `soc_guess`, `smear`, `soc_fmixing`; see
@@ -208,6 +229,25 @@ submit` with the plan for decks (see mace submit):
   of every job of the step, recoveries included, in place of the site's
   `[slurm] constraint`), `exclude`. The first step of a d12 start
   runs the decks as they are (resources only).
+- ELASTIC, EOS, QHA and CPHF steps come after an OPT or SP, and nothing is
+  built from them. Each structure's deck is the one `mace opt2d12` writes for
+  that calculation type from the OPT before the step (the SP in a chain
+  without one): its geometry, functional, basis set and SCF settings, SCF
+  TOLDEE at least 8 (QHA 10) and MAXCYCLE at least 200. Their one override is
+  `elastic_settings`, the module block as opt2d12 takes it (e.g.
+  `{"elastic_settings": {"mode": "ELAPIEZO", "numderiv": 5}}`; `mode` only on
+  ELASTIC steps; none: CRYSTAL's defaults), checked as opt2d12 checks it.
+  Their jobs are CRYSTAL jobs of 7 days (ELASTIC and QHA 7G per core, EOS and
+  CPHF 5G; a site's `[resources.ELASTIC]` etc. win). The planner asks
+  opt2d12's module questions for them; no ready-made template has them.
+- A TRANSPORT step's relaxation time (RELAXTIM, in its `overrides`):
+  `"relaxation_time"` is `"default"` (CRYSTAL's 10 fs), a number of fs, or
+  `"auto"`. With `"auto"`, a TAU step before it computes τ from deformation
+  potentials; the spec puts the TAU step there when the sequence has none
+  (the later steps' keys move up one: `TRANSPORT_4` is then `TRANSPORT_5`).
+  `"auto"` can go next to a `settings_file` (τ replaces the file's RELAXTIM);
+  a number cannot (set it in the file). See
+  [The TAU step](#the-tau-step-relaxation-time-for-transport).
 - `execution`: `max_jobs`, `walltime` (every step), `auto_progression`,
   `job_arrays`. By default a workflow has no `max_jobs` of its own: every
   workflow and manual submission shares your queue budget (see
@@ -637,7 +677,14 @@ mace opt2d12 --out-file OUT [OUT ...] | --d12-file DECK | --directory DIR [optio
 | `--config-file FILE` | Apply a saved configuration to every file (each keeps its own geometry and symmetry) |
 | `-y`, `--yes` | Apply `--config-file` without asking |
 | `--non-interactive` | Ask nothing; needs `--calc-type` |
-| `--calc-type SP\|OPT\|FREQ` | The calculation type for `--non-interactive` |
+| `--calc-type SP\|OPT\|FREQ\|ELASTIC\|EOS\|QHA\|CPHF\|PHONOPY` | The calculation type for `--non-interactive`, the menu's choices 1-8 (ELASTIC: ELASTCON, ELAPIEZO, PIEZOCON, PIEZOCP or PHOTOELA; see [Mechanical properties and phonopy](#mechanical-properties-and-phonopy-opt2d12-choices-4-8)) |
+| `--elastic-settings JSON` | ELASTIC/EOS/QHA/CPHF block settings: a JSON object or file, e.g. `{"mode": "ELASTCON", "numderiv": 5}` (the keys below) |
+| `--dim N N N` | PHONOPY: the supercell, three integers or nine (row-major; default: each lattice vector at least 10 Å) |
+| `--amplitude A` | PHONOPY: the displacement in Å (default 0.01, phonopy's) |
+| `--pm auto\|yes\|no` | PHONOPY: plus and minus displacements (default auto) |
+| `--cry-sym` | PHONOPY: each displaced cell's symmetry in its .ext (phonopy's CRY_SYM: fewer k-points; phonopy warns some space groups, e.g. R-3m, do not work) |
+| `--keep-shrink` | PHONOPY: keep the parent's SHRINK (default: divide it by the supercell size, rounding up; diagonal supercells) |
+| `--force` | PHONOPY: write the set into a non-empty folder |
 | `--opt-type TYPE` | FULLOPTG, ATOMONLY, CELLONLY, ITATOCEL, CVOLOPT or INTREDUN for a non-interactive OPT |
 | `--static-kpath` | Without seekpath, write the static HPKOT path for a 3D phonon dispersion (same as `MACE_STATIC_KPATH=1`) |
 | `--origin-setting S` | Origin setting: `auto` (default), `0 0 1`, ... |
@@ -647,6 +694,138 @@ mace opt2d12 --out-file OUT [OUT ...] | --d12-file DECK | --directory DIR [optio
 mace opt2d12 --out-file optimized.out --calc-type SP --non-interactive
 mace opt2d12 --directory opts --config-file sp_template.json --yes
 mace opt2d12 --d12-file deck.d12 --calc-type OPT          # a deck as the parent
+mace opt2d12 --out-file mat_opt.out --calc-type PHONOPY --non-interactive --dim 2 2 2
+```
+
+At "Select method type" or "Select functional category" you can type a
+functional's name (`PBE0`, `HSE06`, `UHF`, `r2SCAN`, ...) instead of the menu
+numbers: it sets the method, the family and the functional at once.
+
+The convergence levels every menu offers (`mace convert`, `mace opt2d12`, the
+workflow planner, the GUI), each printed with its values:
+
+| Level | SCF tolerances | Optimization convergence (OPTGEOM) |
+|-------|----------------|------------------------------------|
+| Standard | TOLINTEG 7 7 7 7 14, TOLDEE 7 | TOLDEG 0.0003, TOLDEX 0.0012, TOLDEE 7, MAXCYCLE 800 |
+| Tight | TOLINTEG 8 8 8 9 24, TOLDEE 9 | TOLDEG 0.0001, TOLDEX 0.0004, TOLDEE 8, MAXCYCLE 800 |
+| Very tight | TOLINTEG 9 9 9 11 38, TOLDEE 11 (FREQ's default) | TOLDEG 0.00003, TOLDEX 0.00012, TOLDEE 9, MAXCYCLE 800 |
+
+In `mace opt2d12`, a parent whose values are none of these levels gets one
+more choice, `5. Keep the parent's`, which is the default. A FREQ deck never
+loosens a parent's value: each TOLINTEG entry and TOLDEE is the larger of the
+parent's and Very tight's (the parent's own when it is a FREQ run).
+
+A config file can change the parent's SCF records without restating the rest:
+`"scf_modifications": {"MAXCYCLE": 300, "FMIXING": 40, "METHOD": "BROYDEN",
+"LEVSHIFT": [5, 1], "SMEAR": 0.005, "SPINLOCK": 0, "TOLDEE": 9}` (any subset;
+`null` for LEVSHIFT or SMEAR removes the record) and `"dft_grid": "XXLGRID"`
+write what the interactive "modify settings" answers would. A MAXCYCLE given
+there is written as given, also on a FREQ or ELASTIC/EOS/QHA/CPHF deck,
+which otherwise gets at least 200 cycles. Workflow steps use the same key.
+
+`"SPIN": true` or `false` in `scf_modifications` turns spin polarization on
+or off for this deck (DFT `SPIN`; a Hartree-Fock deck switches between UHF
+and RHF); left out, the deck keeps the parent's, and MACE's default stays
+spin-polarized. A deck that turns spin on writes SPIN alone, as MACE's own
+spin-polarized decks do (a SPINLOCK only where one is set, never ATOMSPIN);
+one that turns it off drops SPIN and SPINLOCK, and `SPIN: false` with a
+SPINLOCK is refused. Such a deck starts from a fresh SCF guess: a GUESSP the
+parent deck carried is dropped, the log says why, and the title ends with
+" - SPIN on (closed-shell parent), fresh SCF guess" (or "SPIN off ...").
+The GUESSP entry of the CRYSTAL23 manual (p. 114) asks for the same
+symmetry, atoms, basis functions and shells and says nothing of the spin;
+CRYSTAL's restart reader stops on a matrix of the other spin treatment
+(`ERROR **** READFG **** RESTART NOT POSSIBLE - OPEN-CLOSED SHELL
+INCOMPATIBILITY`, measured for a GUESSPNOSO deck from a closed-shell
+parent), so neither opt2d12 nor a workflow's GUESSP restart uses the
+parent's matrix across a spin change. A parent with an odd electron count
+("N. OF ELECTRONS PER CELL" in its output) cannot go closed shell: opt2d12
+writes nothing and says so. In a workflow spec, the spec check warns
+for each step that changes the spin of the step it starts from, and refuses
+SPIN on a SOC step (a two-component run treats spin itself) and a
+GUESSPNOSO restart from a step that runs closed shell. The CLI planner's
+Advanced OPT, SP and FREQ setups end with "Spin-polarized (y), closed shell
+(n) [keep current]".
+
+A follow-up deck keeps its parent's k-point mesh (the SHRINK record) unless
+a config file sets one: `"kpoint_modifications": {"new_k_points": ...}` (a
+workflow step's key, which the engine hands to opt2d12) or
+`"k_points_for_all_files"` (one mesh for every file of a batch; the plain
+`k_points` a saved template carries is the saving structure's own and is
+ignored). The value is CRYSTAL's SHRINK (manual p. 124): two numbers are the
+one-line `IS ISP` ("8 16"; ISP equal to IS suits an insulator), three the
+per-axis factors IS1 IS2 IS3 (written as `0 ISP` and the factors; a slab's
+third factor is 1, a polymer's second and third), one number n the mesh
+n n n, and `"auto"` MACE's own mesh from each structure's cell (the rule
+`mace convert` gives a CIF: 40 < k·L < 80 Å along each periodic direction).
+Factors the space or layer group makes equivalent must agree, or CRYSTAL
+stops with SHRINK BREAKS SYMMETRY: opt2d12 raises them to the larger one and
+says so (a cubic group ties all three, a tetragonal, trigonal or hexagonal P
+group the first two, a centered lattice all three; a slab follows its layer
+group's lattice). A changed mesh keeps the GUESSP restart: the manual asks
+the restart for the same symmetry, atoms, basis functions and shells and
+allows other computational conditions (p. 114), and the matrix read back is
+the direct-lattice density matrix. In a workflow the step after a changed
+one inherits the change. The CLI planner's Advanced OPT, SP and FREQ setups
+ask "k-point mesh [keep current]" after the spin question; blank keeps the
+parent step's mesh.
+
+The calculation-type menu is 1 SP, 2 OPT, 3 FREQ, then for a finished run's
+output 4 ELASTIC, 5 EOS, 6 QHA, 7 CPHF and 8 PHONOPY (their questions follow
+the method, basis, tolerance and SCF questions, whose defaults are the
+parent's; `--calc-type` with `--elastic-settings` or `--dim`, or a
+`--config-file` holding `"calculation_type"` and `"elastic_settings"` or
+`"phonopy_settings"`, asks nothing). FREQ is CRYSTAL's own FREQCALC; PHONOPY
+is phonopy's finite-displacement phonons. In a workflow the modules 4-7 are
+steps after an OPT or SP (see the spec's `steps` above); PHONOPY is not a
+workflow step.
+
+#### Mechanical properties and phonopy (opt2d12 choices 4-8)
+
+Choices 4-8 start from a finished, well-optimized run. A parent that is not a
+finished OPT or SP run is refused before anything is asked (`Refusing OUT:`
+then `[ABNORMAL_TERMINATION]`, `[SCF_NOT_CONVERGED]`, `[OPT_NOT_CONVERGED]` or
+`[FREQ_GEOMETRY]`); an ELASTIC, EOS or QHA run's own output and a RESTART are
+their own parent. Two-component (SOC) parents are refused: these modules
+optimize strained cells, which a 2c SCF cannot, and phonopy's supercells are
+written scalar.
+
+The modules' `--elastic-settings` keys (CRYSTAL23 manual ch. 9-10, 12-13;
+the questions ask the same):
+
+| Key | What it does |
+|---|---|
+| `mode` | ELASTIC: ELASTCON (default), ELAPIEZO, PIEZOCON, PIEZOCP or PHOTOELA; EOS, QHA and CPHF are their own `--calc-type` |
+| `numderiv`, `stepsize`, `deform` | Points per strain, strain step, which strains (six 0/1 flags) |
+| `clampion`, `nuchess`, `hessnum2`, `modepart`, `hessstep` | Clamped-ion only; nuclear relaxation from the internal-strain Hessian and its options |
+| `preoptgeom`, `pressure`, `presseos` | Optimize first; ELASTCON at a pressure (GPa) |
+| `seismdir`, `awesome` | Seismic velocities along extra directions; AWESoMe files |
+| `tolalpha`, `dynamic` | CPHF/KS tolerance; PHOTOELA at a wavelength (nm) |
+| `range`, `vrange`, `prange` | EOS volumes and printed ranges |
+| `qstep`, `points`, `temperat`, `scelphono`, `neglefre` | QHA settings |
+| `third`, `fourth`, `cphf_dynamic`, `damping` | CPHF hyperpolarizabilities and dynamic CPHF |
+| `restart` | `RESTART` or `RESTART2`: continue or re-analyze the parent run from its ELASINFO.DAT / EOSINFO.DAT. The parent's module settings are kept, and its file (`PARENT.ELASINFO.DAT`, which the job script copies back after a run, or the one in the parent job's scratch folder) is put next to the new deck under its name; refused when there is none |
+| `print` | Extended printing (PRINT), which the manual recommends: the questions' default for ELASTCON, ELAPIEZO, PIEZOCON, PHOTOELA and EOS (PIEZOCP, QHA and CPHF list none); `--elastic-settings` without it, and a workflow step, write CRYSTAL's defaults |
+
+PHONOPY writes a folder named as any deck of the parent, with the supercell
+as its type (`mat_opt_ph222_PBE0_optimized/`), holding one deck per
+displaced supercell (`<folder>_disp-NNN.d12`, written by opt2d12's own deck
+writer with an `EXTERNAL` geometry and `GRADCAL` before the final `END`), its
+`.ext` (phonopy's CRYSTAL writer; the job script stages it as fort.34),
+`phonopy_disp.yaml` and `mace_phonopy.json`. The parent needs its `.d12` and
+must be a 3D crystal without atom-indexed records (SPINLOCK, ATOMSPIN, GHOSTS,
+CHEMOD/DOPING) or an unlocked magnetic state; every refusal names its reason.
+The parent's SHRINK is divided by the supercell size in each direction,
+TOLDEE is at least 10 and MAXCYCLE at least 200; GUESSP is dropped. Submit the
+set with a plain `mace submit DIR` and the walltime opt2d12 prints (untracked,
+with no workflow progression); when its last job ends, the completion callback
+runs [`mace analyze phonopy DIR`](#mace-analyze) (where phonopy is installed),
+or run it yourself. Install phonopy with `pip install 'phonopy<5'`.
+
+```bash
+mace opt2d12 --out-file opt.out --calc-type ELASTIC --non-interactive --elastic-settings '{"mode": "ELAPIEZO", "numderiv": 5}'
+mace opt2d12 --out-file mat_opt.out --calc-type EOS --non-interactive --elastic-settings '{"range": [0.92, 1.08, 8]}'
+mace opt2d12 --out-file mat_opt.out --calc-type PHONOPY --non-interactive --dim 2 2 2
 ```
 
 More: [One template, many structures](../DOCUMENTATION.md#one-d12-template-for-many-structures-mace-opt2d12),
@@ -675,11 +854,141 @@ mace opt2d3 --input OUT [--calc-type TYPE] [options]   |   mace opt2d3 --batch [
 | `-o`, `--output-dir DIR` | Where the decks go (default: beside the input) |
 | `--static-kpath` | Without seekpath, write the static HPKOT path for a 3D BAND (same as `MACE_STATIC_KPATH=1`) |
 | `--edit-kpath` | BAND: ask "Edit the band k-path?" when the answers are piped in too (at a terminal it is always asked) |
+| `--doss-step EV\|PRESET` | DOSS: the energy step of the DOS grid in eV, or `screening` (0.2), `standard` (0.02, the default) or `fine` (0.005); the resolution question is not asked |
+| `--doss-points N` | DOSS: this many energy points, written as given (2-99997; e.g. 1000 to screen many structures) |
+| `--doss-window LO HI\|all` | DOSS: LO to HI eV around E_F (e.g. `-15 10`; -20..+15 is a 3D or 2D material's default when every band would need more than 5000 points), or `all`: every band. A window needs a trustworthy E_F (the SCF's, else a BAND or DOSS run of it), else the deck keeps all bands |
+| `--doss-conduction-bands N` | DOSS: a 1D material's bands by index (its default) run to N bands above the highest occupied one (default: as many as the valence bands, at least the minimal valence shells' bands and 4) |
+| `--transport-k SPACING\|PRESET` | TRANSPORT: the k spacing (1/Å, 2π included) of BOLTZTRA's NEWK mesh, or `screening` (the parent SCF's mesh), `standard` (the default) or `fine`; never coarser than the parent's mesh |
+| `--transport-is IS` | TRANSPORT: this NEWK shrinking factor, as given (ISP = 2 IS) |
+| `--non-interactive` | Answer every question with its default (Enter) |
 
 ```bash
 mace opt2d3 -i optimized.out -t BAND
 mace opt2d3 --batch --calc-type DOSS
 ```
+
+BAND: since 1.1.6, for a 3D crystal Enter at "Select format (1-4) [4]" writes
+SeeK-path's full path (format 4, k-point vectors, a title with "SeeKPath");
+1.1.5 wrote the high-symmetry label path (format 1), which answering `1` still
+gives. For a slab or a polymer the default stays that label path ("[1]"), the
+deck 1.1.5 wrote; answer `4` for SeeK-path's path of the corresponding 3D
+group. A slab in a non-centrosymmetric layer group then gets the path without
+the primed time-reversal copies (kept for a two-component parent, where -k is
+not k), and a polymer's path ends at X (k = 1/2). Workflow BAND steps,
+quick-start and progressing submissions write the same deck as Enter. A slab's
+path is cut to its plane and a polymer's to its chain. A 3D
+SeeK-path path needs the seekpath package: without it the deck stops with the
+install command, unless `--static-kpath` (or `MACE_STATIC_KPATH=1`) asks for
+the static table path.
+
+DOSS: since 1.1.6 the DOS grid is set by its energy step. "Select energy
+resolution (1-5) [2]" offers Screening (0.2 eV), Standard (0.02 eV, Enter),
+Fine (0.005 eV), another step, or a number of points, each preset with the
+points and step it gives for this output. With a step the deck's NPT (the
+second number of the DOSS record) is ceil(span / step), at least 1000 and at
+most 99997, CRYSTAL's real maximum: the manual sets none, but DOSS.DAT's header
+prints NPT + 2 in five digits (a 200000-point run wrote "NEPTS *****"). A
+number of points is written as given (2-99997), however coarse, for screening
+many structures quickly. CRYSTAL spreads the points from the bottom of the
+first band to the top of the last (manual, DOSS, p.320), and no output before
+the DOSS run prints that span, so for a band range MACE estimates it from the
+atoms: the deepest core level (an ECP atom's semicore band) to about 20
+Hartree, 790 eV for diamond, where the run finds 890.
+
+Every band of an all-electron basis spans hundreds of eV, so a fine step there
+needs tens of thousands of points (diamond at Standard: 39552). Above 5000
+points the deck covers the energies around E_F instead, on every route: opt2d3
+says so and asks, and Enter, `--non-interactive`, a settings file, workflow
+steps and Setup write the same deck, with a warning naming the opt-out
+`--doss-window all` (opt2d3's No; the setting `all_bands`). What it covers
+depends on the periodic dimensionality, because CRYSTAL needs an energy
+window's bounds (BMI, BMA) in band gaps: on the MSU HPCC (CRYSTAL23) a 1D
+polyacetylene DOSS whose upper bound fell inside a band stopped with "double
+free or corruption", with or without projections, while the same bands by
+index ran.
+
+- **3D and 2D: a window**, -20 to +15 eV around E_F (`DOSS_DEFAULT_WINDOW_EV`;
+  "Use a window around E_F (-20 to +15 eV) instead? [Y/n]", bounds editable).
+  It keeps the whole valence band of a carbon or oxide material (diamond's is
+  about 21 eV wide) and leaves out the core levels and the high virtual bands;
+  its points follow from the same step (1750 at Standard). When a BAND run of
+  the same SCF is beside it, opt2d3 moves the bounds outward, never inward, into
+  the nearest gaps between its bands (0.2 eV from a band edge, at most 1 eV
+  into the gap, and only to a gap within 5 eV: a 3D material's conduction bands
+  overlap into one continuum) and says which bound moved and why: diamond's
+  lower bound goes to 1 eV below its valence band, -24.2 eV. A window you give
+  (`--doss-window LO HI`, other bounds) is written as given.
+- **1D: bands by index** (INZB, IFNB), never energies ("Use bands 3 to 12 by
+  index instead? [Y/n]", then "Conduction bands above the highest occupied
+  band"). From the first band above the core (the SCF output's CORE ELECTRONS
+  PER CELL / 2, plus the semicore orbitals an ECP keeps, e.g. Ag's 4s 4p) to
+  the highest of: the minimal valence shells' bands (s + p, H 1, + d for a
+  transition metal), as many bands above the highest occupied one as below it,
+  and 4 above it; `--doss-conduction-bands N` (the setting `conduction_bands`)
+  takes N above it instead. Polyacetylene: bands 3 to 12, up to E_F+16.6 eV.
+  The points follow from the bands' span: a BAND run of the SCF gives it (plus
+  1 eV), else 50 eV is assumed (the suite's valence + as many conduction bands
+  span 36-49 eV). After the run, a band-index DOS that stops below E_F+15 eV
+  gets a note naming `--doss-conduction-bands` (`mace analyze`:
+  `doss_reach_note`; the DOS plots of `mace plotting` and the GUI).
+- **0D**: no DOSS (CRYSTAL refuses a molecule).
+Inside the window the DOS is the all-bands DOS: a band that crosses a bound is
+included (an HPCC probe on diamond). The range question's "Energy window
+around Fermi level" starts at the same -20..+15 eV. A window needs a trustworthy E_F, since
+CRYSTAL's BMI/BMA are absolute energies: the SCF's, else a BAND or DOSS run of
+the same SCF beside it (same title; the example suite's `<entry>/BAND` beside
+`<entry>/SP`, a workflow's step folders). After an SCF that ended with its
+spins locked (SPINLOCK) CRYSTAL keeps a -1.0 Hartree placeholder; without a
+BAND or DOSS run MACE says so and writes all bands, never a
+window around the placeholder. A grid coarser than 0.05 eV is warned about:
+the DOS effective masses and band-edge character need a finer one.
+`--doss-step`, `--doss-points`, `--doss-window` and `--doss-conduction-bands`
+set these without the questions.
+
+Workflow DOSS steps (the engine default, the planner's Basic answer, its
+Advanced questions, the builder's step form), quick-start and progressing
+submissions use Standard and the same window rule unless the plan says
+otherwise. A settings file (`--config-file`) or a planned
+workflow that names a number of points (`n_points`, 1000 in the 1.1.6 preview)
+keeps it; `energy_resolution` (`screening`, `standard`, `fine`, `step` with
+`energy_step_ev`, or `points`) names the others, and `energy_window` (Hartree
+around E_F) a window. The plots read the deck's points as they are; `mace
+plotting`'s DOS smoothing only smooths what is drawn.
+
+TRANSPORT: MURANGE and TDFRANGE are absolute energies in CRYSTAL (eV), and a
+range relative to E_F (the default, -2..+2 eV for μ and -5..+5 eV for the
+transport distribution) is placed with the same trustworthy E_F. TDFRANGE
+follows E_F since 1.1.6 too: written as -5..+5 eV absolute it missed the μ
+window of any material with E_F below -3 eV (σ was zero for the example SOD
+and h-BN). Without a trustworthy E_F, `--config-file` and workflow steps
+refuse the deck with the reason, and the questions ask for absolute energies;
+before, the deck was written at -2..+2 eV absolute, inside diamond's gap.
+
+TRANSPORT's k mesh: BOLTZTRA sums band velocities over the NEWK k points on
+0.01 eV bins (manual eq. 14.4, p.314), and the SCF's mesh, which converges
+energies, leaves that sum spiky. Since 1.1.6 the NEWK mesh has its own
+setting, "Select k-point mesh (1-5) [2]": Screening (the parent SCF's mesh),
+Standard (Enter), Fine, another k spacing, or a shrinking factor IS as given;
+`--transport-k SPACING|screening|standard|fine` and `--transport-is IS` set it
+without the question, and settings files and workflow steps use Standard. A
+spacing (1/Å, 2π included) gives IS = the largest ceil(|b_i| / spacing) over
+the periodic reciprocal vectors, never below the parent's IS; ISP = 2 IS. The
+presets follow the periodic dimensionality (Standard 0.064 / 0.015 / 0.009 1/Å
+for 3D / 2D / 1D, Fine 0.045 / 0.010 / 0.006): measured on the example suite's
+five materials, they are the coarsest spacings at which σ is within 5% and S
+within 5 µV/K of the densest run at 300 K (diamond IS 48, SOD 16, h-BN 194,
+graphene 197, polyacetylene 284; the SCF meshes were IS 5-18 and up to 100% off
+in σ). A 1D or 2D run takes seconds at these meshes, a small 3D cell minutes
+(diamond IS 48: under 2 min on 4 cores, SOD IS 16: 24 min). BOLTZTRA writes a
+scratch file a rank (fort.70.peN, 4.5 GB each for diamond at IS 48) that
+nothing reads afterwards; the properties job script (and `mace run`) puts it
+on the node's local disk (`$TMPDIR`, else `/tmp`, when 64 GB are free:
+`MACE_BOLTZTRA_GB`), where on the shared scratch file system the same run took
+an hour. After the run, the transport plot
+(`mace gui`, `mace plotting`'s transport plots) and `mace analyze`
+(`transport_mesh_note`) say when a mesh looks too coarse: below 60% of the
+Standard IS of the cell, or a 300 K Lorenz number in the bands more than 30%
+from Sommerfeld's 2.44e-8 W Ω/K².
 
 More: [Crystal_d3/README.md](../Crystal_d3/README.md).
 
@@ -747,11 +1056,12 @@ mace submit [FILE_OR_DIR ...] [options]
 |---|---|
 | `-i`, `--interactive` | Choose cores, memory and walltime |
 | `--nosubmit` | Write the job scripts only |
-| `--overwrite-sh` | Write new job scripts instead of reusing existing `.sh` files; also required for `-i`/`--walltime`/`--exclude-*` to apply to a script edited by hand or written before 1.1.5 |
+| `--overwrite-sh` | Write new job scripts instead of reusing existing `.sh` files; also required for `-i`/`--walltime`/`--exclude-*` to apply to a script edited by hand or written before 1.1.5 (`--progress` and `--progress-plan` never use or replace a deck's `.sh`, so it does not apply to them) |
 | `--walltime TIME` | Walltime for these jobs (e.g. `2:00:00`) |
 | `--track` | Record the jobs in materials.db (monitor, analysis, recovery) |
-| `--progress TEMPLATE` | Plan the steps that follow and run them as each job ends (a template from `mace workflow --show-templates`, or `interactive`); implies `--track` |
-| `--progress-plan PLAN` | Submit the decks as the first step of a plan written by `mace workflow --spec SPEC --write-plan` (decks the plan does not list are left out of a folder); they then progress as the plan says; implies `--track`, and the plan's `job_arrays` setting applies |
+| `--progress TEMPLATE` | Plan the steps that follow and run them as each job ends (a template from `mace workflow --show-templates`, or `interactive`); implies `--track`. The decks start the workflow as with `--progress-plan`: each is copied into its step folder and runs there with a new job script, and a deck whose `.out` is a finished run of its type is not run again. A deck whose type has no step in the template (an ELASTIC, EOS, QHA or CPHF deck is in none) is refused, before a plan is written |
+| `--progress-plan PLAN` | Submit the decks as the first step of a plan written by `mace workflow --spec SPEC --write-plan` (decks the plan does not list are left out of a folder); they then progress as the plan says; implies `--track`, and the plan's `job_arrays` setting applies. Each deck is copied into `workflow_outputs/<id>/step_NNN_<TYPE>/<material>/` and runs there with a new job script (its own `.sh` and outputs are left as they are, so `--overwrite-sh` does not apply); a deck whose `.out` is a finished run of its type is not run again, and its next step starts from that output. With `--array` the step's job arrays are written in its step folder too |
+| `--rerun-finished` | With `--progress` or `--progress-plan`: run every deck, also one whose `.out` is a finished run of its type (a deck changed after its `.out` was written runs again without it) |
 | `--array` | Decks with identical resource requests share one SLURM job array |
 | `--max-running N` | With `--array`: at most N tasks of each array at once |
 | `-y`, `--yes` | Without `--track`: submit the decks that do not fit in your queue budget from the reserve without asking |
@@ -821,9 +1131,12 @@ folder, or show how one run converged.
 
 ```
 mace analyze --extract-properties DIR [options]
+mace analyze --list-properties [--calc-type TYPE] [--derived] [--gui] [--units] [--json|--markdown]
 mace analyze --convergence FILE.out [--json]
 mace analyze --convergence FILE.out --energy [--segments continuous|separate] [--relative-to REF] [--unit UNIT]
 mace analyze --convergence FILE.out --scf [--step latest|first|N|point:N] [--unit UNIT]
+mace analyze elastic OUT [--json] [--epsilon E] [--compare OUT ...] [--fit F] [--plot NAME ...] [--shape surface|planes] [--format png|svg|pdf] [-o DIR] [--style S]
+mace analyze phonopy DIR [--check] [--band auto|"q ..."|none] [--mesh 100.0|"a b c"] [--nac-from FREQ.out] [--plot]
 ```
 
 | Option | What it does |
@@ -832,21 +1145,31 @@ mace analyze --convergence FILE.out --scf [--step latest|first|N|point:N] [--uni
 | `--output-file FILE` | One output instead of a folder |
 | `--material-id ID` | Filter by, or override, the material id |
 | `--calc-id ID` | Override the calculation id |
-| `--calc-type TYPE` | Filter by calculation type (OPT, SP, FREQ, BAND, DOSS) |
+| `--calc-type TYPE` | Filter by calculation type (OPT, SP, FREQ, BAND, DOSS); with `--list-properties`, that type's keys |
 | `--filter-material ID` | Only this material |
 | `--filter-type TYPE` | Only this calculation type |
 | `--db-path PATH` | Database (default: materials.db) |
 | `--fragments` | Per-fragment Mulliken charges for neutral runs too |
+| `--reference NAME=FILE\|CALC_ID` | A reference run a derived property needs (a bulk, the elements, a clean slab): its output or its calc_id in the database; repeat for several ([docs/properties.md](properties.md)) |
+| `--no-derived` | Compute no derived property; their stored rows stay (also `MACE_DERIVED=0`) |
+| `--skip-property NAME` | Do not compute this derived property, repeatable; its stored rows stay (also `MACE_SKIP_PROPERTIES=NAME,NAME`) |
 | `--register` | First record the folder's completed calculations (materials and calculations rows), so `mace database` and its exports list them. On by default for a folder; not for `--output-file` |
+| `--register-output-only` | With `--output-file --register`: record that output only, not the other completed outputs of its folder and the folders below it (the GUI's Extract) |
 | `--no-register` | Store the properties only: outputs without a calculation record share one set of rows per material, and `mace database` lists no material for them |
 | `--dry-run` | Write nothing; list each output as new, changed, unchanged, ... |
-| `--json` | With `--dry-run` or `--convergence`: JSON |
+| `--json` | With `--dry-run`, `--convergence` or `--list-properties`: JSON |
 | `--skip-unchanged` | Only new and changed outputs of tracked calculations |
 | `--backup` | Back up the database into `<db dir>/backups/` first |
 | `--keep-backups N` | With `--backup`: keep N (default 3) |
 | `--progress-json` | One JSON line per file on stdout (a build that continues one that stopped starts with `{"resumed": {"already": N, "total": M}}`) |
 | `--kappa-lattice VALUE\|FILE` | TRANSPORT runs: the lattice thermal conductivity κ_L in W/(m·K) (one value, or a CSV of `T,kappa_L` rows) for the total ZT |
 | `--tau-fs FS` | With `--kappa-lattice`: the relaxation time to evaluate the total ZT at (default: the run's RELAXTIM) |
+| `--list-properties` | The property inventory: every key the database stores, its unit, the calculation types it applies to and where it comes from (the extractor's own keys and the derived properties of `mace/properties`); writes nothing ([docs/properties.md](properties.md)) |
+| `--derived` | With `--list-properties`: the derived properties only |
+| `--gui` | With `--list-properties`: what the GUI computes or shows from a run, and which of it the database lacks |
+| `--units` | With `--list-properties`: the display units the GUI's Properties tab converts between (per dimension, with the factors in `--json`), its presets, and the quantities stored under several keys that it shows as one row |
+| `--markdown` | With `--list-properties`: the markdown of docs/properties.md's inventory |
+| `--update-doc FILE` | With `--list-properties`: rewrite the generated inventory of FILE |
 | `--convergence FILE` | Per optimization point: SCF cycles, energy change, gradients and displacements against their thresholds |
 | `--energy` | With `--convergence`: the energy along the run as the GUI's energy card copies it (point, FINALRUN segment, frame, E in Ha, ΔE) |
 | `--segments MODE` | With `--energy`: `continuous` (default: one reference across the FINALRUN restarts) or `separate` (one per segment) |
@@ -864,6 +1187,15 @@ of 10-20 are common near a band edge). κ₀ (KAPPA.dat; the manual's κₑ of
 Eq. 14.3 is this zero-field coefficient) and the electronic
 κₑ = κ₀ − T·σ·S² at the averaged peak are stored as
 `transport_kappa0_at_zt_max` and `transport_kappa_electronic_at_zt_max`.
+A point where κₑ is below the precision of the files is left out of ZTₑ:
+|κ₀ − T·σ·S²| < 2×10⁻⁶ κ₀ (the `transport` record counts them as
+`zt_points_kappa_e_below_precision`). The files print 8 significant digits,
+so κₑ computed from them is uncertain by up to 2×10⁻⁷ κ₀ where T·σ·S² ≈ κ₀,
+and 2×10⁻⁶ κ₀ (10 times that) keeps κₑ to 10%. Such points are rounding
+noise: ZTₑ reached 10⁹ at them. The total ZT keeps such a point only while
+that uncertainty is at most 1% of κ_L (there κₑ is taken as its value, at
+least 0). The run's `.dat` files are found as `.dat` or `.DAT` (MACE's own
+runs write `.DAT`).
 
 S, σ and κ₀ are tensors (CRYSTAL23 manual pp. 314-315: SEEBECK.dat has the
 nine components, SIGMA.dat and KAPPA.dat the six of a symmetric tensor; a
@@ -944,7 +1276,8 @@ A later extraction without `--kappa-lattice` keeps these rows while the run's
 build's change detection: a `touch` changes nothing). If the files have
 changed, it removes them and says so. Extract again with `--kappa-lattice` to
 replace them. The GUI's transport plot shows the same
-numbers (its ZT tab).
+numbers (ZT in its Quantity choice), and `mace plotting` draws them (see
+[Transport plots](#transport-plots-mace-plotting---transport)).
 
 ```bash
 mace analyze --extract-properties runs/ --register --skip-unchanged --backup
@@ -955,11 +1288,57 @@ mace analyze --convergence mat1_opt.out --energy --segments separate
 mace analyze --convergence mat1_sp.out --scf --unit meV
 ```
 
+#### Results of the mechanical-property and phonopy runs
+
+`mace analyze elastic OUT ...` reads a finished ELASTIC, EOS, QHA or CPHF run
+(opt2d12 choices 4-7): the tensors, the Voigt-Reuss-Hill moduli, Born
+stability, sound velocities, EOS fits, QHA thermodynamics, CPHF optics, and
+the Born charges of a FREQ run with INTCPHF.
+
+| Option | What it does |
+|---|---|
+| `--json` | One JSON object per file (with `derived` for ELASTIC, `eos.quality`, `qha.thermo` and `qha.gruneisen`, `optics` for a dielectric tensor or β, and `born` for a FREQ run with INTCPHF: Born charges, ε0 and the computed LO-TO splitting; `warnings`: what is unphysical and not stored, as the report's WARNING lines) |
+| `--plot NAME` | Draw a plot of the run (repeatable): `youngs`, `compressibility` (ELASTIC: directional Young's modulus and linear compressibility), `shear`, `poisson` (ELASTIC: G(n, m) and ν(n, m), the minimum and maximum over m ⊥ n, ELATE's envelopes), `sound` (ELASTIC: Christoffel phase and group velocities in the xy, xz and yz planes), `piezo` (ELAPIEZO/PIEZOCON: the longitudinal coefficient d_L(n), or e_L(n) without d), `eos`, `pv`, `bp`, `vp`, `residuals`, `enthalpy` (EOS: E(V), P(V), B(P), V/V0(P), each fit's residuals with its RMS, H(P) = E + PV per formula unit), `volume`, `vratio`, `expansion`, `bulk`, `heat`, `gamma`, `free`, `entropy`, `fv` (QHA: V(T), V/V0 and a/a0, α(T), B(T), Cp and Cv, the Grüneisen γ, F(T), S(T) and the F(V) family with its minima; the last four need the per-volume harmonic blocks or the PVT table of a complete output), `epsilon`, `refractive`, `absorption` (CPHF DYNAMIC: ε(ω), n(ω) and κ, the absorption coefficient with DAMPING), `indicatrix` (CPHF: the index ellipsoid), `shg` (CPHF with β: \|d(n)\|, `--shape surface\|planes`), or `all`; written as `<stem>.<name>[_<shape>].<fmt>` beside the output. The GUI's results document draws the same arrays (its Copy CLI Command prints this line) |
+| `--shape surface\|planes` | `youngs`, `compressibility`, `shear`, `poisson` and `piezo` of a 3D run as a 3D surface (default) or polar cuts in the xy, xz and yz planes (a slab always draws its in-plane polar plot; `piezo` adds the cut through z and its largest direction when the principal planes miss it) |
+| `--compare OUT`, `--fit F` | EOS: another phase's EOS output (repeatable; the same composition, compared per formula unit): the text and `--json` (`transitions`) give the pressures where the enthalpies cross, and `--plot enthalpy` draws H − H_ref of each phase; `--fit` picks the fit (`birch_murnaghan` by default, `murnaghan`, `poirier_tarantola`, `vinet`) |
+| `--epsilon E` | The static, stress-free relative permittivity ε^T (one value, or `"EXX EYY EZZ"`, or nine) for the piezoelectric coupling k²(n) = d_L²/(s_L ε0 ε_L); without it the run's electronic ε∞ is used when it prints one (an upper bound), else k² is not given |
+| `--format F`, `-o DIR`, `--output-dir DIR`, `--style S` | With `--plot`: png (default), svg or pdf (repeatable); the folder; the plot style of `mace plotting --style` |
+
+```bash
+mace analyze elastic mat_opt_elastcon_PBE0_optimized.out --json
+mace analyze elastic mat_elastcon.out --plot youngs --shape planes --format svg
+mace analyze elastic mat_elastcon.out --plot shear --plot poisson --plot sound
+mace analyze elastic mat_elapiezo.out --plot piezo --epsilon 6.8 --json
+mace analyze elastic mat_eos.out --plot all -o figures
+mace analyze elastic diamond_eos.out --compare lonsdaleite_eos.out --plot enthalpy
+```
+
+`mace analyze phonopy DIR` reads a phonopy displacement set (opt2d12 choice
+8): it checks every displaced output (normal termination, SCF converged, one
+force row per atom, the printed geometry is its displaced cell) and stops on
+any problem, then writes FORCE_SETS, phonopy_params.yaml, band.yaml,
+mesh.yaml, total_dos.dat and thermal_properties.yaml (needs phonopy). The
+completion callback of the set's last job runs it with these defaults.
+
+| Option | What it does |
+|---|---|
+| `--check` | Only check the outputs |
+| `--band auto\|"q ..."\|none`, `--band-labels`, `--band-points N` | The band path (default: SeeK-path) |
+| `--mesh 100.0\|"a b c"` | The DOS mesh |
+| `--tmin`, `--tmax`, `--tstep` | The temperature range (K) |
+| `--nac-from FREQ.out` | Born charges and dielectric tensor from a Gamma FREQCALC with INTENS + INTCPHF |
+| `--plot` | Write band_dos.pdf |
+
+```bash
+mace analyze phonopy mat_opt_ph222_PBE0_optimized --plot
+mace analyze phonopy mat_opt_ph222_PBE0_optimized --nac-from mat_freq.out
+```
+
 ### mace plotting
 
 Plots from CRYSTAL outputs: band structures, DOS, structures, cube
-volumetrics, orbitals (ORBITALS), FREQ normal modes and IR/Raman spectra.
-With no mode flag it asks.
+volumetrics, orbitals (ORBITALS), FREQ normal modes, IR/Raman spectra and
+BOLTZTRA transport data. With no mode flag it asks.
 
 **Exit status:** 0 when every requested figure was drawn; 1 when a requested
 kind has no files or any figure was not drawn (a file error, a band + DOS
@@ -973,7 +1352,7 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 
 | Option | What it does |
 |---|---|
-| `--band`, `--dos`, `--band-dos`, `--structure`, `--cube`, `--orbitals`, `--freq` (or `--vibmodes`), `--ir`, `--raman`, `--spectra`, `--bz`, `--all` | What to plot (`--band-dos`: each band structure with its run's DOS in one figure on a shared energy axis, the GUI's band + DOS view, written as `<material>.BAND_DOS.png`; its FILE is either file of the run; `--spectra`: IR and Raman; `--bz`: the first Brillouin zone with the k-path; `--all`: everything found, band + DOS figures too) |
+| `--band`, `--dos`, `--band-dos`, `--phonon-band-dos`, `--structure`, `--cube`, `--orbitals`, `--freq` (or `--vibmodes`), `--ir`, `--raman`, `--spectra`, `--transport`, `--bz`, `--all` | What to plot (`--band-dos`: each band structure with its run's DOS in one figure on a shared energy axis, the GUI's band + DOS view, written as `<material>.BAND_DOS.png`; its FILE is either file of the run; `--phonon-band-dos`: a phonon dispersion with its phonon DOS on a shared frequency axis, the GUI's Add Phonon DOS… / Add Phonon Bands… figure, written as `<material>.PHONON_BAND_DOS.png`: zero frequency is shared (no Fermi level), the unit is `--units cm-1` (default), `THz` or `meV`, an imaginary mode shows below zero on both panels, an electronic file is refused, and plotly draws it (matplotlib has no phonon figure); `--band-dos` on a phonon run's data writes the same figure and name; `--spectra`: IR and Raman; `--transport`: BOLTZTRA data, see [Transport plots](#transport-plots-mace-plotting---transport); `--bz`: the first Brillouin zone with the k-path; `--all`: everything found, band + DOS figures too) |
 | `-d`, `--directory DIR` | Where to look (default: here) |
 | `-o`, `--output DIR` | Where the plots go (band and DOS: beside the data when not given) |
 | `--backend plotly\|matplotlib` | Band, DOS and band + DOS renderer. `plotly` (default when plotly and kaleido can export here) draws the GUI's figure: the same code, colors, line widths, legends and k labels as the GUI's plot pane at a light plot background, written by kaleido (PNG at 300 dpi, `--dpi`; the size in the PNG's metadata). `matplotlib` draws the figures of MACE 1.1.5 and earlier (with the defaults below aligned to the GUI's); MACE falls back to it, saying so once with the reason and the install line, where plotly or kaleido is missing (an HPCC's plain `python3`) or cannot export (plotly 7 needs kaleido 1, which needs Chrome; MACE pins `plotly>=5.0.0,<6.2` with `kaleido==0.2.1`). Also `mace-folder.toml` / `site.toml` `[plots] backend` and `MACE_PLOT_BACKEND` |
@@ -981,13 +1360,16 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 | `--spin-colors auto\|mace\|blue-red\|black-vermilion\|custom` | Band and DOS: the color pair (spin up / down, a closed-shell run's bands and DOS total), as the GUI's Color pair. `auto` (default): the style's: blue/red (#1f4e9c / #c0392b, dark plot #7aa7f0 / #f08a7c) in `default` and `presentation`, black/vermilion in `publication`, the style's own pair in `grayscale` and `colorblind`; `mace` (MACE pink/cyan, #e0218a / #00a0a4); `custom`: `--spin-up-color`/`--spin-down-color` |
 | `--spin-up-color HEX`, `--spin-down-color HEX` | Band and DOS: a custom spin pair (#rrggbb; given alone, they replace that color of the style's pair). The DOS total is drawn in the pair too |
 | `--band-color HEX` | Band and DOS: with `--band-style single`, the color of a run that is not spin-polarized (closed shell, or α = β): its bands and one-sided DOS total, with no spin legend. Default: the color pair's first color. A spin-polarized run keeps the color pair. Also `[plots] band_color` |
-| `--band-style auto\|single\|overlay\|ink` | Band and DOS, plotly backend (`--backend matplotlib` ignores it): a closed-shell run's bands, as the GUI's Band style. `single`: one solid line in the color pair's first color (the DOS total too); `overlay`: that line with a dashed line in the second color on top; `ink`: the neutral ink color (the 1.1.6 preview's look). `auto` (default): `single` with a gap at E_F, `overlay` for a metal. A spin-polarized run always draws spin up solid, spin down dashed. Also `[plots] band_style` |
+| `--band-style auto\|single\|overlay\|ink` | Band and DOS, plotly backend (`--backend matplotlib` ignores it): a closed-shell run's bands, as the GUI's Band style. `single`: one solid line in the color pair's first color (the DOS total too); `overlay`: that line with a dashed line in the second color on top; `ink`: the neutral ink color (the plot's text color). `auto` (default): `single` with a gap at E_F, `overlay` for a metal. A spin-polarized run always draws spin up solid, spin down dashed. Also `[plots] band_style` |
 | `--spin-down-style dash\|dot\|dashdot\|solid` (or `--spin-style`), `--spin-down-solid` | Band and DOS: spin down's (β's) line style (default dash, for colorblind safety; spin up solid). With both spins on a DOS the dash means spin down only: projections are solid, told apart by color |
 | `--dos-colors MODE` | DOS projections (the GUI's DOS projections; `--dos-projections` is the same flag): which projections and their colors: `auto` (default: one element by orbital, two or three element × orbital, more by element), `total`, `element` (the element's color from the palette, darkened where too light), `orbital` (s, p, d, f hues), `element-orbital` (shades of each element's color, the strongest for the element's largest projection) |
 | `--no-dos-total`, `--dos-total` | DOS: without the total (an ink line over a light fill of its color; with both spins the spin pair, each side filled lightly in its spin's color), or with it (the default; `--dos-total` overrides a `mace-folder.toml`'s `dos_total = false`) |
 | `--dos-smooth EV` | DOS: Gaussian smoothing of the drawn curves, sigma in eV (display only, labeled in the plot; e.g. `0.05`, which takes the spikes off and keeps the structure). `0`: off (the default). `[plots] dos_smooth`, the GUI's DOS smoothing |
 | `--dos-spin auto\|mirrored\|overlaid` (or `--spin-dos`) | DOS spin layout: `auto` (default) mirrors a spin-polarized run and draws a closed-shell or α = β run one-sided (an α = β run as the α + β total), as the GUI |
-| `--units eV\|meV\|Ha\|kJ/mol\|kcal/mol` | Band and DOS energy unit (plotly; default eV, or the folder's `[units] energy`) |
+| `--units eV\|meV\|Ha\|kJ/mol\|kcal/mol\|cm-1\|THz` | Band and DOS energy unit (plotly; default eV, or the folder's `[units] energy`). `cm-1` and `THz` are for the frequencies of a phonon fort.25 (default there cm-1; a phonon plot takes cm-1, THz or meV); an electronic plot given either is drawn in eV |
+| `--f25-run N` | A fort.25 (`.f25`) that holds several runs (CRYSTAL appends to it): the Nth, counted from 1 (default: the last, the one the BAND.DAT/DOSS.DAT beside it holds) |
+| `--f25-domain auto\|electronic\|phonon` | A fort.25 of bands or DOS: electronic (energies, hartree) or phonon (frequencies, cm⁻¹); `auto` (default) reads it from the run's output beside it and the file name |
+| `--no-fermi-line`, `--no-k-labels`, `--no-spin-labels` | Band and DOS, plotly: leave out the dotted Fermi level line, the k-point labels under the bands, or the "up" and "down" words over a mirrored DOS (the GUI's Reference and Labels menus) |
 | `--width IN`, `--height IN` | Band, DOS and band + DOS figure size in inches. Default: plotly the GUI pane's size (band and band + DOS 7.9 x 4.4 in, DOS 5.4 x 5.4 in, its text 9 pt); matplotlib 3.5 x 5 in, a band figure wider with many k labels. matplotlib widens a figure on the right when its legend needs room |
 | `--dpi N` | PNG resolution in dots per inch, written into the PNG so LaTeX and Word place it at its size: band, DOS and band + DOS (default 300; `--backend matplotlib` band and DOS 600) and `--legend` (default 300) |
 | `--format FMT` | Output format. Cube/FREQ: html (default), png, svg or pdf. Band, DOS, band + DOS: png, svg, pdf or html (plotly; default png and svg) |
@@ -997,8 +1379,10 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 | `--alpha A` | Band line opacity, matplotlib; below 1 overlapping bands stack darker (default 1) |
 | `--no-gaps` | matplotlib: remove the gaps at k-path discontinuities (a jump's two labels share one tick, "H\|P", either way) |
 | `--band-path FILE` | Band and `--bz`: plot along an edited k-path (JSON `band_path`, as `mace gui`'s k-path editor and `mace opt2d3` write it: Crystal_d3/README.md) |
+| `--partner FILE` | `--band-dos` with one FILE: the run's other half from another folder (the DOS of a band FILE, the band structure of a DOS FILE), as `mace gui`'s Add DOS… and Add Band…. A different formula (from the runs' outputs) is refused; a different cell or Fermi level is a warning, and the DOS is then drawn on the band run's Fermi level. `--phonon-band-dos`: the phonon DOS of a phonon dispersion FILE (or the reverse), as Add Phonon DOS… and Add Phonon Bands…; a different formula or supercell (SCELPHONO, from the runs' outputs or `.d12`) is refused, and so is an electronic half with a phonon one |
 | `--projection TYPE` | DOS, matplotlib: both, total, orbital or tm_orb (default: the projections of `--dos-colors`, as the GUI) |
 | `--no-composition` | DOS: no VB/CB composition labels |
+| `--log-dos` | `--dos`, `--band-dos`: a logarithmic DOS axis (\|DOS\|), the GUI's Log Y on a DOS plot and Log DOS on a band + DOS plot. The band energies stay linear: `--band --log-dos` is refused, and so is the matplotlib backend (it has no log DOS axis) |
 | `--supercell NX NY NZ` | Structure: supercell (default 2 2 2) |
 | `--bond-cutoff A` | Structure: bond cutoff in Å (default 1.9) |
 | `--color-by-coord` | Structure: color atoms by coordination |
@@ -1011,7 +1395,7 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 | `--view iso\|slice\|slice-all` | Cube: view (default iso) |
 | `--slice AXIS POS` | Cube: one 2D slice, drawn as a flat map on Cartesian in-plane axes (a skewed cell keeps its parallelogram), equal x/y scale, the atoms within 2 bohr of the plane and the unit on the colorbar |
 | `--colorscale NAME`, `--no-atoms`, `--bonds`, `--publication` | Cube: color scale and display |
-| `--potential-colors chemistry\|physics` | Cube: electrostatic potential colors in isosurfaces, slices and potential-colored surfaces. `chemistry` (default, as GaussView and VMD): red = negative (electron-rich), blue = positive (electron-poor), the same pair as spin (+ blue); `physics`: red = positive (MACE 1.1.6 and earlier). The GUI's Settings › Viewport › Potential colors; also `[plots] potential_colors`. Spin and differences stay + blue, − red |
+| `--potential-colors chemistry\|physics` | Cube: electrostatic potential colors in isosurfaces, slices and potential-colored surfaces. `chemistry` (default, as GaussView and VMD): red = negative (electron-rich), blue = positive (electron-poor), the same pair as spin (+ blue); `physics`: red = positive (MACE 1.1.5 and earlier). The GUI's Settings › Viewport › Potential colors; also `[plots] potential_colors`. Spin and differences stay + blue, − red |
 | `--clip P` | Cube slices: the color range runs from the (100 − P)th to the Pth percentile of the values, symmetric about 0 for spin and potential, so the nuclear spikes do not take the whole scale (default 99) |
 | `--color-range LO,HI` | Cube slices: the color range outright (log10 units for a log-scale density; a negative low end needs `--color-range=-0.01,0.01`) |
 | `--engine-args "..."` | Cube: extra flags for the cube engine |
@@ -1028,14 +1412,22 @@ mace plotting [MODE] [FILE ...] [-d DIR] [-o DIR] [options]
 | `--all-modes` | FREQ: every mode in one HTML |
 | `--gif` | FREQ: an animated GIF |
 | `--amplitude F`, `--normalize`, `--static` | FREQ: displacement scale, normalized vectors, no animation |
+| `--freq-supercell N1 N2 N3` | FREQ: cells drawn along a, b, c (modes at Γ; default 1 1 1) |
 | `--raman-mode MODE` | Raman: total, par_perp or all (default) |
 | `--average` | Average conformer (`-confN_`) spectra per material |
 | `--ir-column N` | IR intensity column (default 2, absorbance) |
-| `--gallery KIND` | Many outputs in one grid figure: `band`, `dos`, `bandos` (band + DOS), `ir`, `raman`, `opt` (energy along each optimization), `scf` (SCF convergence) or `structure` (thumbnails). The FILEs and folders (searched recursively) make the set; at most 200 panes |
+| `--quantity NAME` | Transport: what to draw (default: the file's own). The run's files: `seebeck`, `sigma`, `sigmas`, `kappa` (κ₀), `tdf`; derived from them: `pf`, `kappa-e`, `zt`, `lorenz`, `sigma-tau`, `pf-tau` |
+| `--component avg\|xx\|yy\|zz\|all` | Transport: the tensor component (default `avg`, the average of the diagonal: `(xx + yy + zz) / 3`, a slab's `(xx + yy) / 2`) |
+| `--temperature K\|all` | Transport: the temperature drawn (default: the run's first), or `all`, one curve each (with one component) |
+| `--x-axis mu\|carriers` | Transport: against the chemical potential (default) or the carrier concentration (\|n\| in cm⁻³ for a 3D run, carriers per cell otherwise; log axis, p- and n-type apart) |
+| `--kappa-lattice VALUE\|FILE` | Transport, `--quantity zt`: the lattice thermal conductivity κ_L in W/(m·K), or a CSV of `T,kappa_L` rows (as `mace analyze`). Without it: ZTₑ with κ_L = 0, labeled an upper bound |
+| `--tau-fs FS` | Transport, `pf`, `kappa-e`, `zt`: the relaxation time to rescale σ and κ₀ to (default: the run's RELAXTIM) |
+| `--gallery KIND` | Many outputs in one grid figure: `band`, `dos`, `bandos` (band + DOS), `ir`, `raman`, `opt` (energy along each optimization), `scf` (SCF convergence) or `structure` (thumbnails). The FILEs and folders (searched recursively) make the set; 200 panes per page (`--max`, `--page`) |
 | `--cols N` | Gallery: columns (default 3, at most 8) |
 | `--independent-axes` | Gallery: each pane its own ranges (default: shared; band and DOS panes always use `--e-lower`/`--e-upper`, and `--energy-reference`/`--fermi-shift`) |
 | `--caption-csv PATH` | Gallery: also write the caption table (material id, formula, band gap, energy from the `materials.db` beside the files) |
-| `--max N` | Gallery: at most N panes (default 200) |
+| `--max N` | Gallery: panes per page (default 200) |
+| `--page N` | Gallery: a set larger than `--max` panes is paged; draw page N (from 1, default 1). Panes and captions are numbered from the page's first file |
 | `--db PATH` | Gallery: the database for the captions (default: the `materials.db` beside the files, or up to three folders above) |
 
 ```bash
@@ -1043,12 +1435,15 @@ mace plotting
 mace plotting --band -d ./band_calcs -o ./plots
 mace plotting --dos run_doss.DOSS.DAT --style publication --dos-colors element-orbital
 mace plotting --band-dos                     # each band structure with its DOS, one figure
+mace plotting --band-dos x_band.BAND.DAT --partner ../DOSS/x_doss.DOSS.DAT   # the DOS from another folder
+mace plotting --phonon-band-dos x_phonon_band.f25 --partner ../PHONON_DOS/x_phonon_dos.f25 --units THz   # x.PHONON_BAND_DOS.png
 mace plotting --band --spin-colors blue-red --spin-down-solid
 mace plotting --band --backend matplotlib    # the figures of MACE 1.1.5
 mace plotting --freq mol_freq.out --mode 7 --gif
 mace plotting --band Si_band.BAND.DAT --band-path edited_path.json
 mace plotting --bz Si_band.BAND.DAT     # the zone of Si_band.out's cell, the path of Si_band.d3
 mace plotting --gallery band BAND/ --cols 4 -o bands.svg
+mace plotting --transport run.SIGMA.DAT --quantity zt --kappa-lattice 1.5 --temperature 300
 mace plotting --gallery bandos runs/ --caption-csv captions.csv
 ```
 
@@ -1174,6 +1569,145 @@ Caveats:
   with TOLINTEG 8 8 8 8 20) while POB-DZVP converged; this is an SCF issue of
   that basis on that system, not of ORBITALS.
 
+#### Transport plots (mace plotting --transport)
+
+A BOLTZTRA run writes `<stem>.SEEBECK.dat`, `.SIGMA.dat`, `.SIGMAS.dat`,
+`.KAPPA.dat` and `.TDF.dat` (MACE's runs: `.DAT`). Give any one of them; the
+others are found beside it by the stem, as the GUI's transport plot finds
+them, and `--quantity` draws anything they allow. The numbers and curves are
+the GUI's (both use `mace/utils/transport_plot.py`). The figure goes beside
+the data (or into `-o`) as `<stem>.<QUANTITY>_<T>K.png` and `.svg` (ZTₑ
+without κ_L: `ZT_E`). With
+`--temperature all` the name ends in `_allT`, and a component or the carrier
+axis is added to the name (`_xx`, `_carriers`).
+
+| `--quantity` | What | Unit |
+|---|---|---|
+| `seebeck` | S (SEEBECK.dat) | µV/K |
+| `sigma` | σ (SIGMA.dat) | S/m |
+| `sigmas` | σS as CRYSTAL writes it (SIGMAS.dat): −σ·S, the sign of Eq. 14.2, at every point checked | A/(m·K) |
+| `kappa` | κ₀ (KAPPA.dat): the manual's κₑ (Eq. 14.3) is the zero-field coefficient | W/(m·K) |
+| `tdf` | the transport distribution function against energy (TDF.dat) | 1/ħ²·eV·fs/Å |
+| `pf` | power factor S²σ | µW/(cm·K²) |
+| `kappa-e` | electronic thermal conductivity κₑ = κ₀ − TσS² | W/(m·K) |
+| `zt` | ZT = S²σT/(κₑ + κ_L), with `--kappa-lattice`. Without it, ZTₑ (κ_L = 0), labeled an upper bound. With κ_L, ZTₑ is drawn dashed beside the total, and the y axis spans the total | – |
+| `lorenz` | Lorenz number L = κₑ/(σT), with Sommerfeld's L₀ = π²k_B²/(3e²) = 2.44×10⁻⁸ W·Ω/K² as a dotted line | 10⁻⁸ W·Ω/K² |
+| `sigma-tau` | σ/τ | 10¹⁸ 1/(Ω·m·s) |
+| `pf-tau` | PF/τ = S²σ/τ | 10¹¹ W/(m·K²·s) |
+
+- **One run, one grid.** Derived quantities are computed point by point on
+  the run's (T, μ) grid. Files on different grids (from different runs) are
+  refused with both grids named; MACE does not interpolate.
+- **The relaxation time.** SIGMA.dat and KAPPA.dat are σ and κ₀ at the run's
+  constant τ (RELAXTIM). MACE reads τ from the run's `.out`
+  (`RELAXATION TIME (fs)`), or else from its `.d3` (RELAXTIM; without it,
+  CRYSTAL's default of 10 fs). The figure's notes say which. σ/τ and PF/τ
+  divide by that τ. `--tau-fs` rescales σ and κ₀ by τ/τ_run for PF, κₑ and the
+  total ZT. S, ZTₑ and L do not depend on τ.
+- **Which points count.** As in `mace analyze`, a derived point counts where
+  \|σ\| is at least 10⁻³ of the component's peak. For κₑ, L and ZTₑ, κ₀ must also
+  be nonzero and κₑ above the files' precision: \|κ₀ − TσS²\| ≥ 2×10⁻⁶ κ₀
+  (see `mace analyze` above). Below that, κₑ is rounding noise and the point is
+  a gap; the notes say how many. ZT with κ_L keeps such a point where κ_L is at
+  least 100 times that uncertainty. ZT is computed by the code
+  `mace analyze --kappa-lattice` uses, so the peak of the average is
+  `transport_zt_*_max_avg`.
+- **Slabs and polymers.** In the example suite's graphene and polyacetylene
+  runs, κ₀ nearly equals TσS² at every point. κₑ is either below the
+  precision (polyacetylene: 1343 of 1543 points) or a small difference whose L
+  is far below Sommerfeld's L₀ (median 0.007 L₀ and 8×10⁻⁵ L₀). The notes say
+  so: κₑ, L and ZTₑ of such a run are not reliable.
+- **Components.** `avg` is the average of the file's diagonal (a slab's file
+  has xx and yy, a polymer's xx). A derived average is computed from the
+  averaged S, σ and κ₀, as the database's `_avg` keys.
+- **Spin.** For an open-shell run, the alpha and beta blocks of SIGMA,
+  SIGMAS, KAPPA and TDF are summed (the TDF point by point on its energy grid).
+  SEEBECK.dat has one block.
+- **Carriers.** `--x-axis carriers` uses N, the carriers per cell of the
+  run's SIGMA.dat (alpha + beta). N is positive for holes (p-type) and
+  negative for electrons (n-type). For a 3D run it is divided by the cell
+  volume from the `.out` (`CELL VOLUME (A.U.)`), in cm⁻³. CRYSTAL's
+  `V(cm^3)` block headers hold that volume in bohr³ × 10⁻²⁴, not cm³; without
+  a `.out`, MACE converts the header from bohr³.
+
+```bash
+mace plotting --transport run.SEEBECK.DAT                       # the file's own quantity, the first temperature
+mace plotting --transport run.SIGMAS.DAT --quantity zt --kappa-lattice 1.5 --temperature 300
+mace plotting --transport run.KAPPA.DAT --quantity lorenz --component all --temperature 500
+mace plotting --transport run.SEEBECK.DAT --quantity pf --x-axis carriers --temperature all --component xx
+```
+
+### mace animate
+
+Animate a CRYSTAL normal mode (FREQ output), an optimization trajectory (OPT
+output), or an MD run or NEB path (any multi-frame file ASE reads: .xyz,
+.extxyz, .traj) as GIF, WebM or MP4. The frames are drawn headless (Pillow);
+WebM and MP4 need ffmpeg on PATH. The GUI's File > Export Animation... captures
+its own 3D view instead.
+
+```
+mace animate FILE [-o OUTPUT] [--format gif|webm|mp4] [--source auto|freq|opt|ase] [--mode N] [options]
+```
+
+| Option | What it does |
+|---|---|
+| `-o`, `--output FILE` | Output file (default: beside the input, `<stem>_mode<N>.<format>`) |
+| `--format gif\|webm\|mp4` | gif (default; or from the `-o` suffix), webm or mp4 |
+| `--source auto\|freq\|opt\|ase` | What to animate in a CRYSTAL output (auto: its normal modes if it has them, else its steps) |
+| `--mode N` | The normal mode (default: the first real one above 1 cm-1) |
+| `--list-modes` | List the output's normal modes and stop |
+| `--frames N` | Frames per vibration cycle (default 24, as the GUI) |
+| `--amplitude X` | Multiplies the drawn displacement (default 1: the physical zero-point amplitude CRYSTAL prints, as the GUI draws it) |
+| `--amplitude-scale physical\|normalized` | physical (default) or normalized: the largest atom moves 0.5 Å × `--amplitude` (the GUI's Fit 0.5 Å, the drawing before 1.1.6) |
+| `--every N` | Keep every n-th frame of a trajectory (default 1) |
+| `--fps N` | Frames per second (default 20) |
+| `--loop N` | Plays: 0 = forever (default), 1 = once, n = n times |
+| `--size WxH` | Width x height in pixels (default 800x600) |
+| `--scale X` | Multiply the size (default 1) |
+| `--background B` | light, dark, white, black or transparent (GIF, WebM) |
+| `--view V` | auto, a, b, c (along a lattice vector) or x, y, z |
+| `--style ballstick\|spacefill` | Atom style |
+| `--palette P` | Element colors (a palette of View > Element Colors) |
+| `--grayscale` | Atoms in grays of the same lightness (for print) |
+| `--patterns off\|auto\|all` | Print patterns on the atoms (default: auto with `--grayscale`, else off) |
+| `--no-cell`, `--no-bonds`, `--no-label` | Leave out the unit cell, the bonds, the caption |
+| `--check` | Say which formats this machine can write, then stop |
+
+```bash
+mace animate run_freq.out --mode 7 --format mp4 --fps 30
+mace animate run_freq.out --mode 7 --amplitude 10    # the physical amplitude x10
+mace animate neb.xyz --grayscale --patterns auto
+```
+
+### mace slice
+
+A plane through a CRYSTAL cube (density, potential, spin, a difference or a
+Wannier orbital): a lattice plane of the grid, a Miller plane (hkl) or the
+plane normal to a direction [uvw]. The GUI's Volume document draws the same
+plane (Slice section).
+
+```
+mace slice CUBE [--axis a|b|c | --hkl H K L | --uvw U V W] [--index N] [--pos P] [--tilt DEG] [--twist DEG] [-o OUTPUT] [options]
+```
+
+| Option | What it does |
+|---|---|
+| `--axis a\|b\|c` | A lattice plane of the grid along a, b or c (exact values) |
+| `--hkl H K L` | A Miller plane (default: 0 0 1) |
+| `--uvw U V W` | The plane normal to the direction [uvw] |
+| `--index N` | With `--axis`: the grid plane (default: the middle one) |
+| `--pos P` | Position across the box along the normal, 0 to 1 (default 0.5) |
+| `--tilt DEG`, `--twist DEG` | Turn about the plane's first / second in-plane axis |
+| `-o`, `--output FILE` | .png (default), .svg, .pdf or .csv |
+| `--contours N` | Contour levels (default 12) |
+| `--colors chemistry\|physics` | A potential's colors: chemistry red = negative (default), physics red = positive |
+| `--dpi N` | Image resolution |
+
+```bash
+mace slice MgO_DENS.CUBE --hkl 1 1 0
+mace slice MgO_DENS.CUBE --axis c --index 40 -o c40.csv
+```
+
 ### mace database
 
 Query materials.db: statistics, searches, properties, exports, comparisons
@@ -1241,6 +1775,24 @@ The large JSON values (`neighbor_analysis`, `final_neighbor_analysis`,
 `mace database --action properties` and the GUI's inspector show them with
 the rest, and an export writes them only when named in its property list.
 
+**Derived properties.** After its own extraction, the extractor runs every
+derived property of `mace/properties` that applies to the run and stores
+its keys with the run's other rows (re-extraction replaces them): the run
+card's `energy_per_atom_ev`, `dft_functional`, `basis_set`,
+`crystal_version` and `mpi_processes`; a BAND run's band-edge effective
+masses (`effective_mass_{electron,hole}_{mc,md}`, `effective_masses`: the
+automatic masses of `mace tau`); and a FREQ run's thermodynamics at every
+temperature it printed (`thermodynamics_vs_temperature`, in
+`property_blobs`, when TEMPERAT or PRESSURE gave more than one point: the
+scalar thermodynamics keys are the first point's). Each run's
+`extraction_provenance` row names the derived properties that ran, their
+version, the files they read, and why the others were skipped. The GUI's
+**Save to Database** (the Relaxation Time dialog) writes rows with
+`extractor_script` `mace-gui`, which a re-extraction keeps.
+[mace analyze](#mace-analyze) lists every key (its property inventory);
+[docs/properties.md](properties.md) is the full inventory and how to add a
+derived property.
+
 **Renamed keys (1.1.6).** A key renamed or merged in 1.1.6 is still read
 under its old name until 1.1.7: a filter, query, export property list or the
 GUI's property filter that names it gets the new key, with a note on
@@ -1289,12 +1841,14 @@ More: [Material tracking](../DOCUMENTATION.md#material-tracking-system).
 
 ### mace preopt
 
-A better starting geometry for a CIF or D12 (springs, GFN-FF through xtb,
-or an ML potential). CRYSTAL still optimizes it; only the geometry is
-written.
+A better starting geometry for a CIF, D12, XYZ/extended XYZ, POSCAR or
+CRYSTAL .out (springs, GFN-FF through xtb, or an ML potential). CRYSTAL still
+optimizes it; only the geometry is written. A SLAB, POLYMER or MOLECULE deck
+is read in group 1 only (every atom listed); for one in another group, use the
+.out of its run (its last geometry; the pbc is kept).
 
 ```
-mace preopt INPUT.cif|INPUT.d12 [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR] [options]
+mace preopt INPUT.cif|INPUT.d12|INPUT.out [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR] [options]
 ```
 
 | Option | What it does |
@@ -1308,6 +1862,7 @@ mace preopt INPUT.cif|INPUT.d12 [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR
 | `--symmetrize TOL` | Symmetrize first (it can raise the space group) |
 | `--charge Q` | Net charge (GFN-FF) |
 | `--uhf N` | Unpaired electrons, recorded (GFN-FF ignores it) |
+| `--bonds B` | The bonds the springs hold: `shown` (default, the GUI's drawn bonds), `lenient` (1.2 ×) or `none` (repulsion only) |
 | `--fmax F` | Force threshold in eV/Å |
 | `--steps N` | Step limit |
 | `--time-limit S` | Seconds |
@@ -1323,31 +1878,134 @@ mace preopt MgO.cif --method auto -o preopt/
 
 More: [preopt.md](preopt.md).
 
+### mace supercell
+
+A supercell of any structure MACE reads (CIF, 3D or P1 .d12, CRYSTAL .out,
+fort.34/.gui, POSCAR, XYZ/extended XYZ): the GUI's Build > Supercell. N1 N2 N3
+default to 2 along periodic directions and 1 along non-periodic ones. A slab,
+polymer or molecule repeats along a non-periodic direction only when you ask
+for more than 1 there, spaced by the vacuum mode.
+
+```
+mace supercell INPUT [N1 N2 N3 | --matrix "M11 ... M33"] [--vacuum MODE] [--format cif|extxyz] [-o OUT] [--force]
+```
+
+| Option | What it does |
+|---|---|
+| `N1 N2 N3` | Repeats along a, b, c |
+| `--matrix "M11 ... M33"` | A full 3x3 supercell matrix instead |
+| `--vacuum MODE` | Spacing along non-periodic directions: `bbox` (default; extent + 1 Å each side), `file`, `crystal` (500 Å), a gap in Å, or `open` |
+| `--format cif\|extxyz` | CIF (default; non-periodic directions in a 15 Å box) or extended XYZ (keeps pbc) |
+| `-o OUT` | Output file (default `<stem>_<n1>x<n2>x<n3>.<format>`) |
+| `--force` | Overwrite an existing output |
+
+```bash
+mace supercell MgO.cif 2 2 2
+mace supercell graphene_slab_sp.out 1 1 2 --vacuum 12 --format extxyz
+```
+
 ### mace mlip
 
 The ML potentials `mace preopt` and the GUI's Clean can use: list them,
-record the Python environment they run in, fetch their weights.
+make or record the Python environment they run in, fetch their weights.
 
 ```
-mace mlip list [--json] [--recheck]
-mace mlip setup [--python PATH]
-mace mlip fetch ID [--yes] [--dir DIR]
+mace mlip list [--json] [--recheck] [--all] [--academic]
+mace mlip install [--dir DIR] [--backend LIST] [--gpu] [--python PATH] [--fetch ID | --no-fetch] [--yes] [--dry-run] [--accept-academic-license]
+mace mlip setup [--python PATH] [--env NAME]
+mace mlip fetch ID [--yes] [--dir DIR] [--accept-academic-license]
 ```
 
 | Option | What it does |
 |---|---|
 | `--json`, `--recheck` | list: JSON; probe the environment again |
-| `--python PATH` | setup: probe and record this interpreter (without it, print how to make one) |
+| `--all` | list: also the models `mace calc` offers (MACE-MP-0b3, ORB-v3, OrbMol-v2, MatterSim, UMA) and the academic-only ones |
+| `--academic` | list: also the academic-only models (MACE-OFF: academic, non-commercial use only, opt-in) |
+| `--accept-academic-license` | fetch, install: acknowledge academic, non-commercial use of an academic-only model (at a terminal you also type ACADEMIC); recorded with its date |
+| `--dir DIR` | install: where the venv goes (default `$XDG_DATA_HOME/mace-tool/mlip/venv`) |
+| `--backend LIST` | install: `mace-torch` (default), `chgnet`, `orb-models` (Python 3.12+), `mattersim`, comma-separated; or `fairchem-core` (UMA) alone, in its own environment `venv-fairchem` |
+| `--gpu` | install: torch with CUDA, when an NVIDIA GPU answers (else the CPU build) |
+| `--python PATH` | install: the Python 3.10+ to build from; setup: probe and record this interpreter (without it, print the steps to run by hand) |
+| `--fetch ID`, `--no-fetch` | install: the model whose weights follow (default MACE-MPA-0 with mace-torch); none |
+| `--yes`, `--dry-run` | install: do not ask (and accept the weights' license); show the plan and the commands only |
+| `--env NAME` | setup: the environment it records (`default`, or `fairchem` for UMA) |
 | `--yes`, `--dir DIR` | fetch: do not ask; where the weights go |
 
-`mace mlip fetch` is the only MACE command that downloads anything.
+`mace mlip install` shows the plan first: the folder, the Python it builds
+from, each package with its license, the size (about 1.5 GB and 46,000 files
+with mace-torch and CHGNet), the free space and, where `quota` answers, the
+space and file quota (a warning above 90 %). It then makes the venv, upgrades
+pip, installs the CPU build of torch and the pinned packages with PYTHONPATH
+unset, runs `pip check` and the probe, records the interpreter and fetches the
+default model's weights after showing their license. A failed or canceled run
+removes the folder it created; running it again repairs an environment in
+place. Exit codes: 0 ready, 1 failed, 2 refused, 3 ready without the weights.
+
+Only `mace mlip install` (packages) and `mace mlip fetch` (weights) download anything. An
+environment in the default place, `${XDG_DATA_HOME:-~/.local/share}/mace-tool/mlip/venv`,
+is found without `--python`; one elsewhere is recorded with it.
 
 ```bash
+mace mlip install
+mace mlip install --backend mace-torch,chgnet --dir ~/mlenv --no-fetch
 mace mlip setup --python ~/mlenv/bin/python
 mace mlip fetch acesuit-mace-mpa-0-medium
 ```
 
 More: [preopt.md](preopt.md#ml-potentials).
+
+### mace calc
+
+Force fields, charges, tight binding and ML potentials on any structure MACE
+reads: UFF and UFF4MOF and EQeq (built in), xTB (GFN2, GFN1, GFN-FF; the
+external `xtb`), DFTB+ (the external `dftb+`), and the ML potentials MACE-MP
+(ACEsuit's mace-torch, unrelated to this MACE tool), ORB-v3,
+MatterSim and CHGNet (run in their own environment, see `mace mlip list --all`).
+
+```
+mace calc list [--json] [--recheck]
+mace calc setup [uff|eqeq|xtb|dftb|mlip]
+mace calc sp|opt|freq|md INPUT -b BACKEND [-m METHOD] [options]
+mace calc sp|opt|freq|md INPUT -b mlip --model-file PATH --model-backend B --model-license-ok [options]
+mace calc charges INPUT [-b eqeq|xtb|dftb] [options]
+```
+
+| Option | What it does |
+|---|---|
+| `-b`, `--backend B` | uff, eqeq, xtb, dftb, mlip; shorthands uff4mof, gfn2, gfn1, gfnff, mlip:MODEL |
+| `-m`, `--method M` | the backend's method (uff4mof, uff; gfn2, gfn1, gfnff; skf; an ML model id) |
+| `-o`, `--output-dir DIR`, `--force` | where the files go (default: next to INPUT); overwrite them |
+| `--json` | list: JSON; a task: the report as JSON on stdout |
+| `--recheck` | list: detect again (skip the caches) |
+| `--frame N` | which frame of a CRYSTAL output |
+| `--device D` | ML: `auto` (default: GPU 0 when there is one, else the CPU), `cpu` or `cuda:N` |
+| `--charge Q`, `--uhf N`, `--multiplicity M` | total charge (xTB, DFTB+, EQeq, OrbMol-v2, UMA omol); unpaired electrons (xTB); spin multiplicity 2S+1 (OrbMol-v2, UMA omol: given, else read from the .d12/.out, else charge 0 and the lowest multiplicity, said in the result) |
+| `--task-head H` | UMA: omat, omol, oc20, odac or omc (default: omat for 3D, 2D, 1D; omol for molecules) |
+| `--threads N`, `--time-limit S` | threads; stop after S seconds (the partial result is written, exit 3) |
+| `--debug` | show the Python traceback when the calculation fails (otherwise a one-line message, the backend's own error and where its log was kept) |
+| `--fmax F`, `--steps N`, `--relax-cell`, `--keep-symmetry`, `--optimizer` | opt |
+| `--displacement D`, `--temperature T` | freq: finite-difference step (Å); thermochemistry temperature (K) |
+| `--ensemble`, `--timestep`, `--md-steps`, `--friction`, `--pressure`, `--interval`, `--seed` | md (NVE, NVT Langevin, NPT Berendsen) |
+| `--kpts`, `--kpoint-density`, `--skf-dir` | DFTB+: k-points; the Slater-Koster set |
+| `--engine` | xTB: the `xtb` program (default) or the tblite package |
+| `--uff-charges`, `--cutoff` | UFF: fixed EQeq point charges; the cutoff (Å) |
+| `--charge-centers`, `--eqeq-method` | EQeq: e.g. Zn=2; auto, ewald, direct or nonperiodic |
+| `--gpu-mem-fraction`, `--dtype`, `--option KEY=VALUE` | ML: GPU memory share, precision; any other backend option |
+| `--model-file PATH`, `--model-backend B`, `--model-license-ok` | ML: a model file you already have, loaded by `mace-torch` or `mattersim`; `--model-license-ok` states that you hold its license (required). Read where it is, never downloaded or copied |
+
+The ML models listed by `mace mlip list --all` run on GPU 0 by default; a
+second GPU is used only when asked for.
+
+```bash
+mace calc opt MOF-5.cif -b uff4mof --relax-cell
+mace calc charges MOF-5.cif
+mace calc md Si.cif -b mlip -m acesuit-mace-mpa-0-medium --temperature 600
+mace calc opt EC.xyz -b mlip --model-file ~/models/MACE-OFF23_medium.model --model-backend mace-torch --model-license-ok
+mace calc sp radical.xyz -b mlip -m orbmol-v2 --charge 0 --multiplicity 2
+mace calc opt slab.d12 -b mlip -m meta-uma-s-1p1 --task-head oc20
+```
+
+More: [calculators.md](calculators.md).
 
 ### mace defects
 
@@ -1417,44 +2075,147 @@ mace ions cell.d12 --net-charge -1 -o charged/
 More: [Crystal_d12/README.md](../Crystal_d12/README.md) ("Charged systems
 and ion clusters").
 
-### mace phonopy
+### mace tau
 
-Finite-displacement phonons through phonopy (optional: `pip install
-'phonopy<5'`): displaced supercells from a finished 3D OPT or SP parent,
-then force sets, band structure, DOS and thermal properties.
+The relaxation time tau for Boltzmann transport from deformation-potential
+theory (longitudinal acoustic phonons): from m*, E1 and C, from a mobility, or
+fitted from strained single points.
 
 ```
-mace phonopy generate PARENT.out --dim "N N N" [options]
-mace phonopy collect DIR [options]
+mace tau estimate --dim 1|2|3 --m-star M|auto --e1 E1 --c C [--temperature T] | --mobility MU --m-star M
+mace tau strain DECK.d12 --axis x|y|z [--strains LIST] [--output-dir DIR] [--force]
+mace tau fit OUT ... --carrier electron|hole [--m-star M|auto] [--band FILE] [--dos FILE] [--c-from ELASTCON.out] [--save FILE]
 ```
 
 | Option | What it does |
 |---|---|
-| `--d12 FILE` | generate: the parent deck (default: same stem) |
-| `--dim "N N N"` | generate: the supercell (or 9 integers) |
-| `--output-dir DIR`, `--force` | generate: output folder (default `phonopy_<stem>_<dim>/`); reuse a non-empty one |
-| `--amplitude A` | generate: displacement in Å (default 0.01) |
-| `--pm auto\|yes\|no` | generate: plus/minus displacements |
-| `--toldee N` | generate: TOLDEE (raised only, at least 10) |
-| `--cry-sym` | generate: each displaced cell's symmetry in its .ext |
-| `--keep-shrink` | generate: keep the parent's SHRINK |
-| `--check` | collect: only check the outputs |
-| `--band auto\|"q ..."\|none`, `--band-labels`, `--band-points N` | collect: the band path (default: SeeK-path) |
-| `--mesh 100.0\|"a b c"` | collect: the DOS mesh |
-| `--tmin`, `--tmax`, `--tstep` | collect: temperature range (K) |
-| `--nac-from FREQ.out` | collect: Born charges and dielectric tensor from a Gamma FREQCALC with INTENS + INTCPHF |
-| `--plot` | collect: write band_dos.pdf |
+| `--dim 1\|2\|3` | estimate: the dimensionality |
+| `--m-star M\|auto` (`--mstar`), `--m-other M`, `--m-dos M` | Effective (band) mass along transport; 2D: the in-plane mass across it; the density-of-states mass (m_e). `auto` (the default of `fit`) fits them from BAND/DOSS outputs |
+| `--band FILE` (`--band-dat`), `--dos FILE`, `--mass-window MEV` | auto: the BAND.DAT/BAND .f25 and DOSS.DAT/DOSS .f25 (`fit` finds them beside the outputs); the band-edge fit window (40 meV) |
+| `--e1 E1`, `--c C` | Deformation potential (eV); elastic constant (GPa 3D, N/m 2D, J/m 1D) |
+| `--temperature T`, `-T T` | Temperature (K) |
+| `--mobility MU` | estimate: tau = mu m*/e from a mobility (cm^2/(V s)) |
+| `--axis x\|y\|z`, `--strains LIST`, `--output-dir DIR`, `--force` | strain: the strained SP decks |
+| `--carrier electron\|hole`, `--c-from FILE` | fit (and estimate with auto): the carrier; fit: C from an ELASTCON output |
+| `--json`, `--save FILE` | The result as JSON on stdout; saved with its provenance |
 
-Submit the displaced decks with plain `mace submit DIR --walltime <printed>`,
-never with `--track` or `--progress`.
+Then: `RELAXTIM <tau fs>` in the TRANSPORT deck, or rescale a finished run
+with `mace analyze --extract-properties DIR --kappa-lattice K --tau-fs <tau fs>`.
 
 ```bash
-mace phonopy generate mat_opt.out --dim "2 2 2"
-mace submit phonopy_mat_opt_222 --walltime 2:00:00
-mace phonopy collect phonopy_mat_opt_222 --plot
+mace tau estimate --dim 3 --m-star 0.26 --e1 9.5 --c 165 --temperature 300
+mace tau fit mat_sp_dp_x_*.out --carrier electron --m-star 0.26
+mace tau fit mat_sp_dp_x_*.out --carrier hole        # m_c and m_d from the BAND/DOSS outputs beside them
 ```
 
-More: [Phonons with phonopy](../DOCUMENTATION.md#phonons-with-phonopy-mace-phonopy).
+tau takes the density-of-states mass m_d, the mobility the band mass m_c
+along the transport axis. With `auto`, m_c is the band curvature along the
+path segment through the band edge that runs along (or by the lattice
+symmetry is equivalent to) the axis; m_d comes from the band directions
+through the edge, else from the DOS (per valley); every band meeting at the
+edge is listed. The output and the JSON say where each mass came from.
+
+#### The TAU step (relaxation time for TRANSPORT)
+
+A workflow step that computes the TRANSPORT step's relaxation time, as `mace
+tau strain` and `mace tau fit` do by hand:
+
+```
+OPT → SP ─┬─ BAND ─┐
+          ├─ DOSS ─┤
+          └─ TAU (strained SPs) ─→ fit ─→ TRANSPORT (RELAXTIM = τ)
+```
+
+1. **Strained runs.** When the SP finishes, the TAU step writes and submits
+   the strained single points of the SP deck: 4 strains per axis (±0.5%,
+   ±1%, ELASTIC IDEF -2) and one unstrained run, shared by the axes, at
+   TOLDEE 8 or tighter.
+   - The axes come from the symmetry: x for a cubic crystal (5 runs), x and
+     z for a tetragonal, trigonal or hexagonal one (9), x, y and z below
+     that (13). A slab gets its in-plane axes (x for a square or hexagonal
+     layer), a polymer x.
+   - They run beside BAND and DOSS, in
+     `workflow_outputs/<id>/step_NNN_TAU/<material>/`, each as its own job
+     with the SP's resources and 1.5× its walltime (a strained cell has less
+     symmetry, so more k points). `tau_group.json` lists them.
+2. **Fit.** When every strained run has finished (completed, or failed with
+   no recovery left), in any order, and the BAND and DOSS runs are no longer
+   running, the engine fits:
+   - E1 and C, for both carriers along every axis;
+   - the masses from the workflow's BAND and DOSS outputs (or the step's
+     `m_star`);
+   - τ (`dpt.estimate`).
+
+   It writes `tau_<carrier>_<axis>.json` (the record `mace analyze
+   --extract-properties --tau-fs` reads) and `tau_summary.json`.
+3. **TRANSPORT** waits for the summary, then runs with RELAXTIM = τ of the
+   chosen carrier along the first axis.
+   - The carrier is the step's `carrier`. `auto` means electrons: MACE has no
+     doping setting, and the summary says so.
+   - The TRANSPORT row records the τ it ran with and where it came from.
+
+A failed strained run is recovered like any SP and stays in its group; one
+that fails for good is left out of the fit.
+
+TRANSPORT is never held, except by `strict`. In these cases it runs with 10 fs
+(`fallback_fs`) and the reason is recorded:
+
+| Case | Reason recorded |
+|---|---|
+| No band edges | "a metal or no gap" |
+| Fewer than two strained runs and the unstrained one finished along the axis | too few strained runs |
+| No effective mass: no BAND or DOSS step, or no mass from them, and no `m_star` | "no effective mass" |
+| τ outside 1–10⁵ fs | the computed τ, kept in the summary |
+| The SP deck cannot be strained (a molecule, a two-component deck) | the strained decks could not be written |
+
+A poor E1 fit (R² < 0.9, for example diamond's conduction band along x,
+where the strain splits the valleys) is used and flagged "low confidence".
+With `strict`, a fallback or a low-confidence τ holds TRANSPORT (status
+`held`).
+
+| Option (spec `overrides` of the TAU step) | Default | What it does |
+|---|---|---|
+| `axes` | `auto` | `auto` (from the symmetry) or a list of `x`, `y`, `z` |
+| `strains` | `[-0.01, -0.005, 0.005, 0.01]` | 2 to 8 non-zero strains within ±0.05 |
+| `carrier` | `auto` | `electron`, `hole` or `auto` (electrons): the τ RELAXTIM takes |
+| `m_star` | `auto` | `auto` (BAND/DOSS of the workflow) or a mass in m_e |
+| `strict` | `false` | hold TRANSPORT when τ falls back or the fit is poor |
+| `fallback_fs` | `10` | the RELAXTIM of a fallback |
+| `temperature` | `300` | K, for τ |
+
+The workflow's status (`mace workflow`, the Workflows view) shows the group as `running 3/5` and, under
+**Relaxation time:**, the RELAXTIM each structure's TRANSPORT uses (or the
+fallback and its reason). In the interactive planner, add TAU to a custom
+chain before TRANSPORT.
+
+### mace transform
+
+Rotate and/or move atoms of a structure by exact amounts: the GUI's Rotate
+tool (R) and Move tool gizmos from the command line. The rotation comes first;
+the cell is unchanged. OUTPUT (default `<stem>_transformed.cif`) is written
+with ase in the format of its extension.
+
+```
+mace transform INPUT [--atoms LIST] [--rotate DEG --axis AXIS] [--about centroid|com|cell|origin|atom:N|X,Y,Z] [--translate DX DY DZ | --translate-frac DA DB DC] [-o OUTPUT] [--no-wrap] [--force]
+```
+
+| Option | What it does |
+|---|---|
+| `--atoms LIST` | 1-based indices, ranges and elements: `1,5-8`, `O`, `all` (default: all atoms) |
+| `--rotate DEG` | Turn by DEG degrees, counterclockwise seen from the axis's tip |
+| `--axis AXIS` | x, y, z; a, b, c; a*, b*, c*; or `"u v w"` (a lattice direction; a Cartesian vector for a molecule) |
+| `--about PIVOT` | What `--rotate` turns about, as the GUI's Rotate panel: `centroid` (default: of the picked atoms, made whole across the cell's faces), `com` (their center of mass, standard atomic masses), `cell` (the cell's center, (½, ½, ½); along a slab's, polymer's or molecule's open directions the middle of the atoms, as the GUI's Bounding box draws it), `origin`, `atom:N` (atom N, 1-based; it need not be in `--atoms`: its image nearest the picked atoms' centroid), or `x,y,z` in Å |
+| `--translate DX DY DZ` | Then move by this many Å |
+| `--translate-frac DA DB DC` | Then move by these fractions of a, b, c |
+| `-o`, `--output FILE` | The file to write |
+| `--no-wrap` | Keep moved atoms where they land (default: wrapped into the cell) |
+| `--force` | Overwrite OUTPUT |
+
+```bash
+mace transform MOF.cif --atoms 97-104 --rotate 90 --axis c -o MOF_rot.cif
+mace transform MOF.cif --atoms 97-104 --rotate 120 --axis "1 1 1" --about atom:12
+mace transform slab.d12 --atoms O --translate 0 0 0.5
+```
 
 ### mace gui
 
@@ -1474,8 +2235,12 @@ mace gui diagnostics [--dir DIR] [--json]
 | Option | What it does |
 |---|---|
 | `-d`, `--dir DIR` | The folder to serve (default: here) |
-| `-p`, `--port P` | Port (default `MACE_GUI_PORT`, else 8765; 0 picks a free one) |
-| `--open` | Open a browser on this machine |
+| `-p`, `--port P` | Port (default `MACE_GUI_PORT`, else 8765 on your own computer and, on a shared node, a port of your own: 20000 + your user id mod 10000, the next free one if that is busy; 0 picks a free one). A port you name is used as is |
+| `--keep` | Keep serving after the session that started it closes. By default a server started over `ssh node "mace gui"` without a terminal stops when that connection ends (sshd sends no hangup then, and the server would hold its port on a shared node for good). `nohup mace gui ... &` does the same as `--keep`; `MACE_GUI_KEEP=1` too |
+| `--new-session` | Start another server even when one of yours already serves this folder |
+| `--sessions` | List your running MACE GUI sessions (also on other nodes that share your home folder), each with its `ssh -L` line, and exit |
+| `--open` | Open MACE GUI on this machine: in its own app window of Brave, Chrome, Chromium, Edge or Vivaldi (the first found), else a browser tab |
+| `--browser app\|tab` | With `--open`: `app` (its own window, the default when one of those browsers is installed) or `tab` (your default browser; also the default when `$BROWSER` is set). `[gui] open = "app"` or `"tab"` in site.toml sets your default |
 | `--gpu N` | With `--open`: the NVIDIA GPU the browser renders on (default 0) |
 | `--host H` | Interface to bind (default 127.0.0.1) |
 | `--insecure-network` | Needed for any `--host` but loopback |
@@ -1501,6 +2266,7 @@ repeatable, e.g. `--sbatch-arg=--reservation=r1`), `--setup LINE` and `--dry-run
 | `--gateway G`, `--jump HOSTS`, `--node N`, `--hop auto\|jump\|nested` | How to reach the node |
 | `--dir DIR`, `--mace CMD`, `--setup LINE`, `--conda ENV` | What runs on the node |
 | `--local-port P`, `--ssh-option OPT`, `--root DIR`, `--no-open` | This computer's side |
+| `--browser app\|tab` | MACE GUI in its own app window (the default when Brave, Chrome, Chromium, Edge or Vivaldi is installed) or a browser tab, as `mace gui --browser` |
 | `--slurm` and its `--time`, `--cpus`, `--mem`, `--partition`, `--account`, `--qos`, `--constraint`, `--gpus`, `--sbatch-arg` | Run the GUI as a SLURM job |
 | `--save [NAME]`, `--list`, `--forget NAME` | Saved profiles |
 | `--dry-run` | Print the ssh command(s) |
@@ -1522,6 +2288,36 @@ mace gui connect --slurm --gateway me@hpcc.example.edu --node dev-node-01
 ```
 
 More: [gui.md](gui.md), [First run from your computer](gui.md#first-run-from-your-computer).
+
+### mace mcp
+
+Serve MACE's tools (structures, decks, jobs, outputs, materials.db) to an MCP
+client over stdin/stdout (JSON-RPC 2.0). Tools that submit or cancel jobs, or
+replace files, do nothing until the client calls them again with
+`"confirm": true`. Paths stay inside `--root`.
+
+```
+mace mcp [--root DIR] [--read-only] [--allow-outside-root] [--transport auto|builtin|sdk] [--workers N] [--list-tools [--json]] [--config] [--check] [--debug]
+```
+
+| Option | What it does |
+|---|---|
+| `--root DIR` | The folder the tools work in; paths outside it are refused (default: the current folder) |
+| `--read-only` | Offer only the tools that read: no writes, no submit, no cancel |
+| `--allow-outside-root` | Accept paths outside `--root` (absolute paths anywhere you can read) |
+| `--transport auto\|builtin\|sdk` | auto: the official `mcp` package when it is installed, else the built-in one |
+| `--workers N` | Built-in transport: tool calls run at once (default 2) |
+| `--list-tools` | Print the tools and exit (`--json`: the tools/list JSON) |
+| `--config` | Print a client configuration block and exit |
+| `--check` | Initialize the server in-process, list tools, exit |
+| `--debug` | Tracebacks on stderr |
+
+```bash
+mace mcp --root ~/calcs --read-only
+mace mcp --config --root ~/calcs
+```
+
+More: [mcp.md](mcp.md).
 
 ### mace site
 
@@ -1550,6 +2346,30 @@ mace site suggest DECK... [--type T] [--json]
 | `--type T` | suggest: size the decks as this calculation type (OPT, SP, FREQ, BAND, DOSS, ...) |
 
 More: [Site settings](#site-settings-mace-site-sitetoml).
+
+### mace examples
+
+The bundled example suite (`examples/suite/`): CRYSTAL23 inputs and outputs for
+five material archetypes across the calculation types, to try the GUI and the
+plots without running a calculation first. Diamond, h-BN, polyacetylene and EC
+(3D, 2D, 1D, 0D) cover every calculation type `mace examples` lists.
+
+```
+mace examples [list]
+mace examples hydrate [--force]
+mace examples copy DEST
+mace examples path
+```
+
+| Option | What it does |
+|---|---|
+| `list` (default) | The calculation-type by entry table: output, failed (run), deck (only), or n/a |
+| `hydrate` | Unpack the compressed files next to themselves (the GUI does this itself when it lists the folder) |
+| `--force` | hydrate: rewrite files that are already there |
+| `copy DEST` | Copy the unpacked suite to a new folder (a read-only install) |
+| `path` | Unpack, then print the suite folder: `mace gui --dir $(mace examples path) --open` |
+
+More: [Example suite](gui.md#example-suite-examplessuite).
 
 ### mace help
 
@@ -1938,8 +2758,8 @@ setting keeps the sizes stored in its plan. Memory (`mem_per_cpu` or `mem`)
 works the same way.
 
 **One calculation type.** A `[resources.<TYPE>]` table sets the same keys
-for one calculation type: `OPT`, `SP`, `FREQ`, `BAND`, `DOSS`, `TRANSPORT`,
-`"CHARGE+POTENTIAL"` (quoted, for the `+`) or `ORBITALS`. For example, frequencies on
+for one calculation type: `OPT`, `SP`, `FREQ`, `ELASTIC`, `EOS`, `QHA`, `CPHF`, `BAND`,
+`DOSS`, `TRANSPORT`, `"CHARGE+POTENTIAL"` (quoted, for the `+`) or `ORBITALS`. For example, frequencies on
 64 cores for 3 days and a smaller band structure:
 
 ```toml
@@ -1954,8 +2774,9 @@ ntasks = 4
 
 (`mace site set resources.FREQ.ntasks 64`, `mace site set
 resources.FREQ.walltime 3-00:00:00`, ...). `mace submit` tells each deck's
-type from its keywords (OPTGEOM: OPT, FREQCALC: FREQ, else SP; BAND, DOSS,
-BOLTZTRA, ECH3/POT3 in a .d3), so a folder of mixed decks gets each type's
+type from its keywords (OPTGEOM: OPT, FREQCALC: FREQ; ELASTCON, ELAPIEZO,
+PIEZOCON, PIEZOCP, PHOTOELA: ELASTIC; EOS, QHA, CPHF: their own; else SP;
+BAND, DOSS, BOLTZTRA, ECH3/POT3 in a .d3), so a folder of mixed decks gets each type's
 size; `mace submit -i` then asks once per type that has a table. On a pipe
 (answers fed in, not typed) `mace submit -i` refuses when the decks split
 into more than one group: it lists the groups in the order they are asked
@@ -2045,6 +2866,11 @@ held-out 30 %:
 * work: one SCF cycle costs about `exp(-4.63) x AO^1.66 x (k-points x
   spins)^0.52` core-seconds; an SP is ~14 cycles, an OPT ~18, a FREQ ~39
   per displacement; a properties job `exp(a) x AO^b` core-seconds per type.
+  The mechanics and response modules, too few runs to fit, are scaled from
+  HPCC runs of diamond against its SP: an ELASTIC deck (ELASTCON, ELAPIEZO,
+  PIEZOCON, PIEZOCP, PHOTOELA) ~730 cycles, an EOS ~310, a QHA ~176 per
+  displacement, a CPHF ~270, with walltime margins wide enough for PHOTOELA
+  (ELASTIC), an optimization per volume (EOS) and QHA's 13 volumes;
   Half of the held-out estimates are within a factor of 1.5 to 2 of the
   measured run time (DOSS 3);
 * cores: Pcrystal spreads the integrals over every process and the k-space
@@ -2372,8 +3198,21 @@ project spaces, with a warning from 80 % and critical from 90 % (both
    `LANG`, `LC_*`, `TERM`, `COLUMNS`, `NO_COLOR`, `FORCE_COLOR` and the names in
    `[quota] alias_env_allow` are passed (clearing `LD_LIBRARY_PATH` is allowed;
    setting `LD_*`, `PYTHON*`, `PATH` and the like never is);
-3. `lfs quota`, `mmlsquota` (GPFS), `quota -s -w`;
+3. `lfs quota`, `mmlsquota` (GPFS), `quota -s -w` (a file system name that
+   wraps the numbers to the next line is read too);
 4. `df`, labeled "Filesystem (not your quota)" when nothing else answered.
+
+**Research spaces.** Beyond home and scratch, many clusters give each research
+group a shared folder with its own quota. MACE looks for `<research root>/<name>`
+for each group you belong to and for each name the quota tool lists
+(`[quota] research_roots`, default `/mnt/research`; `research_paths` adds
+folders by path), and keeps the ones you can enter. Each is shown with its own
+Quota % (space) and Files % (inodes) in `mace cluster quota` (columns Type and
+Folder), in the Storage tab of the Cluster view (grouped Home, Scratch,
+Research spaces, each with an Open button), and as a chip with the two
+percentages in File › Open Folder, which lists your research spaces beside Home
+and Scratch. A space you can use that the quota tool lists no row for is shown
+without percentages. `--root`/`MACE_GUI_ROOTS` still replace the defaults.
 
 ### Your limits
 
@@ -2677,6 +3516,8 @@ warn_percent = 80             # 50..99
 critical_percent = 90         # above warn_percent, at most 99
 # paths = ["/project/mygroup"]
 # alias_env_allow = []
+# research_roots = ["/mnt/research"]   # folders that hold research-group spaces
+# research_paths = []                  # more research-space folders, by path
 
 [scan]
 entries_per_second = 2000     # 500..10000

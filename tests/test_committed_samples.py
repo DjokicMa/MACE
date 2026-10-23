@@ -86,8 +86,10 @@ def test_external_deck_round_trips_its_basis_block(deck):
     with contextlib.redirect_stdout(io.StringIO()):
         got = CrystalInputParser(str(deck)).parse().get("external_basis_data", [])
     assert got == want
-    # the ECP atoms (Z > 200) are part of it
-    assert any(re.match(r"^2\d\d\s+\d+$", l) for l in want)
+    # the ECP atoms (Z > 200) are part of it, in a deck that has any (the all-electron diamond phonon
+    # deck of tests/data/f25 has none)
+    if re.search(r"^\s*2\d\d\s+\d+\s*$", deck.read_text(), re.M):
+        assert any(re.match(r"^2\d\d\s+\d+$", l) for l in want)
 
 
 # ------------------- test_preflight_preflight: TESTPDIM on a copy, byte exact
@@ -126,8 +128,11 @@ def test_preflight_leaves_the_deck_alone_and_reads_crystals_verdict(tmp_path):
 
 # ------------------- test_title_keyword_detection: outputs typed by their deck
 
+# the response-property modules (ELASTCON, ELAPIEZO, PIEZOCON, PIEZOCP, PHOTOELA, EOS, QHA; 1.1.6) relax the
+# atoms of every strained cell, so their outputs carry OPTGEOM's lines with no OPTGEOM in the deck: not pairs
+_MODULES = re.compile(r"^\s*(ELASTCON|ELAPIEZO|PIEZOCON|PIEZOCP|PHOTOELA|EOS|QHA)\s*$", re.M)
 PAIRS = [(o, o.with_suffix(".d12")) for o in sorted(DATA.rglob("*.out"))
-         if o.with_suffix(".d12").exists()]
+         if o.with_suffix(".d12").exists() and not _MODULES.search(o.with_suffix(".d12").read_text(errors="ignore"))]
 
 
 @pytest.mark.parametrize("out, deck", PAIRS, ids=_ids([o for o, _ in PAIRS]))

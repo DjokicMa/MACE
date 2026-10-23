@@ -1,4 +1,4 @@
-"""`mace phonopy collect --nac-from FREQ.out` (needs phonopy).
+"""`mace analyze phonopy --nac-from FREQ.out` (needs phonopy).
 
 The FREQ output is phonopy's NaCl-CRYSTAL crystal.o (CRYSTAL17, Gamma FREQCALC
 with INTENS + INTCPHF), trimmed to the blocks phonopy-crystal-born reads. The
@@ -18,9 +18,9 @@ import pytest
 
 phonopy = pytest.importorskip("phonopy")
 
-from conftest import REPO_ROOT  # noqa: E402
+from conftest import REPO_ROOT, phonopy_set  # noqa: E402
 
-from mace.phonopy_bridge import cli  # noqa: E402
+from mace.analysis.cli import main as analyze  # noqa: E402
 
 FIX = REPO_ROOT / "tests" / "fixtures" / "phonopy_crystal" / "NaCl"
 
@@ -29,9 +29,9 @@ FIX = REPO_ROOT / "tests" / "fixtures" / "phonopy_crystal" / "NaCl"
 def setdir(tmp_path, monkeypatch):
     for f in ("parent.out", "parent.d12", "crystal.o", "crystal.d12"):
         shutil.copy(FIX / f, tmp_path / f)
+    ok, d = phonopy_set(tmp_path, dim="4 4 4")
+    assert ok
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["generate", "parent.out", "--dim", "4 4 4"]) == 0
-    d = tmp_path / "phonopy_parent_444"
     man = json.loads((d / "mace_phonopy.json").read_text())
     for i, job in enumerate(man["jobs"], start=1):
         shutil.copy(FIX / f"supercell-{i:03d}.o", d / f"{job}.out")
@@ -46,7 +46,7 @@ def _freq_cm(d, q):
 
 def test_born_written_and_lo_to_split(setdir):
     d = setdir
-    assert cli.main(["collect", str(d), "--nac-from", "crystal.o", "--band", "none"]) == 0
+    assert analyze(["phonopy", str(d), "--nac-from", "crystal.o", "--band", "none"]) == 0
     born = (d / "BORN").read_text().split("\n")
     assert born[0] == "default"
     assert [float(x) for x in born[2].split()][0] == pytest.approx(1.0238)     # Na Z*
@@ -57,7 +57,7 @@ def test_born_written_and_lo_to_split(setdir):
     d2 = d.parent / "nonac"
     shutil.copytree(d, d2)
     (d2 / "BORN").unlink()
-    assert cli.main(["collect", str(d2), "--band", "none"]) == 0
+    assert analyze(["phonopy", str(d2), "--band", "none"]) == 0
     g = _freq_cm(d2, [0.001, 0.0, 0.001])
     assert g[5] - g[3] < 0.5
 
@@ -67,7 +67,7 @@ def _refused(d, text, capsys, name="bad.o", d12=True):
     p.write_text(text)
     if d12:
         shutil.copy(d.parent / "crystal.d12", p.with_suffix(".d12"))
-    rc = cli.main(["collect", str(d), "--nac-from", str(p), "--band", "none"])
+    rc = analyze(["phonopy", str(d), "--nac-from", str(p), "--band", "none"])
     err = capsys.readouterr().err
     assert rc == 1, err
     assert "NAC refused" in err
@@ -123,7 +123,7 @@ def test_different_method_refused(setdir, capsys):
     p.write_text(_good())
     p.with_suffix(".d12").write_text(
         (setdir.parent / "crystal.d12").read_text().replace("PBE0", "B3LYP"))
-    rc = cli.main(["collect", str(setdir), "--nac-from", str(p), "--band", "none"])
+    rc = analyze(["phonopy", str(setdir), "--nac-from", str(p), "--band", "none"])
     assert rc == 1 and "functional/basis records differ" in capsys.readouterr().err
 
 
@@ -138,5 +138,5 @@ def test_scelphono_deck_refused(setdir, capsys):
     p.write_text(_good())
     p.with_suffix(".d12").write_text(
         (setdir.parent / "crystal.d12").read_text().replace("FREQCALC\n", "FREQCALC\nSCELPHONO\n2 0 0\n0 2 0\n0 0 2\nDISPERSI\n"))
-    rc = cli.main(["collect", str(setdir), "--nac-from", str(p), "--band", "none"])
+    rc = analyze(["phonopy", str(setdir), "--nac-from", str(p), "--band", "none"])
     assert rc == 1 and "SCELPHONO" in capsys.readouterr().err

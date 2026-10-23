@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.1.6</strong> (preview)
+  <strong>Version 1.1.6</strong>
 </p>
 
 <p align="center">
@@ -31,6 +31,9 @@ states, phonons and spectra. It writes the decks, submits and tracks the jobs,
 recovers failed runs, and runs each next step of a workflow by itself. The
 MACE GUI shows a folder's structures, runs, plots and database in your web
 browser, and the `mace` command does everything from a terminal.
+
+MACE is a separate tool that drives CRYSTAL (and, later, other DFT codes). It
+does not include CRYSTAL: every user needs their own CRYSTAL license.
 
 ## Getting started
 
@@ -81,7 +84,9 @@ and Ctrl+click the link it prints. Every setup (Windows, macOS, Linux;
 PowerShell, MobaXterm, VS Code, plain ssh) has its own steps in
 [Choose your setup](docs/gui.md#choose-your-setup).
 The server only listens on 127.0.0.1 and asks for a sign-in token; nothing is
-installed on your laptop. Try it on [`examples/gui`](examples/gui).
+installed on your laptop. Try it on [`examples/gui`](examples/gui), or on
+[`examples/suite`](examples/suite): real inputs and outputs for a porous framework,
+a dense crystal, a 2D slab, a 1D polymer and a molecule (`mace examples`).
 
 ## Quick start: the command line
 
@@ -115,12 +120,24 @@ mace --help                                 # every command, in groups
 - Decks: `mace convert`, `opt2d12`, `opt2d3`, `opt2cif`, checked with `mace preflight`
 - Jobs: `mace submit` (also as SLURM job arrays), `mace run` on a dev node,
   `mace monitor`, `mace completion`, `mace cluster`
-- Results: `mace analyze`, `mace plotting`, `mace database`
+- Results: `mace analyze` (also structure analysis: porosity, PXRD, topology,
+  [docs/analysis.md](docs/analysis.md)), `mace plotting`, `mace database`,
+  `mace animate` (normal modes and trajectories as GIF, WebM or MP4),
+  `mace slice` (a cube along any plane)
+- Structures: `mace supercell`, `mace transform` (rotate and translate atoms)
+- Force fields, tight binding and ML potentials: `mace calc`
+  ([docs/calculators.md](docs/calculators.md))
+- Mechanical properties: ELASTCON, EOS, QHA and CPHF decks (`mace opt2d12`
+  choices 4-7) and their analysis (`mace analyze elastic`); phonons with phonopy
+  (`mace opt2d12` choice 8, `mace analyze phonopy`); transport relaxation times:
+  `mace tau`
 - Special systems: charged systems and ion clusters (`mace ions`), point
-  defects (`mace defects`), phonons with phonopy (`mace phonopy`), starting
-  geometries (`mace preopt`, `mace mlip`)
+  defects (`mace defects`), starting geometries (`mace preopt`, `mace mlip`)
 - Any SLURM cluster: site settings for job scripts (`mace site`,
   [Site settings](docs/cli.md#site-settings-mace-site-sitetoml))
+- Agents and editors: MACE's tools over the Model Context Protocol (`mace mcp`,
+  [docs/mcp.md](docs/mcp.md))
+- Examples: `mace examples` lists and copies the bundled example suite
 
 ## Documentation
 
@@ -130,6 +147,9 @@ mace --help                                 # every command, in groups
 - [docs/ssh-setup.md](docs/ssh-setup.md) - SSH keys, agents and `~/.ssh/config` for `mace gui connect`
 - [docs/cli.md](docs/cli.md) - every command and its options
 - [docs/preopt.md](docs/preopt.md) - starting geometries (`mace preopt`, the GUI's Clean)
+- [docs/analysis.md](docs/analysis.md) - structure analysis (`mace analyze <tool>`: porosity, PXRD, topology, ...)
+- [docs/calculators.md](docs/calculators.md) - force fields, tight binding and ML potentials (`mace calc`)
+- [docs/mcp.md](docs/mcp.md) - MACE's tools for agents and editors (`mace mcp`)
 - [docs/defects/README.md](docs/defects/README.md) - point defects
 - [DOCUMENTATION.md](DOCUMENTATION.md) - technical documentation: workflows,
   job arrays, phonons, the database, architecture
@@ -195,6 +215,14 @@ the colors their projects publish, each under MIT (`css/THEMES.LICENSE.txt`). pl
 logo (`docs/logo/`) is part of this repository (MIT). The ML potentials of
 `mace mlip` are third-party models with their own licenses, shown before
 they are downloaded ([docs/preopt.md](docs/preopt.md#ml-potentials)).
+
+**Third-party data:** `mace/analysis/rcsr_data/3dall.txt.xz` is the
+Reticular Chemistry Structure Resource's list of 3-periodic nets
+(<http://rcsr.net>, downloaded 2026-10-22, unmodified), used to identify
+topologies. RCSR states no license or terms of use for it; it is RCSR's work,
+redistributed with credit and not covered by MACE's MIT License. Please cite
+M. O'Keeffe, M. A. Peskov, S. J. Ramsden and O. M. Yaghi, Acc. Chem. Res. 41,
+1782 (2008), doi:10.1021/ar800124u (`rcsr_data/NOTICE.txt`).
 
 Issues and contributions: GitHub Issues and pull requests (fork, branch, add
 tests for new behavior).

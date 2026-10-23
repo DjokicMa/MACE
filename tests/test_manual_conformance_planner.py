@@ -137,6 +137,8 @@ def test_3c_selection_pins_its_parametrized_basis(
         planner, "_get_basis_modifications", lambda: {"inherit_basis": True}
     )
     monkeypatch.setattr(planner, "_get_custom_tolerances", lambda: {})
+    monkeypatch.setattr(planner, "_ask_step_spin", lambda config, **k: None)
+    monkeypatch.setattr(planner, "_ask_step_kpoints", lambda config, **k: None)
 
     config = planner._get_advanced_opt_config()
 
@@ -158,6 +160,8 @@ def test_non_3c_selection_leaves_the_inherited_basis_alone(planner, monkeypatch)
         planner, "_get_basis_modifications", lambda: {"inherit_basis": True}
     )
     monkeypatch.setattr(planner, "_get_custom_tolerances", lambda: {})
+    monkeypatch.setattr(planner, "_ask_step_spin", lambda config, **k: None)
+    monkeypatch.setattr(planner, "_ask_step_kpoints", lambda config, **k: None)
 
     config = planner._get_advanced_opt_config()
 

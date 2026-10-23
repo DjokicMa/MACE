@@ -1,4 +1,4 @@
-"""`mace phonopy collect` on phonopy's own NaCl-CRYSTAL example (needs phonopy).
+"""`mace analyze phonopy` on phonopy's own NaCl-CRYSTAL example (needs phonopy).
 
 The fixture is a trimmed copy of phonopy v4.7.2 example/NaCl-CRYSTAL: the
 parent, and the two CRYSTAL outputs phonopy's authors ran for the 4x4x4
@@ -23,8 +23,9 @@ import pytest
 
 phonopy = pytest.importorskip("phonopy")
 
-from conftest import REPO_ROOT  # noqa: E402
+from conftest import REPO_ROOT, phonopy_set  # noqa: E402
 
+from mace.analysis.cli import main as analyze  # noqa: E402
 from mace.phonopy_bridge import cli  # noqa: E402
 from mace.phonopy_bridge import collect as C  # noqa: E402
 
@@ -45,9 +46,9 @@ REF_CV_300 = 47.1469502          # J/K/mol, mesh length 100 (31x31x31)
 def _setup(tmp_path, monkeypatch, outputs=True):
     for f in ("parent.out", "parent.d12", "crystal.o", "crystal.d12"):
         shutil.copy(FIX / f, tmp_path / f)
+    ok, d = phonopy_set(tmp_path, dim="4 4 4")
+    assert ok
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["generate", "parent.out", "--dim", "4 4 4"]) == 0
-    d = tmp_path / "phonopy_parent_444"
     man = json.loads((d / "mace_phonopy.json").read_text())
     if outputs:
         for i, job in enumerate(man["jobs"], start=1):
@@ -82,7 +83,7 @@ def _freqs(ph, q):
 
 def test_forces_fc_frequencies_and_thermal_match_phonopy(tmp_path, monkeypatch):
     d, _ = _setup(tmp_path, monkeypatch)
-    assert cli.main(["collect", str(d), "--band", "none"]) == 0
+    assert analyze(["phonopy", str(d), "--band", "none"]) == 0
     ours = phonopy.load(str(d / "phonopy_params.yaml"), is_compact_fc=False)
     ref = _oracle()
     np.testing.assert_allclose(np.array(ours.dataset["first_atoms"][0]["forces"]),
@@ -109,7 +110,7 @@ def test_force_sets_equal_phonopys(tmp_path, monkeypatch):
     from phonopy.file_IO import write_FORCE_SETS
 
     d, _ = _setup(tmp_path, monkeypatch)
-    assert cli.main(["collect", str(d), "--band", "none"]) == 0
+    assert analyze(["phonopy", str(d), "--band", "none"]) == 0
     ref = _oracle()
     write_FORCE_SETS(ref.dataset, filename=str(tmp_path / "FORCE_SETS.ref"))
     assert (d / "FORCE_SETS").read_text() == (tmp_path / "FORCE_SETS.ref").read_text()
@@ -117,7 +118,7 @@ def test_force_sets_equal_phonopys(tmp_path, monkeypatch):
 
 def test_yaml_outputs_exist_and_plot(tmp_path, monkeypatch):
     d, _ = _setup(tmp_path, monkeypatch)
-    assert cli.main(["collect", str(d), "--band",
+    assert analyze(["phonopy", str(d), "--band",
                      "0 0 0  1/2 0 1/2  1/2 1/4 3/4, 1/2 1/2 1/2  0 0 0",
                      "--band-labels", "G X W L G", "--mesh", "8 8 8", "--plot"]) == 0
     for f in ("band.yaml", "mesh.yaml", "total_dos.dat", "thermal_properties.yaml",
@@ -130,7 +131,7 @@ def test_yaml_outputs_exist_and_plot(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _check(d, capsys):
-    rc = cli.main(["collect", str(d), "--check"])
+    rc = analyze(["phonopy", str(d), "--check"])
     out = capsys.readouterr()
     return rc, out.out + out.err
 
@@ -202,7 +203,7 @@ def test_band_auto_points_in_crystal_primitive_basis(tmp_path, monkeypatch):
     cart = np.array(x) @ rec
     a = 5.56981957
     assert np.allclose(sorted(np.abs(cart)), [0, 0, 1 / a], atol=1e-6)
-    assert cli.main(["collect", str(d)]) == 0
+    assert analyze(["phonopy", str(d)]) == 0
     assert (d / "band.yaml").is_file()
 
 
@@ -210,21 +211,23 @@ def test_band_auto_points_in_crystal_primitive_basis(tmp_path, monkeypatch):
 # T5: the real invocation path
 # ---------------------------------------------------------------------------
 
-def test_generate_and_collect_through_mace_cli(tmp_path):
+def test_opt2d12_and_analyze_through_mace_cli(tmp_path):
     for f in ("parent.out", "parent.d12"):
         shutil.copy(FIX / f, tmp_path / f)
-    env = dict(os.environ, MACE_NO_BANNER="1")
-    p = subprocess.run([sys.executable, str(MACE_CLI), "phonopy", "generate", "parent.out",
-                        "--dim", "4 4 4"], cwd=tmp_path, env=env, capture_output=True,
-                       text=True, timeout=600)
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["MACE_NO_BANNER"] = "1"
+    p = subprocess.run([sys.executable, str(MACE_CLI), "opt2d12", "--out-file", "parent.out", "--calc-type",
+                        "PHONOPY", "--non-interactive", "--dim", "4", "4", "4"], cwd=tmp_path, env=env,
+                       capture_output=True, text=True, timeout=600)
     assert p.returncode == 0, p.stdout + p.stderr
-    assert "mace submit phonopy_parent_444 --walltime" in p.stdout
-    d = tmp_path / "phonopy_parent_444"
+    assert "mace submit parent_ph444_PBE0_optimized --walltime" in p.stdout
+    assert "mace analyze phonopy parent_ph444_PBE0_optimized" in p.stdout
+    d = tmp_path / "parent_ph444_PBE0_optimized"
     man = json.loads((d / "mace_phonopy.json").read_text())
     for i, job in enumerate(man["jobs"], start=1):
         shutil.copy(FIX / f"supercell-{i:03d}.o", d / f"{job}.out")
-    p = subprocess.run([sys.executable, str(MACE_CLI), "phonopy", "collect",
-                        "phonopy_parent_444", "--band", "none"], cwd=tmp_path, env=env,
+    p = subprocess.run([sys.executable, str(MACE_CLI), "analyze", "phonopy",
+                        "parent_ph444_PBE0_optimized", "--band", "none"], cwd=tmp_path, env=env,
                        capture_output=True, text=True, timeout=600)
     assert p.returncode == 0, p.stdout + p.stderr
     assert (d / "thermal_properties.yaml").is_file()
@@ -245,7 +248,7 @@ def test_collect_runs_without_contextlib_chdir(tmp_path, monkeypatch):
     d, _ = _setup(tmp_path, monkeypatch)
     monkeypatch.delattr(contextlib, "chdir", raising=False)
     cwd = os.getcwd()
-    assert cli.main(["collect", str(d), "--band", "none"]) == 0
+    assert analyze(["phonopy", str(d), "--band", "none"]) == 0
     assert (d / "FORCE_SETS").is_file() and os.getcwd() == cwd
 
 
@@ -268,7 +271,7 @@ def test_unparseable_forces_name_the_output(tmp_path, monkeypatch, capsys):
         return real(num_atoms, files, verbose=verbose)
 
     monkeypatch.setattr(pic, "parse_set_of_forces", fake)
-    rc = cli.main(["collect", str(d), "--band", "none"])
+    rc = analyze(["phonopy", str(d), "--band", "none"])
     err = capsys.readouterr().err
     assert rc == 1
     assert f"{bad}.out" in err and man["jobs"][0] not in err
@@ -281,7 +284,7 @@ def test_force_sets_not_created_is_an_error(tmp_path, monkeypatch, capsys):
     d, _ = _setup(tmp_path, monkeypatch)
     (d / "FORCE_SETS").write_text("stale\n")          # from an earlier run
     monkeypatch.setattr(fio, "write_FORCE_SETS", lambda *a, **k: None)
-    rc = cli.main(["collect", str(d), "--band", "none"])
+    rc = analyze(["phonopy", str(d), "--band", "none"])
     err = capsys.readouterr().err
     assert rc == 1 and "FORCE_SETS" in err and "could not be created" in err
     assert not (d / "FORCE_SETS").exists()
@@ -300,3 +303,66 @@ def test_output_without_forces_points_at_the_deck(tmp_path, monkeypatch, capsys)
     rc, out = _check(d, capsys)
     assert rc == 1 and "force block has 0 rows" in out
     assert "stopped before GRADCAL" in out and "terminate normally" not in out
+
+
+# ---------------------------------------------------------------------------
+# The files the collect step wrote (tests/fixtures/phonopy_crystal/NaCl_collected)
+# ---------------------------------------------------------------------------
+
+COLLECTED = REPO_ROOT / "tests" / "fixtures" / "phonopy_crystal" / "NaCl_collected"
+
+
+def test_analyze_phonopy_writes_the_files_collect_wrote(tmp_path, monkeypatch):
+    """NaCl_collected holds band.yaml, total_dos.dat and thermal_properties.yaml as the
+    1.1.6-preview collect command wrote them (phonopy 4.8.3, see the fixtures' README); the
+    set opt2d12 writes and mace analyze phonopy give the same numbers."""
+    pytest.importorskip("seekpath")
+    d, _ = _setup(tmp_path, monkeypatch)
+    assert analyze(["phonopy", str(d), "--band-points", "5", "--mesh", "6 6 6",
+                    "--tmax", "600", "--tstep", "100"]) == 0
+    import yaml
+    for name in ("band.yaml", "thermal_properties.yaml"):
+        ours, theirs = (yaml.safe_load(p.read_text()) for p in (d / name, COLLECTED / name))
+        for k in ("phonopy", "calculator"):
+            ours.pop(k, None), theirs.pop(k, None)
+        if name == "band.yaml":
+            fo = np.array([[b["frequency"] for b in q["band"]] for q in ours["phonon"]])
+            ft = np.array([[b["frequency"] for b in q["band"]] for q in theirs["phonon"]])
+            np.testing.assert_allclose(fo, ft, atol=1e-6)
+            assert [q["q-position"] for q in ours["phonon"]] == [q["q-position"] for q in theirs["phonon"]]
+        else:
+            for a, b in zip(ours["thermal_properties"], theirs["thermal_properties"]):
+                for k in ("temperature", "free_energy", "entropy", "heat_capacity", "energy"):
+                    assert abs(a[k] - b[k]) < 1e-6, (k, a, b)
+    np.testing.assert_allclose(np.loadtxt(d / "total_dos.dat"), np.loadtxt(COLLECTED / "total_dos.dat"), atol=1e-8)
+
+
+# ---------------------------------------------------------------------------
+# The completion callback of the set's last job
+# ---------------------------------------------------------------------------
+
+def test_the_last_job_of_a_set_runs_the_analysis_once(tmp_path, monkeypatch, capsys):
+    d, man = _setup(tmp_path, monkeypatch, outputs=False)
+    first, last = man["jobs"]
+    shutil.copy(FIX / "supercell-001.o", d / f"{first}.out")
+    # one job still to end: nothing to do
+    assert cli.analyze_when_complete(str(d), first) is None
+    assert not (d / "FORCE_SETS").exists()
+    shutil.copy(FIX / "supercell-002.o", d / f"{last}.out")
+    # not a job of this set (another folder's callback): nothing
+    assert cli.analyze_when_complete(str(d), "someone_else") is None
+    assert cli.analyze_when_complete(str(d), last) == 0
+    assert (d / "FORCE_SETS").is_file() and (d / "thermal_properties.yaml").is_file()
+    assert "every job has ended; mace analyze phonopy" in capsys.readouterr().out
+    # a second callback (a job that ended at the same time) leaves it alone
+    assert cli.analyze_when_complete(str(d), first) is None
+
+
+def test_the_callback_runs_it_from_the_job_scripts_environment(tmp_path, monkeypatch):
+    """The job script exports JOB and DIR; the queue manager's completion step reads them."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    d, man = _setup(tmp_path, monkeypatch)
+    monkeypatch.setenv("DIR", str(d))
+    monkeypatch.setenv("JOB", man["jobs"][-1])
+    EnhancedCrystalQueueManager._analyze_finished_phonopy_set()
+    assert (d / "FORCE_SETS").is_file()

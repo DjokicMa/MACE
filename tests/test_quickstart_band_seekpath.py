@@ -1,12 +1,12 @@
 """Quick-start / --progress BAND steps write opt2d3's Enter-through deck.
 
-v1.1.1 made the quick-start BAND ask for the SeeK-path vectors
-(``seekpath_full``), so a `mace submit --progress` BAND step wrote a
-different path, title and NLINE record than opt2d3 writes for the same
-parent when the user presses Enter through it (the automatic path as
-high-symmetry labels). The quick-start configuration is now the engine's and
-the planner's Basic default; the decks themselves are compared in
-test_band_default_is_opt2d3_enter.
+SeeK-path is the default k-path of a BAND step (opt2d3's automatic path,
+format 4), by every route. v1.1.1 made the quick-start BAND ask for the
+SeeK-path vectors (``seekpath_full``); 1.1.2 moved it to the high-symmetry
+labels so it matched opt2d3's Enter-through answer; 1.1.6 made SeeK-path
+that answer, so the quick-start configuration is again SeeK-path, and the
+engine's and the planner's Basic default are the same dict. The decks
+themselves are compared in tests/test_workflow_band_matches_opt2d3.py.
 """
 import sys
 
@@ -25,7 +25,7 @@ def test_band_is_the_opt2d3_default():
     cfg = _get_basic_d3_config_for_quick_start("BAND")
     assert cfg == opt2d3_default_band_config()
     assert cfg == WorkflowEngine.__new__(WorkflowEngine)._get_default_d3_config("BAND")
-    assert "seekpath_full" not in cfg and cfg["path_method"] == "labels"
+    assert cfg["seekpath_full"] is True and cfg["path_method"] == "coordinates"
 
 
 def test_band_config_still_valid():

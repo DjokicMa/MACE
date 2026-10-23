@@ -170,7 +170,10 @@ def test_progress_records_in_the_database_its_callback_uses(tmp_path, fake_slurm
     proc = _run_submit(tmp_path, fake_slurm, "--progress", "full_electronic", str(deck))
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
-    script = (tmp_path / "MgO_opt.sh").read_text()
+    # the deck runs in its step folder (workflow_outputs/<id>/step_001_OPT/MgO/)
+    (sh,) = tmp_path.glob("workflow_outputs/workflow_*/step_001_OPT/MgO/MgO_opt.sh")
+    assert not (tmp_path / "MgO_opt.sh").exists()
+    script = sh.read_text()
     exported = [l for l in script.splitlines() if l.startswith("export MACE_CONTEXT_DIR=")]
     assert len(exported) == 1, exported
     context_dir = Path(exported[0].split("=", 1)[1].strip('"'))

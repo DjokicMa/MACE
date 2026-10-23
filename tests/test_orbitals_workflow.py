@@ -139,9 +139,22 @@ def test_setup_grays_out_orbitals_for_a_two_component_parent(tmp_path):
     assert setup.parent_refusals(SCF / "si.out") == {}
     info = setup.parent_info("opt2d3", "hi2c.out", [], SCF / "hi2c.out")
     assert info["refused"] == {"ORBITALS": SOC_REFUSAL}
+    # what a Setup run (POST /api/setup/run) answers for the 2c output in front: its parent's refusals,
+    # the reasons the panel grays its calculation types out with (setup/panel.js calcSegment)
+    d = tmp_path / "runs"
+    d.mkdir()
+    shutil.copy(SCF / "hi2c.out", d / "hi2c.out")
+    (d / "hi2c.f9").write_text("wavefunction placeholder\n")
+    store = {}
+    get = lambda k: store.get(json.dumps(k, default=str))  # noqa: E731
+    put = lambda k, v, n: store.__setitem__(json.dumps(k, default=str), v)  # noqa: E731
+    for calc in ("BAND", "ORBITALS"):
+        req = setup.Request({"answers": {}, "patches": {}, "preview": True})
+        r = setup.run_setup(req, "opt2d3", calc, tmp_path / f"w_{calc}", d / "hi2c.out", "hi2c.out",
+                            setup.source_key("opt2d3", d / "hi2c.out"), get, put, None, schema_info=setup.schema())
+        assert r["parent"]["refused"] == {"ORBITALS": SOC_REFUSAL}, calc
     js = (REPO_ROOT / "mace" / "gui" / "static" / "js" / "setup" / "panel.js").read_text()
-    assert 'aria-disabled="true" title="${esc(refused[t])}"' in js
-    assert 'calc.getAttribute("aria-disabled") === "true"' in js
+    assert "st.result.parent.refused" in js and "aria-disabled" in js
 
 
 def test_builder_grays_out_orbitals_for_two_component_decks(tmp_path):

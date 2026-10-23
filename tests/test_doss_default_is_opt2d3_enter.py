@@ -102,7 +102,8 @@ def test_config_says_what_the_writer_does(tmp_path, monkeypatch, route):
     assert config["include_element_totals"] is True
     # all bands: no window or band range the writer would not read
     assert "energy_range" not in config and "energy_window" not in config
-    assert config["n_points"] == 10000
+    # the Standard energy resolution: the points follow from the step and the span
+    assert config["energy_resolution"] == "standard" and config["n_points"] == "auto"
 
 
 @pytest.mark.parametrize("parent", sorted(PARENTS))
@@ -112,3 +113,33 @@ def test_default_doss_deck_is_opt2d3_enter_deck(tmp_path, monkeypatch, route, pa
     manual = _manual(out, tmp_path / "manual")
     config = _route_config(route, tmp_path, monkeypatch)
     assert _workflow(out, tmp_path / "workflow", config) == manual
+
+
+@pytest.mark.parametrize("parent", sorted(PARENTS))
+def test_mace_opt2d3_enter_writes_the_standard_steps_points(tmp_path, parent):
+    """`mace opt2d3 -t DOSS` with every answer Enter: the DOSS record's NPT
+    (its second number) is the Standard step's: over every band (the parent's
+    estimated span) when that needs no more than 5000 points or the parent has no
+    trustworthy E_F, else over the default window around E_F (1000 in the 1.1.6
+    preview, 10000 before)."""
+    out = _stage(tmp_path, PARENTS[parent])
+    env = _env()
+    env.pop("PYTHONPATH", None)
+    env["MACE_NO_BANNER"] = "1"
+    r = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d3",
+                        "--input", str(out), "--calc-type", "DOSS"],
+                       cwd=str(out.parent), input="\n" * 40, capture_output=True,
+                       text=True, env=env, timeout=180)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    lines = _deck(out.parent).splitlines()
+    record = lines[lines.index("DOSS") + 1].split()
+    sys.path.insert(0, str(REPO_ROOT / "Crystal_d3"))
+    import d3_config as C
+    import d3_interactive
+    span = C.doss_span_estimate_ev(C.doss_atomic_numbers(out.read_text()))
+    assert C.doss_npts(span) > C.DOSS_WINDOW_OFFER_NPTS
+    if d3_interactive.trusted_fermi_au(str(out))[0] is None:
+        assert record[1:4] == [str(C.doss_npts(span)), "1", record[3]] and record[3] != "-1", record
+    else:
+        lo, hi = C.DOSS_DEFAULT_WINDOW_EV
+        assert record[1:4] == [str(C.doss_npts(hi - lo)), "-1", "-1"], record

@@ -426,7 +426,9 @@ def test_phonon_dispersion_is_refused_where_it_cannot_be_written():
     assert "NOT ALLOWED FOR MOLECULES" in phonon_dispersion_refusal("MOLECULE", disp)
     # cif2d12 has no slab output to read the corresponding space group from
     assert "CORRESPONDING SPACE GROUP" in phonon_dispersion_refusal("SLAB", disp)
-    assert "not written for a POLYMER" in phonon_dispersion_refusal("POLYMER", disp)
+    # a polymer takes one integer and the Gamma-X path (measured on CRYSTAL23 for the 1.1.6 example suite)
+    assert phonon_dispersion_refusal("POLYMER", disp) is None
+    assert "not written for a HELIX" in phonon_dispersion_refusal("HELIX", disp)
 
 
 def test_crystal_system_carries_the_lattice_centering():
@@ -480,14 +482,12 @@ PHONON_BANDS = REPO_ROOT / "Crystal_d12" / "example_configs" / "phonon_bands.jso
 @pytest.mark.parametrize("parent,expect", [
     ("1LiFSI-1DEC-conf1_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
      "NOT ALLOWED FOR MOLECULES"),
-    ("4LG_FSI_2x2_ABAB_opt_HSESOL3C_Attempt2_SLAB_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
-     "PDOS has not been run on CRYSTAL23 for a slab"),
-], ids=["molecule", "slab"])
+], ids=["molecule"])
 def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, expect):
     """The SLAB crashed in the title (no space group) and left a 0-byte deck;
     the MOLECULE deck was written and CRYSTAL23 stopped at SCELPHONO. A slab
-    now takes SCELPHONO 2x2 + BANDS (test_slab_phonon_dispersion), but not
-    this config's PDOS, which was not run for a slab."""
+    now takes SCELPHONO 2x2 + BANDS + PDOS (test_opt2d12_writes_a_slab_phonon_bands_and_dos_deck);
+    a molecule's band structure is still refused."""
     out = tmp_path / "out"
     rc, log, par = _opt2d12(tmp_path, parent, PHONON_BANDS, out)
     assert rc != 0, log[-2000:]
@@ -495,6 +495,19 @@ def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, ex
     assert "Traceback" not in log
     assert list(out.iterdir()) == []
     assert sorted(p.suffix for p in par.iterdir()) == [".d12", ".out"]
+
+
+def test_opt2d12_writes_a_slab_phonon_bands_and_dos_deck(tmp_path):
+    """SCELPHONO 2x2 + DISPERSION + BANDS and + PDOS each ran on CRYSTAL23 for a slab (h-BN, the 1.1.6
+    example suite), so this config's bands-and-DOS deck is written for a slab too."""
+    out = tmp_path / "out"
+    rc, log, _ = _opt2d12(tmp_path, "4LG_2x2_AA_opt_HSESOL3C_optimized",          # C96: even electrons, closed shell OK
+                          PHONON_BANDS, out)
+    assert rc == 0, log[-2000:]
+    (deck,) = out.glob("*.d12")
+    lines = deck.read_text().splitlines()
+    i = lines.index("SCELPHONO")
+    assert lines[i + 1:i + 3] == ["2 0", "0 2"] and "BANDS" in lines and "PDOS" in lines
 
 
 def test_cif2d12_phonon_path_follows_the_lattice_centering(tmp_path):

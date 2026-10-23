@@ -10,7 +10,8 @@ mace.utils.fort34 expands the asymmetric unit with the operators instead.
 Fixtures (tests/data/fort34/): the asymmetric unit and Cartesian operators of
 the final geometry of four corpus OPT outputs (diamond Fd-3m, Ag2Br2 P6_3mc,
 Ag2Br3 R-3c, and the P1 4-layer graphene slab), plus graphite AB 1x1x2
-(P6_3/mmc) and a graphene slab (p6/mmm, c = 500 Å).
+(P6_3/mmc) and a graphene slab (p6/mmm, c = 500 Å), and Se_P31_crystal23.f34,
+a real CRYSTAL23 EXTPRT file of P3_1 Se (its own operators and atoms).
 """
 import shutil
 import subprocess
@@ -116,6 +117,39 @@ def test_operators_written_either_way_round(tmp_path, name):
     p.write_text(_column_convention((F34 / name).read_text()))
     col = fort34.read(p)
     assert len(col["numbers"]) == len(row["numbers"])
+
+
+def _crystal_p31_cell():
+    """The P3_1 Se cell CRYSTAL23 itself built from the deck of Se_P31_crystal23.f34 (its .out:
+    asymmetric unit (0.2254, 0.1, 0.3), cell a = 4.366, c = 4.954 Å), Cartesian Å."""
+    spglib = pytest.importorskip("spglib")
+    crystal = pytest.importorskip("ase.spacegroup").crystal
+    a = crystal("Se", [(0.2254, 0.1, 0.3)], spacegroup=144, cellpar=[4.366, 4.366, 4.954, 90, 90, 120])
+    return a, spglib
+
+
+@pytest.mark.parametrize("group_record", [True, False])
+def test_crystal23_screw_axis_operators_are_read_as_written(tmp_path, group_record):
+    """A real CRYSTAL23 EXTPRT fort.34 of P3_1 Se (MSU HPCC, 1.1.6): it lists all three atoms and writes each
+    operator for x' = R x + t. Read as x R + t the 3_1 screw becomes 3_2 and still closes, but only by adding
+    the mirror image's three atoms; the reading that adds none is CRYSTAL's, with or without the group record."""
+    from mace.utils import fort34
+    text = (F34 / "Se_P31_crystal23.f34").read_text()
+    assert text.split()[-2:] == ["144", "3"]
+    p = tmp_path / "se.f34"
+    p.write_text(text if group_record else "\n".join(text.splitlines()[:-1]) + "\n")
+    f = fort34.read(p)
+    assert f["convention"] == "column" and not f.get("convention_ambiguous")
+    assert f["nirr"] == 3 and len(f["numbers"]) == 3
+    a, spglib = _crystal_p31_cell()
+    lat = np.asarray(f["lattice"])
+    assert fort34._spacegroup_number(f["cart"], f["numbers"], lat) == 144
+    # the same atoms as CRYSTAL's own cell (fort.34 places a on x; compare in fractions of each cell)
+    frac = np.linalg.solve(lat.T, np.asarray(f["cart"]).T).T % 1.0
+    ref = a.get_scaled_positions() % 1.0
+    for x in ref:
+        d = (frac - x + 0.5) % 1.0 - 0.5
+        assert np.abs(d).max(axis=1).min() < 1e-6
 
 
 def test_fortran_d_exponents(tmp_path):

@@ -17,6 +17,9 @@ import pytest
 from conftest import REPO_ROOT, find_data
 from test_gui_results import HA, write_band, write_band_crystal
 from mace.gui import results
+from mace.utils.plot_labels import fermi_key, mathtext
+
+FERMI_KEY = mathtext(fermi_key(0))     # the dotted E_F line's legend entry (E$_{\mathregular{F}}$)
 
 sys.path.insert(0, str(REPO_ROOT / "Plotting"))
 
@@ -60,7 +63,7 @@ def test_real_runs_magnetic_and_closed_shell():
     assert closed["spin_polarized"] is False and closed["spin_identical"] is False
 
 
-def _cli_figure(monkeypatch, path):
+def _cli_figure(monkeypatch, path, band_style=None):
     """Run ipBANDS on one BAND.DAT and hand back the figure it saved."""
     import matplotlib
     matplotlib.use("Agg")
@@ -72,7 +75,7 @@ def _cli_figure(monkeypatch, path):
     args = SimpleNamespace(list_segments=False, segments=None, path=None, no_gaps=False, gap_width=0.02,
                            E_lower=-10, E_upper=10, fixed_width=None, fixed_height=None, alpha=1.0,
                            spin_up_color=ipb.DEFAULT_SPIN_UP_COLOR, spin_down_color=ipb.DEFAULT_SPIN_DOWN_COLOR,
-                           auto_width=False, formats="png")
+                           auto_width=False, formats="png", band_style=band_style)
     d3 = path.with_name(path.name.replace(".BAND.DAT", ".d3"))
     ipb.ipBANDS(str(path), "m", {"d3": str(d3)}, args, str(path.parent))
     assert saved
@@ -80,8 +83,8 @@ def _cli_figure(monkeypatch, path):
     legend = [t.get_text() for t in ax.get_legend().get_texts()]
     # (matplotlib names every custom dash pattern "--", the dotted Fermi line's too)
     dashed = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--" and len(ln.get_xdata())
-              and not ln.get_label().startswith("$E_F")]
-    fermi = [ln for ln in ax.get_lines() if ln.get_label().startswith("$E_F")]
+              and not ln.get_label().startswith(FERMI_KEY)]
+    fermi = [ln for ln in ax.get_lines() if ln.get_label().startswith(FERMI_KEY)]
     _cli_figure.fermi_dashes = [ln._unscaled_dash_pattern for ln in fermi]
     colors = {ln.get_color() for ln in ax.get_lines() if len(ln.get_xdata()) > 2}      # the bands (not k ticks)
     _cli_figure.colors = colors
@@ -91,9 +94,13 @@ def _cli_figure(monkeypatch, path):
 def test_cli_draws_a_non_magnetic_run_once(monkeypatch, tmp_path):
     path, _, _ = write_band_crystal(tmp_path, noise=1e-4)
     legend, dashed = _cli_figure(monkeypatch, path)
-    # one set, in the plot's ink, with no spin legend (Marcus 2026-10-16: not spin up's pink)
+    # one set with no spin legend, in the Band style's color as the GUI draws it (1.1.6: Auto is Single, the
+    # spin pair's first color, blue; not spin up's pink, Marcus 2026-10-16); Ink keeps the plot's ink
+    from mace.plotting.presets import SPIN_COLORS
     assert not any("spin" in t or "α" in t for t in legend)
-    assert not dashed and _cli_figure.colors == {"#000000"}
+    assert not dashed and _cli_figure.colors == {SPIN_COLORS["light"]["up"]}
+    _cli_figure(monkeypatch, path, band_style="ink")
+    assert _cli_figure.colors == {"#000000"}
 
 
 def test_cli_keeps_both_spins_of_a_magnetic_run(monkeypatch, tmp_path):
@@ -109,7 +116,8 @@ def test_cli_closed_shell_is_one_set(monkeypatch, tmp_path):
     path, _, _ = write_band_crystal(tmp_path)
     legend, dashed = _cli_figure(monkeypatch, path)
     assert not any("spin" in t or "bands" in t for t in legend)
-    assert not dashed and _cli_figure.colors == {"#000000"}
+    from mace.plotting.presets import SPIN_COLORS
+    assert not dashed and _cli_figure.colors == {SPIN_COLORS["light"]["up"]}      # Band style Auto: Single
 
 
 BAND_4LG = REPO_ROOT / "test" / "BAND" / "4LG_FSI_2x2_AA_opt_HSESOL3C_optimized_band.BAND.DAT"

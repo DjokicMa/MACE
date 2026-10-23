@@ -1,4 +1,4 @@
-"""Every default BAND NSUB is opt2d3's 1000; DOSS keeps 10000 points.
+"""Every default BAND NSUB is opt2d3's 1000; every default DOSS has the Standard energy resolution.
 
 NSUB is the total number of k points along the whole path (CRYSTAL23 manual
 p.309; note 4 p.310: CRYSTAL spreads them over the lines). opt2d3 offers
@@ -6,7 +6,10 @@ p.309; note 4 p.310: CRYSTAL spreads them over the lines). opt2d3 offers
 without a step configuration (engine), the planner's basic and advanced
 BAND configurations and the quick-start configuration used 10000 - ten times
 the k points and the cost for the same path. DOSS's n_points is the number
-of energy points and is not changed.
+of energy points (the second number of the DOSS record); its default was
+10000 in opt2d3's prompt and writer and in every workflow route, 1000 in the
+1.1.6 preview, and follows from the energy step since 1.1.6 (the Standard
+step, Crystal_d3/d3_config.doss_npts).
 """
 import builtins
 import inspect
@@ -53,7 +56,16 @@ def test_workflow_band_defaults_match_opt2d3(tmp_path, monkeypatch):
     assert found == dict.fromkeys(found, OPT2D3_BAND_NSUB)
 
 
-def test_doss_keeps_10000_energy_points(tmp_path, monkeypatch):
+def test_opt2d3_doss_default_is_the_standard_resolution():
+    import CRYSTALOptToD3
+    import d3_interactive
+    writer = inspect.getsource(CRYSTALOptToD3.D3Generator._write_doss_d3)
+    prompt = inspect.getsource(d3_interactive._doss_resolution_menu)
+    assert 'config.get("n_points"' not in writer and "doss_npts(" in writer
+    assert 'C.DOSS_RESOLUTIONS.index("standard")' in prompt
+
+
+def test_doss_defaults_to_the_standard_resolution(tmp_path, monkeypatch):
     from mace.workflow.engine import WorkflowEngine
     from mace.workflow.planner import WorkflowPlanner
     from mace.run_mace import _get_basic_d3_config_for_quick_start
@@ -61,7 +73,11 @@ def test_doss_keeps_10000_energy_points(tmp_path, monkeypatch):
     engine = WorkflowEngine.__new__(WorkflowEngine)
     planner = WorkflowPlanner(work_dir=tmp_path)
     monkeypatch.setattr(builtins, "input", lambda prompt="": "")
-    assert engine._get_default_d3_config("DOSS")["n_points"] == 10000
-    assert planner._get_basic_d3_config("DOSS")["n_points"] == 10000
-    assert planner._get_advanced_d3_config("DOSS")["n_points"] == 10000
-    assert _get_basic_d3_config_for_quick_start("DOSS")["n_points"] == 10000
+    found = {
+        "engine": engine._get_default_d3_config("DOSS"),
+        "planner basic": planner._get_basic_d3_config("DOSS"),
+        "planner advanced": planner._get_advanced_d3_config("DOSS"),
+        "quick start": _get_basic_d3_config_for_quick_start("DOSS"),
+    }
+    assert {k: (c["energy_resolution"], c["n_points"]) for k, c in found.items()} == \
+        dict.fromkeys(found, ("standard", "auto"))

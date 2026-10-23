@@ -99,8 +99,10 @@ def _run_checks():
     check("I6 public wrappers + _impl bodies present", has_impl)
 
 
-def test_back_integration():
+def test_back_integration(monkeypatch):
     """pytest entry point: run every back-navigation check, assert none failed."""
+    # The checks swap menu_nav._REAL_INPUT for scripted feeders: restore it after.
+    monkeypatch.setattr(menu_nav, "_REAL_INPUT", menu_nav._REAL_INPUT)
     _run_checks()
     assert not _fail, f"back-integration failures: {_fail}"
 

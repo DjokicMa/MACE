@@ -239,8 +239,10 @@ jump ssh uses for the node.
 
 `mace gui connect --check` checks each piece above and says, for each
 problem, the one command that fixes it. It is read-only: it changes no file,
-and it never opens the private half of a key (only the `.pub` file, to compare
-fingerprints with the agent).
+and it reads the `.pub` file of a key to compare fingerprints with the agent.
+It opens the private half only on Windows when the ssh-agent service is
+disabled: `ssh-keygen -y -P ""` tells whether the key has a passphrase, and
+only its exit code is kept.
 
 ```
 mace gui connect --gateway cluster --node dev-node-01 --check

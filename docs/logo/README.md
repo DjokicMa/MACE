@@ -23,6 +23,8 @@ so you can inline several files in one page without id collisions.
 | `icon.svg` | App icon and favicon on a 32 x 32 grid. A bright gradient squircle with a dark knocked-out stepped-block M (the banner's own M, 2 x 4 px cells, with a 1 x 2 px extrusion). It reads on both light and dark chrome. |
 | `icon-16.svg` | Separately hinted 16 x 16 icon: integer-aligned 1 x 2 px cells, no extrusion. Use it whenever the icon renders at exactly 16 px. |
 | `icon-512.png` | 512 px raster of `icon.svg` (app stores, PWA manifest, social preview). |
+| `icon-192.png` | 192 px raster of `icon.svg` (the MACE GUI's web app manifest and app window). |
+| `apple-touch-icon.png` | 180 px raster of `icon.svg` without its rounded corners and with no transparency (iOS and macOS round it themselves). |
 | `favicon-32.png`, `favicon-16.png` | Raster favicons (16 comes from `icon-16.svg`). |
 
 Suggested favicon markup:
@@ -90,8 +92,9 @@ teal does not wash out on white. Other colors:
 
 - The README header uses `hero.svg` and `hero-on-dark.svg` from this folder.
 - The MACE GUI serves its own copies from `mace/gui/static/brand/` (the
-  favicon, the menu bar, the About dialog and the welcome screen); a test
-  keeps them byte-identical to the files here.
+  favicon, the menu bar, the About dialog, the welcome screen, and the web
+  app manifest's icons, which name and draw its app window); a test keeps
+  them byte-identical to the files here.
 
 ## Regenerating
 

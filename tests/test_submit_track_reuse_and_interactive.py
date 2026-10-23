@@ -100,15 +100,18 @@ def test_overwrite_sh_replaces_an_edited_script(tmp_path):
 
 
 def test_progress_does_not_replace_an_edited_script(tmp_path):
-    """--progress submits the plan's job scripts (they carry the workflow
-    context): an edited <name>.sh cannot be used, nor silently replaced."""
+    """--progress runs the deck in its workflow's step folder with the
+    plan's job script written there (it carries the workflow context): an
+    edited <name>.sh beside the deck is neither used nor replaced, and does
+    not stop the submission."""
     env, fake, d = _setup(tmp_path)
     edited = _edit(d)
-    p = _mace(d, env, "submit", "--progress", "sp", "x.d12")
+    p = _mace(d, env, "submit", "--progress", "opt_sp", "x.d12")
     out = p.stdout + p.stderr
-    assert p.returncode == 1, out
-    assert "--overwrite-sh" in out
-    assert not fake.calls("sbatch")
+    assert p.returncode == 0, out
+    assert "would not reach" not in out and "--overwrite-sh" not in out
+    (call,) = fake.calls("sbatch")
+    assert "/workflow_outputs/" in call["argv"][-1]
     assert (d / "x.sh").read_text() == edited
 
 

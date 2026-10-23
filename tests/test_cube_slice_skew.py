@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 # Cube engine ships in the package (relocated from gitignored test/); import it
-# from there so this test runs on a fresh clone.
+# from there so this test runs on a fresh clone. It draws with plotly (the engine imports without it).
+pytest.importorskip("plotly")
 ccp = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly")
 
 
@@ -76,7 +77,7 @@ def test_slice_with_atoms_renders(tmp_path):
     fig = ccp.plot_slice_plotly(cube, "z", position=9, show_atoms=True)
     assert any(t.type == "heatmap" for t in fig.data)
     assert any(t.type == "scatter" and t.mode == "markers+text" for t in fig.data)
-    assert "e/bohr³" in fig.data[0].colorbar.title.text
+    assert "e bohr<sup>−3</sup>" in fig.data[0].colorbar.title.text
 
 
 # ---- --slice-all (grid of subplots) ----

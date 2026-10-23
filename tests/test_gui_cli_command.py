@@ -117,6 +117,33 @@ def test_copied_command_beats_a_folder_file(tmp_path, monkeypatch):
     assert plain == "mace plotting --band-dos x.BAND.DAT --e-lower=-6 --e-upper=6", plain
 
 
+@node
+def test_copied_command_names_the_reference_the_fort25_picks_and_the_switches(tmp_path):
+    """Reference › Fermi is named (auto takes the vacuum scale when the run's POTC files are there), and so
+    are a fort.25's Domain and Run and the Reference/Labels switches turned off."""
+    from mace.plotting.main import create_parser
+    cases = [dict(kind="band", file="x_band.BAND.DAT", emin=-6, emax=6, reference="fermi"),
+             dict(kind="band", file="x_band.BAND.DAT", emin=-6, emax=6, reference="vacuum"),
+             dict(kind="band", file="x_band.BAND.DAT", emin=-6, emax=6),
+             dict(kind="bandos", file="x_band.fort.25", emin=-6, emax=6, reference="fermi",
+                  menus={"domain": "electronic", "run": 2, "fermi_line": 0, "k_labels": 0, "spin_labels": 0}),
+             dict(kind="dos", file="x.f25", emin=-6, emax=6, menus={"domain": "phonon", "spin_labels": 0})]
+    texts = _node(cases, tmp_path)
+    args = [create_parser().parse_args(shlex.split(t)[2:]) for t in texts]
+    assert [a.energy_reference for a in args] == ["fermi", "vacuum", "auto", "fermi", "auto"], texts
+    assert (args[3].f25_domain, args[3].f25_run) == ("electronic", 2)
+    assert args[3].no_fermi_line and args[3].no_k_labels and args[3].no_spin_labels
+    assert (args[4].f25_domain, args[4].f25_run) == ("phonon", None) and args[4].no_spin_labels
+    assert not (args[4].no_fermi_line or args[4].no_k_labels or args[0].no_spin_labels)
+
+
+def test_publication_figure_takes_the_fort25_picks_and_the_switches():
+    get = {"domain": "phonon", "run": "2", "fermi_line": "0", "k_labels": "false", "spin_labels": "1"}.get
+    out = plots.look_args("band", get)
+    assert out == ["--f25-domain=phonon", "--f25-run=2", "--no-fermi-line", "--no-k-labels"], out
+    assert plots.look_args("band", {"fermi_line": "1", "k_labels": "true"}.get) == []
+
+
 def test_explicit_style_flags_name_every_default():
     assert P.style_flags({}) == []
     assert P.style_flags({}, explicit=True) == ["--style=default", "--spin-colors=auto", "--band-style=auto", "--spin-down-style=dash",

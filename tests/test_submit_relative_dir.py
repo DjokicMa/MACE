@@ -4,9 +4,9 @@ crystal.py changes into the deck's directory before generating the job script,
 but then looked for the script at <relative dir>/<job>.sh from INSIDE that
 directory - a path that does not exist - and reported "Failed to generate/find
 script" for every deck, submitting nothing. Found on HPCC with
-`mace submit phonopy_<stem>_222 --walltime 1:00:00`, the command
-`mace phonopy generate` prints. Absolute paths and the current directory were
-unaffected.
+`mace submit phonopy_<stem>_222 --walltime 1:00:00`, the command the phonopy
+set generator printed (now `mace opt2d12 --calc-type PHONOPY`). Absolute paths
+and the current directory were unaffected.
 """
 import os
 import subprocess

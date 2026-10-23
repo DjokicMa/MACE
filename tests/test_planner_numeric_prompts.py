@@ -83,26 +83,27 @@ def test_band_nsub_not_a_number_is_asked_again(planner, monkeypatch):
 
 def test_doss_projection_out_of_range_is_asked_again_and_zero_is_kept(planner, monkeypatch):
     """The menu lists 0 (total DOS only) to 4."""
-    prompts = scripted(monkeypatch, ["7", "0", "", "", ""])
+    prompts = scripted(monkeypatch, ["7", "0", "", "", "", "", "", "", ""])   # ... the resolution, the window, its
+    #                                                                           bounds, a 1D material's conduction bands
     config = planner._get_advanced_d3_config("DOSS")
     assert config["projection_type"] == 0
     assert prompts[0] == prompts[1] == "  Select projection type [4]: "
 
 
 def test_doss_energy_range_not_a_number_is_asked_again(planner, monkeypatch):
-    scripted(monkeypatch, ["", "", "low", "-5", "5.5", ""])
+    scripted(monkeypatch, ["", "", "low", "-5", "5.5", "", "", "", "", ""])
     assert planner._get_advanced_d3_config("DOSS")["e_range"] == [-5.0, 5.5]
 
 
 def test_transport_absolute_mu_has_no_default_and_is_asked_again(planner, monkeypatch):
-    prompts = scripted(monkeypatch, ["3", "", "a", "-1", "1", "", "", "", ""])
+    prompts = scripted(monkeypatch, ["3", "", "a", "-1", "1", "", "", "", "", ""])   # ..., the k mesh
     config = planner._get_advanced_d3_config("TRANSPORT")
     assert config["mu_range"] == [-1.0, 1.0, 0.01]
     assert prompts[1:4] == ["  Min μ absolute (eV): "] * 3
 
 
 def test_transport_temperature_and_relaxation_ask_again(planner, monkeypatch):
-    scripted(monkeypatch, ["1", "", "", "hot", "200", "", "0", "25", "short", "5.5"])
+    scripted(monkeypatch, ["1", "", "", "hot", "200", "", "0", "25", "short", "5.5", ""])   # ..., the k mesh
     config = planner._get_advanced_d3_config("TRANSPORT")
     assert config["temperature_range"] == [200, 800, 25]
     assert config["relaxation_time"] == 5.5
@@ -122,7 +123,7 @@ def test_all_blank_answers_keep_the_defaults_and_their_types(planner, monkeypatc
     assert band["n_points"] == 1000
     assert doss["projection_type"] == 4
     assert doss["e_range"] == [-20, 20] and all(type(v) is int for v in doss["e_range"])
-    assert doss["n_points"] == 10000
+    assert doss["energy_resolution"] == "standard" and doss["n_points"] == "auto"
     assert transport["mu_range"] == [-2.0, 2.0, 0.01]
     assert transport["temperature_range"] == [100, 800, 50]
     assert type(transport["relaxation_time"]) is int and transport["relaxation_time"] == 10

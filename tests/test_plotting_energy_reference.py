@@ -29,6 +29,9 @@ from test_gui_results import write_band  # noqa: E402
 from test_ipdos_readers import write_doss  # noqa: E402
 
 BAND, DOS = "mgo_band.BAND.DAT", "mgo_doss.DOSS.DAT"
+# the energy axis's mathtext (mace.utils.plot_labels.mathtext of E − E<sub>F</sub>): subscripts in the text font
+M, EF, EVAC = "\u2212", r"E$_{\mathregular{F}}$", r"E$_{\mathregular{vac}}$"
+EF_TITLE = f"E {M} {EF} (eV)"
 
 
 def _cli(*args, cwd):
@@ -69,7 +72,8 @@ def _svg(tmp_path, kind, *args, rc=0):
 def test_no_new_options_draw_what_the_defaults_draw(tmp_path, kind):
     _run(tmp_path)
     plain, _ = _svg(tmp_path, kind)
-    assert "E - E_F" in plain and "E_{vac}" not in plain
+    # the axis title in mathtext, as the plotly figures' and the GUI's (plot_labels.energy_title)
+    assert EF_TITLE in plain and "vac" not in plain
     explicit, _ = _svg(tmp_path, kind, "--fermi-shift", "0", "--energy-reference", "auto")
     assert explicit == plain
     # the default window is -6 to 6 eV (as the GUI's), no longer -8 to 8
@@ -84,10 +88,10 @@ def test_a_fermi_shift_names_itself(tmp_path, kind):
     plain, _ = _svg(tmp_path, kind)
     shifted, _ = _svg(tmp_path, kind, "--fermi-shift", "0.5")
     assert shifted != plain
-    assert r"$E - (E_F+0.5)$ (eV)" in shifted          # the axis title (matplotlib keeps it as a comment)
-    assert "$E_F+0.5$ eV" in shifted                            # the dashed line's legend entry
+    assert f"E {M} ({EF} + 0.50 eV) (eV)" in shifted          # the axis title (matplotlib keeps it as a comment)
+    assert f"{EF} + 0.50 eV" in shifted                            # the dashed line's legend entry
     down, _ = _svg(tmp_path, kind, "--fermi-shift=-0.25")
-    assert r"$E - (E_F-0.25)$ (eV)" in down
+    assert f"E {M} ({EF} {M} 0.25 eV) (eV)" in down
 
 
 @pytest.mark.parametrize("kind", ["--band", "--dos"])
@@ -99,12 +103,12 @@ def test_the_reference_with_a_potc_run(tmp_path, kind):
     potc_dir.mkdir()
     _run(potc_dir, potc=True)
     auto, _ = _svg(potc_dir, kind)
-    assert "E - E_{vac}" in auto                     # auto: the vacuum scale, as before
+    assert f"E {M} {EVAC} (eV)" in auto                     # auto: the vacuum scale, as before
     assert _svg(potc_dir, kind, "--energy-reference", "vacuum")[0] == auto
     # fermi: off the vacuum scale, the same figure as without the POTC run
     assert _svg(potc_dir, kind, "--energy-reference", "fermi")[0] == no_potc
     shifted, _ = _svg(potc_dir, kind, "--fermi-shift", "0.5")
-    assert r"$E - (E_{vac}+0.5)$ (eV)" in shifted
+    assert f"E {M} ({EVAC} + 0.50 eV) (eV)" in shifted
 
 
 @pytest.mark.parametrize("kind", ["--band", "--dos"])
@@ -143,9 +147,9 @@ def test_the_band_shift_moves_the_bands_only():
     up, down = ipb.apply_fermi_shift(a, a + 0.1, 0.5)
     assert down.ravel().tolist() == pytest.approx([0.6, 1.6])
     assert ipb.apply_fermi_shift(a, a, 0.0)[0] is a
-    assert ipb.energy_axis_label(False) == r"$E - E_F$ (eV)"   # 1.1.6: plain, as the GUI
-    assert ipb.energy_axis_label(True) == r"$E - E_{vac}$ (eV)"
-    assert ipb.fermi_legend_label(0) == "$E_F$" and ipb.fermi_legend_label(-1.5) == "$E_F-1.5$ eV"
+    assert ipb.energy_axis_label(False) == EF_TITLE              # 1.1.6: the GUI's title, in mathtext
+    assert ipb.energy_axis_label(True) == f"E {M} {EVAC} (eV)"
+    assert ipb.fermi_legend_label(0) == EF and ipb.fermi_legend_label(-1.5) == f"{EF} {M} 1.50 eV"
 
 
 def test_the_band_reference_choices(tmp_path):
@@ -168,7 +172,7 @@ def test_gallery_panes_take_the_shift_and_reference(tmp_path):
     _run(tmp_path, potc=True)
     band = tmp_path / BAND
     base = G.pane(band, "bandos")
-    assert base["error"] is None and base["panels"][0]["ylabel"] == "E vs vacuum (eV)"
+    assert base["error"] is None and base["panels"][0]["ylabel"] == "E − E<sub>vac</sub> (eV)"
     f = base["panels"][0]["fermi"]
     assert abs(f) > 1
     moved = G.pane(band, "bandos", shift=0.5)
@@ -177,7 +181,7 @@ def test_gallery_panes_take_the_shift_and_reference(tmp_path):
     y0 = [v for v in b0["series"][0]["y"] if v is not None]
     y1 = [v for v in b1["series"][0]["y"] if v is not None]
     assert y1 == pytest.approx([v - 0.5 for v in y0], abs=1e-4)          # the data moves
-    assert b1["ylabel"] == "E − (E<sub>vac</sub> +0.5) (eV)"
+    assert b1["ylabel"] == "E − (E<sub>vac</sub> + 0.50 eV) (eV)"           # the band plot's title (plot_labels)
     # the DOS panel: its energies are the reader's less the shift (the kept range follows the window)
     from mace.gui import results
     energies = np.array(results.dos_data(tmp_path / DOS)["energy"]) - 0.5
@@ -185,7 +189,7 @@ def test_gallery_panes_take_the_shift_and_reference(tmp_path):
     assert d1["fermi"] == f
     assert all(np.abs(energies - v).min() < 1e-4 for v in d1["series"][0]["y"])
     fermi = G.pane(band, "band", reference="fermi")["panels"][0]
-    assert fermi["fermi"] == 0 and fermi["ylabel"] == "E (eV)" and fermi["ylim"] == list(G.EWINDOW)
+    assert fermi["fermi"] == 0 and fermi["ylabel"] == "E − E<sub>F</sub> (eV)" and fermi["ylim"] == list(G.EWINDOW)
     plain = tmp_path / "plain"
     plain.mkdir()
     _run(plain)

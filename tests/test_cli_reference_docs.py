@@ -23,7 +23,9 @@ DOC = (REPO_ROOT / "docs" / "cli.md").read_text()
 # The help screens of a command: its own, then those of its subcommands.
 SUBHELPS = {
     "defects": [("build",), ("potc",), ("analyze",)],
-    "phonopy": [("generate",), ("collect",)],
+    "analyze": [("elastic",), ("phonopy",)],
+    "tau": [("estimate",), ("strain",), ("fit",)],
+    "examples": [("hydrate",)],
     "gui": [("--slurm",), ("connect",), ("login-url",), ("diagnostics",)],
 }
 

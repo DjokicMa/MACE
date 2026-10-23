@@ -62,7 +62,7 @@ def test_points_with_nonpositive_kappa_e_store_nothing(tmp_path, capsys):
 
 def test_gui_labels_kappa_dat_as_kappa0():
     from mace.gui.results import TRANSPORT_QUANTITIES
-    assert "κ₀" in TRANSPORT_QUANTITIES["KAPPA"][0]
+    assert "κ<sub>0</sub>" in TRANSPORT_QUANTITIES["KAPPA"][0]
 
 
 def test_zt_is_named_electrons_only():

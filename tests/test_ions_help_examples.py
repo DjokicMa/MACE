@@ -1,4 +1,4 @@
-"""`mace ions --help` shows worked examples, as `mace phonopy` and `mace defects` do.
+"""`mace ions --help` shows worked examples, as `mace opt2d12` and `mace defects` do.
 
 Its help listed the options only, with nothing on how they combine (an
 ion cluster from cif2d12 decks, an explicit net charge, per-atom shell

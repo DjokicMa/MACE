@@ -257,8 +257,12 @@ def t16():
 _ALL_TESTS = [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16]
 
 
-def test_menu_nav():
+def test_menu_nav(monkeypatch):
     """pytest entry point: run every menu_nav self-test, assert none failed."""
+    # The checks swap menu_nav._REAL_INPUT for scripted feeders; put the real
+    # input back afterwards, or a later test reading its own stdin meets the
+    # exhausted feeder instead.
+    monkeypatch.setattr(menu_nav, "_REAL_INPUT", menu_nav._REAL_INPUT)
     _failures.clear()
     for t in _ALL_TESTS:
         t()

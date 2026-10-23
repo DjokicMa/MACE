@@ -658,7 +658,7 @@ def test_cli_help_lists_preflight():
 
 def test_external_deck_with_its_ext_is_checked_with_fort34_staged(tmp_path):
     """An EXTERNAL deck whose geometry sits next to it as <stem>.ext (what
-    `mace phonopy generate` writes, and what the job script stages as fort.34)
+    `mace opt2d12 --calc-type PHONOPY` writes, and what the job script stages as fort.34)
     can be checked: the .ext is staged as fort.34 in the throwaway directory."""
     ext_bytes = b"3 1 1\n  5.0 0.0 0.0\n  0.0 5.0 0.0\n  0.0 0.0 5.0\n1\n"
     deck = tmp_path / "disp-001.d12"

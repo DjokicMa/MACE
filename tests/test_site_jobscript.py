@@ -160,10 +160,17 @@ BASE_TEMPLATE_SHA256 = {
 # ORBITALS (1.1.6): the properties script gives a staged ORBITALS deck the root
 # ${JOB}_orb and copies back the ${JOB}_orb*.molden files it wrote (review
 # fix: only the exact ORBITALS names, not another job under the same prefix,
-# moved rather than copied so scratch does not keep a second set).
+# moved rather than copied so scratch does not keep a second set). Elastic and
+# EOS/QHA restarts (1.1.6): the SCF script copies back ELASINFO.DAT /
+# EOSINFO.DAT as $JOB.ELASINFO.DAT / $JOB.EOSINFO.DAT and stages them for a
+# RESTART/RESTART2 deck (tests/test_elastic_restart.py). FREQ (1.1.6 example
+# suite): the SCF script copies back the IRSPEC.DAT / RAMSPEC.DAT, PHONBANDS.DAT,
+# PHONDOS.DAT and fort.25 this run wrote as ${JOB}_IRSPEC.DAT, ${JOB}_RAMSPEC.DAT,
+# $JOB.PHONBANDS.DAT, $JOB.PHONDOS.DAT and $JOB.f25. TRANSPORT (1.1.6): the properties script puts
+# BOLTZTRA's fort.70.peN scratch files on node-local storage (tests/test_boltztra_local_scratch.py).
 TEMPLATE_SHA256 = {
-    "submitcrystal23.sh": "7ab4f256811eed85bb8d5732a47b3b4a196096d7cb3ac54c8008beca84507586",
-    "submit_prop.sh": "e3c3121ef51380f176a6fbf6eb1700dda7f56426fe2c4b4f17531dba12bcb4de",
+    "submitcrystal23.sh": "36751590b0db5c62631df5ebb9910dd2494fd9f0c247cc59353d12f5389a96fc",
+    "submit_prop.sh": "04c4ebf053eecebc05cab248a96add165d55cb6de557f48dfefd345e8a738793",
 }
 
 

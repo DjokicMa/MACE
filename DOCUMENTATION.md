@@ -69,7 +69,7 @@ MACE/
 │   ├── preopt/                # `mace preopt`, `mace mlip`: starting geometries
 │   ├── cluster/               # `mace cluster`: SLURM nodes, limits, quotas, job progress
 │   ├── defects/               # `mace defects`: point-defect deck sets and analysis
-│   ├── phonopy_bridge/        # `mace phonopy`: phonons through phonopy
+│   ├── phonopy_bridge/        # phonons through phonopy (opt2d12 PHONOPY, `mace analyze phonopy`)
 │   └── utils/                 # Analysis, themed terminal UI, utility tools
 │
 ├── docs/                      # Guides (gui.md, cli.md, preopt.md, defects/, citations.md) and the logo (logo/)
@@ -254,12 +254,13 @@ mace workflow --execute workflow_plan_<id>.json --array
   `scancel 12345678_7` cancels that task; `scancel 12345678` cancels every task
   of the array. MACE itself only ever cancels or restarts single tasks.
 - **Files.** Each array has a folder `.mace_arrays/arr_<date>_<time>_<k>/` next
-  to the decks (for a workflow, in `step_001_<TYPE>/`): `manifest.tsv` (task,
-  directory, job, script, calculation), the wrapper script that runs the
-  deck's own script for its task, `submitted.json`, and `logs/` with one SLURM
-  log per task. The log is also linked into the deck's folder as
-  `<job>-<array id>_<task>.o`, where MACE reads job ids and walltime kills.
-  Each task runs its deck's script in that deck's folder, with its own scratch
+  to the decks (for a workflow, `mace submit --progress` and `--progress-plan`
+  included, in its step's folder `workflow_outputs/<id>/step_NNN_<TYPE>/`):
+  `manifest.tsv` (task, directory, job, script, calculation), the wrapper script
+  that runs the deck's own script for its task, `submitted.json`, and `logs/`
+  with one SLURM log per task. The log is also linked into the deck's folder as
+  `<job>-<array id>_<task>.o`, where MACE reads job ids and walltime kills. Each
+  task runs its deck's script in that deck's folder, with its own scratch
   directory, exactly as a normal job does.
 - **Throttle.** `--max-running N` is per array (`--array=0-M%N`): two resource
   requests give two arrays, up to `2N` tasks at once. Change it for a running
@@ -324,42 +325,48 @@ functional, basis, tolerances, charge/spin keywords) is touched. See
 [docs/preopt.md](docs/preopt.md) for the methods, refusals, licenses and
 citations; the GUI's Clean Geometry runs the same pipeline.
 
-### Phonons with phonopy (`mace phonopy`)
+### Phonons with phonopy (`mace opt2d12` choice 8, `mace analyze phonopy`)
 Finite-displacement phonon dispersion, DOS and thermal properties for a 3D
 crystal, with CRYSTAL computing the forces and phonopy (optional dependency,
 `pip install 'phonopy<5'`) doing the rest. phonopy runs on the machine where you
-type the commands; the cluster only runs CRYSTAL.
+type the commands (and in the completion callback of the set's last job, where
+it is installed); the cluster only runs CRYSTAL.
 ```bash
-# 1. Displaced supercells from a finished OPT (or SP) parent
-mace phonopy generate mat_opt.out --dim "2 2 2"          # reads mat_opt.d12 beside it
+# 1. Displaced supercells from a finished OPT (or SP) parent: opt2d12 choice 8, or
+mace opt2d12 --out-file mat_opt.out --calc-type PHONOPY --non-interactive --dim 2 2 2   # reads mat_opt.d12 beside it
 # 2. Run them - a plain submission, NOT --track or --progress, with the walltime step 1 printed
-mace submit phonopy_mat_opt_222 --walltime 2:00:00
+mace submit mat_opt_ph222_PBE0_optimized --walltime 2:00:00
 # 3. Check the outputs, then forces -> band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml
-mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
+#    (the completion callback of the last job runs this; or by hand, e.g. for NAC)
+mace analyze phonopy mat_opt_ph222_PBE0_optimized [--nac-from mat_freq.out] [--plot]
 ```
-- **generate** writes one deck per displaced supercell, `<stem>_ph<dim>_disp-NNN.d12`,
-  with its geometry in `<stem>_ph<dim>_disp-NNN.ext`. The deck starts with `EXTERNAL`
-  (manual p.21) and the job script copies the `.ext` to `fort.34` before CRYSTAL starts
-  (format: manual pp.450-451). Job names carry the parent's name and the supercell, so
-  two sets never share a scratch directory. It also writes `phonopy_disp.yaml` (the
-  displacements) and `mace_phonopy.json` (parent paths and checksums, every deck edit,
-  versions).
-- **The parent's method is kept.** The deck has the layout phonopy's own CRYSTAL
-  writer gives it: `EXTERNAL`, the parent's basis set and SCF block byte for byte
-  (`BASISSET` replaces the END of the geometry block, manual p.28), then `TOLDEE`,
-  `GRADCAL` (manual p.111) and `END`. The part in between is phonopy's TEMPLATE and
-  must not contain an END, TOLDEE or GRADCAL: measured on CRYSTAL23, a TEMPLATE that
-  ends with END makes CRYSTAL stop before GRADCAL, with return code 0 and no forces.
-  For an explicit basis it is also written to `TEMPLATE` in the set directory. The
-  edits, each printed: the final END removed; TOLDEE moved before GRADCAL and raised
-  to at least 10 (`--toldee N` raises it further, never lowers it); GUESSP dropped;
-  `BIPOSIZE`/`EXCHSIZE 110000000` added when the parent had neither and the supercell
-  has more than 5 atoms (d12_writer's rule); a parent GRADCAL moved to the end.
+- **opt2d12 writes the set** as it writes any deck of the parent: the method,
+  basis, tolerance, SCF and spin questions come first with the parent's values
+  as their defaults (`--non-interactive` keeps the parent's settings), then
+  phonopy's (supercell, displacement, plus/minus, CRY_SYM, SHRINK). The set is a
+  folder named as a deck of the parent would be, with the supercell as its type
+  (`mat_opt_ph222_PBE0_optimized/`), holding one deck per displaced supercell,
+  `<folder>_disp-NNN.d12`, with its geometry in `<folder>_disp-NNN.ext`. The deck
+  starts with `EXTERNAL` (manual p.21) and the job script copies the `.ext` to
+  `fort.34` before CRYSTAL starts (format: manual pp.450-451). Job names carry the
+  parent's name and the supercell, so two sets never share a scratch directory. It
+  also writes `phonopy_disp.yaml` (the displacements) and `mace_phonopy.json`
+  (parent paths and checksums, the edits, versions).
+- **The parent's method is kept.** Every deck is written by opt2d12's own deck
+  writer: `EXTERNAL`, the basis set (`BASISSET` replaces the END of the geometry
+  block, manual p.28; an explicit basis follows its END), the parent's SCF block
+  as opt2d12 writes it, then `GRADCAL` (manual p.111) just before the final `END`.
+  The edits, each printed: TOLDEE at least 10 (the parent's tighter value, or a
+  tighter answer, is kept); MAXCYCLE at least 200 (as for the other decks with a
+  tighter TOLDEE); GUESSP dropped; `BIPOSIZE`/`EXCHSIZE 110000000` for a supercell
+  of more than 5 atoms when the parent had neither (d12_writer's rule).
   SHRINK is divided by the supercell size in each direction, so the supercell is
   sampled as densely as the parent (diamond, parent `SHRINK 12 24`: `6 12` for 2x2x2,
   `4 8` for 3x3x3); where the size does not divide the parent's value it is rounded
   up, never coarser than the parent, and a note says so. A non-diagonal `--dim`
   keeps the parent's SHRINK with a warning; `--keep-shrink` keeps it always.
+  Refused before anything is asked: a parent without its `.d12`, and the parents
+  below.
 - **Refused parents** (each with its reason): not 3D (use CRYSTAL's FREQCALC +
   SCELPHONO + DISPERSI, manual pp.73, 232); not terminated normally; SCF not converged;
   an optimization without `OPT END - CONVERGED`; a FREQCALC output as the geometry
@@ -371,19 +378,21 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   named. An SP parent is accepted with a warning
   that its geometry is assumed relaxed; a parent cell that is not primitive (P1,
   SUPERCEL) gives a folded-bands warning.
-- `--dim` takes 3 integers or a 9-integer matrix; `--amplitude` (default 0.01 A) and
-  `--pm auto|yes|no` are phonopy's. An `--output-dir` must be empty (or `--force`) and
-  must not be inside `workflow_outputs/`.
+- `--dim` takes 3 integers or a 9-integer matrix (default: each supercell lattice
+  vector at least 10 A); `--amplitude` (default 0.01 A) and `--pm auto|yes|no` are
+  phonopy's. The set's folder goes in `--output-dir` (default: beside the parent); a
+  non-empty one is refused unless `--force` (asked at a terminal), and so is one
+  inside `workflow_outputs/`.
 - `--cry-sym` (opt-in) writes the symmetry operators of each displaced cell into its
   `.ext`, as phonopy does when a `CRY_SYM` file exists (one is written to the set
   directory). The displaced cell keeps more symmetry than P1, so CRYSTAL needs fewer
   k-points: measured on CRYSTAL23 for diamond (Fd-3m, 2x2x2), the same frequencies as
   P1 to 0.04 cm-1 at about a third of the core hours. phonopy warns that some space
   groups do not work this way (e.g. R-3m); a rhombohedral parent gets a louder
-  warning, and `collect` still checks that each output's printed geometry is its
+  warning, and the analysis still checks that each output's printed geometry is its
   displaced cell. Compare with a P1 set before trusting a new structure type.
 - **Walltime.** A displaced supercell costs far more than its parent, and a job that
-  runs out of walltime leaves no forces. `generate` prints a walltime per job, at
+  runs out of walltime leaves no forces. opt2d12 prints a walltime per job, at
   `mace submit`'s 32 tasks, for `mace submit DIR --walltime ...`: k-points times
   atoms cubed, calibrated on the heaviest case measured on CRYSTAL23 (diamond,
   B3LYP-D3 with SPIN and XLGRID, 2x2x2 in P1, SHRINK 6: 3160 s on 64 tasks) with a
@@ -395,7 +404,7 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   also recorded as `walltime` in `mace_phonopy.json`.
 - **Do not use `--track` or `--progress`** with these decks: the completion callback
   would record the displaced supercells as calculations of the parent's material.
-- **collect** first checks every output: present, terminated normally, SCF converged,
+- **`mace analyze phonopy`** first checks every output: present, terminated normally, SCF converged,
   one force row per supercell atom, and the geometry CRYSTAL printed equal (to 1e-4 A)
   to that deck's displaced cell - a converged run of the wrong geometry (a stale job
   script that never staged the `.ext`; resubmit with `--overwrite-sh`) would otherwise
@@ -421,7 +430,7 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
 - **phonopy's own commands** (phonopy 4.7.2 syntax) work on the same set, run in its
   directory, e.g. to plot with a `band.conf` of your own:
   ```bash
-  phonopy-init --crystal -f mat_opt_ph222_disp-*.out   # -> FORCE_SETS (collect writes it too)
+  phonopy-init --crystal -f mat_opt_ph222_PBE0_optimized_disp-*.out   # -> FORCE_SETS (mace analyze phonopy writes it too)
   phonopy --factor=521.47083 --config band.conf        # band.yaml in cm-1 (default THz)
   ```
   `phonopy-init -f` exits 0 even when it cannot read an output: check that
@@ -429,26 +438,153 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   belong to `phonopy-init`; `phonopy` itself takes no `--crystal` (the calculator is
   in `phonopy_disp.yaml`); a configuration file needs `--config` (a bare
   `phonopy` with a .conf as its argument computes nothing); and there is no `--nac`:
-  a `BORN` file in the directory (as `collect --nac-from` writes) switches the
-  non-analytical correction on, `--nonac` off. With an explicit basis the set
-  directory also holds `TEMPLATE` (and `CRY_SYM` with `--cry-sym`), so
-  `phonopy-init --crystal -d --dim 2 2 2 -c ../mat_opt.out` there writes the same
-  decks as `supercell-NNN.d12` for the default `--amplitude` and `--pm`, apart from
-  the title and TOLDEE: phonopy always writes 10, MACE the parent's value when it is
-  higher (or `--toldee`). An internal-basis (`BASISSET`) set has no `TEMPLATE`:
-  phonopy's writer puts `ENDGEOM` before the template, and only an explicit basis can
-  follow that (an internal library replaces the END of block 1), so such a set cannot
-  be rewritten with `phonopy-init -d`; use the decks MACE wrote. MACE also adds
-  `BIPOSIZE`/`EXCHSIZE` 110000000 to a supercell of more than 5 atoms when the parent
-  has neither (d12_writer's rule); phonopy's writer does not.
+  a `BORN` file in the directory (as `mace analyze phonopy --nac-from` writes) switches the
+  non-analytical correction on, `--nonac` off. The `.ext` files and `phonopy_disp.yaml`
+  are phonopy's own (byte for byte what `phonopy-init --crystal -d` writes); the decks
+  are opt2d12's, so the set has no phonopy `TEMPLATE`: rewrite a set with opt2d12, not
+  with `phonopy-init -d`.
 - **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
-  `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
+  `INTCPHF`, same functional and basis as the displaced decks (its `.d12` must sit
+  beside the output). The Born
   charges and dielectric tensor are read with phonopy-crystal-born and written to
   `BORN`; the run is refused unless its cell has the same cartesian orientation, atoms
   and positions as the phonopy cell and CRYSTAL's asymmetric unit is phonopy's.
 
 Please cite phonopy (and SeeK-path for the default band path) when you
-publish these results; see [docs/citations.md](docs/citations.md#phonons-mace-phonopy).
+publish these results; see [docs/citations.md](docs/citations.md#phonons-phonopy).
+
+In the GUI, **Calculation Setup › 8 Phonopy** on the parent output (also
+**Calculation › Regular Calculations › 8**) runs opt2d12 and hands the set to
+Submit with the suggested walltime; **Analysis › Phonons with Phonopy…** runs
+`mace analyze phonopy` and plots the phonon bands, the DOS and the thermal
+properties (THz or cm⁻¹).
+
+### Elastic, piezoelectric, photoelastic constants and EOS (`mace opt2d12` choices 4-7, `mace analyze elastic`)
+CRYSTAL23's mechanical-property modules (manual ch. 12-13), the quasi-harmonic
+approximation (ch. 9) and the CPHF/KS dielectric response (ch. 10) as follow-up decks of
+an optimized structure: `mace opt2d12` choices 4 ELASTIC, 5 EOS, 6 QHA and 7
+CPHF. The deck keeps the parent's functional, basis, spin and SCF settings (the
+same questions as any opt2d12 deck, the parent's values their defaults); the
+module block is the last record of the geometry input, with only the
+sub-keywords that differ from CRYSTAL's defaults. A parent that is not a
+finished OPT or SP run is refused before anything is asked.
+```bash
+O="mace opt2d12 --out-file mat_opt.out --non-interactive"
+$O --calc-type ELASTIC --elastic-settings '{"print": true}'                 # ELASTCON, CRYSTAL's defaults + PRINT
+$O --calc-type ELASTIC --elastic-settings '{"nuchess": true, "hessnum2": true, "print": true}'
+$O --calc-type ELASTIC --elastic-settings '{"mode": "ELAPIEZO", "print": true}'   # + piezoelectric tensors
+$O --calc-type ELASTIC --elastic-settings '{"mode": "PHOTOELA", "dynamic": 589, "print": true}'
+$O --calc-type EOS --elastic-settings '{"range": [0.92, 1.08, 8], "prange": [-5, 10, 16], "print": true}'
+$O --calc-type QHA --elastic-settings '{"points": 7, "temperat": [100, 10, 1000]}'
+$O --calc-type CPHF --elastic-settings '{"third": true}'
+mace submit mat_opt_elastcon_PBE0_optimized.d12
+mace analyze elastic mat_opt_elastcon_PBE0_optimized.out [--json]
+```
+| Module | What | Manual | Notes |
+|---|---|---|---|
+| `ELASTCON` | elastic constants C, compliance S, seismic velocities | p. 290 | 1D-3D; `PRESSURE`/`PRESSEOS` for C under pressure (3D) |
+| `ELAPIEZO` | C plus direct (e) and converse (d) piezoelectric tensors | p. 298 | Pcrystal only; none for a centrosymmetric crystal |
+| `PIEZOCON` | direct piezoelectric tensor e (Berry phase) | p. 296 | Pcrystal only; insulators |
+| `PIEZOCP` | direct piezoelectric tensor e (CPHF/KS) | p. 298 | 3D only |
+| `PHOTOELA` | elasto-optic (Pockels) and piezo-optic tensors | p. 301 | `DYNAMIC` for a finite wavelength |
+| `EOS` | E(V) scan fitted to Murnaghan, Birch-Murnaghan, Poirier-Tarantola, Vinet | p. 284 | 3D only |
+| `QHA` | quasi-harmonic V(T), K_T(T), thermal expansion, Cp-Cv (`--calc-type QHA`) | p. 253 | 1D, 2D and 3D (p. 14), not a molecule; `"scelphono": "2 2 2"` for dispersion (3D only); SCF TOLDEE 10 |
+| `CPHF` | polarizability, dielectric tensor, hyperpolarizabilities β (`"third"`), γ (`"fourth"`) (`--calc-type CPHF`) | p. 270 | 0D-3D; `"cphf_dynamic"` (DYNAMIC) needs a pure LDA/GGA functional |
+
+- **Settings**: every sub-keyword of the manual, asked by opt2d12's module
+  questions, or as JSON in `--elastic-settings` (the keys in lower case: `numderiv`,
+  `stepsize`, `deform`, `clampion`, `nuchess`, `hessnum2`, `modepart`, `hessstep`,
+  `preoptgeom`, `pressure`, `presseos`, `seismdir`, `awesome`, `tolalpha`, `dynamic`,
+  `range`, `vrange`, `prange`, `qstep`, `points`, `temperat`, `scelphono`, `neglefre`,
+  `third`, `fourth`, `cphf_dynamic`, `damping`, `restart`, `print`; a config file's
+  `"elastic_settings"`; see [docs/cli.md](docs/cli.md#mechanical-properties-and-phonopy-opt2d12-choices-4-8)). MACE refuses what the
+  manual excludes (an EOS of a slab, DEFORM along a non-periodic direction,
+  NUCHESS with CLAMPION, PIEZOCON/ELAPIEZO with an `MPPcrystal` site, ...).
+- **SCF threshold**: the modules converge the SCF to TOLDEE 8 themselves; a
+  parent's looser TOLDEE in block 3 would override that, so MACE writes 8 (a
+  tighter parent value is kept).
+- **Two-component (SOC) parents are refused**: the modules optimize strained
+  cells, and CRYSTAL23 stops a 2c SCF that optimizes.
+- **`mace analyze elastic`** reads the symmetrized C, S, the seismic velocities, the
+  piezoelectric, Pockels and piezo-optic tensors, the EOS fits and the QHA V(T),
+  K(T) and thermal-expansion tables, and derives the
+  Voigt, Reuss and Hill bulk and shear moduli, Young's modulus, Poisson's ratio,
+  the universal anisotropy index, Born stability (the eigenvalues of C), the sound
+  velocities and the Debye temperature (in-plane moduli for a slab). The moduli
+  equal the table CRYSTAL prints with PRINT; `mace analyze --extract-properties`
+  files them in the database (category `mechanical`).
+- **What is flagged and not stored.** The report (`WARNING:` lines), the
+  `--json` `warnings` list and the GUI's results document flag results that are
+  not physical, and the database leaves them out:
+  - a mechanically unstable C (not positive definite): the Voigt/Reuss/Hill
+    averages, the eigenvalues and `elastic_born_stable` are stored, but not
+    Young's modulus, Poisson's ratio, A^U, the Debye temperature or any derived
+    number (directional extremes, sound velocities, Pugh, hardness, κ_min,
+    piezoelectric coupling): those of an unstable tensor are meaningless
+    (E_min of -4e8 GPa and the like);
+  - a Chen hardness its formula puts below zero (a soft solid outside the fit)
+    is shown as 0 with the formula's value, and not stored;
+  - a dielectric tensor less symmetric than the space group allows (cubic:
+    isotropic; tetragonal, hexagonal, trigonal: uniaxial) or with a
+    non-positive principal value: the class-dependent results (principal n,
+    birefringence, 2V, optic sign) and the LO-TO splitting are not stored. An
+    unstable CPHF (its DIIS test above 1e3; stable runs stay below 10) is
+    flagged too;
+  - a β or γ table CRYSTAL printed as overflow (`-8.9595+158`, no E) or with
+    values above 1e6 (β) or 1e10 a.u. (γ) has diverged; it and an incomplete
+    table give no SHG analysis and no "centrosymmetric" conclusion.
+- **Directions** are Cartesian (x, y, z): a symmetry direction is written as a
+  combination of the axes (`x+y`, `x−z`) or, in a cubic crystal, as the
+  lattice direction `[1 1 0]` (the two agree only there); any other direction
+  by its components, never rounded to integers.
+- In the GUI: **Calculation Setup › 4 ELASTIC, 5 EOS, 6 QHA, 7 CPHF** on the
+  parent output writes the deck (also **Calculation › Regular
+  Calculations › 4-7**); **Analysis › Mechanical Properties Results…** shows the
+  tensors, moduli and E(V).
+
+Measured on HPCC (CRYSTAL23, diamond, B3LYP-D3): ELASTCON gives C11 1150.4,
+C12 122.7, C44 618.3 GPa and K_H 465.2 GPa; the EOS of the same structure gives
+B0 464.5 GPa (Birch-Murnaghan).
+
+### Transport relaxation time (`mace tau`)
+BOLTZTRA works in the constant relaxation-time approximation: sigma and the
+electronic thermal conductivity scale with RELAXTIM (default 10 fs), the Seebeck
+coefficient does not (manual p. 314). `mace tau` estimates tau from simulation
+data with deformation-potential theory (longitudinal acoustic phonons; Bardeen &
+Shockley 1950, 2D Takagi 1994 / Qiao 2014, 1D Beleznay 2003), and prints where
+each input came from.
+```bash
+mace tau estimate --dim 3 --m-star 0.26 --e1 9.5 --c 165     # m* (m_e), E1 (eV), C (GPa; N/m in 2D, J/m in 1D)
+mace tau estimate --mobility 1400 --m-star 0.26              # tau = mu m*/e from a mobility you have
+mace tau strain mat_sp.d12 --axis x                          # strains -1, -0.5, 0, +0.5, +1 % (ELASTIC, manual p. 47)
+mace submit .                                                # run the five decks
+mace tau fit mat_sp_dp_x_*.out --carrier electron --c-from mat_elastcon.out --save tau.json   # m* from BAND/DOSS beside them
+```
+- **E1** is the slope of the band edge (CBM for electrons, VBM for holes) against
+  strain; **C** the curvature of the total energy (clamped ions), or the
+  relaxed-ion C_ii of an ELASTCON run (`--c-from`). **m*** is given (`--m-star`) or,
+  by default, fitted from the BAND and DOSS outputs beside the series (or `--band`,
+  `--dos`): tau takes the density-of-states mass m_d, the mobility the band mass m_c
+  along the axis. m_c is a parabola fitted within 40 meV of the band edge along the
+  path segment that runs along the axis; m_d the geometric mean of the band's masses
+  along the path directions through the edge, or (when the path samples too few) a
+  fit of the integrated DOS, divided by N_v^(2/3) for N_v equivalent valleys. Every
+  band meeting at the edge is listed, and the output says where each mass came from.
+  A DOS mass depends on CRYSTAL's Fourier-Legendre smoothing (NPOL) and the k mesh;
+  band curvature is preferred. Diamond (B3LYP-D3): electrons m_l 1.62 (literature
+  1.4-1.56), per-valley m_d 0.55 (0.50-0.57); holes along [100] 0.30/0.48 (0.29/0.54).
+- The fit flags a non-linear edge (a degenerate edge that splits under the
+  strain, or an edge that moves to another k point): use another strain axis or
+  give `--e1`. In a 3D crystal the printed eigenvalues move with the cell's
+  average potential, so a 3D E1 is approximate (slabs and polymers are referenced
+  to the vacuum).
+- 3D results include tau(E) = tau_0 (E/kT)^-1/2 above the band edge. The estimate
+  is the acoustic-phonon limit: optical, polar, impurity and boundary scattering
+  lower tau further.
+- Use it as `RELAXTIM <tau fs>` in a TRANSPORT deck, or rescale a finished run:
+  `mace analyze --extract-properties DIR --kappa-lattice K --tau-fs <tau fs>` (or `--tau-fs tau.json`,
+  the file `--save` wrote: the database's `transport_zt_total_tau_source` then names its method).
+- In the GUI: **Analysis › Transport Relaxation Time…**.
 
 ### Job Management (Direct Script Access)
 ```bash
@@ -484,6 +620,11 @@ mace monitor --action dashboard --interval 30
 # Database health and statistics
 mace database --action stats
 
+# Every property the database stores, and what the GUI computes that it does not
+# (docs/properties.md: the inventory and the derived-property registry)
+mace analyze --list-properties --calc-type FREQ
+mace analyze --list-properties --gui
+
 # File organization and management
 python mace/utils/file_manager.py --action organize --material-id material_name
 ```
@@ -511,15 +652,18 @@ python mace/run_workflow.py --show-templates
 #### Core Dependencies (Required)
 ```bash
 # Scientific computing stack
-pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0 'seekpath>=2.1,<3'
+pip install 'numpy>=1.21.0' 'matplotlib>=3.5.0' 'ase>=3.22.0' 'spglib>=1.16.0' 'seekpath>=2.1,<3'
 
 # Material tracking system dependencies (Phase 2)
-pip install pyyaml>=6.0 pandas>=1.3.0
+pip install 'pyyaml>=6.0' 'pandas>=1.3.0'
+
+# Plots: cube and FREQ rendering, static image export, cube grid interpolation
+pip install "plotly>=5.0.0,<6.2" "scipy>=1.10.0" kaleido==0.2.1
 ```
 
 #### One-Line Installation
 ```bash
-pip install numpy matplotlib ase spglib seekpath pyyaml pandas
+pip install -r requirements.txt   # numpy matplotlib ase spglib seekpath rich pyyaml pandas plotly scipy kaleido
 ```
 
 #### Package Purposes
@@ -529,29 +673,26 @@ pip install numpy matplotlib ase spglib seekpath pyyaml pandas
 - **spglib**: Space group operations and symmetry analysis
 - **pyyaml**: YAML configuration file handling for workflow automation
 - **pandas**: Data analysis and CSV processing
+- **rich**: Themed terminal UI (status lines, tables, progress bars, live dashboards); installed by requirements.txt, and without it MACE still runs, in plain text
+- **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
 - **seekpath**: The HPKOT band k-path of a 3D cell (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)), computed from the structure; MACE writes it in CRYSTAL's reciprocal basis, with the lattice-dependent points of that cell and its discontinuities. The static tables (`d3_kpoints.seekpath_data`) hold SeeK-path's numbers in SeeK-path's standard cell, which for many lattices is not CRYSTAL's. Without seekpath a 3D SeeK-path BAND deck or SeeK-path phonon dispersion stops with the install command; `--static-kpath` (opt2d3, opt2d12) or `MACE_STATIC_KPATH=1` writes the static path instead. On MSU HPCC install it into the module Python the jobs use (see INSTALLATION.md, "HPC / SLURM clusters")
 
 #### Optional Dependencies
 ```bash
-# Themed terminal UI (MACE falls back to plain text without it)
-pip install rich
+# Cube isosurfaces (mace plotting --cube)
+pip install scikit-image
 
-# Interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
-pip install "plotly>=5.0.0,<6.2" scipy kaleido==0.2.1 scikit-image
-
-# Finite-displacement phonons (mace phonopy)
+# Finite-displacement phonons (mace opt2d12 --calc-type PHONOPY, mace analyze phonopy)
 pip install 'phonopy<5'
 ```
 
 #### Package Purposes (Optional)
-- **rich**: Themed terminal UI (status lines, tables, progress bars, live dashboards)
-- **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
 - **scikit-image**: Isosurface extraction for cube plots
-- **phonopy**: `mace phonopy generate/collect` (finite-displacement phonons, NAC); 4.7.2 tested
+- **phonopy**: `mace opt2d12 --calc-type PHONOPY` and `mace analyze phonopy` (finite-displacement phonons, NAC); 4.7.2 tested
 
 #### Installation Verification
 ```bash
-python -c "import numpy, matplotlib, ase, spglib, seekpath, yaml, pandas; print('All dependencies installed successfully')"
+python -c "import numpy, matplotlib, ase, spglib, seekpath, rich, yaml, pandas, plotly, scipy; print('All dependencies installed successfully')"
 ```
 
 ## Architecture Overview
@@ -735,7 +876,7 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
    
 3. **`full_electronic`**: OPT → SP → BAND → DOSS
    - Complete electronic structure characterization
-   - Walltimes: 7d → 3d → 1d → 1d
+   - Walltimes: 7d → 3d → 2h → 2h
    
 4. **`double_opt`**: OPT → OPT2 → SP
    - Two-stage optimization for difficult systems
@@ -747,15 +888,15 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
 
 6. **`transport_analysis`**: OPT → SP → TRANSPORT
    - Transport properties calculation (conductivity, Seebeck coefficient)
-   - Walltimes: 7d → 3d → 1d
+   - Walltimes: 7d → 3d → 2h
 
 7. **`charge_analysis`**: OPT → SP → CHARGE+POTENTIAL
    - Charge density and electrostatic potential analysis
-   - Walltimes: 7d → 3d → 1d
+   - Walltimes: 7d → 3d → 2h
 
 8. **`combined_analysis`**: OPT → SP → BAND → DOSS → TRANSPORT
    - Electronic structure with transport properties
-   - Walltimes: 7d → 3d → 1d → 1d → 1d
+   - Walltimes: 7d → 3d → 2h → 2h → 2h
 
 #### **Custom Workflows**
 - Interactive workflow designer
@@ -798,7 +939,7 @@ Cores: 32, Memory: 4G, Walltime: 3-00:00:00, Account: mendoza_q
 Cores: 8, Memory: 80G, Walltime: 2:00:00, Account: mendoza_q
 
 # Frequency calculations
-Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
+Cores: 32, Memory: 7G, Walltime: 7-00:00:00, Account: mendoza_q
 ```
 
 #### **Dynamic Script Generation**

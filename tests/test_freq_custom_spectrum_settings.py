@@ -148,8 +148,10 @@ GOLDEN = {
     "4": ["FREQCALC", "INTENS", "INTRAMAN", "INTCPHF", "ENDCPHF", "IRSPEC", "RANGE", "0 4000", "END",
           "RAMSPEC", "RANGE", "0 4000", "END", "ENDFREQ"],
     "5": ["FREQCALC", "TEMPERAT", "20 0 400", "NOINTENS", "THERMO", "END", "ENDFREQ"],
-    "6": ["FREQCALC", "NOINTENS", "DISPERSION", "BANDS", "0 100", "4", "X GAMMA", "GAMMA L", "L W",
-          "W GAMMA", "ENDFREQ"],
+    # X-GAMMA-L-W-GAMMA as integer records: CRYSTAL23 stops label records with "INPFREQ **** FORMAT
+    # ERROR IN FREQCALC INPUT DECK" (measured on diamond for the 1.1.6 example suite)
+    "6": ["FREQCALC", "NOINTENS", "DISPERSION", "BANDS", "16 100", "4", "8 0 8 0 0 0", "0 0 0 8 8 8",
+          "8 8 8 8 4 12", "8 4 12 0 0 0", "ENDFREQ"],
     "7": ["FREQCALC", "NOINTENS", "DISPERSION", "PDOS", "2000.0 200", "1", "ENDFREQ"],
     # custom settings, no intensities
     "8": ["FREQCALC", "NOINTENS", "ENDFREQ"],

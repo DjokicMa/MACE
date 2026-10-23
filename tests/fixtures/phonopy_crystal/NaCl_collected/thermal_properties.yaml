@@ -1,0 +1,58 @@
+# Thermal properties / unit cell (natom)
+
+unit:
+  temperature:   K
+  free_energy:   kJ/mol
+  entropy:       J/K/mol
+  heat_capacity: J/K/mol
+
+natom: 2    
+cutoff_frequency: 0.00000
+exclude_gamma_acoustic: false
+num_modes: 1296
+num_integrated_modes: 1296
+
+zero_point_energy:       5.9497612
+
+thermal_properties:
+- temperature:         0.0000000
+  free_energy:         5.9497612
+  entropy:             0.0000000
+  heat_capacity:       0.0000000
+  energy:              5.9497612
+
+- temperature:       100.0000000
+  free_energy:         5.2805797
+  entropy:            20.0122919
+  heat_capacity:      31.6371744
+  energy:              7.2818089
+
+- temperature:       200.0000000
+  free_energy:         1.8535080
+  entropy:            46.8554996
+  heat_capacity:      44.0366857
+  energy:             11.2246079
+
+- temperature:       300.0000000
+  free_energy:        -3.8121882
+  entropy:            65.4148401
+  heat_capacity:      47.1469502
+  energy:             15.8122638
+
+- temperature:       400.0000000
+  free_energy:       -11.0711280
+  entropy:            79.1613552
+  heat_capacity:      48.3162507
+  energy:             20.5934141
+
+- temperature:       500.0000000
+  free_energy:       -19.5487880
+  entropy:            90.0093225
+  heat_capacity:      48.8727260
+  energy:             25.4558732
+
+- temperature:       600.0000000
+  free_energy:       -29.0098389
+  entropy:            98.9494597
+  heat_capacity:      49.1791792
+  energy:             30.3598369

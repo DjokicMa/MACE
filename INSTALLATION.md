@@ -63,7 +63,13 @@ ask for both.
   https://github.com/DjokicMa/MACE.git`) and run it with Python 3:
   `python <MACE>/mace_cli gui connect ...` (Windows: `python
   <MACE>\mace_cli gui connect ...`). It needs only Python 3 and ssh, none of
-  the packages in `requirements.txt`.
+  the packages in `requirements.txt`. On Windows, `python` may be the
+  Microsoft Store stub that prints "Python was not found": it is not a Python.
+  Install Python 3 from python.org (or use Anaconda), or skip Python and use
+  the PowerShell script (`scripts/mace-gui-connect.ps1`), which needs only
+  Windows' own OpenSSH (it finds `ssh.exe` itself when PowerShell's PATH lost
+  it; see [Windows and VS Code, step by
+  step](docs/gui.md#windows-and-vs-code-step-by-step)).
 - **For everything else on your computer** (`mace gui`, decks, plots, the
   database): follow [Quick Start](#quick-start) below. MACE is developed and
   tested on Linux; on Windows, use WSL for this full install.
@@ -124,11 +130,11 @@ install.
 | Optional feature | What | How MACE finds it |
 |---|---|---|
 | `mace preflight` | the serial `crystal` binary | `--crystal-bin`, `MACE_CRYSTAL_BIN`, `[crystal] bin_dir`, `$EBROOTCRYSTAL/bin`, PATH, then the job scripts' CRYSTAL module |
-| `mace phonopy` | `pip install 'phonopy<5'` | the Python that runs `mace` |
+| `mace opt2d12 --calc-type PHONOPY`, `mace analyze phonopy` | `pip install 'phonopy<5'` | the Python that runs `mace` |
 | `mace plotting --cube` isosurfaces | `pip install scikit-image` | the Python that runs `mace` |
 | Excel export (`mace database --action export --format excel`, the GUI's Database export) | `pip install 'openpyxl<4'` (in `requirements-optional.txt`); CSV, JSON, LaTeX and HTML need nothing extra | the Python that runs `mace` |
 | GFN-FF in `mace preopt` and Clean | the xtb program, 6.7 or newer (LGPL, not shipped) | `MACE_XTB`, else `xtb` on PATH, else the newest `xtb` module 6.7 or newer (`MACE_XTB_MODULE` pins one, `none` turns the search off) |
-| ML potentials in `mace preopt` and Clean | a separate Python environment with mace-torch or chgnet, and the model weights | `mace mlip setup --python PATH` (or `MACE_MLIP_PYTHON`); weights from `mace mlip fetch` in `$XDG_DATA_HOME/mace-tool/mlip/` (`MACE_MLIP_DIR`) |
+| ML potentials in `mace preopt` and Clean | a separate Python environment with mace-torch or chgnet, and the model weights | `mace mlip install` (or the GUI's Settings › ML potentials) makes it in `$XDG_DATA_HOME/mace-tool/mlip/venv`, where MACE finds it; one elsewhere: `mace mlip setup --python PATH` (or `MACE_MLIP_PYTHON`); weights from `mace mlip fetch` in `$XDG_DATA_HOME/mace-tool/mlip/` (`MACE_MLIP_DIR`) |
 | `mace cluster` | SLURM's `sinfo`, `squeue`, `sacct`, `scontrol`, `sshare`, `sstat`; a quota command if your site has one | PATH; `[quota]` in site.toml names a site's own tool |
 | The MACE GUI | nothing beyond `requirements.txt` on the machine with the data; a current browser with WebGL2 on your computer, and ssh to reach a cluster | `mace gui --open`, or the link it prints |
 | `mace gui connect` | Python 3 and an OpenSSH client on your computer (no MACE packages); `scripts/` has bash and PowerShell versions for a computer without MACE | PATH |
@@ -156,7 +162,7 @@ File History in `~/.local/state/mace/gui/history/`.
 |---|---|---|
 | seekpath | optional | **required** (2.1 or newer); `--static-kpath` or `MACE_STATIC_KPATH=1` writes the static path without it |
 | Other required packages | numpy, matplotlib, ase, spglib, rich, PyYAML, pandas, plotly, scipy, kaleido | unchanged |
-| Optional packages | - | phonopy (`mace phonopy`); selenium and axe-selenium-python (GUI browser tests only) |
+| Optional packages | - | phonopy (`mace opt2d12 --calc-type PHONOPY`, `mace analyze phonopy`); selenium and axe-selenium-python (GUI browser tests only) |
 | External programs | CRYSTAL, SLURM, MPI | the same, plus optional xtb (GFN-FF) and an optional ML Python environment |
 | CRYSTAL module | the module written in the job-script templates | site settings, else the built-in module when it loads, else the newest CRYSTAL 23.x module with `Pcrystal` and `Pproperties` |
 | Configuration files | `~/.config/mace/config.json` (theme) | also `site.toml`, `gui.json`, `connect.toml`, `mlip.json`, all optional |
@@ -198,16 +204,14 @@ New environment variables, all optional:
 
 ```bash
 # Core dependencies (required; or: pip install -r requirements.txt)
-pip install numpy matplotlib ase spglib seekpath pyyaml pandas "plotly>=5.0.0,<6.2"
+pip install numpy matplotlib ase spglib seekpath rich pyyaml pandas "plotly>=5.0.0,<6.2" scipy kaleido==0.2.1
+# (rich draws the themed terminal UI; without it MACE still runs, in plain text)
 
-# Recommended: themed terminal UI (MACE falls back to plain text without it)
-pip install rich
-
-# Optional: interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
-pip install scipy kaleido==0.2.1 scikit-image
+# Optional: cube isosurfaces (mace plotting --cube)
+pip install scikit-image
 
 # Verify installation
-python -c "import numpy, matplotlib, ase, spglib, seekpath, yaml, pandas, plotly; print('All dependencies installed successfully')"
+python -c "import numpy, matplotlib, ase, spglib, seekpath, rich, yaml, pandas, plotly; print('All dependencies installed successfully')"
 ```
 
 #### HPC / SLURM clusters (IMPORTANT: install into the *module* Python)
@@ -244,9 +248,11 @@ python "$MACE_HOME/mace/queue/manager.py" --callback-mode status_check   # read-
 **The MACE GUI on a dev node.** `mace gui` runs under the same module Python
 and needs nothing beyond `requirements.txt` (ase, spglib and plotly; a
 feature whose package is missing shows the `pip install --user ...` line). It
-listens on 127.0.0.1 of the node; your laptop reaches it through an ssh
-tunnel, which `mace gui` prints. Choose a personal port on shared nodes
-(`export MACE_GUI_PORT=8xxx`). From your own computer, `mace gui connect`
+listens on 127.0.0.1 (and ::1) of the node; your laptop reaches it through
+an ssh tunnel, which `mace gui` prints. On a shared node it uses a port of
+your own (20000 + your user id mod 10000, the next free one if busy), so two
+people on one node never collide; `mace gui --sessions` lists yours
+([docs/gui.md](docs/gui.md#several-people-on-one-node)). From your own computer, `mace gui connect`
 starts it on the node and opens it in your browser in one step. See
 [docs/gui.md](docs/gui.md#first-run-from-your-computer), "First run from your
 computer", for Linux, macOS, Windows, MobaXterm and VS Code.
@@ -585,7 +591,7 @@ python mace_cli submit calculation.d12
 
 # Or use scripts directly if added to PATH
 NewCifToD12.py --cif_dir ./cifs
-CRYSTALOptToD12.py --input material.out
+CRYSTALOptToD12.py --out-file material.out
 ```
 
 ## Uninstalling

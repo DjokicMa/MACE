@@ -259,7 +259,11 @@ def test_editor_api_new_cell_and_clean(server):
     assert r["symmetry"]["number"] != 227
     st, r = _post(base, "new", {"cellpar": [3.6] * 3 + [90] * 3, "spacegroup": 225,
                                 "sites": [{"element": "Cu", "frac": [0, 0, 0]}]})
+    # copper's metal bonds are drawn (a structure of metals only), so Clean holds them (1.1.6) ...
     st, c = _post(base, "clean", {"session": r["session"]})
+    assert st == 200 and not c.get("nothing_to_clean") and c["report"]["converged"], c
+    # ... unless the document's bond rule (Build › Calculate Bonds…, sent with the request) bonds no pair
+    st, c = _post(base, "clean", {"session": r["session"], "bonds": {"bondPairs": {"Cu-Cu": {"never": True}}}})
     assert st == 200 and c["nothing_to_clean"]
     st, r = _post(base, "new", {"cellpar": [4.2] * 3 + [90] * 3, "spacegroup": 225,
                                 "sites": [{"element": "Mg", "frac": [0, 0, 0]},

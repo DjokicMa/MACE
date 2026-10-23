@@ -8,6 +8,7 @@ pytest.importorskip("spglib")
 from ase.build import bulk  # noqa: E402
 
 from mace.gui import clean as C  # noqa: E402
+from mace.gui import structures as S  # noqa: E402
 
 CELLS = {
     "Si-conv": lambda: bulk("Si", "diamond", 5.431, cubic=True),
@@ -39,19 +40,65 @@ def test_repulsion_removes_the_floppy_modes_of_bond_springs(name, bond_only):
     assert C.floppy_modes(atoms) == 0
 
 
+@pytest.mark.parametrize("held", ["shown", "lenient"])
 @pytest.mark.parametrize("name", list(CELLS))
-def test_rattled_cell_moves_back_toward_its_bond_lengths(name):
+def test_rattled_cell_moves_back_toward_its_bond_lengths(name, held):
+    """As shown, the springs hold the bonds the viewer draws (1.1.6): this rattle stretches one bond past
+    the default 1.15, so the document's rule is set as Build › Calculate Bonds… would set it, to draw them
+    all. Lenient (Clean › Bonds held, 1.2 x) holds them all at the default criteria."""
     ideal = CELLS[name]()
     bonds = C.bonded_pairs(ideal)
     ref = _bond_lengths(ideal, bonds)
     rattled = ideal.copy()
     rattled.rattle(0.08, seed=3)
     err0 = np.sqrt(((_bond_lengths(rattled, bonds) - ref) ** 2).mean())
-    res = C.clean(rattled, keep_symmetry=False, fmax=0.005, max_steps=3000)
+    rule = S.bond_rule({"bondTolerance": 1.2}) if held == "shown" else None
+    assert set(C.held_bonds(rattled, held, rule)) == set(bonds)
+    res = C.clean(rattled, keep_symmetry=False, fmax=0.005, max_steps=3000, bond_rule=rule, bonds_held=held)
     err1 = np.sqrt(((_bond_lengths(res["atoms"], bonds) - ref) ** 2).mean())
-    assert res["converged"] and err1 < 0.3 * err0, (err0, err1)
+    assert res["converged"] and err1 < 0.3 * err0 and res["bonds_held"] == held, (err0, err1)
     if name.startswith(("Si", "MgO")):    # rigid and stable: the group comes back
         assert _sg(res["atoms"]) == _sg(ideal)
+
+
+def test_bonds_held_modes():
+    """Clean › Bonds held: As shown is the viewer's rule (a stretched bond the view no longer draws is not
+    held), Lenient 1.2 x the bond radii with the default criteria, None no bond (the repulsion alone)."""
+    ideal = CELLS["Si-conv"]()
+    rattled = ideal.copy()
+    rattled.rattle(0.08, seed=3)
+    shown, lenient = set(C.held_bonds(rattled)), set(C.held_bonds(rattled, "lenient"))
+    assert shown < lenient and len(lenient) == len(C.bonded_pairs(ideal)) and lenient - shown
+    assert C.held_bonds(rattled, "none") == []
+    # Lenient ignores the document's criteria; As shown takes them
+    never = S.bond_rule({"bondPairs": {"Si-Si": {"never": True}}})
+    assert C.held_bonds(rattled, "shown", never) == [] and set(C.held_bonds(rattled, "lenient", never)) == lenient
+    # metals: Lenient bonds a structure of metals only, as the viewer does, and still no cation pair of a compound
+    assert len(C.held_bonds(bulk("Cu", "fcc", 3.61, cubic=True), "lenient")) == 24
+    mgo = CELLS["MgO-conv"]()
+    sym = mgo.get_chemical_symbols()
+    assert {sym[i] + sym[j] for i, j, _ in C.held_bonds(mgo, "lenient")} <= {"MgO", "OMg"}
+    for bad in ("all", "Shown", 1):
+        with pytest.raises(ValueError, match="bonds held is one of shown, lenient, none"):
+            C.check_bonds_held(bad)
+    assert C.check_bonds_held(None) == C.check_bonds_held("") == "shown"
+
+
+def test_bonds_held_none_runs_the_repulsion_alone():
+    """None: no springs, close pairs only push apart; a lone atom or a rule that bonds nothing runs too
+    (nothing to clean is for As shown and Lenient)."""
+    from ase import Atoms
+    pair = Atoms("Si2", positions=[[0, 0, 0], [1.2, 0, 0]], cell=[12, 12, 12], pbc=True)    # far too close
+    res = C.clean(pair, keep_symmetry=False, bonds_held="none", max_steps=3000)
+    assert res["n_bonds"] == 0 and res["bonds_held"] == "none"
+    assert res["atoms"].get_distance(0, 1, mic=True) > 1.2 + 0.5
+    springs = C.clean(pair, keep_symmetry=False, max_steps=3000)        # As shown: Si-Si 1.2 Å is a bond
+    assert springs["n_bonds"] == 1 and springs["atoms"].get_distance(0, 1, mic=True) < res["atoms"].get_distance(0, 1, mic=True)
+    lone = Atoms("Ar", cell=[10, 10, 10], pbc=True)
+    assert C.clean(lone, bonds_held="none")["converged"]
+    for held in ("shown", "lenient"):
+        with pytest.raises(C.NothingToClean):
+            C.clean(lone, bonds_held=held)
 
 
 def test_symmetric_expansion_keeps_the_group_and_shrinks_back():
@@ -82,12 +129,29 @@ def test_ideal_cell_with_default_options_does_not_move(name):
     assert np.allclose(res["atoms"].cell.array, ideal.cell.array)   # relax_cell is off
 
 
-def test_metals_and_lone_atoms_have_nothing_to_clean():
-    with pytest.raises(C.NothingToClean):
-        C.clean(bulk("Cu", "fcc", 3.61))
+def test_lone_atoms_and_unbonded_rules_have_nothing_to_clean():
     from ase import Atoms
     with pytest.raises(C.NothingToClean):
         C.clean(Atoms("Ar", cell=[10, 10, 10], pbc=True))
+    with pytest.raises(C.NothingToClean):            # the document's rule bonds no pair
+        C.clean(bulk("MgO", "rocksalt", 4.212), bond_rule=S.bond_rule({"bondPairs": {"Mg-O": {"never": True}}}))
+
+
+def test_metals_clean_with_the_bonds_the_viewer_draws():
+    """An all-metal cell (a metal, an alloy) has its metal-metal bonds drawn, so Clean holds them; a
+    compound's cations stay apart unless Bonds between metals is on (geom/core.js metalMetalBonds)."""
+    cu = bulk("Cu", "fcc", 3.61, cubic=True)
+    alloy = bulk("Au", "fcc", 4.0, cubic=True)
+    alloy.numbers[:2] = 29
+    for metal in (cu, alloy):
+        assert len(C.bonded_pairs(metal)) == 24
+        r = metal.copy()
+        r.rattle(0.03, seed=2)
+        res = C.clean(r, keep_symmetry=False, fmax=0.005, max_steps=3000)
+        assert res["converged"] and res["steps"] > 1
+    mgo = bulk("MgO", "rocksalt", 4.212, cubic=True)
+    assert {(n[i], n[j]) for n in [mgo.get_chemical_symbols()] for i, j, _ in C.bonded_pairs(mgo)} <= {("Mg", "O"), ("O", "Mg")}
+    assert len(C.bonded_pairs(mgo, S.bond_rule({"bondMetalMetal": True}))) > len(C.bonded_pairs(mgo))
 
 
 def test_time_limit_stops_the_run():

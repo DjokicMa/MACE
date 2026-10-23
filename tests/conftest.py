@@ -86,6 +86,28 @@ def corpus_guard(pattern: str) -> None:
         pytest.fail(f"a guismoke test must not read the test/ corpus ({pattern}); use examples/gui", pytrace=False)
 
 
+def phonopy_set(cwd, out="parent.out", dim="2 2 2", output_dir=None, **flags):
+    """``mace opt2d12 --out-file OUT --calc-type PHONOPY --non-interactive --dim ...`` in this
+    process, in ``cwd`` (flags: amplitude, pm, cry_sym, keep_shrink, force). Returns
+    (written, the set's folder or None); its report is on stdout, a refusal on stderr."""
+    import CRYSTALOptToD12 as O
+    import d12_calc_phonopy as PH
+    import io
+    old_cwd, old_requested, old_stdin = os.getcwd(), PH.REQUESTED, sys.stdin
+    os.chdir(cwd)
+    sys.stdin = io.StringIO("")          # no answers: the parent's settings, as from a shell
+    try:
+        PH.REQUESTED = {"dim": dim, **{k: v for k, v in flags.items() if v not in (None, False)}}
+        d12 = os.path.splitext(out)[0] + ".d12"
+        ok, _ = O.process_files(out, d12 if os.path.exists(d12) else None, non_interactive=True,
+                                calc_type="PHONOPY", unattended=True, output_dir=output_dir)
+        return ok, (Path(cwd) / O.LAST_RESULT["deck"]) if ok else None
+    finally:
+        PH.REQUESTED = old_requested
+        sys.stdin = old_stdin
+        os.chdir(old_cwd)
+
+
 def find_data(pattern: str, must_contain: str = None) -> Path:
     """First ``test/`` file matching glob ``pattern`` (optionally whose text
     contains ``must_contain``), else ``pytest.skip``.

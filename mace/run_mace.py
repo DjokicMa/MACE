@@ -302,18 +302,27 @@ def _get_quick_slurm_config(calc_type: str, step_num: int, inputs=None, basis=No
     
     # Determine script type and resources based on calculation
     base_type = calc_type.rstrip("0123456789")
+    # a TAU step's strained single points: the SP's job, 1.5x its walltime
+    tau = base_type == "TAU"
+    if tau:
+        base_type = "SP"
     
     # Get the job scripts directory - correctly handle the path
     mace_dir = Path(__file__).parent.parent
     job_scripts_dir = mace_dir / "mace" / "submission"
     
-    if base_type in ["OPT", "SP", "FREQ"]:
+    from mace.workflow.common.constants import MODULE_STEP_TYPES, SLURM_RESOURCE_DEFAULTS
+    if base_type in ["OPT", "SP", "FREQ"] or base_type in MODULE_STEP_TYPES:
         script_name = "submitcrystal23.sh"
         default_resources = {
             "OPT": {"ntasks": 32, "memory_per_cpu": "5G", "walltime": "7-00:00:00"},
             "SP": {"ntasks": 32, "memory_per_cpu": "4G", "walltime": "3-00:00:00"},
             "FREQ": {"ntasks": 32, "memory_per_cpu": "5G", "walltime": "7-00:00:00"}
         }
+        # ELASTIC, EOS, QHA, CPHF: the workflow's built-in sizes of these jobs
+        default_resources.update({t: {k: SLURM_RESOURCE_DEFAULTS[t][k]
+                                      for k in ("ntasks", "memory_per_cpu", "walltime")}
+                                  for t in MODULE_STEP_TYPES})
     else:  # D3 calculations
         from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
         script_name = "submit_prop.sh"
@@ -346,6 +355,9 @@ def _get_quick_slurm_config(calc_type: str, step_num: int, inputs=None, basis=No
     if auto:
         print(f"  {calc_type}: suggested from the inputs' size ([resources] auto): {auto['reason']}")
     resources = site.overlay_resources(resources, site.load_resolved(), kind, base_type, auto)
+    if tau:
+        from mace.workflow.tau_step import scale_walltime
+        resources = {**resources, "walltime": scale_walltime(resources["walltime"])}
     
     return {
         "scripts": {
@@ -425,6 +437,7 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
         "fmixing": 30
     }
     
+    from mace.workflow.common.constants import MODULE_STEP_TYPES
     # Default step configurations
     step_configs = {}
     for i, calc_type in enumerate(sequence):
@@ -456,6 +469,24 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                 "d3_calculation": True,
                 "d3_config_mode": "basic",
                 "d3_config": _get_basic_d3_config_for_quick_start(base_type)
+            }
+        elif base_type == "TAU":
+            # the TRANSPORT step's relaxation time from strained single points
+            # of the SP (mace/workflow/tau_step.py)
+            from mace.workflow.tau_step import check_options
+            step_configs[f"{calc_type}_{step_num}"] = {
+                "calculation_type": "TAU",
+                "source": "mace.transport.strain",
+                "tau": check_options({}),
+            }
+        elif base_type in MODULE_STEP_TYPES:
+            # ELASTIC, EOS, QHA, CPHF: opt2d12's module deck at the parent's
+            # geometry and method; no elastic_settings is CRYSTAL's defaults
+            # (an elastic parent's own block for the same module)
+            step_configs[f"{calc_type}_{step_num}"] = {
+                "calculation_type": base_type,
+                "source": "CRYSTALOptToD12.py",
+                "inherit_settings": True,
             }
         elif base_type == "FREQ":
             step_configs[f"{calc_type}_{step_num}"] = {
@@ -491,7 +522,9 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
         "execution_settings": {
             "max_concurrent_jobs": args.max_jobs,
             "enable_material_tracking": True,
-            "auto_progression": True
+            "auto_progression": True,
+            # a cap somebody chose (--max-jobs, a spec's execution.max_jobs) is kept even when it is 200
+            **({"max_jobs_explicit": True} if args.max_jobs is not None else {}),
         }
     }
     job_arrays = job_arrays_setting(args)
@@ -537,11 +570,17 @@ def show_workflow_templates():
         "FREQ": "Vibrational frequency calculation",
         "TRANSPORT": "Transport properties (conductivity, Seebeck coefficient)",
         "CHARGE+POTENTIAL": "Charge density and electrostatic potential",
-        "ORBITALS": "Orbitals as Molden files (NEWK + ORBITALS)"
+        "ORBITALS": "Orbitals as Molden files (NEWK + ORBITALS)",
+        "ELASTIC": "Elastic, piezoelectric or photoelastic constants (after OPT)",
+        "EOS": "Equation of state (after OPT)",
+        "QHA": "Quasi-harmonic approximation (after OPT)",
+        "CPHF": "Dielectric response, CPHF/KS (after OPT)",
     }
     
     for calc_type, description in calc_types.items():
         print(f"  {calc_type:<6} : {description}")
+    print("\n  Finite-displacement phonons with phonopy are not a workflow step: "
+          "mace opt2d12 --out-file PARENT.out --calc-type PHONOPY")
 
 
 if __name__ == "__main__":

@@ -644,19 +644,30 @@ Write the default error-recovery configuration file (equivalent to
 
 # Commands handed straight to a script's own argparse: `mace X --help` is
 # that script's help (examples included), named `mace X` by argv[0].
-PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions')
+PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions', 'examples')
 # Commands mace_cli hands to a module of its own before any parsing here
 # (`mace update`: standard library only); `mace X --help` is that module's.
-MODULE_HELP_COMMANDS = ('update',)
+MODULE_HELP_COMMANDS = ('update', 'animate', 'slice', 'mcp', 'tau')
+
+
+# Commands folded into others: `mace X ...` prints where X went and exits 2.
+FOLDED_COMMANDS = {
+    'phonopy': "mace phonopy was folded into mace opt2d12 (choice 8 / --calc-type PHONOPY) "
+               "and mace analyze phonopy",
+    'elastic': "mace elastic was folded into mace opt2d12 (choices 4-7 / --calc-type) "
+               "and mace analyze elastic",
+}
 
 
 # ------------------------------------------------------------ command registry
 # A new top-level command goes in COMMANDS AND in one COMMAND_GROUPS entry
 # (tests/test_cli_groups.py fails otherwise). A new subcommand worth naming
 # (e.g. `site check`) goes in that command's one-liner here.
-COMMANDS = ['workflow', 'submit', 'run', 'site', 'preflight', 'preopt', 'mlip', 'defects', 'phonopy', 'monitor',
+COMMANDS = ['workflow', 'submit', 'run', 'site', 'preflight', 'preopt', 'supercell', 'mlip', 'calc', 'defects', 'tau', 'transform',
+            'monitor',
             'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions', 'completion', 'status', 'queue',
-            'manager', 'recover', 'database', 'engine', 'plotting', 'gui', 'cluster', 'help', 'credits', 'version', 'update']
+            'manager', 'recover', 'database', 'engine', 'plotting', 'gui', 'mcp', 'cluster', 'examples', 'help', 'credits', 'version', 'update',
+            'animate', 'slice']
 
 # (key for `mace help KEY`, title, purpose or "", [(command, one-liner, extra lines)])
 COMMAND_GROUPS = (
@@ -682,16 +693,23 @@ COMMAND_GROUPS = (
         ("run", "Run decks on this node now, no SLURM - small SP, BAND/DOSS...", ()),
     ]),
     ("results", "Results", "extract, analyze, plot and query", [
-        ("analyze", "Outputs into materials.db (gaps, energies); --convergence FILE", ()),
+        ("analyze", "Outputs into materials.db (gaps, energies); --convergence FILE", (
+            "porosity, pxrd, topology, ...  one structure file",
+            "elastic RUN.out, phonopy DIR  module results, phonopy phonons",)),
         ("plotting", "Plots - bands, DOS, structures, cubes, orbitals, FREQ, IR/Raman", ()),
+        ("animate", "GIF/WebM/MP4 of a FREQ mode, OPT steps, an MD run or a NEB path", ()),
+        ("slice", "A cube's plane - grid, Miller (hkl) or normal to [uvw]; PNG/CSV", ()),
         ("database", "Query materials.db - search, compare, export (CSV, Excel, ...)", ()),
     ]),
     ("special", "Special systems and structure tools", "", [
         ("preopt", "A better starting geometry for a CIF/D12 (springs, GFN-FF, ML)", ()),
-        ("mlip", "ML potentials for preopt - list, set up the environment, fetch", ()),
+        ("supercell", "Supercells of any structure; slabs/molecules at a vacuum spacing", ()),
+        ("mlip", "ML potentials for preopt - list, install, set up, fetch weights", ()),
+        ("calc", "UFF/UFF4MOF, EQeq, xTB, DFTB+, ML potentials - SP, OPT, FREQ, MD", ()),
         ("defects", "Point-defect deck sets (charge states, calibration) and analysis", ()),
         ("ions", "Charged systems - CHEMOD/DOPING/SPIN for ions and charged cells", ()),
-        ("phonopy", "Phonons with phonopy - displaced supercells, then bands and DOS", ()),
+        ("tau", "Transport relaxation time from deformation potentials (BOLTZTRA)", ()),
+        ("transform", "Rotate or move atoms by exact angles and offsets (the GUI gizmos)", ()),
     ]),
     ("gui", "GUI", "", [
         ("gui", "The MACE GUI in your browser - structures, plots, database, setup", (
@@ -699,9 +717,11 @@ COMMAND_GROUPS = (
             "connect      start it on a cluster node from your computer",
             "login-url    a new one-time sign-in link for a running GUI",
             "diagnostics  the server's part of a bug report (no GUI needed)")),
+        ("mcp", "Serve MACE tools to MCP agents and clients over stdin/stdout", ()),
     ]),
     ("setup", "Setup and information", "run `mace site` first on a new cluster", [
         ("site", "Show job-script site settings (--init, check, set/unset, suggest)", ()),
+        ("examples", "Example inputs and outputs - 5 material archetypes", ()),
         ("help", "This list, one group (mace help monitoring) or one command", ()),
         ("version", "Show the MACE version (same as --version)", ()),
         ("update", "Update MACE (and a cluster's) to a release, preview or main", ()),
@@ -833,7 +853,9 @@ Arguments:
 Options:
   --interactive, -i     Interactively configure SLURM resources (cores, memory, walltime)
   --nosubmit           Generate SLURM scripts but do not submit jobs
-  --overwrite-sh       Overwrite existing .sh files instead of using them
+  --overwrite-sh       Overwrite existing .sh files instead of using them (not
+                       with --progress or --progress-plan, whose step folders
+                       get new job scripts)
   --walltime TIME      SLURM walltime for these jobs (e.g. 2:00:00 or 7-00:00:00),
                        overriding the per-calc-type defaults
   --track              Record calculations in materials.db via the tracking queue
@@ -843,11 +865,18 @@ Options:
                        as each one completes. TEMPLATE is a workflow template
                        (mace workflow --show-templates) or "interactive" to
                        configure every step yourself. Implies --track.
-                       Without it, a manual submission runs exactly what you
-                       submitted and nothing else.
+                       Each deck is copied, with the files its job reads, into
+                       its step folder (workflow_outputs/<id>/step_NNN_<TYPE>/
+                       <material>/) and submitted there; nothing beside the
+                       decks is written. Without it, a manual submission runs
+                       exactly what you submitted and nothing else.
   --progress-plan PLAN Submit these decks as the first step of a plan written by
-                       `mace workflow --spec SPEC --write-plan`; they then
-                       progress as that plan says. Implies --track.
+                       `mace workflow --spec SPEC --write-plan`, in step folders
+                       as --progress does; they then progress as that plan
+                       says. Implies --track.
+  --rerun-finished     With --progress or --progress-plan: run every deck again,
+                       also one whose .out is a finished run of its type (by
+                       default that output starts the next steps instead)
   --array              Submit the decks as SLURM job arrays: decks whose job
                        scripts ask for exactly the same resources share one
                        array, one task per deck. A deck whose request no other
@@ -1056,8 +1085,44 @@ they are labeled uncorrected for image charges). The --calibrate decks are an
 optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
 `mace defects analyze --help`.
 """,
+    'transform': """
+Usage: mace transform INPUT [--atoms LIST] [--rotate DEG --axis AXIS]
+                      [--about centroid|com|cell|origin|atom:N|X,Y,Z]
+                      [--translate DX DY DZ | --translate-frac DA DB DC] [-o OUTPUT] [--no-wrap] [--force]
+
+Rotate and/or move atoms of a structure by exact amounts: the GUI's Rotate tool
+(R) and Move tool gizmos from the command line. The rotation comes first; the
+cell is unchanged. INPUT is a CIF, D12, CRYSTAL output or any structure file
+the GUI opens; OUTPUT (default <stem>_transformed.cif) is written with ase in
+the format of its extension.
+
+Options:
+  --atoms LIST        1-based indices, ranges and elements: "1,5-8", "O", "all"
+                      (default: all atoms)
+  --rotate DEG        turn by DEG degrees, counterclockwise seen from the axis's tip
+  --axis AXIS         x, y, z; a, b, c; a*, b*, c*; or "u v w" (a lattice
+                      direction; a Cartesian vector for a molecule)
+  --about PIVOT       what --rotate turns about, as the GUI's Rotate panel:
+                      centroid (default: of the picked atoms, made whole across
+                      the cell's faces), com (their center of mass), cell (the
+                      cell's center; along a slab's or molecule's open directions,
+                      the middle of the atoms), origin, atom:N (atom N, 1-based;
+                      it need not be in --atoms), or x,y,z in Angstrom
+  --translate DX DY DZ        then move by this many Angstrom
+  --translate-frac DA DB DC   then move by these fractions of a, b, c
+  -o, --output FILE   the file to write
+  --no-wrap           keep moved atoms where they land (default: wrapped into the cell)
+  --force             overwrite OUTPUT
+
+Examples:
+  mace transform MOF.cif --atoms 97-104 --rotate 90 --axis c -o MOF_rot.cif
+  mace transform MOF.cif --atoms 97-104 --rotate 120 --axis "1 1 1" --about atom:12
+  mace transform slab.d12 --atoms O --translate 0 0 0.5
+  mace transform MgO.cif --atoms 5 --translate-frac 0.1 0 0 --no-wrap
+""",
     'preopt': """
-Usage: mace preopt INPUT.cif|INPUT.d12 [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR] [options]
+Usage: mace preopt INPUT [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR] [options]
+       INPUT: a .cif, .d12, .xyz/.extxyz, POSCAR or CRYSTAL .out file
 
 Pre-optimize a structure into a better STARTING geometry for CRYSTAL. The
 result is never a final structure: CRYSTAL still optimizes it, and the next
@@ -1065,6 +1130,13 @@ CRYSTAL step must be an OPT. Nothing about the calculation is touched - no
 OPTGEOM, functional, basis, tolerances, SPIN or charge keywords; only the
 geometry is written: OUTDIR/<stem>_preopt.cif (in the input's own space group
 and setting when the run kept it) plus OUTDIR/<stem>_preopt.json (provenance).
+A group-1 SLAB, POLYMER or MOLECULE deck, the .out of a SLAB, POLYMER or
+MOLECULE run (its last geometry; a deck in another group is refused, use its
+.out), an extended XYZ (pbc="T T F") or an XYZ (a molecule) keeps its
+periodicity: nothing wraps along a non-periodic axis, --relax-cell moves only
+the periodic directions, a molecule keeps its box; the result is also written
+as <stem>_preopt.extxyz (exact, pbc kept) and the CIF holds it in a box with
+15 A of vacuum.
 
 Methods:
   springs        rough spring model, always available (default)
@@ -1093,6 +1165,9 @@ Options:
   --charge Q          net charge (GFN-FF uses it; ML potentials take none)
   --uhf N             unpaired electrons, passed to xtb and recorded only
                       (GFN-FF ignores it)
+  --bonds B           the bonds the springs hold: shown (default; the GUI's
+                      drawn bonds, 1.15 x the bond radii), lenient (1.2 x:
+                      also slightly stretched ones) or none (repulsion only)
   --fmax F            force threshold, eV/A (springs 1e-3, gfnff 0.01, mlip 0.02)
   --steps N           step limit (springs 2000, gfnff 500, mlip 300)
   --time-limit S      seconds (springs 10, gfnff 60, mlip 120)
@@ -1113,6 +1188,7 @@ Examples:
   mace preopt LiFSI_box.cif --method gfnff --charge 0
   mace preopt MgO.cif --method mlip:acesuit-mace-mpa-0-medium --relax-cell
   mace preopt rattled.cif --method auto --symmetrize 0.1 -o preopt/
+  mace preopt graphene_opt.out --method mlip:acesuit-mace-mpa-0-medium --relax-cell
 
 Note: starting geometry only; CRYSTAL still optimizes; the next CRYSTAL step
 must be an OPT (mace convert <stem>_preopt.cif with your options, calculation
@@ -1120,10 +1196,37 @@ type OPT). A .d12 that builds its geometry with SUPERCEL, ATOMREMO, ATOMSUBS,
 GHOSTS, ... is refused: pre-optimize the expanded structure (a CIF of it).
 See docs/preopt.md.
 """,
+    'supercell': """
+Usage: mace supercell INPUT [N1 N2 N3 | --matrix "M11 ... M33"] [--vacuum MODE] [--format cif|extxyz] [-o OUT] [--force]
+
+A supercell of any structure MACE reads (CIF, 3D or P1 .d12, CRYSTAL .out,
+fort.34/.gui, POSCAR, XYZ/extended XYZ): the GUI's Build > Supercell. N1 N2 N3
+default to 2 along periodic directions and 1 along non-periodic ones. A slab,
+polymer or molecule repeats along a non-periodic direction only when you ask for
+more than 1 there, spaced by the vacuum mode (the GUI's Inspector > Display >
+Vacuum):
+  --vacuum bbox     the atoms' extent + 1 A on each side (default)
+  --vacuum file     the vacuum the file defines (a CRYSTAL output's 500 A)
+  --vacuum crystal  CRYSTAL's 500 A
+  --vacuum GAP      a number: the atoms' extent + GAP A (custom)
+  --vacuum open     nothing repeats along a non-periodic direction
+  --format cif      (default) a slab, polymer or molecule in a 15 A vacuum box
+  --format extxyz   keeps the periodicity (pbc)
+  -o OUT            the output (default <stem>_<n1>x<n2>x<n3>.<format>)
+
+Examples:
+  mace supercell MgO.cif 2 2 2
+  mace supercell graphene_slab_sp.out 3 3 1
+  mace supercell graphene_slab_sp.out 1 1 2 --vacuum 12 --format extxyz
+  mace supercell water.xyz 2 1 1 --vacuum crystal
+""",
     'mlip': """
-Usage: mace mlip list [--json] [--recheck]
-       mace mlip setup [--python PATH]
-       mace mlip fetch ID [--yes] [--dir DIR]
+Usage: mace mlip list [--json] [--recheck] [--all] [--academic]
+       mace mlip install [--dir DIR] [--backend LIST] [--gpu] [--python PATH]
+                         [--fetch ID | --no-fetch] [--yes] [--dry-run]
+                         [--accept-academic-license]
+       mace mlip setup [--python PATH] [--env NAME]
+       mace mlip fetch ID [--yes] [--dir DIR] [--accept-academic-license]
 
 ML potentials for `mace preopt` and the GUI's Clean. They are third-party
 models, unrelated to this MACE tool, and run out of process in their own
@@ -1132,26 +1235,123 @@ Python environment (ACEsuit's package is also called "mace").
   list     each model: id, label, code and weights license, size, status
            (ready, needs_setup, import_failed, probe_timeout, needs_fetch,
            bad_hash, unsupported_python) and the next step
-  setup    without --python: print how to make an ML environment (MACE never
-           creates or installs one); with --python PATH: probe that interpreter
-           and record it ($XDG_CONFIG_HOME/mace/mlip.json)
+  install  make the ML environment: show the plan (folder, Python, packages
+           and their licenses, size, free space and quota), ask, then a venv
+           (default $XDG_DATA_HOME/mace-tool/mlip/venv), pip upgraded, CPU
+           torch (--gpu: CUDA, when a GPU answers), the pinned packages
+           (--backend mace-torch,chgnet,orb-models,mattersim), pip check, the
+           probe, the record, and the default model's weights (license shown;
+           --no-fetch skips). PYTHONPATH never reaches pip. A failed or
+           canceled run removes the folder it created; a second run repairs.
+           Exit 0 ready, 1 failed, 2 refused, 3 ready without the weights.
+  setup    without --python: print the same steps to run by hand; with
+           --python PATH: probe that interpreter and record it
+           ($XDG_CONFIG_HOME/mace/mlip.json)
   fetch    show the license, size, URL, sha256, training data and citation,
            ask, then download and verify the weights (--yes when stdin is not
-           a terminal). The only MACE command that downloads anything.
+           a terminal). Only fetch and install download anything.
 
-Models (1.1.5): acesuit-mace-mpa-0-medium (MIT code and weights, default)
+Models for preopt and Clean:
+                acesuit-mace-mpa-0-medium (MIT code and weights, default)
                 chgnet-0.3.0 (BSD, weights inside the chgnet package, fallback)
+`mace calc` also offers (list --all): MACE-MP-0b3 (ACEsuit mace-torch, MIT),
+ORB-v3 and OrbMol-v2 (orb-models, Apache-2.0; Python 3.12+), MatterSim v1
+(MIT) and UMA (Meta fairchem: MIT code, FAIR Chemistry License weights,
+gated on Hugging Face: your own access; its own environment, install
+--backend fairchem-core).
+Academic-only, opt-in (list --academic): MACE-OFF24/MACE-OFF23 medium
+(Academic Software License: academic, non-commercial use only). Never a
+default or chosen by auto; fetched and run only after
+fetch ID --accept-academic-license (at a terminal you also type ACADEMIC),
+recorded with its date; every result is labeled "(academic license)".
 
-Environment: MACE_MLIP_PYTHON (the interpreter), MACE_MLIP_DIR (the weights),
-MACE_MLIP_NO_DOWNLOAD=1 (refuse to download).
+Environment: MACE_MLIP_PYTHON (the interpreter; MACE_MLIP_PYTHON_FAIRCHEM for
+UMA's), MACE_MLIP_DIR (the weights), MACE_MLIP_NO_DOWNLOAD=1 (refuse to
+download), HF_TOKEN (yours, for gated weights; MACE never stores it).
 
 Examples:
+  mace mlip install
+  mace mlip install --backend mace-torch,chgnet --dry-run
   mace mlip setup
   mace mlip setup --python ~/mlenv/bin/python
   mace mlip fetch acesuit-mace-mpa-0-medium
   mace mlip list
 
 See docs/preopt.md.
+""",
+    'calc': """
+Usage: mace calc list [--json] [--recheck]
+       mace calc setup [uff|eqeq|xtb|dftb|mlip]
+       mace calc sp|opt|freq|md INPUT -b BACKEND [-m METHOD] [options]
+       mace calc sp|opt|freq|md INPUT -b mlip --model-file PATH
+                --model-backend mace-torch|mattersim --model-license-ok
+       mace calc charges INPUT [-b eqeq|xtb|dftb] [options]
+
+Force fields, charge models, tight binding and ML potentials on any structure
+MACE reads (CIF, .d12, CRYSTAL .out at any --frame, xyz, POSCAR, fort.34):
+
+  uff     UFF and UFF4MOF (-m uff4mof, the default, or -m uff), built in
+  eqeq    EQeq partial charges (Ewald sums as published), built in
+  xtb     GFN2-xTB, GFN1-xTB, GFN-FF (-m gfn2|gfn1|gfnff): the external xtb 6.7+
+  dftb    DFTB+ (-m skf with a Slater-Koster set, or -m gfn2|gfn1)
+  mlip    ML potentials (-m MODEL, see `mace mlip list --all`): MACE-MP
+          (ACEsuit's mace-torch, unrelated to this MACE tool), ORB-v3,
+          OrbMol-v2, MatterSim, CHGNet, UMA (gated, its own environment);
+          MACE-OFF only after its academic-use acknowledgment; run in their
+          own environment
+Shorthands: -b uff4mof, -b gfn2, -b mlip:MODEL.
+
+OrbMol-v2 and UMA's omol head take the total charge and spin multiplicity:
+--charge Q and --multiplicity M (or --uhf N, M = N + 1), else read from the
+.d12/.out the structure came from, else charge 0 and the lowest multiplicity,
+said in the result. UMA's task head: --task-head omat|omol|oc20|odac|omc
+(default omat for 3D, 2D, 1D; omol for molecules).
+
+Tasks: sp (energy, forces, stress), opt (--fmax, --steps, --relax-cell,
+--keep-symmetry, --optimizer), freq (finite differences, --displacement;
+harmonic ZPE and free energy at --temperature), md (--ensemble nve|nvt|npt,
+--temperature, --timestep fs, --md-steps, --friction (Langevin), --pressure
+bar (NPT), --interval, --seed), charges.
+
+Options:
+  -b, --backend B        uff, eqeq, xtb, dftb, mlip (or a shorthand above)
+  -m, --method M         the backend's method (mace calc list shows them)
+  -o, --output-dir DIR   where the files go (default: next to INPUT)
+  --force                overwrite existing output files
+  --device D             ML: auto (default: GPU 0 when there is one, else the
+                         CPU), cpu or cuda:N; CUDA_VISIBLE_DEVICES is respected
+  --charge Q, --uhf N    total charge (xTB, DFTB+, EQeq, OrbMol-v2, UMA omol);
+                         unpaired electrons (xTB)
+  --multiplicity M       spin multiplicity 2S+1 (OrbMol-v2, UMA omol)
+  --task-head H          UMA: omat, omol, oc20, odac, omc
+  --threads N            threads for xtb, dftb+ or the ML worker
+  --time-limit S         stop after S seconds (the partial result is written)
+  --json                 the report as JSON on stdout
+  --debug                show the Python traceback when the calculation fails
+Backend options: --kpts, --kpoint-density, --skf-dir (DFTB+), --engine
+xtb|tblite (xTB), --uff-charges none|eqeq, --cutoff (UFF), --charge-centers
+Zn=2 and --eqeq-method (EQeq), --gpu-mem-fraction and --dtype (ML),
+--option KEY=VALUE for anything else.
+Your own ML model file: --model-file PATH --model-backend mace-torch|mattersim
+--model-license-ok (required: you hold the model's license; MACE reads the
+file where it is and never downloads or copies it).
+
+Files: OUTDIR/<stem>_<backend>-<method>_<task>.json (report) plus the
+optimized structure (.cif, marked as a force-field/ML geometry) and .traj,
+the MD .traj/.extxyz and CSV log, the normal modes (.extxyz), or a P1 CIF
+with _atom_site_charge.
+
+Exit codes: 0 done; 3 done but not converged or stopped (partial result
+written); 1 could not run or failed; 2 usage error.
+
+Examples:
+  mace calc opt MOF-5.cif -b uff4mof --relax-cell
+  mace calc charges MOF-5.cif
+  mace calc opt molecule.xyz -b gfn2 --charge -1
+  mace calc md Si.cif -b mlip -m acesuit-mace-mpa-0-medium --temperature 600
+  mace calc freq benzene.xyz -b gfn2
+
+See docs/calculators.md.
 """,
     'cluster': """
 Usage: mace cluster [SUBCOMMAND] [options] [--json] [--refresh]
@@ -1220,10 +1420,27 @@ package is missing shows the pip command instead.
 
 Options:
   -d, --dir DIR          directory to serve (default: .)
-  -p, --port P           port (default: MACE_GUI_PORT, else 8765; 0 picks a free
-                         one). On a shared node choose your own port
-  --open                 open a browser on this machine (never a text browser
+  -p, --port P           port (default: MACE_GUI_PORT, else 8765 on your own
+                         computer and a port of your own on a shared node,
+                         20000 + your user id mod 10000, the next free one if
+                         busy; 0 picks a free one). A port you name is used
+                         as is
+  --keep                 keep serving after the session that started it closes
+                         (by default a server started over ssh without a
+                         terminal stops when that connection ends; nohup
+                         does the same as --keep)
+  --new-session          start another server even when one of yours already
+                         serves this folder
+  --sessions             list your running MACE GUI sessions (also on other
+                         nodes that share your home folder), each with its
+                         ssh -L line, and exit
+  --open                 open MACE GUI on this machine (never a text browser
                          on an ssh node without a display)
+  --browser app|tab      with --open: app opens MACE GUI in its own window of
+                         Brave, Chrome, Chromium, Edge or Vivaldi (the default
+                         when one is installed), tab a tab of your browser
+                         (also the default when $BROWSER is set; [gui] open
+                         in site.toml sets yours)
   --gpu N                with --open: the NVIDIA GPU the browser renders on
                          (default: GPU 0; N >= 1 uses PRIME render offload)
   --host H               interface to bind (default 127.0.0.1)
@@ -1280,45 +1497,6 @@ Examples:
 
 See docs/gui.md.
 """,
-    'phonopy': """
-Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
-       mace phonopy collect DIR [options]
-
-Finite-displacement phonons with phonopy (optional dependency: pip install 'phonopy<5').
-
-generate  Read a finished 3D OPT (OPT END - CONVERGED) or SP parent and write one
-          EXTERNAL deck per displaced supercell (<stem>_ph<dim>_disp-NNN.d12, geometry
-          in .ext, staged as fort.34 by the job script). The parent's method, basis
-          and tolerances are kept; every deck edit is printed.
-            --d12 PARENT.d12      parent deck (default: same stem as the output)
-            --dim "N N N"         supercell (or 9 integers)
-            --output-dir DIR      default phonopy_<stem>_<dim>/ (--force to reuse)
-            --amplitude A         displacement in Angstrom (default 0.01)
-            --pm auto|yes|no      plus/minus displacements
-            --toldee N            raise TOLDEE (default max(10, parent))
-            --cry-sym             symmetry of each displaced cell in its .ext
-                                  (phonopy's CRY_SYM; some groups, e.g. R-3m, fail)
-            --keep-shrink         keep the parent's SHRINK (default: divide it by
-                                  the supercell size, rounding up)
-collect   Check every output (normal termination, SCF converged, forces, geometry
-          == its displaced cell), then write FORCE_SETS, phonopy_params.yaml,
-          band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml.
-            --check               stop after the checks
-            --band auto|"q ..."   SeeK-path path (default) or phonopy BAND points; none
-            --band-labels, --band-points N, --mesh 100.0|"a b c"
-            --tmin --tmax --tstep thermal properties range (K)
-            --nac-from FREQ.out   Born charges + dielectric tensor from a Gamma
-                                  FREQCALC with INTENS + INTCPHF
-            --plot                band_dos.pdf
-
-Workflow:
-  mace phonopy generate mat_opt.out --dim "2 2 2"
-  mace submit phonopy_mat_opt_222 --walltime 2:00:00      (the walltime generate
-                                                           prints; never --track)
-  mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out]
-
-Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.
-""",
     'monitor': """
 Usage: mace monitor [options]
 
@@ -1347,7 +1525,11 @@ For action-specific options, use: mace monitor --action <ACTION> --help
 """,
     'analyze': """
 Usage: mace analyze --extract-properties <directory> [options]
+       mace analyze <tool> FILE [options]      (structure analysis, below)
+       mace analyze elastic RUN.out [options]  (ELASTIC, EOS, QHA, CPHF results, below)
+       mace analyze phonopy DIR [options]      (a phonopy set's forces, below)
        mace analyze --convergence <file.out> [--json]
+       mace analyze --list-properties [--calc-type TYPE] [--derived] [--gui] [--units] [--json]
        mace analyze --convergence <file.out> --energy [--segments continuous|separate]
        mace analyze --convergence <file.out> --scf [--step latest|first|N|point:N]
 
@@ -1364,6 +1546,17 @@ Options:
   --db-path PATH            Path to materials database (default: materials.db)
   --fragments                Per-fragment Mulliken charges for neutral runs too
                              (charged runs always get them)
+  --reference NAME=FILE|ID   A reference run of the reference energies:
+                             elements, atoms, bulk, surface, adsorbate,
+                             reactants, products. Its output file or calc_id;
+                             N*FILE gives a coefficient (reactions); repeat
+                             for several; NAME=auto drops the saved choice.
+                             Saved with the run, so a later extraction keeps
+                             it (docs/properties.md, "Reference energies")
+  --no-derived               Compute no derived property (MACE_DERIVED=0);
+                             their stored rows stay
+  --skip-property NAME       Do not compute this derived property (repeat;
+                             MACE_SKIP_PROPERTIES=A,B); its stored rows stay
 
 Total ZT of TRANSPORT runs (opt-in; without it only the electronic ZTe):
   --kappa-lattice VALUE|FILE Lattice thermal conductivity κL in W/(m·K): one
@@ -1385,6 +1578,8 @@ Building a database from a folder (--register is on for a folder; the rest opt-i
                              (--extract-properties DIR); not for --output-file
   --no-register              Store the properties only (no materials or
                              calculations rows: `mace database` lists none)
+  --register-output-only     With --output-file --register: record that
+                             output only, not the rest of its folder tree
   --dry-run                  Write nothing: list each output as new, changed,
                              unchanged, not tracked, unreadable or incomplete
   --json                     With --dry-run: one JSON document
@@ -1395,6 +1590,23 @@ Building a database from a folder (--register is on for a folder; the rest opt-i
   --keep-backups N           With --backup: keep the newest N (default 3)
   --progress-json            One JSON line per file on stdout; the rest of
                              the output goes to stderr
+
+The property inventory (writes nothing; docs/properties.md):
+  --list-properties          Every key the database stores, its unit, the
+                             calculation types it applies to and where it comes
+                             from (the extractor's own keys and the derived
+                             properties of mace/properties)
+  --calc-type TYPE           With --list-properties: one calculation type's keys
+  --derived                  With --list-properties: the derived properties only
+  --gui                      With --list-properties: what the GUI computes or
+                             shows from a run, and which of it the database lacks
+  --units                    With --list-properties: the display units the GUI's
+                             Properties tab converts between, its presets, and
+                             the quantities stored under several keys
+  --json / --markdown        With --list-properties: JSON, or the markdown of
+                             docs/properties.md's inventory
+  --update-doc FILE          With --list-properties: rewrite FILE's generated
+                             inventory (docs/properties.md)
 
 Convergence of one run (reads the .out only, writes nothing):
   --convergence FILE         Per optimization point: SCF cycles, CRYSTAL's DE,
@@ -1430,8 +1642,12 @@ Examples:
   mace analyze --extract-properties outputs/ --filter-material 1_dia --filter-type SP
   mace analyze --extract-properties --output-file single_calc.out
   mace analyze --extract-properties clusters/ --fragments
+  mace analyze --extract-properties --output-file slab.out --reference bulk=bulk.out
+  mace analyze --extract-properties --output-file AB.out --reference reactants=A.out --reference reactants=2*B.out
   mace analyze --extract-properties runs/ --register --dry-run
   mace analyze --extract-properties runs/ --register --skip-unchanged --backup
+  mace analyze --list-properties --calc-type FREQ
+  mace analyze --list-properties --gui
   mace analyze --convergence mat1_opt.out
   mace analyze --convergence mat1_opt.out --json
   mace analyze --convergence mat1_opt.out --energy --segments separate
@@ -1439,6 +1655,31 @@ Examples:
 
 Note: This command extracts properties and stores them in the materials database.
 Filters help process only specific materials or calculation types.
+
+Structure analysis (one structure or pattern file; add --json to any):
+  mace analyze porosity FILE      pore sizes, volumes, surface areas (probe)
+  mace analyze pxrd FILE          simulated powder pattern
+  mace analyze peaks PATTERN      peaks of a measured pattern
+  mace analyze index PATTERN      Miller indices, known cell or from scratch
+  mace analyze refine PATTERN     Pawley or Rietveld fit
+  mace analyze topology FILE      underlying net, RCSR symbol, interpenetration
+  mace analyze rcsr status        the reference nets (import adds RCSR's list)
+  mace analyze polyhedra FILE     coordination polyhedra and distortion
+  mace analyze bonds FILE         bond-length and angle distributions
+  mace analyze morphology FILE    BFDH or Wulff crystal shape
+  mace analyze planes FILE        a Miller plane, or cleavage ranking
+  mace analyze zeopp              whether Zeo++ is installed
+Run 'mace analyze <tool> --help' for a tool's options.
+
+Calculation results (the runs mace opt2d12 choices 4-8 set up):
+  mace analyze elastic RUN.out    tensors, moduli, EOS fits, QHA, CPHF optics, Born
+                                  stability (--json; --plot NAME draws the GUI's plots;
+                                  --compare OUT for EOS enthalpies)
+  mace analyze phonopy DIR        a phonopy set (opt2d12 --calc-type PHONOPY): check the
+                                  displaced outputs, then FORCE_SETS, band.yaml, mesh.yaml,
+                                  total_dos.dat, thermal_properties.yaml (--band, --mesh,
+                                  --nac-from FREQ.out, --check, --plot; needs phonopy).
+                                  The completion callback of the set's last job runs it
 """,
     'manager': """
 Usage: mace manager [options]
@@ -1646,6 +1887,8 @@ Modes:
   --dos                 Plot density of states with CLI options
   --band-dos            Each band structure with its run's DOS, one figure on a
                         shared energy axis (the GUI's band + DOS view)
+  --phonon-band-dos     A phonon dispersion with its phonon DOS, one figure on a
+                        shared frequency axis (<material>.PHONON_BAND_DOS.png)
   --structure           Visualize crystal structures from CIF files
   --cube                Render cube volumetrics (ECH3/POT3 density, ESP, spin)
   --orbitals            Orbitals of an ORBITALS run (.molden): pick orbital, k point,
@@ -1653,7 +1896,9 @@ Modes:
   --freq, --vibmodes    Render FREQ vibrational normal modes
   --ir / --raman        Plot IR / Raman spectra (*IRSPEC.DAT / *RAMSPEC.DAT)
   --spectra             Plot both IR and Raman (umbrella)
-  --bz                  Draw the first Brillouin zone with the k-path (BAND.DAT/.d3/.out)
+  --transport           BOLTZTRA data (SEEBECK/SIGMA/SIGMAS/KAPPA/TDF .DAT): any one file
+                        finds the run's others (see Transport Options)
+  --bz                 Draw the first Brillouin zone with the k-path (BAND.DAT/.d3/.out)
   --all                 Plot all available outputs with defaults
   --legend              Write an element legend (SVG, PNG or a TSV/CSV/JSON table)
                         for the elements of the given structure files or folders
@@ -1679,9 +1924,19 @@ Band Structure Options (the energy options apply to --dos and band/DOS galleries
                         fermi: E - E_F even then; vacuum: needs the POTC files
   --fermi-shift EV      Move the energies by -EV: the energy EV above E_F becomes the
                         reference (the dotted line; the GUI's Fermi shift; default: 0)
-  --units UNIT          Energy unit: eV (default), meV, Ha, kJ/mol, kcal/mol (plotly)
+  --units UNIT          Energy unit: eV (default), meV, Ha, kJ/mol, kcal/mol (plotly);
+                        cm-1 or THz for a phonon fort.25 (default there: cm-1)
+  --f25-run N           A fort.25 that holds several runs: the Nth, from 1
+                        (default: the last)
+  --f25-domain D        A fort.25's bands or DOS: auto (default), electronic or phonon
+  --no-fermi-line       Leave out the dotted Fermi level line (plotly)
+  --no-k-labels         Leave out the k-point labels under the bands (plotly)
+  --no-spin-labels      Leave out "up"/"down" over a mirrored DOS (plotly)
   --band-path FILE      Plot along an edited k-path (a JSON band_path, as mace gui and
                         opt2d3 write it; also for --bz)
+  --partner FILE        --band-dos: the run's other half from another folder (the DOS
+                        of a band FILE, the bands of a DOS FILE; mace gui's Add DOS…);
+                        --phonon-band-dos: the phonon DOS or dispersion (Add Phonon DOS…)
   --alpha FLOAT         Band line opacity, matplotlib (default: 1, opaque)
   --no-gaps             No gaps at k-path discontinuities (matplotlib)
 
@@ -1698,7 +1953,7 @@ Plot Style Options (band, DOS, band + DOS; the GUI's Style controls):
   --band-style S        A closed-shell run's bands: auto (default: single with a
                         gap, overlay for a metal), single (the pair's first
                         color), overlay (the second dashed on top), ink (the
-                        1.1.6 preview's look); plotly only, matplotlib ignores it
+                        plot's text color); plotly only, matplotlib ignores it
   --band-color HEX      Band style single: a closed-shell run's bands and DOS
                         total, #rrggbb (default: the pair's first color)
   --spin-down-style S   Spin down's line: dash (default), dot, dashdot, solid
@@ -1710,10 +1965,22 @@ Plot Style Options (band, DOS, band + DOS; the GUI's Style controls):
   --dos-total           DOS with the total (default; overrides the folder file's)
   --dos-smooth EV       DOS: Gaussian smoothing of the drawn curves, sigma in eV
                         (display only, labeled in the plot; e.g. 0.05; 0: off)
+  --log-dos             --dos, --band-dos: a logarithmic DOS axis (the GUI's Log Y
+                        on a DOS, Log DOS on band + DOS); band energies stay linear
 
 DOS Options (matplotlib):
   --projection TYPE     both, total, orbital, tm_orb (default: --dos-colors' lines)
   --no-composition      Disable VB/CB composition labels
+
+Transport Options (--transport):
+  --quantity NAME       seebeck, sigma, sigmas, kappa, tdf, or derived: pf, kappa-e,
+                        zt, lorenz, sigma-tau, pf-tau (default: the file's own)
+  --component C         avg (default), xx, yy, zz or all
+  --temperature K|all   The temperature drawn (default: the run's first), or all
+  --x-axis mu|carriers  Against the chemical potential (default) or the carriers
+  --kappa-lattice VALUE|FILE   --quantity zt: lattice κL in W/(m·K), or a CSV of
+                        T,kappa_L rows; without it ZTe (κL = 0), an upper bound
+  --tau-fs FS           Rescale σ and κ0 to this relaxation time (default: RELAXTIM)
 
 Structure Options:
   --supercell NX NY NZ  Supercell dimensions (default: 2 2 2)
@@ -1751,6 +2018,7 @@ Vibrational Mode Options:
   --all-modes           Render every mode into one HTML (explicit opt-in)
   --gif                 Export an animated GIF instead of HTML
   --amplitude F / --normalize / --static
+  --freq-supercell N1 N2 N3   Cells drawn along a, b, c (default: 1 1 1)
 
 Spectra (IR / Raman) Options:
   --raman-mode MODE     total | par_perp | all (default: all)
@@ -1771,7 +2039,8 @@ Gallery Options (--gallery KIND FILES/FOLDER):
   --cols N              Columns of the grid (default: 3, at most 8)
   --independent-axes    Each pane its own ranges (default: shared)
   --caption-csv PATH    Also write the caption table (material, formula, gap, energy)
-  --max N               At most N panes (default: 200)
+  --max N               Panes per page (default: 200)
+  --page N              A set over --max panes is paged: draw page N (default: 1)
   --db PATH             The materials.db for the captions (default: beside the files)
   -o OUT                The figure (.svg, .png or .pdf), or a folder for gallery_KIND.svg
 
@@ -1779,6 +2048,7 @@ Examples:
   mace plotting                     # Interactive mode
   mace plotting --band              # Plot all band structures with defaults
   mace plotting --band-dos          # Each band structure with its DOS, one figure
+  mace plotting --phonon-band-dos x_phonon_band.f25 --partner ../PHONON_DOS/x_phonon_dos.f25
   mace plotting --band --backend matplotlib   # the figures of MACE 1.1.5
   mace plotting --all               # Plot everything discovered with defaults
   mace plotting --cube dens.CUBE --iso 0.001,0.01
@@ -1840,10 +2110,10 @@ Groups:
   manual      Manual calculations: convert, opt2d12, opt2d3, opt2cif,
               preflight, submit, run
   results     Results: analyze, plotting, database
-  special     Special systems and structure tools: preopt, mlip, defects,
-              ions, phonopy
+  special     Special systems and structure tools: preopt, supercell, mlip,
+              calc, defects, ions, tau, transform
   gui         GUI: gui (connect, login-url, diagnostics)
-  setup       Setup and information: site, help, version, credits
+  setup       Setup and information: site, examples, help, version, credits
   aliases     Aliases and deprecated: status, queue
 
 A command name prints that command's help, exactly as mace <command> --help.
@@ -1926,6 +2196,13 @@ def main():
     """Main entry point with proper argument parsing"""
     # Save original sys.argv before any modifications
     original_argv = sys.argv[:]
+
+    # Commands folded into others (shipped up to 1.1.6-preview): say where they
+    # went and run nothing.
+    _cmd = next((a for a in sys.argv[1:] if not a.startswith('-')), None)
+    if _cmd in FOLDED_COMMANDS:
+        print(FOLDED_COMMANDS[_cmd], file=sys.stderr)
+        sys.exit(2)
     
     # Handle --theme / --save-theme early (the banner can render before argparse):
     # pick the UI color palette for the whole run, export it so child processes
@@ -2012,6 +2289,12 @@ def main():
         from mace.cluster.cli import main as cluster_main
         sys.exit(cluster_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
+    # `mace mcp ...`: the MCP server owns stdout (JSON-RPC on stdin/stdout),
+    # so it starts before any banner; its own --help.
+    if len(sys.argv) >= 2 and sys.argv[1] == 'mcp':
+        from mace.mcp_server.cli import main as mcp_main
+        sys.exit(mcp_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # Check for action-specific help before argparse for any command
     if len(sys.argv) >= 5 and sys.argv[2] == '--action' and sys.argv[4] == '--help':
         command = sys.argv[1]
@@ -2031,6 +2314,21 @@ def main():
             and any(a in ('-h', '--help') for a in sys.argv[3:])):
         from mace.defects.cli import main as defects_main
         sys.exit(defects_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
+    # `mace calc opt --help`, `mace mlip fetch -h`, `mace analyze porosity --help`:
+    # the subcommand's or tool's own help, as defects above.
+    if (len(sys.argv) >= 4 and sys.argv[1] in ('calc', 'mlip', 'analyze')
+            and any(a in ('-h', '--help') for a in sys.argv[3:])):
+        if sys.argv[1] == 'calc':
+            from mace.calculators.cli import TASKS as _subs, main as _tool_main
+            _subs = ('list', 'setup') + tuple(_subs)
+        elif sys.argv[1] == 'mlip':
+            from mace.preopt.mlip_cli import main as _tool_main
+            _subs = ('list', 'setup', 'fetch')
+        else:
+            from mace.analysis.cli import TOOLS as _subs, main as _tool_main
+        if sys.argv[2] in _subs:
+            sys.exit(_tool_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
     # Commands that pass straight through to their script
     if len(sys.argv) >= 2 and sys.argv[1] in PASSTHROUGH_COMMANDS:
@@ -2095,6 +2393,9 @@ def main():
             sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d12"))
             from ion_charges import main as ions_main
             sys.exit(ions_main(sys.argv[2:]))
+        elif command == 'examples':
+            from mace.examples_suite import main as examples_main
+            sys.exit(examples_main(sys.argv[2:]))
         sys.exit(0)
     
     # `mace gui connect|login-url|diagnostics ...`: standard-library tools that
@@ -2111,21 +2412,28 @@ def main():
         from mace.update import main as update_main
         sys.exit(update_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
+    # `mace animate` / `mace slice` (1.1.6): their own parsers (and --help)
+    if len(sys.argv) >= 2 and sys.argv[1] in ('animate', 'slice'):
+        if sys.argv[1] == 'animate':
+            from mace.gui.animexport import main as _module_main
+        else:
+            from mace.gui.slice_cli import main as _module_main
+        sys.exit(_module_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # `mace gui --slurm ...`: MACE GUI as a batch job (standard library only, its
     # own --help); the server itself starts inside the job.
     if len(sys.argv) >= 3 and sys.argv[1] == 'gui' and '--slurm' in sys.argv[2:]:
         from mace.gui.slurmsession import main as slurm_main
         sys.exit(slurm_main([a for a in sys.argv[2:] if a not in ('--no-banner', '--slurm')]))
 
-    # `mace phonopy generate|collect ...` goes straight to its own parser, so that
-    # `mace phonopy generate --help` shows the subcommand's options rather than
-    # being taken by the top-level parser below.
-    if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate', 'collect'):
-        from mace.phonopy_bridge.cli import main as phonopy_main
-        sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
+    # `mace tau ...` (1.1.6) goes straight to its own parser, so its --help
+    # is the subcommands'.
+    if len(sys.argv) >= 2 and sys.argv[1] == 'tau':
+        from mace.transport.cli import main as _a07_main
+        sys.exit(_a07_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
     # `mace site [--json|--refresh|--init]` goes straight to its own parser,
-    # so `mace site --help` shows its options (as phonopy above).
+    # so `mace site --help` shows its options (as tau above).
     if len(sys.argv) >= 2 and sys.argv[1] == 'site':
         from mace.submission.site_cli import main as site_main
         sys.exit(site_main([a for a in sys.argv[2:] if a != '--no-banner']))
@@ -2283,6 +2591,10 @@ def main():
                                  help='Submit these decks as the first step of a workflow plan '
                                       'written by `mace workflow --spec SPEC --write-plan`; '
                                       'they then progress as that plan says. Implies --track.')
+        submit_parser.add_argument('--rerun-finished', action='store_true',
+                                 help='With --progress or --progress-plan: run every deck again, '
+                                      'also one whose .out is a finished run of its type (by '
+                                      'default that output starts the next steps instead)')
         submit_parser.add_argument('--array', action='store_true',
                                  help='Submit the decks as SLURM job arrays: decks whose job '
                                       'scripts ask for exactly the same resources share one '
@@ -2325,6 +2637,9 @@ def main():
         progress_plan = submit_args.progress_plan
         walltime = submit_args.walltime
         progress_plan_data = None
+        if submit_args.rerun_finished and not (progress or progress_plan):
+            ui.err("Error: --rerun-finished applies to --progress and --progress-plan only.")
+            sys.exit(1)
         if progress_plan:
             if progress:
                 ui.err("Error: give --progress or --progress-plan, not both.")
@@ -2499,19 +2814,20 @@ def main():
             # Existing job scripts, as on the untracked path: one MACE wrote and
             # nobody changed is written again (with the resources asked for
             # now); an edited one is submitted as written, and never replaced
-            # without --overwrite-sh - with resource options (-i, --walltime),
-            # --progress (the plan's job scripts carry the workflow context) or
-            # --array (its tasks are generated together) it stops the
+            # without --overwrite-sh - with resource options (-i, --walltime)
+            # or --array (its tasks are generated together) it stops the
             # submission before anything is recorded or queued.
             # A script an older MACE wrote with its default resources is
             # written again (it lacks the 1.1.5 job-script fixes); one written
             # from a customized template (a workflow plan's copy, -i) is reused
             # and keeps its cores and memory (--walltime is set in it as it is).
+            # --progress and --progress-plan never read or write them: their
+            # decks run in the workflow's own step folders (below).
             from mace.submission.job_script_age import (
                 generated_unmodified, conflict_message, older_generated_unmodified,
                 older_regenerated_message, generated_from_custom_copy, set_in_place, in_place_message)
             reuse_scripts, conflicts, in_place = {}, [], []
-            if not overwrite_sh:
+            if not overwrite_sh and not progress:
                 for f in selected:
                     sh = Path(f).with_suffix('.sh')
                     if not sh.exists():
@@ -2520,19 +2836,19 @@ def main():
                         ui.info(older_regenerated_message(Path(f).stem))
                         continue
                     if generated_unmodified(sh):
-                        if (not (interactive or progress or array_mode)
+                        if (not (interactive or array_mode)
                                 and generated_from_custom_copy(sh, 'prop' if str(f).endswith('.d3') else 'scf')):
                             if walltime:
                                 in_place.append(sh)
                             reuse_scripts[str(Path(f).resolve())] = sh.resolve()
                         continue
-                    if interactive or walltime or progress or array_mode:
+                    if interactive or walltime or array_mode:
                         conflicts.append(Path(f).stem)
                     else:
                         reuse_scripts[str(Path(f).resolve())] = sh.resolve()
             if conflicts:
                 given = [o for o, on in (("-i", interactive), ("--walltime", walltime),
-                                         ("--progress", progress), ("--array", array_mode)) if on]
+                                         ("--array", array_mode)) if on]
                 ui.err(conflict_message(conflicts, " / ".join(given)))
                 sys.exit(1)
             for sh in in_place:
@@ -2589,14 +2905,34 @@ def main():
                     plan_file, workflow_id, sequence = check_launch_plan(
                         progress_plan_data, progress_plan, Path(base_dir).resolve(),
                         [Path(f) for f in selected])
+                    from mace.submission.local_run import deck_calc_type
+                    from mace.workflow.manual_progress import missing_steps_message
+                    why = missing_steps_message(
+                        [Path(f) for f in selected], sequence,
+                        lambda p: deck_calc_type(p, "prop" if p.suffix.lower() == ".d3" else "scf"),
+                        what=f"the plan of {workflow_id}")
+                    if why:
+                        raise ValueError(why)
                 except ValueError as e:
                     ui.err(f"Error: {e}")
                     sys.exit(1)
                 describe_plan(plan_file, workflow_id, sequence)
             elif progress:
                 from mace.workflow.manual_progress import (
-                    build_progress_plan, describe_plan, position_in_sequence)
+                    build_progress_plan, describe_plan, material_names, position_in_sequence)
                 try:
+                    # refused before a plan is written (see first_steps below)
+                    material_names([Path(f) for f in selected])
+                    from mace.workflow.common.constants import WORKFLOW_TEMPLATES
+                    if progress in WORKFLOW_TEMPLATES:
+                        from mace.submission.local_run import deck_calc_type
+                        from mace.workflow.manual_progress import missing_steps_message
+                        why = missing_steps_message(
+                            [Path(f) for f in selected], WORKFLOW_TEMPLATES[progress],
+                            lambda p: deck_calc_type(p, "prop" if p.suffix.lower() == ".d3" else "scf"),
+                            what=f"the template {progress}")
+                        if why:
+                            raise ValueError(why)
                     plan_file, workflow_id, sequence = build_progress_plan(
                         work_dir=Path(base_dir).resolve(), db_path='materials.db',
                         input_files=[Path(f) for f in selected], progress=progress,
@@ -2635,9 +2971,6 @@ def main():
                 except (OSError, ValueError):
                     launched_plan = {}
                 manager.script_paths.update(own_step_scripts(launched_plan, Path(base_dir).resolve()))
-            ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
-                    f"{manager_db} (in-place)")
-            submitted = 0
 
             def stamp_workflow(calc_id, calc_type):
                 manager.db.update_calculation_settings(calc_id, {
@@ -2646,12 +2979,49 @@ def main():
                     "workflow_calc_type": calc_type,
                 }, merge=True)      # keeps crystal_module (site.py)
 
+            # --progress, --progress-plan: the workflow leaves the decks' folder
+            # as it is. Each deck runs in its step folder (workflow_outputs/<id>/
+            # step_NNN_<TYPE>/<material>/) with a job script written there; a
+            # deck whose own output already finished is not run again: that
+            # output, read where it is, starts the next steps.
+            first_folders, finished = {}, []
+            if workflow_id:
+                from mace.workflow.manual_progress import first_steps, record_finished
+                try:
+                    to_run, finished = first_steps(selected, Path(base_dir).resolve(), workflow_id,
+                                                   sequence, manager.determine_calc_type_from_file,
+                                                   rerun_finished=submit_args.rerun_finished)
+                except (ValueError, OSError) as e:
+                    ui.err(f"Error: {e}")
+                    sys.exit(1)
+                selected = [staged for staged, _m, _t, _d in to_run]
+                first_folders = {str(staged): (mid, folder) for staged, mid, _t, folder in to_run}
+                for deck, mid, calc_type, out in finished:
+                    record_finished(manager, deck, mid, calc_type, out, stamp=stamp_workflow)
+                    ui.info(f"Finished already, not run again: {deck.name} ({out.name} starts its next steps)")
+                if finished:
+                    from mace.workflow.commands import QueueBusy, _process
+                    try:
+                        started, _db, _shared = _process(Path(base_dir).resolve(), workflow_id, False)
+                        ui.info(f"Next steps started from the finished outputs: {started}")
+                    except QueueBusy as e:
+                        # their rows are recorded: the decks to run still go
+                        # out, and --process starts these next steps later
+                        ui.warn(f"The next steps of the finished decks were not started: {e} "
+                                f"(mace workflow --process {workflow_id} starts them)")
+                if not selected:
+                    _launch_drain(manager, workflow_id, 0)
+                    sys.exit(0)
+            ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
+                    f"{manager_db}" + (" (in the workflow's step folders)" if workflow_id else " (in-place)"))
+            submitted = 0
+
             if array_mode:
                 # Job arrays: the same rows and job scripts as below, submitted
                 # as one array per resource request (mace/submission/job_array.py).
                 results = manager.submit_calculations_as_arrays(
                     [Path(f) for f in selected], max_running=max_running,
-                    stamp=stamp_workflow if workflow_id else None)
+                    stamp=stamp_workflow if workflow_id else None, folders=first_folders)
                 submitted = sum(1 for _, job_id in results if job_id)
                 held = _held_rows(manager, [c for c, j in results if c and not j])
                 ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)"
@@ -2677,7 +3047,9 @@ def main():
                         manager._export_db_path(reuse)
                     # the workflow settings go into the row before it is
                     # submitted: the queue budget reads the workflow's max_jobs
-                    calc_id = manager.submit_calculation(Path(f), job_script_override=reuse,
+                    mid, folder = first_folders.get(str(f), (None, None))
+                    calc_id = manager.submit_calculation(Path(f), material_id=mid, work_dir=folder,
+                                                         job_script_override=reuse,
                                                          stamp=stamp_workflow if workflow_id else None)
                     from mace.queue import budget as _budget
                     _o = _budget.last_outcome()
@@ -2905,11 +3277,6 @@ def main():
             from defects.cli import main as defects_main
         sys.exit(defects_main(command_args('defects')))
 
-    elif args.command == 'phonopy':
-        # Lazy: phonopy is optional and only imported by the subcommands.
-        from mace.phonopy_bridge.cli import main as phonopy_main
-        sys.exit(phonopy_main(command_args('phonopy')))
-
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status
         # 'status' is redirected here with --status prepended to args.args,
@@ -3050,6 +3417,17 @@ def main():
         # other rebuilt subcommand) so the original flag/value pairing is preserved
         # and --no-banner is stripped consistently, including in the fallback.
         all_args = command_args('analyze')
+        # structure analysis tools (1.1.6): mace analyze porosity|pxrd|topology|... FILE
+        from mace.analysis.cli import TOOLS as _ANALYSIS_TOOLS
+        if all_args and all_args[0] in _ANALYSIS_TOOLS:
+            from mace.analysis.cli import main as analysis_main
+            sys.exit(analysis_main(all_args))
+        if '--list-properties' in all_args:
+            # the property inventory (docs/properties.md): stored keys by
+            # calculation type, derived properties, the GUI's values and gaps
+            from mace.properties.inventory import main as inventory_main
+            rest = [a for a in all_args if a != '--list-properties']
+            sys.exit(inventory_main(rest))
         if '--convergence' in all_args:
             from utils.out_convergence import main as convergence_main
             i = all_args.index('--convergence')
@@ -4505,9 +4883,21 @@ def main():
         from mace.preopt.cli import main as preopt_main
         sys.exit(preopt_main(command_args('preopt')))
 
+    elif args.command == 'supercell':
+        from mace.utils.supercell_cli import main as supercell_main
+        sys.exit(supercell_main(command_args('supercell')))
+
+    elif args.command == 'transform':
+        from mace.structure_transform import main as transform_main
+        sys.exit(transform_main(command_args('transform')))
+
     elif args.command == 'mlip':
         from mace.preopt.mlip_cli import main as mlip_main
         sys.exit(mlip_main(command_args('mlip')))
+
+    elif args.command == 'calc':
+        from mace.calculators.cli import main as calc_main
+        sys.exit(calc_main(command_args('calc')))
 
     elif args.command == 'gui':
         try:

@@ -1,7 +1,7 @@
 """The default BAND deck is one CRYSTAL23 can read, for every lattice.
 
-opt2d3's Enter-through BAND answer (and so the workflow default) is the
-high-symmetry label format: ISS = 0 and label records like "V Y". CRYSTAL23
+opt2d3's high-symmetry label format (path format 1, no longer the Enter-through
+answer: SeeK-path is) writes ISS = 0 and label records like "V Y". CRYSTAL23
 takes those labels only from its Tables 14.1/14.2 (manual note 6: only the
 labels in those tables are recognized), and only for 3D systems:
 
@@ -17,8 +17,8 @@ the same path as integer coordinates in units of 1/ISS, ISS from the
 parent's shrink. 3D lattices with a table entry keep their label deck (an
 fcc MgO "X G / G L / L W / W G" deck runs).
 
-Both real routes run as subprocesses: opt2d3 with Enter on stdin, and the
-generator with the workflow's default configuration.
+Both real routes run as subprocesses: opt2d3 with path format 1 on stdin, and
+the generator with the matching label configuration.
 """
 import shutil
 from pathlib import Path
@@ -30,8 +30,12 @@ from test_workflow_band_matches_opt2d3 import _manual, _workflow
 pytest.importorskip("numpy")
 
 DATA = Path(__file__).parent / "data"
-ENTER = []
+ENTER = ["1", "1"]                  # automatic path, format 1: the high-symmetry labels
 FORMAT_2 = ["1", "2", "", "1", "n"]
+# the workflow's label configuration (the engine default before SeeK-path became the default)
+LABELS_CONFIG = {"calculation_type": "BAND", "path_method": "labels", "path": "auto", "labels": "auto",
+                 "auto_path": True, "shrink": 0, "n_points": 1000, "bands": "auto", "auto_bands": True,
+                 "first_band": 1, "last_band": None, "plot": True, "print_eigenvalues": False}
 
 EXPECTED = {
     # textbook LiH, rocksalt primitive cell in P -1 (synthetic excerpt)
@@ -73,12 +77,11 @@ def test_enter_through_deck_is_integer_coordinates(tmp_path, parent):
 
 
 @pytest.mark.parametrize("parent", sorted(EXPECTED))
-def test_workflow_default_deck_is_the_enter_through_deck(tmp_path, parent):
-    from mace.workflow.common.constants import opt2d3_default_band_config
+def test_workflow_label_deck_is_the_opt2d3_label_deck(tmp_path, parent):
     src, records = EXPECTED[parent]
     out = _stage(tmp_path, src)
     manual = _manual(out, tmp_path / "manual", ENTER)
-    assert _workflow(out, tmp_path / "workflow", opt2d3_default_band_config()) == manual
+    assert _workflow(out, tmp_path / "workflow", dict(LABELS_CONFIG)) == manual
     assert manual.splitlines()[2:-1] == records
 
 
@@ -98,12 +101,11 @@ CORPUS = {
 @pytest.mark.parametrize("pattern", sorted(CORPUS))
 def test_corpus_enter_through_deck_is_integer_coordinates(tmp_path, pattern):
     from conftest import find_data
-    from mace.workflow.common.constants import opt2d3_default_band_config
     out = _stage(tmp_path, find_data(pattern))
     manual = _manual(out, tmp_path / "manual", ENTER)
     assert manual.splitlines()[2:-1] == CORPUS[pattern]
     assert _manual(out, tmp_path / "format2", FORMAT_2) == manual
-    assert _workflow(out, tmp_path / "workflow", opt2d3_default_band_config()) == manual
+    assert _workflow(out, tmp_path / "workflow", dict(LABELS_CONFIG)) == manual
 
 
 def test_tabulated_3d_lattice_keeps_its_label_deck(tmp_path):

@@ -461,3 +461,41 @@ console.log(JSON.stringify({{ smooth: PP.gaussSmooth(a.y, a.e, 0.05), pick: PP.p
           "gaps": P.dos_window_gaps(dos["window"], -12, 25), "ticks": [P.mirrored_ticks(-7.3, 7.3), P.mirrored_ticks(-0.43, 0.43)],
           "spot": P.legend_spot([([0, 10], [-0.9, -0.9])], [0, 10], [-1, 1], 0.3, 0.5)}
     _close(_norm(py), json.loads(r.stdout))
+
+
+@pytest.mark.parametrize("unit", ["cm-1", "THz"])
+def test_a_frequency_unit_on_an_electronic_plot_is_drawn_in_ev(fe, unit, tmp_path):
+    """--units cm-1/THz is for a phonon fort.25: on an electronic band/DOS the values were eV labeled as cm⁻¹ or
+    THz (the factor fell back to 1, the label did not). Both the factor and the label are eV, in the GUI too."""
+    band, dos = fe
+    ev = _python(_case(band, dos, fermi_key=True))
+    got = _python(_case(band, dos, o={"unit": unit}, fermi_key=True))
+    assert got["layout"]["yaxis"]["title"]["text"] == ev["layout"]["yaxis"]["title"]["text"] == "E − E<sub>F</sub> (eV)"
+    assert [t.get("y") for t in got["traces"]] == [t.get("y") for t in ev["traces"]]
+    if shutil.which("node"):
+        _compare([_case(band, dos, o={"unit": unit}, fermi_key=True), _case(band, None, o={"unit": unit})], tmp_path)
+
+
+def test_log_dos_is_not_filled_across_the_gap(tmp_path):
+    """Review 1.1.6 E3: on a log DOS axis a zero is no point, and plotly joins a "tozerox" fill's segments
+    across the gap: the filled total drew a wedge over diamond's band gap. Log DOS draws the total unfilled,
+    in mace plotting and in the GUI (bandfig.js), for each spin layout; the linear DOS keeps its fill."""
+    path = CORPUS / "DOSS" / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized_doss.DOSS.DAT"
+    if not path.is_file():
+        pytest.skip("test/ corpus not present")
+    dos = results.dos_data(path)
+    cases = [_case(None, dos, o={"ylog": True}, look=look, width=520)
+             for look in ({}, {"dos_spin": "mirrored"}, {"dos_spin": "overlaid"})]
+    for c in cases:
+        totals = [t for t in _python(copy.deepcopy(c))["traces"] if t.get("meta") == "dos" and t["name"].startswith("Total")]
+        assert totals
+        for t in totals:
+            assert t.get("fill") == "none" and "fillcolor" not in t, t["name"]
+            xs = t["x"]
+            # the gap: no points between drawn ones
+            first = next(k for k, v in enumerate(xs) if v is not None)
+            last = max(k for k, v in enumerate(xs) if v is not None)
+            assert any(v is None for v in xs[first:last])
+    linear = _python(_case(None, dos, width=520))["traces"]
+    assert next(t for t in linear if t.get("meta") == "dos" and t["name"] == "Total")["fill"] == "tozerox"
+    _compare(cases, tmp_path)

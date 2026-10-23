@@ -172,7 +172,7 @@ def test_help_dash_h_prints_the_help_command_text(argv):
     (("--no-banner", "defects", "-h"), "mace defects"),
     (("cluster", "-h"), "mace cluster"),
     (("gui", "connect", "--help"), "connect"),
-    (("phonopy", "generate", "--help"), "generate"),
+    (("analyze", "phonopy", "--help"), "phonopy"),
 ])
 def test_old_invocations_still_answer(argv, word):
     rc, out, err = _mace(*argv)

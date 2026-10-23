@@ -193,21 +193,23 @@ def d3(calc_type):
 
 
 def test_transport_back_one_number(terminal):
-    t = terminal(["", "", "", "2", "", "", "b", "1.5", "0.02", "", "", "", "20", "n"])
+    # no output: the μ and TDF ranges stay relative (placed around each material's E_F when its deck is
+    # written); the k mesh (Enter: Standard) is asked before the relaxation time
+    t = terminal(["", "", "", "2", "", "", "b", "1.5", "0.02", "", "", "", "", "20", "n"])
     got = d3("TRANSPORT")
     assert got == {"temperature_range": (100.0, 800.0, 50.0),
                    "mu_range": (-2.0, 1.5, 0.02), "mu_reference": "vbm",
-                   "tdf_range": (-5.0, 5.0, 0.01), "relaxation_time": 20.0,
+                   "tdf_range": (-5.0, 5.0, 0.01), "k_resolution": "standard", "relaxation_time": 20.0,
                    "calculation_type": "TRANSPORT"}
-    assert t.reads == 14
+    assert t.reads == 15
 
 
 def test_transport_back_across_the_smearing_question(terminal):
-    t = terminal(["", "", "", "3", "", "", "", "", "", "", "", "y", "b", "y", "0.05", "1"])
+    t = terminal(["", "", "", "3", "", "", "", "", "", "", "", "", "y", "b", "y", "0.05", "1"])
     got = d3("TRANSPORT")
     assert got["mu_reference"] == "absolute"
     assert (got["smearing"], got["smearing_type"]) == (0.05, 1)
-    assert t.reads == 16
+    assert t.reads == 17
 
 
 # ------------------------------------------------------------ not at a TTY

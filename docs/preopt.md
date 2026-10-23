@@ -14,11 +14,19 @@ final structure:
 - An FF/ML result never silently changes the space group CRYSTAL will keep
   (see [Space groups](#space-groups)).
 
+Inputs: CIF, .d12, XYZ/extended XYZ, POSCAR and a CRYSTAL .out (its last
+geometry, read as the GUI reads it). A SLAB, POLYMER or MOLECULE deck is read
+in group 1, where it lists every atom; one in another layer, rod or point group
+needs CRYSTAL's group tables, so MACE refuses it and names the .out of its run
+to use instead. A slab, polymer or molecule keeps its pbc: nothing wraps along
+a non-periodic axis and `--relax-cell` moves only the periodic directions.
+
 ```
 mace preopt hand_built.cif                                  # springs (the default)
 mace preopt LiFSI_box.cif --method gfnff --charge 0
 mace preopt MgO.cif --method mlip:acesuit-mace-mpa-0-medium --relax-cell
 mace preopt rattled.cif --method auto --symmetrize 0.1 -o preopt/
+mace preopt graphene_opt.out --method mlip:acesuit-mace-mpa-0-medium --relax-cell   # a slab run's last geometry
 mace convert --cif_dir preopt/ --batch --options_file my_opt_options.json   # an OPT
 ```
 
@@ -34,6 +42,14 @@ mace convert --cif_dir preopt/ --batch --options_file my_opt_options.json   # an
 Positions only by default; `--relax-cell` (the GUI's **Relax the cell**)
 relaxes the cell too. Every run first makes the spring result, so there is
 always something to fall back to.
+
+The springs hold the bonds `--bonds` (the GUI's **Bonds held**) names:
+`shown` (the default) the bonds the GUI draws, 1.15 × the sum of the bond
+radii with metal-metal pairs in a structure of metals only; `lenient` the same
+rule at 1.2 ×, which also holds bonds stretched a little past what the GUI
+draws (a hand-dragged atom); `none` no bond, only the repulsion that pushes
+close atoms apart. A structure with no bond to hold (a lone atom) has nothing
+to clean, except with `none`.
 
 ### Where GFN-FF works and fails
 
@@ -63,10 +79,21 @@ process, in its own interpreter (`python -I`, no PYTHONPATH, a private working
 directory), and why the worker checks that `mace` belongs to the installed
 mace-torch before it loads anything.
 
-Only models whose code and weights are MIT, BSD or Apache licensed are listed;
-the allow-list is part of MACE's code, not of a data file. Models under the
-Academic Software License (MACE-OMAT, MACE-MATPES, MACE-OMOL, MACE-MH, GRACE)
-and Meta's FAIR/OMat24 models (eqV2, eSEN, UMA) are not offered.
+Commercial-safe by default: every model listed, defaulted to, chosen by Auto
+or in a preset allows commercial use (MIT, BSD, Apache, and the FAIR Chemistry
+License of Meta's UMA, which is `mace calc` only); the allow-list is part of
+MACE's code, not of a data file. Academic-only models are an explicit opt-in:
+MACE-OFF24 and MACE-OFF23 medium (organic molecules, Academic Software
+License) are never a default or chosen by Auto, are left out of `mace mlip
+list` unless you pass `--all` or `--academic`, and are fetched from ACEsuit's
+repository and run only after you acknowledge academic, non-commercial use
+(`mace mlip fetch ID --accept-academic-license`, and at a terminal you type
+ACADEMIC; in the GUI a checkbox under the license). The acknowledgment is
+recorded with its date beside the weights (`ACADEMIC.json`); every result made
+with one is labeled "(academic license)", in its summary, report, CIF header
+and marker (`license=academic`) and the GUI. Then `--method
+mlip:acesuit-mace-off24-medium` runs it here. Other Academic Software License
+models (MACE-OMAT, MACE-MATPES, MACE-OMOL, MACE-MH, GRACE) are not offered.
 
 ### Auto
 
@@ -226,21 +253,32 @@ xtb before 6.7 has no periodic GFN-FF; MACE says "Found xtb 6.6.1; GFN-FF for
 periodic cells needs 6.7+". Without coreutils' `timeout`, an xtb whose parent
 was killed runs until it finishes on its own (MACE still stops it on a cancel).
 
-**An ML environment** (`mace mlip setup` prints this):
+**An ML environment.** `mace mlip install` makes it, or the GUI's
+**Settings › ML potentials › Set Up ML Environment…** (the same installer):
+it shows the folder, the Python, each package's license, the size and the
+space and file quota, then runs the steps below and records the result. By
+hand (`mace mlip setup` prints these steps): Make it in the default
+place, `DIR=${XDG_DATA_HOME:-~/.local/share}/mace-tool/mlip/venv` beside the
+weights, and MACE finds it with nothing set or recorded (the
+GUI too). An environment elsewhere works when recorded with
+`mace mlip setup --python`; `MACE_MLIP_PYTHON`, then the record, win over the
+default place. `mace mlip list` says which one it uses.
 
 ```
 python -m venv --system-site-packages DIR            # a Python that already has torch
+DIR/bin/python -m pip install --upgrade pip            # an old pip (22.x) fails on torch's dependencies
 DIR/bin/pip install mace-torch==0.3.16 chgnet==0.4.2   # about 80 MB
 # no torch yet: a CPU-only torch first (several hundred MB; a plain
-# `pip install torch` pulls a CUDA build of several GB)
+# `pip install torch` pulls a CUDA build of several GB); with mace-torch
+# and chgnet about 1.5 GB and 46,000 files in all
 DIR/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 df -h DIR                                            # check there is room
-mace mlip setup --python DIR/bin/python               # probe and record it
+mace mlip setup --python DIR/bin/python               # probe and record it (optional in the default place)
 mace mlip fetch acesuit-mace-mpa-0-medium            # shows the license, then downloads 79 MB
 mace mlip list                                       # what is ready
 ```
 
-`mace mlip fetch` is the only MACE command that downloads anything. It shows
+`mace mlip fetch` downloads model weights (`mace mlip install` also installs packages and calls it). It shows
 the model, the licenses with their links, the size, URL, sha256, training data
 and citation, asks (pass `--yes` in a script), verifies size and sha256, and
 keeps `LICENSE.txt` and `ACCEPTED.json` next to the weights in
@@ -248,15 +286,16 @@ keeps `LICENSE.txt` and `ACCEPTED.json` next to the weights in
 from `~/.cache/mace`, which mace-torch uses for its own downloads. The worker
 always runs offline.
 
-The GUI never installs or downloads: an unavailable method is grayed out with
-these commands, and **Recheck** looks again.
+In the GUI an unavailable method is grayed out with these commands,
+**Recheck** looks again, and Settings › ML potentials installs the environment
+and downloads weights, each only when you ask (the same installer and fetch).
 
 ## Environment variables
 
 | Variable | Meaning |
 |---|---|
 | `MACE_XTB` | the xtb program to use (else `xtb` on PATH) |
-| `MACE_MLIP_PYTHON` | the ML environment's interpreter (else the one `mace mlip setup --python` recorded) |
+| `MACE_MLIP_PYTHON` | the ML environment's interpreter (else the one `mace mlip setup --python` recorded, else `$XDG_DATA_HOME/mace-tool/mlip/venv/bin/python` when it exists) |
 | `MACE_MLIP_DIR` | where the weights are (else `$XDG_DATA_HOME/mace-tool/mlip`) |
 | `MACE_MLIP_NO_DOWNLOAD=1` | `mace mlip fetch` refuses to download (compute nodes) |
 
@@ -283,6 +322,56 @@ these commands, and **Recheck** looks again.
 
 Fetch the ML weights on a dev node (compute nodes may have no network), then run
 jobs with `MACE_MLIP_NO_DOWNLOAD=1`.
+
+**An ML environment on a module Python (MSU HPCC as an example).** Make it on a
+dev node, where the default `Python/3.11.3-GCCcore-12.3.0` module is loaded, in
+the default place (`~/.local/share/mace-tool/mlip/venv`; home is shared by every
+node, so the GUI and jobs find it too), and run the pip lines after `unset PYTHONPATH`: the module's PYTHONPATH (its
+Python-bundle-PyPI site-packages) makes pip skip packages the module already
+has, and MACE runs the environment without PYTHONPATH, so those would be
+missing. Upgrade pip first; the module's pip 22.3 discards current wheels and
+fails. `mace mlip install` does all of this for you.
+
+The environment's python finds its `libpython3.x.so` only through the
+`LD_LIBRARY_PATH` its module sets; without it, it stops with "error while
+loading shared libraries". Its standard library may need more of the
+module's toolchain: the 3.11 module's `_ssl` loads OpenSSL 1.1's
+`libssl.so.1.1`, which the system does not have. MACE therefore records those
+folders with the interpreter: `mace mlip install` and `mace mlip setup
+--python` (the GUI's Use an Existing Python…) start the environment's python
+once with no `LD_LIBRARY_PATH`, import its standard library's extension
+modules, find each missing library in `lib` beside its real path (the
+module's prefix), beside the `home` in its `pyvenv.cfg` or in a folder of the
+current `LD_LIBRARY_PATH` (the module's, when it is loaded), and save the
+folders in `~/.config/mace/mlip.json` under `library_path`. Every time MACE
+starts that interpreter (the probe, the ML worker in `mace calc`, `mace
+preopt`, the GUI and a job's callback, pip in a repair) the folder goes in
+front of that child's `LD_LIBRARY_PATH` only, so the environment runs on a
+dev node, a compute node, the gateway or under a shell with another Python
+module loaded, without loading its module by hand. This holds for every
+environment: the default `venv`, and `venv-<name>` (for example
+`venv-fairchem`) or one elsewhere. An environment recorded before MACE did
+this records, at the first probe that needs it, what it finds beside the
+interpreter; record it once more where its module is loaded (`mace mlip
+setup --python DIR/bin/python`) so that the toolchain's folders are recorded
+too. `mace mlip list` names a library MACE could not find
+("cannot open shared object file") and says so.
+
+On MSU HPCC, for example, orb-models 0.7 (ORB-v3, OrbMol-v2) needs Python
+3.12, which Lmod does not load beside the default 3.11 module. Give `mace
+mlip install` the 3.12 module's interpreter from the shell MACE runs in; it
+needs no `module load`, because MACE finds that interpreter's library folder
+the same way:
+
+```
+mace mlip install --backend orb-models --fetch orbmol-v2 \
+    --python /opt/software-current/2023.06/x86_64/generic/software/Python/3.12.3-GCCcore-13.3.0/bin/python3.12
+```
+
+(`( module purge; module load Python/3.12.3-GCCcore-13.3.0; command -v
+python3.12 )` prints that path.) MACE itself keeps running on the 3.11
+module, and `mace calc -m orbmol-v2` then runs with the 3.11 module loaded,
+with no module loaded, and in jobs.
 
 **xtb on a cluster (MSU HPCC as an example).** MACE loads the newest suitable
 xtb module by itself (see above), also when that module cannot be loaded beside

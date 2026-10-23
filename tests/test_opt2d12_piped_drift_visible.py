@@ -89,3 +89,40 @@ def test_histdiis_size_is_checked(monkeypatch):
     _feed(monkeypatch, ["y", "n", "0", ""])
     with pytest.raises(SystemExit):
         d12_interactive._ask_positive_int("HISTDIIS size [100]: ", 100)
+
+
+# ------------------------------------------------- OPTGEOM's TOLDEE is its own record
+
+def _deck(toldee=9, opt=None):
+    """A Si deck with SCF TOLDEE ``toldee`` and, given ``opt``, an OPTGEOM with that TOLDEE."""
+    optgeom = f"OPTGEOM\nFULLOPTG\nTOLDEE\n{opt}\nENDOPT\n" if opt is not None else ""
+    return ("Si\nCRYSTAL\n0 0 0\n227\n5.4\n1\n14 .125 .125 .125\n" + optgeom + "END\n99 0\nEND\n"
+            f"DFT\nPBE0\nEND\nTOLINTEG\n8 8 8 8 16\nTOLDEE\n{toldee}\nEND\n")
+
+
+def test_optgeom_toldee_is_not_the_scf_toldee():
+    """An OPT deck from an SP parent: OPTGEOM TOLDEE 7 is not "TOLDEE: 9 -> 7"."""
+    import CRYSTALOptToD12 as C
+    assert C.settings_changed_from_parent(_deck(9), _deck(9, opt=7)) == []
+
+
+def test_each_toldee_is_compared_with_its_own_and_named():
+    import CRYSTALOptToD12 as C
+    assert C.settings_changed_from_parent(_deck(9, opt=8), _deck(9, opt=7)) == [("OPTGEOM TOLDEE", "8", "7")]
+    assert C.settings_changed_from_parent(_deck(9, opt=7), _deck(11, opt=7)) == [("TOLDEE", "9", "11")]
+
+
+def test_an_opt_from_an_sp_parent_says_nothing_on_enter(tmp_path):
+    """The real CLI, piped blanks: the Si SP parent (TOLDEE 9) to an OPT deck."""
+    si = REPO_ROOT / "tests" / "fixtures" / "phonopy_crystal" / "Si"
+    for name in ("parent.out", "parent.d12"):
+        shutil.copy(si / name, tmp_path / name)
+    env = {k: v for k, v in os.environ.items() if k not in ("COLORTERM", "TERM", "NO_COLOR", "MACE_HOME", "PYTHONPATH")}
+    r = subprocess.run([sys.executable, str(MACE_CLI), "opt2d12", "--no-banner", "--out-file", "parent.out",
+                        "--calc-type", "OPT"], cwd=tmp_path, input="\n" * 200,
+                       capture_output=True, text=True, timeout=300, env=env)
+    log = r.stdout + r.stderr
+    assert r.returncode == 0, log[-3000:]
+    deck = next(p for p in tmp_path.glob("*.d12") if p.name != "parent.d12").read_text()
+    assert "OPTGEOM" in deck
+    assert "differ from the parent deck" not in log, log[-3000:]

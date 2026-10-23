@@ -178,3 +178,15 @@ def test_config_validation_reports_band_path_shape():
     ok, errors = d3_config.validate_d3_config({**BASE, "band_path": [{"from": "GAMMA"}]})
     assert not ok and "band_path" in errors[0]
     assert d3_config.validate_d3_config({**BASE, "band_path": kp.from_tokens(GRAPHITE)})[0]
+
+
+def test_a_title_that_writes_the_jump_like_the_plot_names_every_point():
+    """"H|P" in a BAND title (the plot's form of a jump) is the same jump as "-|-": the segments keep their
+    labels instead of falling back to K1, K2, ..."""
+    import d3_band_path as P
+    recs = "\n".join(f"{i} 0 0  {i + 1} 0 0" for i in range(6))
+    for path in ("GAMMA-H-N-GAMMA-P-H-|-P-N", "GAMMA-H-N-GAMMA-P-H|P-N"):
+        deck = f"BAND\nx - Band Structure - SeeKPath (w.I) - {path}\n6 4 1000 1 10 1 0\n{recs}\nEND"
+        d = P.parse_band_deck(deck)
+        assert [(s["from"], s["to"]) for s in d["segments"]] == [
+            ("GAMMA", "H"), ("H", "N"), ("N", "GAMMA"), ("GAMMA", "P"), ("P", "H"), ("P", "N")], path

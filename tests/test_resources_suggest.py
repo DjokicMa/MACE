@@ -146,7 +146,8 @@ def test_auto_is_off_by_default_and_per_type(tmp_path):
     assert not _load(tmp_path, "").auto("scf", "SP")
     s = _load(tmp_path, AUTO + "[resources.OPT]\nauto = false\n[resources.properties]\nauto = false\n"
                               "[resources.BAND]\nauto = true\n")
-    assert s.auto_types("scf") == ["SP", "FREQ"] and s.auto_types("prop") == ["BAND"]
+    assert s.auto_types("scf") == ["SP", "FREQ", "ELASTIC", "EOS", "QHA", "CPHF"]
+    assert s.auto_types("prop") == ["BAND"]
     with pytest.raises(site.SiteConfigError, match="auto"):
         _load(tmp_path, '[resources]\nauto = "sometimes"\n')
 
@@ -360,14 +361,15 @@ def test_mace_site_set_suggest_and_show(tmp_path):
     env = _env(tmp_path)
     r = _mace(tmp_path, env, "site", "set", "resources.auto", "true")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "Now: size-aware suggestions on for OPT, SP, FREQ, BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL" in r.stdout
+    assert ("Now: size-aware suggestions on for OPT, SP, FREQ, ELASTIC, EOS, QHA, CPHF, BAND, DOSS, "
+            "TRANSPORT, CHARGE+POTENTIAL") in r.stdout
     r = _mace(tmp_path, env, "site", "set", "resources.band.auto", "false")
     assert r.returncode == 0 and "BAND" not in r.stdout.split("on for", 1)[1].split("\n")[0]
     assert _mace(tmp_path, env, "site", "set", "resources.auto", "maybe").returncode == 2
     text = (tmp_path / "xdg" / "mace" / "site.toml").read_text()
     assert "auto = true" in text and "[resources.BAND]" in text
     shown = _mace(tmp_path, env, "site").stdout
-    assert "Suggestions: on for OPT, SP, FREQ, DOSS, TRANSPORT, CHARGE+POTENTIAL" in shown
+    assert "Suggestions: on for OPT, SP, FREQ, ELASTIC, EOS, QHA, CPHF, DOSS, TRANSPORT, CHARGE+POTENTIAL" in shown
     d = tmp_path / "d"
     d.mkdir()
     (d / "big_opt.out").write_text(OUT_HEAD)

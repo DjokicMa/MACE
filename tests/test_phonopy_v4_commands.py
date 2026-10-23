@@ -21,8 +21,9 @@ FILES = [REPO_ROOT / "README.md", REPO_ROOT / "DOCUMENTATION.md", REPO_ROOT / "m
          *sorted(p for p in (REPO_ROOT / "tests").glob("test_phonopy_*.py")
                  if p.name != Path(__file__).name)]   # this file quotes v3 lines on purpose
 
-# `phonopy` as a command: not `mace phonopy`, not `phonopy-init`/`phonopy_bridge`.
-_CMD = re.compile(r"(?<![\w./-])(?<!mace )phonopy(?![\w-])\s+(?P<args>-[^\n`]*|\S+\.conf\b)")
+# `phonopy` as a command: not `mace analyze phonopy` (or the 1.1.5 command), not
+# `phonopy-init`/`phonopy_bridge`.
+_CMD = re.compile(r"(?<![\w./-])(?<!mace )(?<!analyze )phonopy(?![\w-])\s+(?P<args>-[^\n`]*|\S+\.conf\b)")
 _V3 = [(re.compile(r"(^|\s)--crystal\b"), "--crystal belongs to phonopy-init"),
        (re.compile(r"(^|\s)(-d|--dim|-f|-c)(\s|=|$)"), "setup option belongs to phonopy-init"),
        (re.compile(r"(^|\s)--nac(?![\w-])"), "--nac is gone (BORN present = NAC)"),
@@ -46,7 +47,7 @@ def test_the_checker_catches_v3_command_lines():
           "phonopy --nac --config band.conf\nphonopy -f supercell-001.o\n")
     assert len(_v3_uses(v3)) >= 4
     ok = ("phonopy-init --crystal -d --dim 2 2 2\nphonopy --config band.conf\n"
-          "phonopy --factor=521.47083 --config band.conf\nmace phonopy collect d --nac-from x\n"
+          "phonopy --factor=521.47083 --config band.conf\nmace analyze phonopy d --nac-from x\n"
           "phonopy -q --qpoints 0 0 0\n")
     assert _v3_uses(ok) == []
 
@@ -59,7 +60,7 @@ def test_no_phonopy_3_command_lines(path):
 def test_documentation_shows_the_4_7_commands():
     doc = (REPO_ROOT / "DOCUMENTATION.md").read_text()
     for cmd in ("phonopy-init --crystal -f", "phonopy --factor=521.47083 --config band.conf",
-                "phonopy-init --crystal -d --dim"):
+                "phonopy-init --crystal -d"):
         assert cmd in doc, cmd
 
 
@@ -70,7 +71,7 @@ def _tool(name):
 
 def test_documented_phonopy_init_route_works_on_a_mace_set(tmp_path):
     """phonopy-init --crystal -f and phonopy --config, as documented, on the
-    set mace phonopy generate wrote (phonopy's NaCl-CRYSTAL example outputs)."""
+    set mace opt2d12 --calc-type PHONOPY wrote (phonopy's NaCl-CRYSTAL example outputs)."""
     pytest.importorskip("phonopy")
     init, ph = _tool("phonopy-init"), _tool("phonopy")
     if not init or not ph:
@@ -78,15 +79,16 @@ def test_documented_phonopy_init_route_works_on_a_mace_set(tmp_path):
     fix = REPO_ROOT / "tests" / "fixtures" / "phonopy_crystal" / "NaCl"
     for f in ("parent.out", "parent.d12"):
         shutil.copy(fix / f, tmp_path / f)
-    env = dict(os.environ, MACE_NO_BANNER="1")
-    p = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "phonopy", "generate",
-                        "parent.out", "--dim", "4 4 4"], cwd=tmp_path, env=env,
-                       capture_output=True, text=True, timeout=600)
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["MACE_NO_BANNER"] = "1"
+    p = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d12", "--out-file", "parent.out",
+                        "--calc-type", "PHONOPY", "--non-interactive", "--dim", "4", "4", "4"], cwd=tmp_path,
+                       env=env, capture_output=True, text=True, timeout=600)
     assert p.returncode == 0, p.stdout + p.stderr
-    d = tmp_path / "phonopy_parent_444"
+    d = tmp_path / "parent_ph444_PBE0_optimized"
     outs = []
     for i in (1, 2):
-        dst = d / f"parent_ph444_disp-{i:03d}.out"
+        dst = d / f"parent_ph444_PBE0_optimized_disp-{i:03d}.out"
         shutil.copy(fix / f"supercell-{i:03d}.o", dst)
         outs.append(dst.name)
     p = subprocess.run([init, "--crystal", "-f", *outs], cwd=d, capture_output=True,

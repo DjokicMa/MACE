@@ -31,7 +31,7 @@ OUT = """\
 def seen(monkeypatch):
     calls = []
 
-    def analyze(self, band_file=None, doss_file=None):
+    def analyze(self, band_file=None, doss_file=None, n_atoms=None):
         calls.append((band_file and Path(band_file).name, doss_file and Path(doss_file).name))
         return {"analysis_method": "stub"}
 

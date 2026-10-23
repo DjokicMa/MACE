@@ -151,3 +151,48 @@ def test_corpus_formulas_the_cli_hunt_found(stem, formula, cell):
     from mace.utils.formula_extractor import material_info
     info = material_info(output_file=TEST_DATA / (stem + ".out"), d12_file=TEST_DATA / (stem + ".d12"))
     assert (info["formula"], info["cell_formula"], info["source"]) == (formula, cell, "output")
+
+
+MOLECULE_DECK = "OPT/EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized.d12"
+SLAB_DECK = "SP/4LG_FSI_2x2_AA_opt_sp.d12"
+ETHYLENE = """ethylene
+MOLECULE
+1
+6
+6 0.0 0.0 0.667
+6 0.0 0.0 -0.667
+1 0.0 0.923 1.238
+1 0.0 -0.923 1.238
+1 0.0 0.923 -1.238
+1 0.0 -0.923 -1.238
+END
+"""
+
+
+def test_a_low_dimensional_deck_keeps_its_dimensionality(tmp_path):
+    """A group-1 MOLECULE/SLAB deck (read when the output has no geometry) was recorded as CRYSTAL, and a
+    molecule's formula reduced (C2H4 as CH2); 3D decks are recorded as before."""
+    if not TEST_DATA.is_dir():
+        pytest.skip("test/ data corpus not present (gitignored)")
+    from mace.gui.structures import d12_atoms
+    from mace.utils import formula_extractor as FE
+    empty = tmp_path / "x.out"
+    empty.write_text(" CRYSTAL CALCULATION\n")
+    info = FE.material_info(output_file=empty, d12_file=TEST_DATA / MOLECULE_DECK)
+    assert (info["formula"], info["dimensionality"], info["source"]) == ("C3H4O3", "MOLECULE", "d12")
+    info = FE.material_info(output_file=None, d12_file=TEST_DATA / SLAB_DECK)
+    assert (info["dimensionality"], info["source"]) == ("SLAB", "d12"), info
+    (tmp_path / "eth.d12").write_text(ETHYLENE)
+    info = FE.material_info(output_file=None, d12_file=tmp_path / "eth.d12")
+    assert (info["formula"], info["cell_formula"], info["dimensionality"]) == ("C2H4", "C2H4", "MOLECULE")
+    # 3D decks: the reduced formula and CRYSTAL, as before
+    decks = [p for p in sorted((TEST_DATA / "OPT").glob("*_CRYSTAL_*.d12"))][:25]
+    assert decks
+    for p in decks:
+        try:
+            atoms, _ = d12_atoms(p)
+        except Exception:
+            continue
+        f = FE._formulas(atoms.numbers, molecule=False)
+        assert FE._info_from_d12(p) == {"formula": f[0], "cell_formula": f[1], "dimensionality": "CRYSTAL",
+                                        "source": "d12"}, p.name

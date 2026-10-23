@@ -375,7 +375,8 @@ def test_a_low_dimensional_deck_without_its_output_keeps_the_message(tmp_path):
     with pytest.raises(ValueError) as exc:
         S.read_structure(deck)
     assert not isinstance(exc.value, S.OpenInstead)
-    assert "open the .out of a SLAB/POLYMER/MOLECULE run instead" in str(exc.value)
+    assert "SLAB deck in layer group 80" in str(exc.value) and "Use the .out of its run instead" in str(exc.value)
+    assert "MACE GUI" not in str(exc.value)                 # the words of every reader (mace preopt, mace calc)
     shutil.copy(EXAMPLES / "outputs" / "graphene_slab_sp.out", tmp_path / "graphene.out")
     with pytest.raises(S.OpenInstead) as exc:
         S.read_structure(deck)

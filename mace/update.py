@@ -608,7 +608,11 @@ def remote_argv(profile: Dict, args_out: List[str], tty: bool, runner: Callable 
     if profile.get("jump"):
         argv += ["-J", str(profile["jump"])]
     argv += ["-t"] if tty else ["-o", "BatchMode=yes"]
-    argv += C._timeout_opts(extra, C.config_connect_timeout(host, runner)) + extra
+    # through a jump host that may ask for a passphrase or 2FA, the gateway's
+    # ConnectTimeout also covers that login: mace gui connect's longer wait
+    prompt = C.prompt_wait(C.jump_chain(profile, "nested", runner=runner), runner)
+    seconds = C.PROMPT_TIMEOUT_S if prompt else C.CONNECT_TIMEOUT_S
+    argv += C._timeout_opts(extra, C.config_connect_timeout(host, runner), seconds) + extra
     src = base64.b64encode(zlib.compress(Path(__file__).read_bytes(), 9)).decode()
     words = shlex.split(str(profile.get("mace") or "mace")) or ["mace"]
     py = words[0] if "python" in os.path.basename(words[0]) else "python3"
@@ -650,6 +654,14 @@ def run_remote(name: Optional[str], args_out: List[str], runner: Callable = subp
     argv = remote_argv(prof, args_out, tty)
     where = prof.get("gateway") or prof.get("node")
     say(f"--- the cluster ({name}: {where}) ---")
+    chain = C.jump_chain(prof, "nested")
+    if C.prompt_wait(chain):
+        # ssh now waits PROMPT_TIMEOUT_S: a first jump host that does not answer fails fast here
+        slow = C.first_hop_timed_out(chain)
+        if slow:
+            say(f"mace update: {C.unreachable_message(slow, 'timeout')}")
+            say(f"mace gui connect {name} --check tests each step of the connection.")
+            return 255
     r = runner(argv)
     if r.returncode == 255:
         say(f"mace update: ssh to {where} failed (see its message above); mace gui connect {name} --check tests "

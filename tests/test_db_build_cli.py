@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO_ROOT, TEST_DATA
+from mace.properties import registry as R
 from mace.utils import property_keys as PK
 
 BASE_COMMIT = "daa5468e"          # the 1.1.5 base before the GUI (reachable in every clone)
@@ -28,7 +29,9 @@ NEW_PROPS = ("space_group_number", "raman_intensities", "num_raman_modes",
              # and those whose patterns matched no CRYSTAL23 line before 1.1.6
              "scf_cycles", "scf_fmixing_percentage",
              # 1.1.6's key clean-up: new keys
-             "wall_time_s", "layer_group_number", "layer_group_symbol", "transport_tensor_average")
+             "wall_time_s", "layer_group_number", "layer_group_symbol", "transport_tensor_average",
+             # derived properties (mace/properties) and their provenance row
+             "extraction_provenance", *sorted({o.name for p in R.load().values() for o in p.outputs}))
 NEW_MARKS = ",".join("?" * len(NEW_PROPS))
 # properties the base tree stored wrongly and this tree no longer stores at all
 # (so a re-extraction removes their rows): a multi-point OPT's point-1 energy
@@ -310,6 +313,10 @@ def test_without_the_new_flags_stdout_matches_the_base_tree(tmp_path, base_tree)
         # BAND.DAT edges (by eigenvalue sign) and DOSS.DAT rows were misread
         # ("semimetal"); a3308d9d corrected it (checked below)
         t = re.sub(r"(Advanced analysis:) \S+ (classification)", r"\1 <C> \2", t)
+        # the quick effective-mass estimate is named as one now (beside the accurate m_c / m_d)
+        t = t.replace("📊 Real effective masses calculated from band structure",
+                      "📊 Effective mass, quick estimate (one band along the path): real_*_effective_mass; "
+                      "the accurate m_c / m_d are effective_mass_*")
         # without ase the base tree printed its warning on stdout; it is on stderr now
         # this tree's note on outputs without a calculation record is new
         return [ln for ln in t.splitlines() if "Materials processed" not in ln and "ASE not available" not in ln

@@ -143,15 +143,18 @@ def test_each_task_chains_its_own_next_step(tmp_path):
     db = _context_db(d)
     by_job = {x["slurm_job_id"]: x for x in rows(db).values()}
     row0 = by_job["4242_0"]
-    stem = Path(row0["input_file"]).stem
-    shutil.copy(out, d / f"{stem}.out")
-    script = (d / f"{stem}.sh").read_text()
+    stem, work = Path(row0["input_file"]).stem, Path(row0["input_file"]).parent
+    # the first step runs in its step folder, its job array beside it
+    assert work.parent.name == "step_001_OPT" and (work.parent / ".mace_arrays").is_dir()
+    assert not (d / ".mace_arrays").exists()
+    shutil.copy(out, work / f"{stem}.out")
+    script = (work / f"{stem}.sh").read_text()
     exports = dict(re.findall(r'^export (MACE_WORKFLOW_ID|MACE_CONTEXT_DIR|MACE_ISOLATION_MODE)'
                               r'="([^"]*)"', script, re.M))
     for t in (0, 1):
         fake.set_record(f"4242_{t}", state="RUNNING")
     before = len(fake.calls("sbatch"))
-    p = _ok(callback(env, d, db, mode="completion",
+    p = _ok(callback(env, work, db, mode="completion",
                      extra_env=dict(task_env("4242", 0, 9100), **exports)))
     r = {x["calc_id"]: x for x in rows(db).values()}
     assert r[row0["calc_id"]]["status"] == "completed", p.stdout[-3000:]

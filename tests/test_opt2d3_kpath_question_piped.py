@@ -61,7 +61,8 @@ def test_piped_single_file_is_not_asked(tmp_path):
 def test_edit_kpath_asks_on_a_pipe(tmp_path):
     d = tmp_path / "in"
     _outputs(d, ["s"])
-    stdin = "\n" * 5 + "y\nr 1\n\n" + "\n" * 10
+    # the automatic path, in path format 1 (the high-symmetry labels; Enter is SeeK-path), then edit: reverse the first segment
+    stdin = "\n1\n\n\n\n" + "y\nr 1\n\n" + "\n" * 10
     r = _run(d, ["-i", "s_sp.out", "-t", "BAND", "--edit-kpath", "--save-config", "--options-file", "cfg.json"], stdin)
     log = r.stdout + r.stderr
     assert r.returncode == 0 and QUESTION in log, log[-3000:]

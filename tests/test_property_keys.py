@@ -197,7 +197,8 @@ def test_real_outputs_write_registered_names_only(tmp_path):
     for out in outs:
         props = _extract(out)
         seen |= {n for n in props if not n.startswith("_")}
-    missing = sorted(n for n in seen if n not in PK.KEYS)
+    # derived properties (mace/properties) register their keys at load
+    missing = sorted(n for n in seen if not PK.known(n))
     assert not missing, f"names real outputs give that property_keys.KEYS lacks: {missing}"
     # nothing an earlier version wrote and 1.1.6 renamed or removed
     stale = sorted(seen & (set(PK.ALIASES) | PK.REMOVED))
@@ -219,7 +220,7 @@ def test_the_save_path_files_rows_by_the_registry(tmp_path, monkeypatch):
                         "UNION ALL SELECT property_name, property_category, property_unit FROM property_blobs").fetchall()
     assert rows
     for name, cat, unit in rows:
-        assert (cat, unit) == (PK.KEYS[name].category, PK.KEYS[name].unit), name
+        assert (cat, unit) == (PK.key(name).category, PK.key(name).unit), name
     blob_names = {r[0] for r in conn.execute("SELECT property_name FROM property_blobs")}
-    assert blob_names <= PK.BLOB_KEYS
-    assert not ({r[0] for r in conn.execute("SELECT property_name FROM properties")} & PK.BLOB_KEYS)
+    assert all(PK.is_blob(n) for n in blob_names)
+    assert not any(PK.is_blob(r[0]) for r in conn.execute("SELECT property_name FROM properties"))

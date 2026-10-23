@@ -137,7 +137,7 @@ def test_execute_workflow_step_runs_dependency_sweep(engine):
 
     seen = {}
 
-    def fake_sweep(material_id, planned_sequence, skip_geometry_steps=False):
+    def fake_sweep(material_id, planned_sequence, skip_geometry_steps=False, workflow_id=None):
         seen.update(material_id=material_id, seq=planned_sequence,
                     skip=skip_geometry_steps)
         return ["id_FREQ"]

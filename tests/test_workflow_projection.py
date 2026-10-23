@@ -74,7 +74,16 @@ def test_projection_writes_later_steps_for_one_material(tmp_path):
     assert sorted(steps) == ["BAND_3", "DOSS_4", "SP_2"]
     sp = Path(steps["SP_2"]["input_file"])
     assert sp.is_file() and "PBE0" in sp.read_text()
+    # the stand-in parent's atoms reach the projected deck (a stand-in .out whose atom tables the
+    # parser could not read gave an SP deck with "0" atoms in the 1.1.6 preview's workflow review)
+    lines = sp.read_text().splitlines()
+    i = lines.index("227")
+    assert lines[i + 2] == "1" and lines[i + 3].split()[0] == "6", lines[:i + 4]
     assert steps["SP_2"]["parent"] == "OPT_1"
+    # a stand-in holds the deck's unique atom in the cubic cell, not the structure: its BAND k-path is the
+    # static table path of Fd-3m (cF2), not SeeK-path's for the stand-in read as simple cubic (GAMMA-X-M-...)
+    title = Path(steps["BAND_3"]["input_file"]).read_text().splitlines()[1]
+    assert "GAMMA-X-U" in title and "GAMMA-X-M" not in title, title
     band_sh = Path(steps["BAND_3"]["script"]).read_text()
     assert "#SBATCH --mem=48G" in band_sh
     assert Path(steps["DOSS_4"]["input_file"]).suffix == ".d3"

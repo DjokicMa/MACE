@@ -110,11 +110,12 @@ def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path, monkeypatch):
     # are named and colored as in the GUI ("O p", T7); the total is an ink line over a light fill (T5); the
     # figure is 3.5 x 5 in without a title (T8). The data drawn are the same.
     old, new = drawn
-    old_curves = {lab.strip(): xy for lab, _c, _ls, xy in old["lines"] if not lab.startswith(("$E_F", "_"))}
-    new_curves = {lab: xy for lab, _c, _ls, xy in new["lines"] if lab and lab != "Total" and not lab.startswith(("$E_F", "_"))}
-    # T5 / 1.1.6 N1: a closed-shell total is an ink line (the GUI's plot ink) over a light neutral fill
-    from mace.plotting.plotly_bands import tokens
-    assert [c for lab, c, _ls, _xy in new["lines"] if lab == "Total"] == [tokens("default")["--plot-ink"]]
+    old_curves = {lab.strip(): xy for lab, _c, _ls, xy in old["lines"] if not lab.startswith(("$E_F", "E$_", "_"))}
+    new_curves = {lab: xy for lab, _c, _ls, xy in new["lines"] if lab and lab != "Total" and not lab.startswith(("$E_F", "E$_", "_"))}
+    # T5 / 1.1.6 N1: a closed-shell total is one line over a light neutral fill, in the Band style's color as
+    # the GUI draws it (1.1.6: Auto is Single, the spin pair's first color; Ink would be the plot ink)
+    from mace.plotting.presets import SPIN_COLORS
+    assert [c for lab, c, _ls, _xy in new["lines"] if lab == "Total"] == [SPIN_COLORS["light"]["up"]]
     names = {"O (s)": "O s", "O (p)": "O p"}
     assert set(new_curves) == {names[k] for k in old_curves}, (old_curves.keys(), new_curves.keys())
     for k, xy in old_curves.items():
@@ -123,12 +124,13 @@ def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path, monkeypatch):
         assert np.allclose(new_curves[names[k]], summed, atol=1e-8), k   # alpha + |beta|: one-sided total
     # one-sided: from 0 to the largest drawn (summed) DOS in the window plus 8% (1.1.6, the GUI's range)
     lo, hi = new["lim"][1]
-    top = max(abs(x) for lab, _c, _ls, xy in new["lines"] if lab and not lab.startswith(("$E_F", "_"))
+    top = max(abs(x) for lab, _c, _ls, xy in new["lines"] if lab and not lab.startswith(("$E_F", "E$_", "_"))
               for x, y in xy if lo <= y <= hi)
     assert new["lim"][0][0] == 0 and new["lim"][0][1] == pytest.approx(1.08 * top) and new["lim"][1] == old["lim"][1]
-    # 1.1.6: the energy title plain, not bold (the GUI's), and the DOS unit "states/eV"
-    assert new["labels"][2] == "" and new["labels"][1] == "$E - E_F$ (eV)"
-    assert [lab for lab, _c, ls, _xy in new["lines"] if lab.startswith("$E_F")] == ["$E_F$"]
+    # 1.1.6: the energy title plain, not bold, and as the GUI's (plot_labels, in mathtext); the DOS unit "states/eV"
+    from mace.utils.plot_labels import energy_title, fermi_key, mathtext, with_unit
+    assert new["labels"][2] == "" and new["labels"][1] == mathtext(with_unit(energy_title("fermi"), "eV"))
+    assert [lab for lab, _c, ls, _xy in new["lines"] if lab.startswith("E$_")] == [mathtext(fermi_key(0))]
 
 
 def test_frozen_base_is_the_base_commit_file():

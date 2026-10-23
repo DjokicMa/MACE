@@ -340,12 +340,15 @@ def test_a_recovered_workflow_step_keeps_its_workflow_and_the_chain_goes_on(tmp_
     (db,) = d.glob(".mace_context_*/materials.db")
     (opt,) = rows(db).values()
     wf = json.loads(opt["settings_json"])["workflow_id"]
+    # the deck runs in its step folder (workflow_outputs/<id>/step_001_OPT/dia0/dia0_opt.d12)
+    job_out = Path(opt["input_file"]).with_suffix(".out")
+    assert job_out.parent == d / "workflow_outputs" / wf / "step_001_OPT" / "dia0"
     # the OPT ran out of memory
-    shutil.copy(find_data("FAILED_QA/3_dia3_opt_killed_signal9_oom.out"), d / "dia0.out")
+    shutil.copy(find_data("FAILED_QA/3_dia3_opt_killed_signal9_oom.out"), job_out)
     fake.remove_record(opt["slurm_job_id"])
     con = sqlite3.connect(db)
     con.execute("UPDATE calculations SET status='failed', output_file=? WHERE calc_id=?",
-                (str(d / "dia0.out"), opt["calc_id"]))
+                (str(job_out), opt["calc_id"]))
     con.commit()
     con.close()
     out = _ok(_recover(env, tmp_path, "--db", str(db), "--yes"))
@@ -359,10 +362,10 @@ def test_a_recovered_workflow_step_keeps_its_workflow_and_the_chain_goes_on(tmp_
     dry = _ok(_recover(env, tmp_path, "--db", str(db), "--dry-run"))
     assert "No failed calculations to recover." in dry
     # the recovered OPT completes: the job callback goes on to the plan's SP
-    shutil.copy(find_data("OPT/1_dia_opt_rev1.out"), d / "dia0.out")
+    shutil.copy(find_data("OPT/1_dia_opt_rev1.out"), job_out)
     fake.remove_record(new[0]["slurm_job_id"])
     fake.update(sacct={new[0]["slurm_job_id"]: [[new[0]["slurm_job_id"], "COMPLETED", "2026-10-14T12:00:00"]]})
-    cb = callback(env, d, db, mode="completion")
+    cb = callback(env, job_out.parent, db, mode="completion")
     assert cb.returncode == 0, cb.stdout[-4000:] + cb.stderr[-2000:]
     r = rows(db)
     assert r[new[0]["calc_id"]]["status"] == "completed", cb.stdout[-4000:]

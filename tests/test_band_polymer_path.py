@@ -13,8 +13,10 @@ Measured with CRYSTAL23 (STO-3G/PBE LiH chains and (SN)x, SHRINK 8 8):
 * "1 2 NSUB ... / 0 0 0  1 0 0" (Gamma -> X = 1/2 along the chain) runs for
   rod groups 1, 4 and 28: "LINE 1 ( 0.00 0.00 0.00: 0.50 0.00 0.00)".
 
-Both real routes run as subprocesses: opt2d3 with Enter on stdin, and the
-generator with the workflow's default configuration.
+Both real routes run as subprocesses: opt2d3 with Enter or path format 1
+(labels) on stdin, and the generator with the workflow's default
+configuration. Enter is the label path for a polymer: SeeK-path's (format 4)
+ran the chain from Gamma to the next Gamma ("0 0 0  4 0 0" at ISS 4).
 """
 import shutil
 from pathlib import Path
@@ -47,7 +49,15 @@ def _chain_records_ok(records):
 
 
 @pytest.mark.parametrize("parent", PARENTS)
-def test_enter_through_polymer_deck_is_gamma_x(tmp_path, parent):
+def test_label_polymer_deck_is_gamma_x(tmp_path, parent):
+    deck = _manual(_stage(tmp_path, parent), tmp_path / "manual", ["1", "1"]).splitlines()
+    assert deck[0] == "BAND" and deck[-1] == "END"
+    assert deck[2:-1] == CHAIN_DECK, deck
+    assert "GAMMA-X" in deck[1], deck[1]
+
+
+@pytest.mark.parametrize("parent", PARENTS)
+def test_enter_through_polymer_deck_is_gamma_x_along_the_chain(tmp_path, parent):
     deck = _manual(_stage(tmp_path, parent), tmp_path / "manual", []).splitlines()
     assert deck[0] == "BAND" and deck[-1] == "END"
     assert deck[2:-1] == CHAIN_DECK, deck

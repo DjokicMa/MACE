@@ -93,7 +93,7 @@ def test_every_connect_line_in_the_docs_parses(tmp_path):
 def test_script_flags_in_the_docs_exist():
     ps_params = set(re.findall(r"\[(?:string|int|string\[\]|switch)\]\$(\w+)", PS1))
     for flag in set(re.findall(r"(?<![\w-])-([A-Z][A-Za-z]+)\b", DOC)):
-        if flag in ("ExecutionPolicy", "File", "Command", "NoProfile", "J", "L", "N", "Manual") or flag.isupper():
+        if flag in ("ExecutionPolicy", "File", "Command", "NoProfile", "J", "L", "N", "Manual", "Online", "Name") or flag.isupper():
             continue
         assert flag in ps_params, flag
     assert "Manual" in ps_params

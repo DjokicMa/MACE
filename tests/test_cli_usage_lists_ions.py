@@ -36,6 +36,6 @@ def test_usage_choices_include_ions_and_other_new_commands():
                           env=env, capture_output=True, text=True, timeout=120)
     out = proc.stdout + proc.stderr
     commands = set(_registry_commands())
-    for name in ("ions", "defects", "phonopy", "opt2d12", "preopt", "mlip"):
+    for name in ("ions", "defects", "opt2d12", "preopt", "mlip"):
         assert re.search(rf"^  {name:<12}\S", out, re.M), (name, out)
         assert name in commands, (name, sorted(commands))

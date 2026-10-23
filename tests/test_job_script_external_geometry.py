@@ -1,7 +1,7 @@
 """EXTERNAL geometry: the job script stages ``$JOB.ext`` as fort.34.
 
 A deck that starts with EXTERNAL reads its geometry from fort.34 (manual p.21;
-file format pp.450-451). ``mace phonopy generate`` writes one such deck per
+file format pp.450-451). ``mace opt2d12 --calc-type PHONOPY`` writes one such deck per
 displaced supercell, with the geometry next to it as ``<job>.ext``. Without the
 staging step CRYSTAL would find no fort.34 in the scratch directory, or worse a
 fort.34 left behind by an earlier run of the same job name.

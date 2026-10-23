@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, find_data
 from mace import completion_checker as cc
 
 DATA = Path(__file__).resolve().parent / "data"
@@ -315,6 +315,24 @@ def test_completion_command_reports_and_moves(calc_dir, tmp_path):
     assert "COMPLETED: 3 calculation(s)" in out
     assert (calc_dir / "completed" / "complete" / "tqb_done.out").is_file()
     assert (calc_dir / "tqb_pto.out").is_file()
+
+
+def test_freq_copy_backs_move_with_their_run(tmp_path):
+    """Review 1.1.6 E4: submitcrystal23.sh copies a FREQ run's IRSPEC/RAMSPEC as <job>_IRSPEC.DAT /
+    <job>_RAMSPEC.DAT, its PHONBANDS.DAT and PHONDOS.DAT as <job>.PHONBANDS.DAT and <job>.PHONDOS.DAT and its
+    fort.25 as <job>.f25; the organizer moved only the dot forms and left the rest behind."""
+    src = find_data("FREQ/2_dia2_opt_rev1_freq_B3LYP-D3-D3_optimized.out")
+    d = tmp_path / "calcs"
+    d.mkdir()
+    job = src.stem
+    shutil.copy(src, d / src.name)
+    sidecars = [f"{job}_IRSPEC.DAT", f"{job}_RAMSPEC.DAT", f"{job}.PHONBANDS.DAT", f"{job}.PHONDOS.DAT", f"{job}.f25"]
+    for name in sidecars:
+        (d / name).write_text("x\n")
+    _mace(tmp_path, "completion", "-d", str(d), "--move-completed")
+    moved = d / "completed" / "completefreq"
+    assert sorted(p.name for p in moved.iterdir()) == sorted([src.name] + sidecars)
+    assert not any((d / name).exists() for name in sidecars)
 
 
 def _seed(db_path):

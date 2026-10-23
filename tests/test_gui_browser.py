@@ -36,7 +36,9 @@ def browser(tmp_path_factory):
     (root / "results").mkdir()
     write_band(root / "results")
     write_doss(root / "results", material="mgo")
-    proc, base, _ = _start(root)
+    # the Inspector in Advanced (1.1.6 tiers), as tests/gui/guiharness.py starts it: these tests use the
+    # classic editing forms and the lattice rows, which Basic hides
+    proc, base, _ = _start(root, env={"MACE_GUI_INSPECTOR_TIER": "advanced"})
     try:  # software GL, never a GPU (spec section 9)
         drv = guiharness.firefox(1500, 950)
     except BaseException:
@@ -103,7 +105,11 @@ def test_structure_tab_draws_with_reduced_formula(browser):
     _shots(drv, "1_structure_MgO")
     _click(drv, '.file[data-path="outputs/graphene_slab_sp.out"]')
     _wait(drv, "return document.querySelector('#s-formula').textContent.startsWith('C')")
-    lattice = drv.find_element(By.ID, "s-lattice").text
+    # a slab is an editable document since 1.1.6: the Inspector's Cell section (not the read-only lattice
+    # card) shows c as not periodic and the area, not a volume
+    cell = "#inspector .insp-section[data-key='cell']"
+    _wait(drv, f"const e = document.querySelector(\"{cell}\"); return !!e && e.innerText.includes('Area')")
+    lattice = drv.find_element(By.CSS_SELECTOR, cell).text
     assert "not periodic" in lattice and "Area" in lattice and "Volume" not in lattice
     _shots(drv, "1b_structure_graphene_slab")
     assert not _errors(drv), _errors(drv)
@@ -163,6 +169,8 @@ def test_editor_edits_undoes_and_cleans(browser):
     drv, root = browser
     _click(drv, '.file[data-path="structures/MgO.cif"]')
     _wait(drv, "return document.querySelector('#s-formula').textContent.includes('MgO')")
+    # the classic card fills before the document is open in the editor (MgO opened here first, on its own)
+    _wait(drv, "return !!(window.__mace.editor && window.__mace.editor.doc())")
     # Phase 3: the structure document is edited in place; the classic panel is
     # in its inspector ("More editing (classic)"), and Edit starts the session
     _click(drv, "#s-edit")

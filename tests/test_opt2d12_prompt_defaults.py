@@ -65,7 +65,7 @@ def test_blank_convergence_answer_keeps_values_matching_no_preset(monkeypatch):
     seen = _blank_input(monkeypatch)
     cfg = d12_calc_basic._configure_optimization_impl(parent)
     assert (cfg["toldeg"], cfg["toldex"], cfg["toldee"], cfg["maxcycle"]) == (0.0002, 0.0008, 8, 1600)
-    assert any("default=keep current" in p for p in seen), seen
+    assert any("default=5" in p for p in seen), seen
 
 
 def test_tolerance_the_parent_left_out_stays_out(monkeypatch):

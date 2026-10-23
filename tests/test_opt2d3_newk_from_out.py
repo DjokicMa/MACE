@@ -37,6 +37,13 @@ def _env():
     return env
 
 
+def _with_fermi(out: Path):
+    """TRANSPORT's ranges are placed around the parent's E_F: an SCF prints its top of the valence bands,
+    these trimmed fixtures do not (without one the deck is refused or asked as absolute energies)."""
+    with open(out, "a") as fh:
+        fh.write("\n TOP OF VALENCE BANDS -    BAND      4; K    1; EIG -2.0000000E-01 AU\n")
+
+
 def _deck(tmp_path, src, calc_type, with_d12):
     d = tmp_path / ("with_d12" if with_d12 else "out_only")
     d.mkdir()
@@ -44,6 +51,8 @@ def _deck(tmp_path, src, calc_type, with_d12):
     if with_d12:
         shutil.copy(src.with_suffix(".d12"), d / src.with_suffix(".d12").name)
     (d / src.with_suffix(".f9").name).write_text("wavefunction placeholder\n")
+    if calc_type == "TRANSPORT":
+        _with_fermi(d / src.name)
     r = subprocess.run([sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d3",
                         "--input", str(d / src.name), "--calc-type", calc_type],
                        cwd=str(d), input="\n" * 40, capture_output=True, text=True,

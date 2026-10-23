@@ -72,6 +72,8 @@ ALLOWED = [
     ("CHANGELOG.md", "`cancelled`, the saved-config keys"),
     # a paper's own title (CHGNet, Nat. Mach. Intell. 2023) in the ML model registry
     ("mace/preopt/mlip_registry.json", "charge-informed atomistic modelling"),
+    # the Model Context Protocol's method name (mace mcp)
+    ("mace/mcp_server/stdio.py", '"notifications/cancelled"'),
 ]
 
 

@@ -25,14 +25,14 @@ try:
     from mace.utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_orbitals_output,
-        is_transport_output, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
+        is_cphf_output, is_frequency_output, is_optimization_output, is_orbitals_output, is_transport_output,
+        mechanics_output_type, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
 except ImportError:  # pragma: no cover - run as a script from mace/
     from utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_orbitals_output,
-        is_transport_output, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
+        is_cphf_output, is_frequency_output, is_optimization_output, is_orbitals_output, is_transport_output,
+        mechanics_output_type, orbitals_missing_reason, orbitals_molden_files, empty_cube_reason)
 
 # === Define known error and completion message patterns === #
 # The error lines and their priority are mace.utils.crystal_errors' table,
@@ -95,6 +95,14 @@ CALC_TYPE_TO_BUCKET = {
     # A properties run whose .d3 drives none of the types above (a matrix
     # dump - BASISSET with print codes 60/64 - for one)
     'PROPERTIES': 'completeproperties',
+    # mace opt2d12 --calc-type ELASTIC / EOS / QHA runs (ELASTCON, ELAPIEZO,
+    # PIEZOCON, PHOTOELA; EOS; QHA): not OPT, though each strain or volume
+    # ends in its own OPT END
+    'ELASTIC': 'completeelastic',
+    'EOS': 'completeeos',
+    'QHA': 'completeqha',
+    # mace opt2d12 --calc-type CPHF runs: an SCF, then the CPHF/CPKS block
+    'CPHF': 'completecphf',
 }
 
 COMPLETED_BUCKETS = list(CALC_TYPE_TO_BUCKET.values())
@@ -109,6 +117,10 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
     'completecharge_potential': "Charge density + potential (D3)",
     'completeorbitals': "Orbitals, Molden files (D3 ORBITALS)",
     'completeproperties': "Other properties (D3)",
+    'completeelastic': "Elastic/piezoelectric/photoelastic constants (ELASTIC)",
+    'completeeos': "Equation of state (EOS)",
+    'completeqha': "Quasi-harmonic approximation (QHA)",
+    'completecphf': "Polarizability and dielectric tensors (CPHF)",
 }
 
 # === Default extensions for organizing files === #
@@ -134,6 +146,8 @@ DEFAULT_EXTENSIONS = [
     # FREQ-related outputs (when the user copies them back from scratch)
     '.FREQINFO.DAT', '.BORN.DAT', '.IRSPEC.DAT', '.RAMSPEC.DAT',
     '.HESSOPT.DAT', '.IRREFR.DAT',
+    # FREQ outputs submitcrystal23.sh copies back itself (the fort.25 is .f25 above)
+    '_IRSPEC.DAT', '_RAMSPEC.DAT', '.PHONBANDS.DAT', '.PHONDOS.DAT',
 ]
 
 
@@ -158,8 +172,8 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     Resolution order (first match wins):
       1. Sibling .d3 file's records (BAND/DOSS/BOLTZTRA/ECH3/POT3/ECHG/POTC;
          PROPERTIES for a .d3 with none of them)
-      2. Lines CRYSTAL prints: TRANSPORT, FREQ, OPT (has_opt_end or the
-         optimization lines), then the CHARGE+POTENTIAL, DOSS and BAND
+      2. Lines CRYSTAL prints: TRANSPORT, ELASTIC/EOS/QHA, FREQ, OPT (has_opt_end or the
+         optimization lines), CPHF, then the CHARGE+POTENTIAL, DOSS and BAND
          properties lines. Content goes before the file name because MACE
          chains the type into every follow-up name: an SP of an OPT is
          "X_opt_..._optimized_sp_..._optimized", and user names such as
@@ -186,10 +200,18 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     content = ''.join(lines)
     if is_transport_output(content):
         return 'TRANSPORT'
+    # before FREQ and OPT: these runs print the OPTGEOM lines and an OPT END
+    # per strain or volume (QHA the FREQCALC lines as well)
+    mechanics = mechanics_output_type(content)
+    if mechanics:
+        return mechanics
     if is_frequency_output(content):
         return 'FREQ'
     if has_opt_end or is_optimization_output(content):
         return 'OPT'
+    # after FREQ: a FREQCALC run with INTCPHF prints the CPHF/CPKS block too
+    if is_cphf_output(content):
+        return 'CPHF'
     if is_charge_potential_output(content):
         return 'CHARGE+POTENTIAL'
     # before DOSS and BAND: an ORBITALS run starts with NEWK too

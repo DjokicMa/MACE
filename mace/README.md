@@ -57,8 +57,8 @@ MACE (Mendoza Automated CRYSTAL Engine) is an automation framework for quantum c
 ### Installation
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd reorganization
+git clone https://github.com/DjokicMa/MACE.git
+cd MACE
 
 # Run interactive setup
 python setup_mace.py --add-to-path
@@ -150,7 +150,11 @@ mace workflow --quick-start --d12-dir ./decks --workflow opt_sp --array
 submitting and tags each job with its workflow ID, so progression follows that
 plan rather than built-in defaults. It implies `--track`. The deck you submit
 can enter the sequence at any point — submitting a hand-made SP under
-`--progress full_electronic` continues with BAND and DOSS.
+`--progress full_electronic` continues with BAND and DOSS. Each deck is copied
+into its step folder (`workflow_outputs/<id>/step_NNN_<TYPE>/<material>/`) and
+runs there with a new job script, so the decks' folder, its `.sh` files and
+outputs are left as they are; a deck whose `.out` is already a finished run of
+its type is not run again, and its next step starts from that output.
 
 #### 4. Monitor Progress
 ```bash
@@ -182,7 +186,8 @@ mace plotting --all
 ```
 `mace plotting` covers band structures, DOS, crystal structures, cube
 volumetrics (density/ESP/spin), FREQ vibrational modes, and IR/Raman spectra.
-Cube and FREQ rendering require the optional `plotly` package.
+Cube and FREQ rendering use `plotly` (in requirements.txt); cube isosurfaces
+also need the optional `scikit-image`.
 
 #### Terminal Appearance
 ```bash

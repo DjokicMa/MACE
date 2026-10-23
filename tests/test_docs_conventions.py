@@ -35,10 +35,10 @@ def test_stuttgart_library_says_its_records_are_unverified():
     assert "every deck path refuses them" in text
 
 
-def test_phonopy_docs_say_internal_basis_sets_have_no_template():
-    text = _text("DOCUMENTATION.md")
-    assert "An internal-basis (`BASISSET`) set has no `TEMPLATE`" in text
-    assert "`BIPOSIZE`/`EXCHSIZE` 110000000" in text
+def test_phonopy_docs_say_the_decks_are_opt2d12s():
+    text = " ".join(_text("DOCUMENTATION.md").split())
+    assert "the set has no phonopy `TEMPLATE`: rewrite a set with opt2d12" in text
+    assert "`BIPOSIZE`/`EXCHSIZE 110000000`" in text
 
 
 def test_installation_says_to_load_job_modules_off_the_gateway():

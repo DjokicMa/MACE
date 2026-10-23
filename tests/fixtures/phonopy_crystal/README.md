@@ -29,8 +29,8 @@ Kept lines are byte-for-byte upstream; no number was edited.
 | `NaCl/parent.d12`, `Si/parent.d12` | the echoed deck | verbatim, minus the `FREQCALC ... ENDFREQ` records |
 
 `parent.out`/`parent.d12` are the SCF single point at the same geometry,
-basis and settings as the FREQCALC run - the kind of parent `mace phonopy
-generate` accepts (it refuses a FREQCALC output as the geometry source). The
+basis and settings as the FREQCALC run - the kind of parent `mace opt2d12
+--calc-type PHONOPY` accepts (it refuses a FREQCALC output as the geometry source). The
 Si run's echoed deck had no newline after its final `END` (the runner printed
 `ENDCreating temporary directory ...`); the deck ends at that `END`.
 
@@ -54,6 +54,16 @@ BORN identical
 (`read_crystal` = lattice, species, positions and conventional atomic numbers;
 `forces` = `parse_set_of_forces`; `printed_geometry`/`force_rows` = MACE's
 collect checks; `BORN` = `phonopy-crystal-born` output.)
+
+## NaCl_collected (MACE 1.1.6)
+
+`band.yaml`, `total_dos.dat` and `thermal_properties.yaml` as the collect step
+(now `mace analyze phonopy`) writes them with phonopy 4.8.3, from `NaCl/parent.out`,
+`NaCl/parent.d12` and the two `NaCl/supercell-00N.o` force outputs above
+(the displacement set of `parent.out` at `--dim 4 4 4`, then `mace analyze phonopy
+DIR --band-points 5 --mesh "6 6 6" --tmax 600 --tstep 100`, kept small on
+purpose). Unedited; read by `tests/test_phonopy_gui_routes.py` (the GUI's
+plot data) without phonopy installed.
 
 ## phonopy license
 

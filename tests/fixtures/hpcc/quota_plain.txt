@@ -1,0 +1,4 @@
+Disk quotas for user USER (uid 1000001): 
+     Filesystem  blocks   quota   limit   grace   files   quota   limit   grace
+hpcc-dmz.vast.hpcc.msu.edu:/home
+                52162208  104857600 131072000          402865  1000000 1000000        

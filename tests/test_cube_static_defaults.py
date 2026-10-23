@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("plotly")                       # these tests draw; the engine imports without plotly
 ccp = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly")
 from mace.orbitals import api  # noqa: E402
 
@@ -76,4 +77,4 @@ def test_slice_png_has_no_3d_scene_and_a_unit(tmp_path):
     cube = ccp.CubeFile(str(_crystal_0d_cube(tmp_path / "mol_POT.CUBE")))
     fig = ccp.plot_slice_plotly(cube, "z", position=8)
     assert {t.type for t in fig.data} <= {"heatmap", "scatter"}
-    assert "Hartree/e" in fig.data[0].colorbar.title.text
+    assert "Ha e<sup>−1</sup>" in fig.data[0].colorbar.title.text

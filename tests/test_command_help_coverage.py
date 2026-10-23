@@ -69,7 +69,7 @@ COMMANDS = _commands()
 
 def test_command_list_is_complete():
     for name in ("convert", "opt2d12", "opt2d3", "opt2cif", "completion", "ions",
-                 "defects", "phonopy", "workflow", "version", "preopt", "mlip"):
+                 "defects", "workflow", "version", "preopt", "mlip"):
         assert name in COMMANDS, (name, COMMANDS)
 
 

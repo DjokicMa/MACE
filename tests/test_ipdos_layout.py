@@ -14,6 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FE = REPO_ROOT / "tests" / "data" / "spin_fe"
 DIA = "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized"
 DIA_DIR = REPO_ROOT / "test" / "DOSS"
+
+from mace.utils.plot_labels import fermi_key, mathtext  # noqa: E402
+
+FERMI_KEY = mathtext(fermi_key(0))     # the dotted E_F line's legend entry (E$_{\mathregular{F}}$)
+
 sys.path.insert(0, str(REPO_ROOT / "Plotting"))
 
 
@@ -62,9 +67,9 @@ def test_spin_dos_is_mirrored_with_labels_fills_and_groups(monkeypatch, tmp_path
     # the grouped legend: Spin, the pair, Projections, swatches (Total first), then E_F
     leg = ax.get_legend()
     names = [t.get_text() for t in leg.get_texts()]
-    assert names[:5] == ["Spin", "spin up (α)", "spin down (β)", "Projections", "Total"] and names[-1] == "$E_F$"
+    assert names[:5] == ["Spin", "spin up (α)", "spin down (β)", "Projections", "Total"] and names[-1] == FERMI_KEY
     assert leg.get_texts()[0].get_color() == tokens("default")["--text-2"]
-    fermi = next(ln for ln in ax.get_lines() if ln.get_label() == "$E_F$")
+    fermi = next(ln for ln in ax.get_lines() if ln.get_label() == FERMI_KEY)
     # dotted (presets.MPL_DASH["dot"]): dashed reads as spin down
     assert tuple(fermi._unscaled_dash_pattern[1]) == tuple(P.MPL_DASH["dot"][1])
 
@@ -82,7 +87,8 @@ def test_smoothing_is_drawn_and_labeled(monkeypatch, tmp_path):
 def test_closed_shell_total_is_a_neutral_fill_under_an_ink_line(monkeypatch, tmp_path):
     from mace.plotting import presets as P
     from mace.plotting.plotly_bands import tokens
-    ip, ax = _figure(monkeypatch, tmp_path, DIA_DIR, DIA)
+    # Band style Ink (1.1.6: Auto is Single, the spin pair's first color, as the GUI draws it)
+    ip, ax = _figure(monkeypatch, tmp_path, DIA_DIR, DIA, band_style="ink")
     ink = tokens("default")["--plot-ink"]
     assert ax.get_xlim()[0] == 0                                       # one-sided
     total = next(ln for ln in ax.get_lines() if ln.get_label() == "Total")

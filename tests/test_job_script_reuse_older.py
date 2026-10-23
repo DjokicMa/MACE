@@ -140,7 +140,9 @@ BASELINE = Path(__file__).parent / "data" / "older_job_scripts" / "submitcrystal
 
 
 @pytest.mark.parametrize("source", ["scf_1.1.4.sh", "scf_1.1.5_preview.sh", "baseline"])
-def test_progress_writes_an_older_generated_script_again(tmp_path, source):
+def test_progress_leaves_an_older_generated_script_and_writes_its_own(tmp_path, source):
+    """--progress runs the deck in its workflow's step folder with a job
+    script written there; the older one beside the deck is left as it is."""
     if source == "baseline":
         fake, env, d = _setup(tmp_path)
         # laid out as in a preview install (mace/submission next to mace/queue/manager.py), so the
@@ -155,16 +157,18 @@ def test_progress_writes_an_older_generated_script_again(tmp_path, source):
     else:
         fake, env, d = _setup(tmp_path, source)
     (d / "x.d12").write_text(OPT_D12)
+    old = (d / "x.sh").read_bytes()
     p = _mace(d, env, "submit", "--progress", "opt_sp", "x.d12")
     out = p.stdout + p.stderr
     assert p.returncode == 0, out[-3000:]
-    assert "written by an older MACE; regenerating it" in out, out[-3000:]
-    assert "would not reach" not in out
+    assert "would not reach" not in out and "regenerating it" not in out, out[-3000:]
+    assert (d / "x.sh").read_bytes() == old
     calls = fake.calls("sbatch")
     assert calls and ".mace_submit_dir" in calls[0]["script_text"], out[-3000:]
+    assert "/workflow_outputs/" in calls[0]["argv"][-1] and calls[0]["argv"][-1].endswith("/x_opt.sh")
 
 
-@pytest.mark.parametrize("opts", [("--progress", "opt_sp"), ("--track", "--array")])
+@pytest.mark.parametrize("opts", [("--track", "--array")])
 def test_an_edited_script_is_not_told_to_drop_progress_or_array(tmp_path, opts):
     fake, env, d = _setup(tmp_path, "scf_1.1.4.sh")
     sh = d / "x.sh"
