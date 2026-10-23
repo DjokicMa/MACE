@@ -1346,7 +1346,8 @@ def test_properties_levels_on_corpus_cuts(tmp_path):
         assert lv[0]["status"] == "done" and lv[0]["text"].endswith(lv[0]["text"].split(": done in ")[-1])
         assert lv[1]["status"] == "running" and lv[1]["confidence"] == "rough"
         assert lv[1]["remaining_s"]["high"] > lv[1]["remaining_s"]["low"] >= 0
-        assert r["levels"][0]["text"].startswith("Total about ")
+        # a range from 0 s reads "under N" (1.1.6; it read "about 0 s - N")
+        assert r["levels"][0]["text"].startswith(("Total about ", "Total under ")), r["levels"][0]["text"]
         # before the first block finishes: the total is unknown and says why
         (d / "y.out").write_text("\n".join(lines[:next(i for i, l in enumerate(lines) if "gordsh1" in l) + 1]) + "\n")
         shutil.copyfile(src.with_suffix(".d3"), d / "y.d3")

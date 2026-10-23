@@ -404,6 +404,21 @@ if [ -f "$DIR/$JOB.ext" ]; then
   cp "$DIR/$JOB.ext" "$scratch/$JOB/fort.34"
   echo "EXTERNAL: staged $JOB.ext as fort.34"
 fi
+# ELASTCON/ELAPIEZO/PIEZOCON/PHOTOELA and EOS/QHA RESTART or RESTART2 read
+# ELASINFO.DAT or EOSINFO.DAT in the run directory (manual pp. 284, 290; EOS
+# and QHA EOSINFO.DAT). A run copies its own back next to the output as
+# $JOB.ELASINFO.DAT / $JOB.EOSINFO.DAT (below), and a RESTART deck from mace
+# opt2d12 stages that of the parent run under the new deck name. A deck with
+# RESTART or RESTART2 gets it here, unless $scratch/$JOB holds a newer one (a
+# killed run of this job, which copied nothing back).
+if grep -qiE "^[[:space:]]*RESTART2?[[:space:]]*$" "$scratch/$JOB/INPUT" 2>/dev/null; then
+  for MACE_F in ELASINFO.DAT EOSINFO.DAT; do
+    if [ -s "$DIR/$JOB.$MACE_F" ] && ! [ "$scratch/$JOB/$MACE_F" -nt "$DIR/$JOB.$MACE_F" ]; then
+      cp "$DIR/$JOB.$MACE_F" "$scratch/$JOB/$MACE_F"
+      echo "RESTART: staged $JOB.$MACE_F as $MACE_F"
+    fi
+  done
+fi
 # files this run writes are newer than this marker (dated two seconds back:
 # file times can be coarser than the moment between it and a fast write)
 touch -d "2 seconds ago" "$scratch/$JOB/.mace_run_start" 2>/dev/null || touch "$scratch/$JOB/.mace_run_start"
@@ -419,6 +434,19 @@ I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/Pcryst
 # SCFOUT.LOG (the output says so); the copy this run wrote goes next to the output as
 # $JOB.SCFOUT.LOG, where the SCF timeline of the GUI and mace analyze --scf read it.
 [ -s SCFOUT.LOG ] && [ SCFOUT.LOG -nt .mace_run_start ] && cp SCFOUT.LOG "$DIR/$JOB.SCFOUT.LOG"
+# The restart file of an elastic or EOS/QHA run (staged above for RESTART/RESTART2).
+for MACE_F in ELASINFO.DAT EOSINFO.DAT; do
+  [ -s "$MACE_F" ] && [ "$MACE_F" -nt .mace_run_start ] && cp "$MACE_F" "$DIR/$JOB.$MACE_F"
+done
+# What a FREQ run writes beside its output: the IR and Raman spectra (INTENS
+# with IRSPEC/RAMSPEC) under the names the GUI and mace plotting --ir/--raman
+# look for, and the phonon dispersion or DOS (PHONBAND/PHONDOS: fort.25,
+# PHONBANDS.DAT and PHONDOS.DAT), as the properties script copies its own fort.25.
+[ -s IRSPEC.DAT ] && [ IRSPEC.DAT -nt .mace_run_start ] && cp IRSPEC.DAT "$DIR/${JOB}_IRSPEC.DAT"
+[ -s RAMSPEC.DAT ] && [ RAMSPEC.DAT -nt .mace_run_start ] && cp RAMSPEC.DAT "$DIR/${JOB}_RAMSPEC.DAT"
+[ -s PHONBANDS.DAT ] && [ PHONBANDS.DAT -nt .mace_run_start ] && cp PHONBANDS.DAT "$DIR/$JOB.PHONBANDS.DAT"
+[ -s PHONDOS.DAT ] && [ PHONDOS.DAT -nt .mace_run_start ] && cp PHONDOS.DAT "$DIR/$JOB.PHONDOS.DAT"
+[ -s fort.25 ] && [ fort.25 -nt .mace_run_start ] && cp fort.25 "$DIR/$JOB.f25"
 
 
 # ADDED: Auto-submit new jobs when this one completes

@@ -233,8 +233,40 @@ cd "$scratch/$JOB" || { echo "ERROR: cannot enter $scratch/$JOB. Not running CRY
 if grep -qiE "^[[:space:]]*ORBITALS[[:space:]]*$" INPUT; then
   sed -i "/^[[:space:]]*ORBITALS[[:space:]]*$/I{n;s/.*/${JOB}_orb/}" INPUT
 fi
+# BOLTZTRA ON THE NODE. BOLTZTRA writes a scratch file a rank, fort.70.peN (4.5 GB each for diamond at
+# NEWK IS 48), that nothing reads after the run. Written on the shared scratch file system that run took
+# 62 minutes, on a node-local disk under 2 (MSU HPCC, CRYSTAL23, 4 ranks; the same results). So the
+# files are links to a directory on the node ($TMPDIR, else /tmp) with at least MACE_BOLTZTRA_GB free,
+# removed after the run; without one they are written here as before.
+MACE_BOLTZTRA_GB=${MACE_BOLTZTRA_GB:-64}
+MACE_LOCAL70=""
+if grep -qiE "^[[:space:]]*BOLTZTRA[[:space:]]*$" INPUT; then
+  for MACE_T in "$TMPDIR" /tmp; do
+    if [ -z "$MACE_T" ] || [ ! -d "$MACE_T" ] || [ ! -w "$MACE_T" ]; then continue; fi
+    MACE_FREE=$(df -Pk "$MACE_T" 2>/dev/null | tail -n 1 | tr -s " " | cut -d " " -f 4)
+    case "$MACE_FREE" in ""|*[!0-9]*) continue ;; esac
+    if [ "$MACE_FREE" -lt $((MACE_BOLTZTRA_GB * 1024 * 1024)) ]; then continue; fi
+    MACE_LOCAL70=$(mktemp -d "$MACE_T/mace_boltztra_${JOB}_XXXXXX" 2>/dev/null) && break
+    MACE_LOCAL70=""
+  done
+  if [ -n "$MACE_LOCAL70" ]; then
+    MACE_I=0
+    while [ "$MACE_I" -lt "${SLURM_NTASKS:-1}" ]; do
+      ln -sfn "$MACE_LOCAL70/fort.70.pe$MACE_I" "fort.70.pe$MACE_I"
+      MACE_I=$((MACE_I + 1))
+    done
+    echo "BOLTZTRA: its scratch files (fort.70.peN) on the node, in $MACE_LOCAL70"
+  else
+    echo "BOLTZTRA: no node-local directory with ${MACE_BOLTZTRA_GB} GB free; its scratch files are written in $scratch/$JOB"
+  fi
+fi
 
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/Pproperties" 2>&1 >& "$DIR/${JOB}.out"
+if [ -n "$MACE_LOCAL70" ]; then
+  rm -rf "$MACE_LOCAL70"
+  MACE_I=0
+  while [ "$MACE_I" -lt "${SLURM_NTASKS:-1}" ]; do rm -f "fort.70.pe$MACE_I"; MACE_I=$((MACE_I + 1)); done
+fi
 #srun $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& "$DIR/${JOB}.out"
 #srun Pproperties 2>&1 >& "$DIR/${JOB}.out"
 

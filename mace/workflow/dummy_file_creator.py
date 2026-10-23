@@ -43,6 +43,15 @@ except ImportError as e:
     raise ImportError("Required d12_constants module not found")
 
 
+from mace.workflow.common.constants import STAND_IN_FERMI_AU  # noqa: E402  (shared with the GUI builder)
+
+
+def append_stand_in_fermi(out_file: Path) -> None:
+    """Give a stand-in SCF output a Fermi level, as an SCF prints its top of the valence bands."""
+    with open(out_file, "a") as fh:
+        fh.write(f"\n TOP OF VALENCE BANDS -    BAND      1; K    1; EIG {STAND_IN_FERMI_AU: .7E} AU\n")
+
+
 class DummyFileCreator:
     """Creates dummy D12 and OUT files for workflow configuration."""
     
@@ -430,8 +439,10 @@ class DummyFileCreator:
             if d12_settings.get("atoms") and d12_settings.get("n_atoms"):
                 n_atoms = d12_settings["n_atoms"]
                 f.write(" COORDINATES IN THE CRYSTALLOGRAPHIC CELL\n")
-                f.write(" *******************************************************************************\n")
+                # CRYSTAL's layout: the column header, then the asterisk line (the parser
+                # skips to that line and reads the atoms right after it)
                 f.write("   ATOM          X(FRAC)          Y(FRAC)          Z(FRAC)\n")
+                f.write(" *******************************************************************************\n")
                 
                 for i, atom in enumerate(d12_settings["atoms"]):
                     # Parser expects format: index T/F atom_number symbol x y z
@@ -596,8 +607,10 @@ class DummyFileCreator:
             if d12_settings.get("atoms") and d12_settings.get("n_atoms"):
                 n_atoms = d12_settings["n_atoms"]
                 f.write(" COORDINATES IN THE CRYSTALLOGRAPHIC CELL\n")
-                f.write(" *******************************************************************************\n")
+                # CRYSTAL's layout: the column header, then the asterisk line (the parser
+                # skips to that line and reads the atoms right after it)
                 f.write("   ATOM          X(FRAC)          Y(FRAC)          Z(FRAC)\n")
+                f.write(" *******************************************************************************\n")
                 
                 for i, atom in enumerate(d12_settings["atoms"]):
                     # Parser expects format: index T/F atomic_number symbol x y z
@@ -614,7 +627,6 @@ class DummyFileCreator:
                 
                 # Also add ATOMS IN THE ASYMMETRIC UNIT section
                 f.write(f" ATOMS IN THE ASYMMETRIC UNIT    {n_atoms} - ATOMS IN THE UNIT CELL:    {n_atoms}\n")
-                f.write(" *******************************************************************************\n")
                 f.write("     ATOM              X/A                 Y/B                 Z/C\n")
                 f.write(" *******************************************************************************\n")
                 
@@ -683,7 +695,6 @@ class DummyFileCreator:
             f.write(" *******************************************************************************\n")
             # Minimal atomic positions
             f.write(" ATOMS IN THE ASYMMETRIC UNIT    1 - ATOMS IN THE UNIT CELL:    1\n")
-            f.write(" *******************************************************************************\n")
             f.write("     ATOM              X/A                 Y/B                 Z/C\n")
             f.write(" *******************************************************************************\n")
             f.write("     1 T    6 C     0.00000000000000  0.00000000000000  0.00000000000000\n")

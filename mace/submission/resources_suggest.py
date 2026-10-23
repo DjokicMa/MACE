@@ -61,10 +61,27 @@ from typing import Any, Dict, List, Optional, Tuple
 MODEL_VERSION = "2026-10-14"
 # ln(core-seconds per SCF cycle) = A + B ln(AO) + C ln(k-points x spins)
 CYCLE = (-4.627, 1.661, 0.522)
-# typical SCF cycles of a job (FREQ: per displacement, 3 x asymmetric atoms + 1)
-EQUIV_CYCLES = {"SP": 14.1, "OPT": 17.8, "FREQ": 38.9}
+# typical SCF cycles of a job (FREQ, QHA: per displacement, 3 x asymmetric atoms + 1)
+EQUIV_CYCLES = {"SP": 14.1, "OPT": 17.8, "FREQ": 38.9,
+                # The mechanics and response modules (too few runs to fit): the SP's
+                # 14.1 times the core-seconds of the HPCC CRYSTAL23 runs of
+                # tests/data/hpcc_116/mechanics over those of the SP of the same
+                # diamond (B3LYP-D3, spin, 36 AOs, 72 k-points; SP 27 s on 8 tasks,
+                # the modules on 16): ELASTCON 46x and ELAPIEZO 58x -> ELASTIC
+                # 14.1 x 52; EOS 22x; QHA 50x over its 4 displacements (one
+                # asymmetric atom: 4 volumes, each optimized, with its Gamma
+                # phonons), per displacement as for FREQ; CPHF (FOURTH) 19x.
+                "ELASTIC": 730.0, "EOS": 310.0, "QHA": 176.0, "CPHF": 270.0}
 # observed / typical at the 95th percentile: the walltime margin
-WALL_FACTOR = {"SP": 4.7, "OPT": 27.5, "FREQ": 5.0}
+WALL_FACTOR = {"SP": 4.7, "OPT": 27.5, "FREQ": 5.0,
+               # ELASTIC: the SP's, times PHOTOELA's 187x over the typical 52x
+               # (PHOTOELA, a CPHF/KS at every strain, is ELASTIC too); EOS: the
+               # OPT's (every volume is optimized; diamond's took one step each);
+               # QHA: the FREQ's times 13/4 (POINTS 13 instead of the default 4);
+               # CPHF: the SP's (the measured run is FOURTH, the costliest order)
+               "ELASTIC": 17.0, "EOS": 27.5, "QHA": 16.3, "CPHF": 4.7}
+# the types whose job displaces every atom of the asymmetric unit
+DISPLACEMENT_TYPES = ("FREQ", "QHA")
 # properties: ln(core-seconds) = a + b ln(AO), margin (the k-point net of a
 # properties run is its own NEWK, not the SCF's, so the AOs alone)
 PROP_WORK = {"BAND": (-1.380, 1.405, 15.7),
@@ -79,7 +96,7 @@ MEM_SCF = (427.9, 150.76, 863.3, 2.6)
 # MB per process: a + b AO^2/1e6, times the envelope
 MEM_PROP = (276.0, 87.2, 1.35)
 MIN_MEM_PER_CPU_GB = 2
-SCF_TYPES = ("OPT", "SP", "FREQ")
+SCF_TYPES = ("OPT", "SP", "FREQ", "ELASTIC", "EOS", "QHA", "CPHF")
 PROP_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
 # the built-in job size (mace/submission/site.py TEMPLATE_RESOURCES): the
 # most cores a suggestion asks for when the node size is not known
@@ -201,7 +218,7 @@ def estimate_work(calc_type: str, info: SizeInfo) -> Tuple[float, float]:
     a, b, c = CYCLE
     per_cycle = math.exp(a + b * math.log(nao) + c * math.log(k))
     n = EQUIV_CYCLES[calc_type]
-    if calc_type == "FREQ":
+    if calc_type in DISPLACEMENT_TYPES:
         n *= 3 * max(1, int(info.nirr or info.natoms or 1)) + 1
     return per_cycle * n, WALL_FACTOR[calc_type]
 
@@ -213,7 +230,8 @@ def memory_per_task_mb(calc_type: str, info: SizeInfo) -> float:
         a, b, env = MEM_PROP
         return (a + b * nao * nao / 1e6) * env
     k = max(1, int(info.nk or 1)) * max(1, int(info.nspin or 1))
-    nsym = 1 if calc_type == "FREQ" else max(1, int(info.nsym or 1))
+    # displaced atoms and strained cells lose the symmetry
+    nsym = 1 if calc_type in DISPLACEMENT_TYPES + ("ELASTIC",) else max(1, int(info.nsym or 1))
     a, b, c, env = MEM_SCF
     return (a + b * nao * nao / nsym / 1e6 + c * k * nao / 1e6) * env
 
@@ -264,7 +282,7 @@ def suggest_resources(calc_type: str, info, limits: Optional[Dict[str, Any]] = N
         nk = max(1, int(info.nk or 1))
         kp = f"{nk} k-point{'s' if nk > 1 else ''}" if nk > 1 or info.dim != "MOLECULE" else "a molecule"
         parts.append(f"{kp} x {info.nspin} spins" if info.nspin > 1 else kp)
-    if ct == "FREQ":
+    if ct in DISPLACEMENT_TYPES:
         parts.append(f"{3 * max(1, int(info.nirr or info.natoms or 1))} displacements")
 
     def cores(n):
@@ -619,7 +637,7 @@ def size_for(path, calc_type: Optional[str] = None) -> Optional[SizeInfo]:
     info = read_out_size(out) if out else None
     deck_info = None
     if path.suffix.lower() == ".d12":
-        if info is None or ct == "FREQ":
+        if info is None or ct in DISPLACEMENT_TYPES:
             deck_info = deck_size(path, ct)
     if info is None:
         info = deck_info

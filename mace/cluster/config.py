@@ -26,7 +26,8 @@ DEFAULT_GROUP_REGEX = (r"^(intel|amd|arm|xeon|epyc|zen|skylake|cascade|icelake|s
 BUILTIN: Dict[str, Dict[str, Any]] = {
     "cluster": {"group_feature_regex": DEFAULT_GROUP_REGEX, "node_query": "auto"},
     "quota": {"command": None, "format": "table", "paths": [], "warn_percent": 80,
-              "critical_percent": 90, "alias_env_allow": []},
+              "critical_percent": 90, "alias_env_allow": [],
+              "research_roots": ["/mnt/research"], "research_paths": []},
     "scan": {"entries_per_second": 2000, "max_seconds": 600, "max_entries": 1_200_000,
              "sizes": "top", "leftover_paths": []},
     "devnodes": {"hosts": [], "pick_by": "load"},
@@ -125,8 +126,10 @@ def _check(table: str, key: str, v: Any) -> Optional[str]:
             return _str_list(v) if v is not None else None
         if key == "format":
             return None if v in ("table", "lfs", "quota", "json") else 'must be "table", "lfs", "quota" or "json"'
-        if key == "paths":
+        if key in ("paths", "research_paths"):
             return _str_list(v) if v != [] else None
+        if key == "research_roots":
+            return _str_list(v)
         if key in ("warn_percent", "critical_percent"):
             return _int_range(v, 50, 99)
         if key == "alias_env_allow":

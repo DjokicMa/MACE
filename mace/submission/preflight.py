@@ -378,7 +378,7 @@ def uncheckable_reason(text: str, has_ext: bool = False) -> Optional[str]:
       throwaway directory has no fort.34, so a failure would say nothing about
       the deck. No deck under ``test/`` uses either keyword. The exception is
       an EXTERNAL deck with its geometry next to it as ``<stem>.ext`` (what
-      ``mace phonopy generate`` writes and the job script stages as fort.34):
+      ``mace opt2d12 --calc-type PHONOPY`` writes and the job script stages as fort.34):
       with ``has_ext`` that file is staged here the same way and the deck is
       checked.
     * GUESSP - manual, "The density matrix from a previous run, P0 (direct

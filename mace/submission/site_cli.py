@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", choices=("scf", "prop", "both"), default="both",
                    help="check: the job scripts to test (Pcrystal, Pproperties or both; default both)")
     p.add_argument("--type", metavar="T", dest="calc_type",
-                   help="suggest: size the decks as this calculation type (OPT, SP, FREQ, BAND, DOSS, ...)")
+                   help="suggest: size the decks as this calculation type (OPT, SP, FREQ, ELASTIC, BAND, DOSS, ...)")
     p.add_argument("--no-sbatch", action="store_true",
                    help="check: write the job scripts and read them with bash -n, but do not ask sbatch; "
                         "the scripts are kept for reading")

@@ -31,7 +31,8 @@ import threading
 
 # Define which calculations are optional (can fail without blocking workflow)
 # These calculations can fail without preventing the workflow from continuing
-OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS'}
+OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS', 'TAU',
+                       'ELASTIC', 'EOS', 'QHA', 'CPHF'}
 
 # Import MACE components
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
@@ -39,6 +40,8 @@ from mace.queue.slurm_ids import note_submission as _note_submission
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context, new_workflow_id
 from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config, opt2d3_default_transport_config
+from mace.workflow.common.constants import MODULE_STEP_TYPES
+from mace.workflow import tau_step
 from mace.utils.settings_extractor import extract_input_settings
 from mace.workflow.plan_functionals import (normalize_plan_functionals,
                                             normalize_step_functionals)
@@ -164,6 +167,15 @@ class WorkflowEngine:
                 return cfg
         return {}
 
+    @staticmethod
+    def _workflow_id_of(calc: Optional[Dict]) -> Optional[str]:
+        """The workflow id a calculation row carries, else MACE_WORKFLOW_ID."""
+        try:
+            wid = json.loads((calc or {}).get('settings_json') or '{}').get('workflow_id')
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            wid = None
+        return wid or os.environ.get('MACE_WORKFLOW_ID')
+
     def _auto_progression_off(self, workflow_id: Optional[str]) -> bool:
         """True when the plan says ``execution_settings.auto_progression``
         false and nobody asked to continue by hand (``manual_progression``)."""
@@ -189,12 +201,12 @@ class WorkflowEngine:
             plan = self._load_workflow_plan(workflow_id) or {}
         except Exception:
             return None
-        cap = (plan.get('execution_settings') or {}).get('max_concurrent_jobs')
         # None unless set explicitly: the 200 every plan up to 1.1.5 stored
         # whether or not the user chose it counts as unset (workflows share
-        # the user-wide queue budget, mace/queue/budget.py)
-        from mace.queue.budget import normalize_cap
-        return normalize_cap(cap)
+        # the user-wide queue budget, mace/queue/budget.py); a plan since
+        # 1.1.6 says when its cap was chosen, so a chosen 200 counts
+        from mace.queue.budget import plan_cap
+        return plan_cap(plan)
 
     def _live_workflow_jobs(self, workflow_id: str) -> int:
         """The workflow's calculations this database lists as queued or
@@ -346,6 +358,23 @@ class WorkflowEngine:
             print(f"    Plan optimization settings applied: {sorted(opt_settings)}")
         return config_data
     
+    def _module_step_config(self, workflow_id: Optional[str], target_calc_type: str,
+                            target_base_type: str) -> Dict[str, Any]:
+        """An ELASTIC/EOS/QHA/CPHF step's part of the config CRYSTALOptToD12
+        reads: its type and the plan step's module block ("elastic_settings",
+        as mace opt2d12 --elastic-settings takes it). Without one the deck has
+        CRYSTAL's defaults, or an elastic parent's own block of the same
+        module (d12_calc_elastic.resolve_for_opt2d12). The method, basis set
+        and SCF settings stay the parent's; the SCF TOLDEE and MAXCYCLE floors
+        of these modules are the deck writer's."""
+        out: Dict[str, Any] = {"calculation_type": target_base_type}
+        cfg = self._get_plan_step_config(workflow_id, target_calc_type) if workflow_id else {}
+        es = cfg.get('elastic_settings')
+        if isinstance(es, dict) and es:
+            out["elastic_settings"] = json.loads(json.dumps(es))
+            print(f"    Plan {target_base_type} settings: {json.dumps(es, sort_keys=True)}")
+        return out
+
     def get_workflow_step_number(self, workflow_id: str, calc_type: str) -> int:
         """Get the correct step number for a calculation type in the workflow"""
         workflow_sequence = self.get_workflow_sequence(workflow_id)
@@ -492,29 +521,59 @@ class WorkflowEngine:
         self._cleanup_failed_workflow_dirs()
                     
     def _cleanup_failed_workflow_dirs(self):
-        """Clean up workflow directories from failed generation attempts"""
+        """Remove the workflow folders a failed generation left empty: a
+        ``workflow_outputs/workflow_*`` folder older than a day that holds no
+        file at all, of a workflow with no step waiting or running. A folder
+        with any file in it is kept: a workflow's first steps are staged
+        there (deck and job script, no output yet) and can wait in the queue,
+        or be held, for days."""
         workflow_outputs_dir = self.base_work_dir / "workflow_outputs"
         if not workflow_outputs_dir.exists():
             return
             
-        # Look for workflow directories
         for workflow_dir in workflow_outputs_dir.glob("workflow_*"):
-            if workflow_dir.is_dir():
-                # Check if directory has any successful calculations
-                has_output = any(workflow_dir.rglob("*.out"))
-                has_slurm_output = any(workflow_dir.rglob("*.o*"))
-                
-                # Check age - clean up failed dirs after 1 day
+            try:
+                if not workflow_dir.is_dir() or workflow_dir.is_symlink():
+                    continue
+                age_hours = (datetime.now().timestamp() - workflow_dir.stat().st_mtime) / 3600
+                if age_hours <= 24:
+                    continue
+                if any(not p.is_dir() or p.is_symlink() for p in workflow_dir.rglob("*")):
+                    continue
+                if self._workflow_has_active_steps(workflow_dir.name):
+                    continue
+                shutil.rmtree(workflow_dir, ignore_errors=True)
+                print(f"Removed empty workflow directory: {workflow_dir.name}")
+            except Exception:
+                # Skip if we can't access the directory
+                pass
+
+    _ACTIVE_STEP_STATES = ('submitted', 'pending', 'queued', 'running', 'held')
+
+    def _workflow_has_active_steps(self, workflow_id: str) -> bool:
+        """True when a step of ``workflow_id`` is submitted, pending, queued,
+        running or held (any such row of its context database, or one of
+        this engine's database that names it), or a database cannot be read."""
+        import sqlite3
+        marks = ",".join("?" * len(self._ACTIVE_STEP_STATES))
+        own_db = self.base_work_dir / f".mace_context_{workflow_id}" / "materials.db"
+        for db_path, any_row in ((own_db, True), (getattr(self.db, 'db_path', None), False)):
+            if not db_path or not Path(db_path).is_file():
+                continue
+            try:
+                con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
                 try:
-                    dir_mtime = workflow_dir.stat().st_mtime
-                    age_hours = (datetime.now().timestamp() - dir_mtime) / 3600
-                    
-                    if not has_output and not has_slurm_output and age_hours > 24:
-                        shutil.rmtree(workflow_dir, ignore_errors=True)
-                        print(f"Removed failed workflow directory: {workflow_dir.name}")
-                except Exception as e:
-                    # Skip if we can't access the directory
-                    pass
+                    rows = con.execute(f"SELECT settings_json, work_dir FROM calculations "
+                                       f"WHERE status IN ({marks})",
+                                       self._ACTIVE_STEP_STATES).fetchall()
+                finally:
+                    con.close()
+            except sqlite3.Error:
+                return True
+            for settings, work_dir in rows:
+                if any_row or workflow_id in (settings or '') or workflow_id in (work_dir or ''):
+                    return True
+        return False
                     
     def get_workflow_id_from_calculation(self, calc_dir: Path) -> Optional[str]:
         """Get workflow ID from calculation directory metadata"""
@@ -670,6 +729,25 @@ class WorkflowEngine:
                         if candidates:
                             template_script = candidates[0]
                             break
+            elif base_type in MODULE_STEP_TYPES:
+                # ELASTIC, EOS, QHA, CPHF: the plan's template of this step, else
+                # the OPT's (the same week-long CRYSTAL job size), else the SP's
+                for pattern in [f"submitcrystal23_{calc_type.lower()}_*.sh",
+                                f"submitcrystal23_{base_type.lower()}_*.sh",
+                                "submitcrystal23_opt_*.sh", "submitcrystal23_sp_*.sh", "submitcrystal23.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+            elif base_type == "TAU":
+                # the strained single points: the plan's TAU template (the SP's
+                # resources, a longer walltime), else the SP's
+                for pattern in [f"submitcrystal23_{calc_type.lower()}_*.sh", "submitcrystal23_tau_*.sh",
+                                "submitcrystal23_sp_*.sh", "submitcrystal23_sp.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
             else:
                 # For other calculation types (OPT, OPTn, etc.)
                 if base_type == "OPT":
@@ -724,7 +802,7 @@ class WorkflowEngine:
         
         if not template_script or not template_script.exists():
             # Fall back to basic template
-            if calc_type in ["OPT", "SP", "FREQ"]:
+            if calc_type in ["OPT", "SP", "FREQ"] or base_type == "TAU" or base_type in MODULE_STEP_TYPES:
                 template_script = base_dir / "submitcrystal23.sh"
                 print(f"  Fallback template: {template_script}")
                 print(f"  Fallback exists: {template_script.exists()}")
@@ -859,7 +937,7 @@ class WorkflowEngine:
         step. The generator writes <job>.sh in cwd; capture its content and
         remove the file — the normal customization/write path takes over.
         """
-        gen_name = ("submitcrystal23.sh" if base_type in ("OPT", "SP", "FREQ")
+        gen_name = ("submitcrystal23.sh" if base_type in ("OPT", "SP", "FREQ", "TAU") + MODULE_STEP_TYPES
                     else "submit_prop.sh")
         generator = Path(__file__).resolve().parent.parent / "submission" / gen_name
         if not generator.exists():
@@ -1832,6 +1910,23 @@ fi'''
             return None
             
         material_id = source_calc['material_id']
+
+        # A TRANSPORT step after a TAU step runs with the TAU step's relaxation
+        # time: it waits for it (checked before any folder is made, so a wait
+        # leaves nothing behind) and is held only by the TAU step's strict.
+        tau_summary = None
+        if self._parse_calc_type(target_calc_type)[0] == "TRANSPORT":
+            tau_wid = self._workflow_id_of(source_calc)
+            tau_seq = self.get_workflow_sequence(tau_wid) if tau_wid else None
+            gate, tau_summary = tau_step.transport_gate(self, material_id, tau_wid, tau_seq or [],
+                                                        target_calc_type)
+            if gate == "wait":
+                print(f"  {target_calc_type} waits for its relaxation time "
+                      f"({tau_step.tau_before(tau_seq, target_calc_type)})")
+                return None
+            if gate == "held":
+                print(f"  {target_calc_type} is held: {tau_step.line(tau_summary)} and the TAU step is strict")
+                return None
         
         # Find the most recent calculation with a wavefunction
         wavefunction_calc_id = self._find_most_recent_wavefunction_calc(material_id)
@@ -1937,6 +2032,17 @@ fi'''
                 config_file = work_dir / f"{target_calc_type.lower()}_config.json"
                 with open(config_file, 'w') as f:
                     json.dump(json_config, f, indent=2)
+
+            tau_note = None
+            if tau_summary is not None:
+                # RELAXTIM from the TAU step, over whichever configuration the plan gave
+                tau_config = tau_step.apply_to_config(json.loads(Path(config_file).read_text()), tau_summary)
+                config_file = work_dir / f"{target_calc_type.lower()}_tau_config.json"
+                config_file.write_text(json.dumps(tau_config, indent=2))
+                tau_rows = tau_step.group_rows(self.db, material_id, tau_summary.get("step", "TAU"))
+                tau_note = tau_step.provenance(
+                    tau_summary, Path(tau_rows[0]["work_dir"]) if tau_rows and tau_rows[0].get("work_dir") else None)
+                print(f"  {target_calc_type}: {tau_step.line(tau_summary)}")
             
             # Run CRYSTALOptToD3.py
             cmd = [
@@ -1994,6 +2100,8 @@ fi'''
             calc_id = self._create_and_submit_d3_calculation(
                 material_id, target_calc_type, final_d3, final_dir, wavefunction_calc_id
             )
+            if calc_id and tau_note:
+                self.db.update_calculation_settings(calc_id, {'relaxation_time': tau_note}, merge=True)
             
             return calc_id
             
@@ -2230,7 +2338,8 @@ fi'''
         return self.generate_numbered_calculation(opt_calc_id, target_calc_type)
             
     def _check_and_trigger_pending_calculations(self, material_id: str, planned_sequence: List[str],
-                                                skip_geometry_steps: bool = False) -> List[str]:
+                                                skip_geometry_steps: bool = False,
+                                                workflow_id: Optional[str] = None) -> List[str]:
         """
         Check for any calculations in the planned sequence that should have been triggered
         but haven't been yet. This handles cases where workflow steps might have been missed.
@@ -2271,6 +2380,21 @@ fi'''
             if skip_geometry_steps and base_type == "OPT":
                 continue
 
+            # A TAU step: its strained single points once its SP has finished
+            # (beside BAND and DOSS), then the fit once they have all finished
+            # (tau_step.py; the TRANSPORT after it waits for that)
+            if base_type == "TAU":
+                tau_wid = workflow_id or os.environ.get('MACE_WORKFLOW_ID')
+                if tau_step.started(self, material_id, planned_type, tau_wid):
+                    tau_step.try_fit(self, material_id, tau_wid, planned_type, planned_sequence)
+                    continue
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
+                    print(f"Triggering pending {planned_type} calculation...")
+                    new_calc_ids.extend(tau_step.generate(
+                        self, completed_by_type[prev_step][-1]['calc_id'], planned_type, tau_wid))
+                continue
+
             # Skip if already completed or in progress
             if self._calculation_already_exists(material_id, planned_type):
                 existing_status = [c['status'] for c in all_calcs if c['calc_type'] == planned_type]
@@ -2303,6 +2427,14 @@ fi'''
                         can_start = True
                         source_calc_id = opt_source  # Use highest completed OPT for FREQ generation
                     
+            elif base_type in MODULE_STEP_TYPES:
+                # ELASTIC, EOS, QHA, CPHF: opt2d12's module deck from the OPT
+                # before it in the sequence (the SP when there is none)
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[prev_step][-1]['calc_id']
+
             elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
                 # D3 property calculations need a wavefunction from SP or OPT
                 # (_find_dependency_in_sequence resolves to the real provider).
@@ -2310,6 +2442,13 @@ fi'''
                 if prev_step and prev_step in completed_by_type:
                     can_start = True
                     source_calc_id = completed_by_type[prev_step][-1]['calc_id']
+                    if base_type == "TRANSPORT":
+                        # after a TAU step: once its relaxation time is known
+                        gate, _ = tau_step.transport_gate(
+                            self, material_id, workflow_id or os.environ.get('MACE_WORKFLOW_ID'),
+                            planned_sequence, planned_type)
+                        if gate in ("wait", "held"):
+                            can_start = False
                     
             elif base_type == "OPT":
                 # OPT calculations need appropriate source geometry
@@ -2350,6 +2489,8 @@ fi'''
                     else:
                         calc_id = self.generate_property_calculation(source_calc_id, planned_type)
                 elif base_type == "OPT":
+                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                elif base_type in MODULE_STEP_TYPES:
                     calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
                 else:
                     calc_id = None
@@ -2450,7 +2591,7 @@ fi'''
                     # Check dependencies first
                     deps_met, blocking_calc = self._check_dependencies_met(
                         next_calc_type, material_id, planned_sequence, 
-                        completed_calcs, failed_generations
+                        completed_calcs, failed_generations, workflow_id
                     )
                     
                     if not deps_met:
@@ -2542,7 +2683,7 @@ fi'''
                     # Check dependencies first
                     deps_met, blocking_calc = self._check_dependencies_met(
                         next_calc_type, material_id, planned_sequence, 
-                        completed_calcs, failed_generations
+                        completed_calcs, failed_generations, workflow_id
                     )
                     
                     if not deps_met:
@@ -2698,7 +2839,8 @@ fi'''
                     if band_calc_id:
                         new_calc_ids.append(band_calc_id)
                 
-        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
+        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"] \
+                or base_type in MODULE_STEP_TYPES:
             # These calculations are often terminal, but sometimes workflow continues.
             # None of them changes the geometry, so a later OPT is built from
             # the highest completed OPT (or SP), never from the step itself.
@@ -2762,7 +2904,7 @@ fi'''
         if planned_sequence:
             try:
                 for pending_id in self._check_and_trigger_pending_calculations(
-                        material_id, planned_sequence, skip_geometry_steps=True):
+                        material_id, planned_sequence, skip_geometry_steps=True, workflow_id=workflow_id):
                     if pending_id not in new_calc_ids:
                         new_calc_ids.append(pending_id)
             except Exception as e:
@@ -3038,6 +3180,23 @@ fi'''
                     return planned_sequence[i]
             return None
             
+        elif base_type in MODULE_STEP_TYPES:
+            # ELASTIC, EOS, QHA, CPHF run at an equilibrium geometry with its
+            # method: the most recent OPT, as FREQ (the SP in a chain without one)
+            for want in ("OPT", "SP"):
+                for i in range(calc_index - 1, -1, -1):
+                    if self._parse_calc_type(planned_sequence[i])[0] == want:
+                        return planned_sequence[i]
+            return None
+
+        elif base_type == "TAU":
+            # the strained single points are made from the SP deck before it
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base == "SP":
+                    return planned_sequence[i]
+            return None
+
         elif base_type == "FREQ":
             # FREQ depends on the previous OPT (needs optimized geometry)
             # Look backwards for the most recent OPT
@@ -3145,7 +3304,8 @@ fi'''
     def _check_dependencies_met(self, calc_type: str, material_id: str, 
                                planned_sequence: List[str], 
                                completed_calcs: Set[str],
-                               failed_calcs: Set[str]) -> Tuple[bool, Optional[str]]:
+                               failed_calcs: Set[str],
+                               workflow_id: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Check if dependencies for a calculation are met based on the workflow sequence.
         
@@ -3161,6 +3321,16 @@ fi'''
         """
         # Find what this calculation depends on in the sequence
         dependency = self._find_dependency_in_sequence(calc_type, planned_sequence)
+
+        # A TRANSPORT after a TAU step also waits for its relaxation time
+        if self._parse_calc_type(calc_type)[0] == "TRANSPORT":
+            tau_type = tau_step.tau_before(planned_sequence, calc_type)
+            if tau_type:
+                gate, _ = tau_step.transport_gate(self, material_id,
+                                                  workflow_id or os.environ.get('MACE_WORKFLOW_ID'),
+                                                  planned_sequence, calc_type)
+                if gate in ("wait", "held"):
+                    return False, tau_type
         
         if not dependency:
             # No dependency - this is the first step
@@ -3353,7 +3523,11 @@ fi'''
                 return None
                 
             out_file = out_files[0]
-            d12_file = d12_files[0] if d12_files else None
+            # The parent's own deck, not the first OPT's copied beside it for
+            # an OPT3 (in directory order either came first): the new deck
+            # inherits the step before's settings, its k-point mesh too.
+            own_d12 = work_dir / source_input_file.name
+            d12_file = own_d12 if own_d12 in d12_files else (d12_files[0] if d12_files else None)
             
             # Use single file mode with automatic input responses
             args = [
@@ -3469,7 +3643,15 @@ fi'''
                                       or workflow_config.get('basis_modifications') or {})
                     if 'new_basis' in basis_settings:
                         temp_config['basis_set'] = basis_settings['new_basis']
-                        temp_config['basis_set_type'] = 'INTERNAL'
+                        # A step may switch between an internal set (BASISSET)
+                        # and an external library (explicit basis input) in
+                        # either direction, whatever its parent had.
+                        if str(basis_settings.get('basis_set_type') or 'INTERNAL').upper() == 'EXTERNAL':
+                            temp_config['basis_set_type'] = 'EXTERNAL'
+                            temp_config['basis_set_path'] = basis_settings['new_basis']
+                        else:
+                            temp_config['basis_set_type'] = 'INTERNAL'
+                        temp_config['use_original_external_basis'] = False
 
                     # Plan tolerances, in the form CRYSTALOptToD12 reads.
                     # (FREQ steps carry theirs inside frequency_settings.)
@@ -3478,6 +3660,20 @@ fi'''
                                       .get('custom_tolerances') or {})
                     if custom_tol:
                         temp_config['tolerance_modifications'] = {'custom_tolerances': custom_tol}
+                    # Plan SCF records (MAXCYCLE, FMIXING, mixing method,
+                    # LEVSHIFT, SMEAR, SPINLOCK, TOLDEE) and DFT grid over the
+                    # parent's; CRYSTALOptToD12 reads scf_modifications itself.
+                    scf_mods = workflow_config.get('scf_modifications')
+                    if isinstance(scf_mods, dict) and scf_mods:
+                        temp_config['scf_modifications'] = dict(scf_mods)
+                    new_grid = (workflow_config.get('grid_modifications') or {}).get('new_grid')
+                    if new_grid:
+                        temp_config['dft_grid'] = new_grid
+                    # The step's own k-point mesh over the parent's (SHRINK, or
+                    # "auto"); CRYSTALOptToD12 reads kpoint_modifications itself.
+                    k_mods = workflow_config.get('kpoint_modifications')
+                    if isinstance(k_mods, dict) and k_mods:
+                        temp_config['kpoint_modifications'] = dict(k_mods)
                     # The plan's method_modifications / optimization_settings
                     # override on top of the translated step settings, so a
                     # plan that changes the functional keeps its FREQ settings.
@@ -3490,6 +3686,8 @@ fi'''
                     # config, "Use these exact settings? y" keeps the parent's
                     # OPT type and the SP/FREQ step finds no deck.
                     temp_config = {"calculation_type": target_base_type}
+                if target_base_type in MODULE_STEP_TYPES:
+                    temp_config.update(self._module_step_config(workflow_id, target_calc_type, target_base_type))
                 # Write to temporary file in work directory
                 temp_config_file = work_dir / f"{target_calc_type}_temp_config.json"
                 with open(temp_config_file, 'w') as f:
@@ -4111,8 +4309,34 @@ fi'''
             settings['workflow_process_timestamp'] = datetime.now().isoformat()
             settings['workflow_steps_generated'] = len(new_calc_ids) if new_calc_ids else 0
             self.db.update_calculation_settings(calc['calc_id'], settings)
+
+        # A TAU group whose last strained run failed leaves no completion to
+        # progress from: its fit (and the TRANSPORT waiting for it) start here
+        new_steps += self._sweep_tau_groups(workflow_id)
                 
         return new_steps
+
+    def _sweep_tau_groups(self, only_workflow: Optional[str] = None) -> int:
+        """Fit every TAU group of this database that has finished without a
+        summary, and start the steps waiting for it; the number started."""
+        started = 0
+        for material_id, tau_type, wid in tau_step.pending_groups(self.db):
+            wid = wid or os.environ.get('MACE_WORKFLOW_ID')
+            if not wid or (only_workflow and wid != only_workflow):
+                continue
+            if self._held_by_control(wid, f"{tau_type} of {material_id}") or self._auto_progression_off(wid):
+                continue
+            sequence = self.get_workflow_sequence(wid)
+            if not sequence:
+                continue
+            try:
+                if tau_step.try_fit(self, material_id, wid, tau_type, sequence) is None:
+                    continue
+                started += len(self._check_and_trigger_pending_calculations(
+                    material_id, sequence, skip_geometry_steps=True, workflow_id=wid))
+            except Exception as e:
+                print(f"Warning: the {tau_type} group of {material_id} could not be fitted: {e}")
+        return started
 
 
 def main():

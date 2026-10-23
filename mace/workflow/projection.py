@@ -50,7 +50,9 @@ def _stand_in(deck: Path) -> Path:
     creator = DummyFileCreator()
     out = deck.with_suffix(".out")
     if deck.suffix.lower() == ".d12":
+        from mace.workflow.dummy_file_creator import append_stand_in_fermi
         creator.create_dummy_out(out, creator.extract_d12_settings(deck))
+        append_stand_in_fermi(out)            # E_F-relative ranges (TRANSPORT) are placed around it
         creator.create_dummy_f9(deck.with_suffix(".f9"))
     else:
         out.write_text(" PROPERTIES STAND-IN OUTPUT\n EEEEEEEEEE TERMINATION\n")
@@ -75,14 +77,23 @@ def project(folder: Path, workflow_id: str, material: Optional[str] = None) -> D
     keys = {t: f"{t}_{i + 1}" for i, t in enumerate(sequence)}
     from mace.database.materials import MaterialDatabase
     db = MaterialDatabase(str(db_path))
-    first = [r for r in db.get_calculations_by_status() if r.get("calc_type") == sequence[0]]
-    mats = sorted({r["material_id"] for r in first})
+    # the launch's rows not finished yet: the first steps, and the next step of a deck whose own output had
+    # finished already (its row is recorded completed and its next step was submitted at launch)
+    first = [r for r in db.get_calculations_by_status() if r.get("status") != "completed"]
+    # a material that starts at the first step shows the whole chain
+    starts = {r["material_id"] for r in first if r.get("calc_type") == sequence[0]}
+    mats = sorted({r["material_id"] for r in first}, key=lambda m: (m not in starts, m))
     if not mats:
-        raise ProjectionError(f"{workflow_id} has no {sequence[0]} step in its database")
+        raise ProjectionError(f"{workflow_id} has no submitted step in its database")
     mid = material if material is not None else mats[0]
     if mid not in mats:
-        raise ProjectionError(f"{mid} has no {sequence[0]} step (materials: {', '.join(mats)})")
+        raise ProjectionError(f"{mid} has no submitted step (materials: {', '.join(mats)})")
     os.environ["MACE_WORKFLOW_ID"] = workflow_id
+    # A stand-in output has no structure to run SeeK-path on (its atoms are the deck's unique ones), so a
+    # BAND step's SeeK-path k-path is projected as the static table path of the deck's space group; the
+    # real step computes it from the finished output.
+    os.environ.setdefault("MACE_STATIC_KPATH", "1")
+    os.environ.setdefault("MACE_STAND_IN_KPATH", "1")    # seekpath installed: still not run on the stand-in
     if Path(db_path).parent.name.startswith(".mace_context_"):
         os.environ["MACE_CONTEXT_DIR"] = str(Path(db_path).parent)
     from mace.workflow.engine import WorkflowEngine

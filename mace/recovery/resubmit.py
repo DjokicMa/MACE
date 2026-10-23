@@ -436,7 +436,10 @@ class Planner:
         with tempfile.TemporaryDirectory(prefix=".mace-recover-preview-", dir=self._preview_parent()) as sb:
             sb = Path(sb)
             originals = {}
-            for src in (deck, script, out):
+            # an EXTERNAL deck's fort.34 source beside it: a new deck takes it along
+            from mace.submission.external_geometry import fort34_sources
+            geometry = [g for g in fort34_sources(deck) if g.parent == deck.parent] if deck else []
+            for src in (deck, script, out, *geometry):
                 if src is not None and src.is_file():
                     dst = sb / src.name
                     shutil.copy2(src, dst)
@@ -482,6 +485,12 @@ class Planner:
                 if p.name in before and text_now == before[p.name]:
                     continue
                 origin = originals.get(p.name)
+                if origin is None and p.suffix == '.ext':
+                    src = next((g for g in geometry if g.is_file() and g.read_bytes() == text_now), None)
+                    changes.append({'path': str(real(p.name)), 'kind': 'new', 'from': str(src) if src else None,
+                                    'diff': f"(a copy of {src.name if src else 'the geometry'}: the new deck's "
+                                            "EXTERNAL geometry, staged as fort.34)\n"})
+                    continue
                 if origin is None:                     # a new file: diff it against its source
                     src = deck if p.suffix in ('.d12', '.d3') else script
                     kind = 'new'

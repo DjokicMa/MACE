@@ -23,6 +23,11 @@ Adapter chain (cached as one key, ``quota``, 10 min / 2 min):
 6. ``df -P -k`` / ``df -P -i`` on the paths: file-system wide, labeled
    "Filesystem (not your quota)", never leveled while a quota source answered.
 
+Whatever answers, rows are then labeled with ``research.annotate`` (``space``
+home, scratch or research, plus the folder), and the result lists every
+research space you can use (``research``: your groups' folders under the research root) with
+its Quota % and Files % where a row exists.
+
 When 1 or 2 answers, 3-5 are skipped (they report the same spaces). Levels:
 warning from ``[quota] warn_percent`` (80), critical from
 ``critical_percent`` (90), for space and for files. Byte units are base
@@ -39,6 +44,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from mace.cluster import config as config_mod
 from mace.cluster import query
+from mace.cluster import research as research_mod
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 DISCOVERY_TIMEOUT = 20.0
@@ -140,8 +146,16 @@ def quota_parser(text: str) -> List[Dict[str, Any]]:
     files quota limit grace (``-w`` keeps each on one line; ``*`` marks over
     quota)."""
     rows = []
-    for line in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    skip = False
+    for i, line in enumerate(lines):
+        if skip:
+            skip = False
+            continue
         f = line.split()
+        if len(f) == 1 and i + 1 < len(lines):         # a long file system name wraps the numbers to the next line
+            f = f + lines[i + 1].split()
+            skip = True
         if len(f) < 7 or f[0].lower() in ("filesystem", "disk"):
             continue
         fs = f[0]
@@ -468,8 +482,14 @@ def collect(rediscover: bool = False, served_root: Optional[str] = None, cfg=Non
             r["level"] = "info"
         else:
             r["level"] = levels(r, warn, crit)
+    try:
+        research_mod.annotate(rows, cfg, scratch=scratch_roots())
+        spaces = research_mod.spaces(rows, cfg)
+    except Exception as exc:                    # the extra labels never cost the quota rows
+        spaces = []
+        notes.append(f"Research spaces: {type(exc).__name__}: {exc}")
     return {"rows": rows, "sources": sources, "notes": notes, "warn_percent": warn,
-            "critical_percent": crit, "have_quota": have_quota, "paths": ps}
+            "critical_percent": crit, "have_quota": have_quota, "paths": ps, "research": spaces}
 
 
 def read(refresh: bool = False, tag: Optional[str] = None, rediscover: bool = False,

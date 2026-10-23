@@ -48,6 +48,22 @@ the conversion settings (mace convert writes the SOC deck; no ``soc_guess``,
 a CIF has no parent run). On any other step they are refused, with the
 reason. A step that cannot start from a SOC run (soc_plan_problems) is
 named in the check's ``warnings`` and by ``--write-plan``.
+
+A TRANSPORT step's relaxation time (BOLTZTRA's RELAXTIM) is its override
+``relaxation_time``: ``default`` (CRYSTAL's 10 fs), a number of fs, or
+``auto``: from deformation potentials, computed by a TAU step before it
+(mace/workflow/tau_step.py). ``auto`` puts a TAU step right before the
+TRANSPORT step when the sequence has none (the steps after it move up one
+key: ``TRANSPORT_5`` is then ``TRANSPORT_6``). A TAU step's overrides are its
+options: ``axes`` (auto | [x, y, z]), ``strains``, ``carrier`` (auto |
+electron | hole), ``m_star`` (auto | m_e), ``strict``, ``fallback_fs`` and
+``temperature``; its resources default to the SP's, with 1.5x its walltime.
+
+ELASTIC, EOS, QHA and CPHF steps (after an OPT or SP; nothing is built from
+them) are opt2d12's module decks at the geometry and method of the OPT before
+them (the SP's without one). Their override is ``elastic_settings``: the
+module block as ``mace opt2d12 --elastic-settings`` takes it (e.g.
+``{"mode": "ELAPIEZO", "numderiv": 5}``; none: CRYSTAL's defaults).
 """
 import copy
 import json
@@ -57,7 +73,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from mace.workflow.common.constants import CALC_TYPES, WORKFLOW_TEMPLATES
+from mace.workflow.common.constants import CALC_TYPES, MODULE_STEP_TYPES, WORKFLOW_TEMPLATES
+from mace.workflow.tau_step import OPTION_KEYS as TAU_OPTION_KEYS
+from mace.workflow.tau_step import TauOptionError, check_options, check_relaxation_time, insert_tau, tau_before
 
 SPEC_VERSION = 1
 D12_TYPES = ("OPT", "SP", "FREQ")
@@ -67,13 +85,31 @@ D3_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
 # spin-orbit coupling: the opt2d12 settings-file keys the engine passes on
 # (SP steps only; Crystal_d12/soc_ecp.py checks them)
 SOC_KEYS = ("soc", "soc_ecp", "soc_basis", "soc_guess", "smear", "soc_fmixing")
+# A later SCF step's other settings are the ones the planner's customization levels set (the plan keys
+# the engine passes to CRYSTALOptToD12): the functional (method_modifications), the basis set
+# (basis_modifications), SCF tolerances (tolerance_modifications), the rest of the SCF block
+# (scf_modifications: MAXCYCLE, FMIXING, mixing method, LEVSHIFT, SMEAR, SPINLOCK, SPIN), the DFT grid
+# (grid_modifications) and the k-point mesh (kpoint_modifications) on every SCF step, the optimization type
+# and OPTGEOM settings on an OPT step, the frequency settings on a FREQ step. A key left out keeps the
+# parent's value for each structure.
+SCF_STEP_KEYS = ("method_modifications", "basis_modifications", "tolerance_modifications",
+                 "scf_modifications", "grid_modifications", "kpoint_modifications")
 OVERRIDE_KEYS = {
-    "OPT": ("optimization_settings", "optimization_type", "method_modifications"),
-    "SP": ("method_modifications",) + SOC_KEYS,
-    "FREQ": ("frequency_settings", "method_modifications"),
+    "OPT": ("optimization_settings", "optimization_type") + SCF_STEP_KEYS,
+    "SP": SCF_STEP_KEYS + SOC_KEYS,
+    "FREQ": ("frequency_settings",) + SCF_STEP_KEYS,
     "d3": ("d3_config", "d3_settings"),
+    "TAU": TAU_OPTION_KEYS,
 }
+# opt2d12's modules (ELASTIC, EOS, QHA, CPHF): the module block's settings
+# (Crystal_d12/d12_calc_elastic.py); the method, basis set and SCF settings
+# are the parent's
+OVERRIDE_KEYS.update({t: ("elastic_settings",) for t in MODULE_STEP_TYPES})
+# TRANSPORT only: default | auto | fs (a TAU step's tau with auto)
+RELAXATION_KEY = "relaxation_time"
 METHOD_MODIFICATION_KEYS = ("new_functional", "use_dispersion")
+BASIS_MODIFICATION_KEYS = ("new_basis", "basis_set_type")
+TOLERANCE_KEYS = ("TOLINTEG", "TOLDEE")
 RESOURCE_KEYS = ("ntasks", "walltime", "memory", "memory_per_cpu", "account", "constraint",
                  "partition", "exclude")
 STEP_KEYS = ("settings_file", "overrides", "resources", "note")
@@ -193,6 +229,11 @@ def validate_spec(raw: Any, base_dir: Union[str, Path]) -> Dict[str, Any]:
         spec["template"] = None
     if kind == "cif" and sequence[0] not in ("OPT", "SP"):
         raise SpecError("a CIF start begins with OPT or SP (the CIFs are converted to that deck)")
+    steps_raw = raw.get("steps") or {}
+    if isinstance(steps_raw, dict):
+        sequence, steps_raw = _insert_tau_steps(sequence, steps_raw)
+        if spec.get("template") and sequence != list(WORKFLOW_TEMPLATES[spec["template"]]):
+            spec["template"] = None
     for i, t in enumerate(sequence[1:], 1):
         deps = CALC_TYPES.get(t.rstrip("0123456789"), {}).get("depends_on") or []
         if deps and not any((s.rstrip("0123456789") or s) in deps for s in sequence[:i]):
@@ -201,7 +242,6 @@ def validate_spec(raw: Any, base_dir: Union[str, Path]) -> Dict[str, Any]:
 
     # steps
     keys = [f"{t}_{i + 1}" for i, t in enumerate(sequence)]
-    steps_raw = raw.get("steps") or {}
     if not isinstance(steps_raw, dict):
         raise SpecError("steps must be an object keyed by step (OPT_1, SP_2, ...)")
     unknown = [k for k in steps_raw if k not in keys]
@@ -214,6 +254,7 @@ def validate_spec(raw: Any, base_dir: Union[str, Path]) -> Dict[str, Any]:
             continue
         steps[key] = _validate_step(key, sequence[i], i, entry, kind, base_dir)
     spec["steps"] = steps
+    _check_relaxation_times(sequence, steps)
     soc = two_component_orbitals_problem(spec)
     if soc:
         raise SpecError(soc)
@@ -311,6 +352,45 @@ def two_component_orbitals_problem(spec: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _insert_tau_steps(sequence: List[str], steps_raw: Dict[str, Any]) -> Tuple[List[str], Dict[str, Any]]:
+    """A TAU step before each TRANSPORT whose relaxation_time is auto and
+    that has none; the steps after it move up one key."""
+    seq = list(sequence)
+    steps = dict(steps_raw)
+    i = 0
+    while i < len(seq):
+        t = seq[i]
+        entry = steps.get(f"{t}_{i + 1}")
+        ov = entry.get("overrides") if isinstance(entry, dict) else None
+        auto = isinstance(ov, dict) and str(ov.get(RELAXATION_KEY, "")).strip().lower() == "auto"
+        if (t.rstrip("0123456789") or t) == "TRANSPORT" and auto and tau_before(seq, t) is None:
+            new = insert_tau(seq, i)
+            moved = {}
+            for k, v in steps.items():
+                m = re.match(r"^(.*)_(\d+)$", k)
+                if m and int(m.group(2)) > i and m.group(1) == seq[int(m.group(2)) - 1]:
+                    moved[f"{m.group(1)}_{int(m.group(2)) + 1}"] = v
+                else:
+                    moved[k] = v
+            seq, steps = new, moved
+            i += 1
+        i += 1
+    return seq, steps
+
+
+def _check_relaxation_times(sequence: List[str], steps: Dict[str, Dict[str, Any]]) -> None:
+    """auto needs a TAU step before the TRANSPORT (put there by _insert_tau_steps);
+    a fixed or default time beside one would leave its tau unused."""
+    for i, t in enumerate(sequence):
+        if (t.rstrip("0123456789") or t) != "TRANSPORT":
+            continue
+        rt = ((steps.get(f"{t}_{i + 1}") or {}).get("overrides") or {}).get(RELAXATION_KEY)
+        tau = tau_before(sequence, t)
+        if tau and rt not in (None, "auto"):
+            raise SpecError(f"steps.{t}_{i + 1}: relaxation_time {rt} with the {tau} step before it, whose tau "
+                            f"it would not use; use auto, or drop the {tau} step")
+
+
 def _walltime(v: Any, where: str) -> str:
     v = str(v).strip()
     if not WALLTIME_RE.match(v):
@@ -342,7 +422,7 @@ def _validate_step(key: str, calc_type: str, index: int, entry: Any, input_kind:
         if not isinstance(data, dict):
             raise SpecError(f"steps.{key}.settings_file must hold a JSON object")
         if first_cif and data.get("calculation_type") not in (None, calc_type):
-            raise SpecError(f"steps.{key}.settings_file is for a {data.get('calculation_type')} deck, "
+            raise SpecError(f"steps.{key}.settings_file is for {_a(data.get('calculation_type'))} deck, "
                             f"but this step is {calc_type}")
         if step_kind(calc_type) == "d3":
             # opt2d3's file names its run (the envelope, its configuration, or both): the
@@ -351,31 +431,57 @@ def _validate_step(key: str, calc_type: str, index: int, entry: Any, input_kind:
             conf = data.get("configuration") if isinstance(data.get("configuration"), dict) else {}
             for t in {data.get("calculation_type"), conf.get("calculation_type")} - {None}:
                 if t != base:
-                    raise SpecError(f"steps.{key}.settings_file is for a {t} step, but this step is {calc_type}")
+                    raise SpecError(f"steps.{key}.settings_file is for {_a(t)} step, but this step is {calc_type}")
+        _check_module_settings_file(key, calc_type, data)
         out["settings_file"] = str(sf)
     ov = entry.get("overrides")
     if ov:
         if not isinstance(ov, dict):
             raise SpecError(f"steps.{key}.overrides must be an object")
+        ov = copy.deepcopy(ov)
+        base = calc_type.rstrip("0123456789") or calc_type
+        if RELAXATION_KEY in ov:
+            if base != "TRANSPORT":
+                raise SpecError(f"steps.{key}.overrides.{RELAXATION_KEY}: a TRANSPORT step's setting")
+            try:
+                ov[RELAXATION_KEY] = check_relaxation_time(ov[RELAXATION_KEY], f"steps.{key}")
+            except TauOptionError as e:
+                raise SpecError(str(e))
+            if entry.get("settings_file") and ov[RELAXATION_KEY] != "auto":
+                raise SpecError(f"steps.{key}: with a settings file, its RELAXTIM is the relaxation time; "
+                                f"set relaxation_time there, or auto (a TAU step's tau over the file's settings)")
+        if base == "TAU":
+            try:
+                check_options(ov, f"steps.{key}.overrides")
+            except TauOptionError as e:
+                raise SpecError(str(e))
         _check_soc(f"steps.{key}.overrides", calc_type, ov, first_cif)
-        if not first_cif and entry.get("settings_file"):
+        _check_module_settings(f"steps.{key}.overrides", calc_type, ov)
+        rest = {k: v for k, v in ov.items() if k != RELAXATION_KEY}
+        if not first_cif and entry.get("settings_file") and rest:
             # the engine generates the step from its settings file alone
             # (--config-file); overrides beside it would be shown by the
             # check and never used
             raise SpecError(f"steps.{key}: with a settings file the engine reads only that file for "
-                            f"this step; put the overrides ({', '.join(sorted(ov))}) in the settings "
+                            f"this step; put the overrides ({', '.join(sorted(rest))}) in the settings "
                             f"file, or drop the settings file")
         if not first_cif:
-            allowed = OVERRIDE_KEYS.get(step_kind(calc_type), ())
+            allowed = OVERRIDE_KEYS.get(step_kind(calc_type), ()) + \
+                ((RELAXATION_KEY,) if base == "TRANSPORT" else ())
             bad = sorted(set(ov) - set(allowed))
             if bad:
-                raise SpecError(f"steps.{key}.overrides: {', '.join(bad)} are not read for a "
-                                f"{calc_type} step (it reads: {', '.join(allowed) or 'nothing'})")
+                raise SpecError(f"steps.{key}.overrides: {', '.join(bad)} are not read for "
+                                f"{_a(calc_type)} step (it reads: {', '.join(allowed) or 'nothing'})")
             mm = ov.get("method_modifications")
             if mm is not None:
                 if not isinstance(mm, dict) or set(mm) - set(METHOD_MODIFICATION_KEYS):
                     raise SpecError(f"steps.{key}.overrides.method_modifications: "
                                     f"{', '.join(METHOD_MODIFICATION_KEYS)} only")
+            _check_modifications(f"steps.{key}.overrides", ov)
+            if ov.get("soc") is True and "SPIN" in (ov.get("scf_modifications") or {}):
+                raise SpecError(f"steps.{key}.overrides.scf_modifications.SPIN: a two-component (SOC) step "
+                                f"treats spin itself (SPIN has no effect in a 2c run); set SPIN on the step "
+                                f"it starts from")
         out["overrides"] = copy.deepcopy(ov)
     res = entry.get("resources")
     if res:
@@ -409,6 +515,84 @@ def _validate_step(key: str, calc_type: str, index: int, entry: Any, input_kind:
     return out
 
 
+def _a(word) -> str:
+    """``word`` (a calculation type) with its article: an ELASTIC, an SP, a QHA
+    (d12_constants.a_calc)."""
+    return _d12_constants().a_calc(word)
+
+
+def _d12_constants():
+    """Crystal_d12/d12_constants.py, the deck writer's own tables and checks."""
+    d12 = Path(__file__).resolve().parents[2] / "Crystal_d12"
+    import sys
+    if str(d12) not in sys.path:
+        sys.path.insert(0, str(d12))
+    import d12_constants
+    return d12_constants
+
+
+def _check_modifications(where: str, ov: Dict[str, Any]) -> None:
+    """basis_modifications / tolerance_modifications / scf_modifications / grid_modifications of a step's
+    overrides, as the planner writes them: {"new_basis": <an internal basis set>} (or <a basis library> with
+    "basis_set_type": "EXTERNAL"),
+    {"custom_tolerances": {"TOLINTEG": "n n n n n", "TOLDEE": n}}, {"MAXCYCLE": n, "FMIXING": n, ...}
+    (d12_constants.check_scf_modifications) and {"new_grid": <grid>}."""
+    bm = ov.get("basis_modifications")
+    if bm is not None:
+        if not isinstance(bm, dict) or set(bm) - set(BASIS_MODIFICATION_KEYS) or not bm.get("new_basis") \
+                or bm.get("basis_set_type", "INTERNAL") not in ("INTERNAL", "EXTERNAL"):
+            raise SpecError(f"{where}.basis_modifications: {{\"new_basis\": <an internal basis set>}}, or "
+                            f"{{\"new_basis\": <a basis library>, \"basis_set_type\": \"EXTERNAL\"}}")
+        if bm.get("basis_set_type") == "EXTERNAL":
+            # MACE's bundled library (full.basis.triplezeta, ...) or a directory of per-element files: the
+            # deck gets explicit basis input whatever its parent had (opt2d12's basis_set_path)
+            _d12_constants()
+            import basis_library
+            if not basis_library.path_exists(str(bm["new_basis"])):
+                raise SpecError(f"{where}.basis_modifications.new_basis: {bm['new_basis']!r} is not a basis library "
+                                f"(MACE's bundled {', '.join(sorted(basis_library.FAMILY_LABELS))}, or a "
+                                f"directory of per-element basis files)")
+            return _check_rest(where, ov)
+        try:
+            known = list(_d12_constants().INTERNAL_BASIS_SETS)
+        except ImportError:                                                   # pragma: no cover
+            known = None
+        if known is not None and bm["new_basis"] not in known:
+            raise SpecError(f"{where}.basis_modifications.new_basis: {bm['new_basis']!r} is not an internal "
+                            f"basis set (those are {', '.join(known)})")
+    _check_rest(where, ov)
+
+
+def _check_rest(where: str, ov: Dict[str, Any]) -> None:
+    """The scf_modifications / grid_modifications / kpoint_modifications / tolerance_modifications of a
+    step's overrides; kpoint_modifications is {"new_k_points": "IS ISP" | "IS1 IS2 IS3" | "auto"}
+    (d12_constants.check_kpoint_modifications)."""
+    if ov.get("scf_modifications") is not None:
+        try:
+            ov["scf_modifications"] = _d12_constants().check_scf_modifications(ov["scf_modifications"])
+        except ValueError as e:
+            raise SpecError(f"{where}.{e}")
+    gm = ov.get("grid_modifications")
+    if gm is not None:
+        grids = _d12_constants().DFT_GRID_NAMES
+        if not isinstance(gm, dict) or set(gm) != {"new_grid"} or gm["new_grid"] not in grids:
+            raise SpecError(f"{where}.grid_modifications: {{\"new_grid\": <{' | '.join(grids)}>}} only")
+    if ov.get("kpoint_modifications") is not None:
+        try:
+            ov["kpoint_modifications"] = _d12_constants().check_kpoint_modifications(ov["kpoint_modifications"])
+        except ValueError as e:
+            raise SpecError(f"{where}.{e}")
+    tm = ov.get("tolerance_modifications")
+    if tm is not None:
+        ct = tm.get("custom_tolerances") if isinstance(tm, dict) else None
+        if not isinstance(ct, dict) or not ct or set(tm) != {"custom_tolerances"} or set(ct) - set(TOLERANCE_KEYS):
+            raise SpecError(f"{where}.tolerance_modifications: {{\"custom_tolerances\": {{TOLINTEG, TOLDEE}}}} only")
+        if "TOLINTEG" in ct and not re.fullmatch(r"(\d+\s+){4}\d+", str(ct["TOLINTEG"]).strip()):
+            raise SpecError(f"{where}.tolerance_modifications: TOLINTEG is five whole numbers (e.g. \"7 7 7 7 14\")")
+        if "TOLDEE" in ct and (not isinstance(ct["TOLDEE"], int) or isinstance(ct["TOLDEE"], bool)):
+            raise SpecError(f"{where}.tolerance_modifications: TOLDEE is a whole number")
+
+
 def _soc_ecp():
     """Crystal_d12/soc_ecp.py, the deck writer's own SOC checks."""
     import sys
@@ -430,6 +614,12 @@ def soc_refusal(calc_type: str) -> Optional[str]:
         return E.unsupported_message("OPTGEOM")
     if base == "FREQ":
         return E.unsupported_message("FREQCALC")
+    if base in MODULE_STEP_TYPES:
+        el = _elastic()
+        try:
+            el.validate(el.normalize({}, base), "CRYSTAL", two_component=True)
+        except el.ElasticSettingsError as e:
+            return str(e)
     return ("A properties step has no SOC setting: it reads the wavefunction of the run it is "
             "built from, so it is a two-component run when that run is a SOC single point "
             "(CRYSTAL23 manual sec. 6.4, p. 183)")
@@ -466,6 +656,67 @@ def _check_soc(where: str, calc_type: str, ov: Dict[str, Any], first_cif: bool) 
         raise SpecError(f"{where}.soc_guess: {E.NO_PARENT_FOR_GUESS}")
 
 
+def _elastic():
+    """Crystal_d12/d12_calc_elastic.py, the module decks' own checks."""
+    import sys
+    d = str(Path(__file__).resolve().parents[2] / "Crystal_d12")
+    if d not in sys.path:
+        sys.path.insert(0, d)
+    import d12_calc_elastic
+    return d12_calc_elastic
+
+
+def module_settings_problem(calc_type: str, settings: Any) -> Optional[str]:
+    """Why ``settings`` cannot be an ELASTIC/EOS/QHA/CPHF step's module block
+    (as mace opt2d12 --elastic-settings reads it), or None. The checks that
+    need the structure (its dimensionality, functional, a two-component
+    parent) are the deck writer's, when the step is generated."""
+    base = calc_type.rstrip("0123456789") or calc_type
+    if not isinstance(settings, dict):
+        return "elastic_settings is an object of the module's sub-keywords (mace opt2d12 --help)"
+    E = _elastic()
+    try:
+        s = E.normalize(settings, base)
+        mode = str(settings.get("mode") or s["mode"]).upper()
+        if base in E.OWN_TYPES and mode != base:
+            return f"{_a(mode)} block is not {_a(base)} step's"
+        if base == "ELASTIC" and s["mode"] in E.OWN_TYPES:
+            return f"{_a(s['mode'])} block is {_a(s['mode'])} step's, not an ELASTIC step's"
+        if s["mode"] not in E.MODES:
+            return f"unknown module {s['mode']}: one of {', '.join(E.ELASTIC_MODES)}"
+        E.block_lines(s)
+    except (E.ElasticSettingsError, TypeError, ValueError) as e:
+        return str(e)
+    return None
+
+
+def _check_module_settings(where: str, calc_type: str, ov: Dict[str, Any]) -> None:
+    """An ELASTIC/EOS/QHA/CPHF step's elastic_settings; refused on any other step."""
+    if "elastic_settings" not in ov:
+        return
+    base = calc_type.rstrip("0123456789") or calc_type
+    if base not in MODULE_STEP_TYPES:
+        return                       # the OVERRIDE_KEYS check names the steps that read it
+    why = module_settings_problem(calc_type, ov["elastic_settings"])
+    if why:
+        raise SpecError(f"{where}.elastic_settings: {why}")
+
+
+def _check_module_settings_file(key: str, calc_type: str, data: Dict[str, Any]) -> None:
+    """An ELASTIC/EOS/QHA/CPHF step's settings file: an opt2d12 config of this
+    type, its "elastic_settings" checked as the overrides' are."""
+    base = calc_type.rstrip("0123456789") or calc_type
+    if base not in MODULE_STEP_TYPES:
+        return
+    t = data.get("calculation_type")
+    if t not in (None, base):
+        raise SpecError(f"steps.{key}.settings_file is for {_a(t)} deck, but this step is {calc_type}")
+    if "elastic_settings" in data:
+        why = module_settings_problem(calc_type, data["elastic_settings"])
+        if why:
+            raise SpecError(f"steps.{key}.settings_file elastic_settings: {why}")
+
+
 def soc_warnings(spec: Dict[str, Any]) -> Dict[str, List[str]]:
     """{step key: warnings}: the planner's own check (soc_plan_problems) of
     the steps that cannot start from a SOC single point of this spec."""
@@ -490,6 +741,134 @@ def soc_warnings(spec: Dict[str, Any]) -> Dict[str, List[str]]:
         for i, t in enumerate(seq):
             if t == step:
                 out[f"{t}_{i + 1}"].append(w)
+    return out
+
+
+def scf_warnings(spec: Dict[str, Any]) -> Dict[str, List[str]]:
+    """{step key: warnings}: an SCF MAXCYCLE set below the floor a FREQ (or ELASTIC/EOS/QHA/CPHF) deck
+    otherwise gets (d12_constants.tight_scf_maxcycle); the value set is written as given."""
+    C = _d12_constants()
+    out: Dict[str, List[str]] = {}
+    for i, t in enumerate(spec["sequence"]):
+        key = f"{t}_{i + 1}"
+        mods = ((spec["steps"].get(key) or {}).get("overrides") or {}).get("scf_modifications") or {}
+        n = mods.get("MAXCYCLE") if isinstance(mods, dict) else None
+        base = t.rstrip("0123456789") or t
+        if isinstance(n, int) and base in C.TIGHT_SCF_CALC_TYPES and n < C.TIGHT_SCF_MIN_MAXCYCLE:
+            out.setdefault(key, []).append(
+                f"{key}: SCF MAXCYCLE {n} is below the {C.TIGHT_SCF_MIN_MAXCYCLE} {_a(base)} deck otherwise gets "
+                f"(its tighter TOLDEE may need more cycles); it is written as set")
+    return out
+
+
+def _deck_is_spin_polarized(text: str) -> bool:
+    return any(line.strip().upper() in ("SPIN", "UHF") for line in text.splitlines()[1:])
+
+
+def step_spin_states(spec: Dict[str, Any]) -> List[Optional[bool]]:
+    """Whether each step of a validated spec runs spin-polarized (True), closed shell (False), or None
+    when the spec does not say (a d12 start whose decks differ, a step whose settings file cannot be read).
+    The first step of a CIF start is its conversion settings (MACE's default: spin-polarized), of a d12
+    start its decks; a later SCF step is its own scf_modifications SPIN or settings file, else its
+    parent's; any other step is its parent's."""
+    from mace.workflow.status import parent_index
+    seq = spec["sequence"]
+    states: List[Optional[bool]] = []
+    for i, t in enumerate(seq):
+        key = f"{t}_{i + 1}"
+        entry = spec["steps"].get(key) or {}
+        ov = entry.get("overrides") or {}
+        data: Any = {}
+        if entry.get("settings_file"):
+            try:
+                data = json.loads(Path(entry["settings_file"]).read_text())
+            except (OSError, ValueError):
+                data = None
+        if i == 0:
+            if spec["inputs"]["type"] == "d12":
+                found = set()
+                for f in spec["inputs"]["files"]:
+                    try:
+                        found.add(_deck_is_spin_polarized(Path(f).read_text(errors="replace")))
+                    except OSError:
+                        found.add(None)
+                states.append(found.pop() if len(found) == 1 else None)
+                continue
+            cfg = {**(data or {}), **ov} if data is not None else None
+            if cfg is None:
+                states.append(None)
+            else:
+                spin = cfg.get("is_spin_polarized", cfg.get("spin_polarized", True))
+                states.append(bool(spin) or str(cfg.get("hf_method") or "").upper() == "UHF")
+            continue
+        j = parent_index(list(seq), i)
+        inherited = states[j] if j is not None else None
+        mods = ov.get("scf_modifications") if isinstance(ov.get("scf_modifications"), dict) else {}
+        scf = step_kind(t) in ("OPT", "SP", "FREQ")
+        if scf and "SPIN" in mods:
+            states.append(bool(mods["SPIN"]))
+        elif scf and data is None:
+            states.append(None)
+        elif scf and isinstance(data, dict) and isinstance(
+                (data.get("scf_modifications") or {}).get("SPIN"), bool):
+            states.append(data["scf_modifications"]["SPIN"])
+        elif scf and isinstance(data, dict) and "spin_polarized" in data:
+            states.append(bool(data["spin_polarized"]))
+        else:
+            states.append(inherited)
+    return states
+
+
+def spin_warnings(spec: Dict[str, Any]) -> Dict[str, List[str]]:
+    """{step key: notes}: a step that turns spin polarization on or off (scf_modifications SPIN) starts
+    from a fresh SCF guess, not its parent's wavefunction: CRYSTAL's restart reader stops on a density
+    matrix of the other spin treatment (d12_constants.SPIN_CHANGE_GUESS). A SOC step restarting with
+    GUESSPNOSO from a parent that runs closed shell is refused (manual p. 173: an unrestricted parent)."""
+    from mace.workflow.status import parent_index
+    seq = spec["sequence"]
+    states = step_spin_states(spec)
+    out: Dict[str, List[str]] = {}
+    for i, t in enumerate(seq):
+        key = f"{t}_{i + 1}"
+        j = parent_index(list(seq), i)
+        if j is None:
+            continue
+        pkey = f"{seq[j]}_{j + 1}"
+        ov = (spec["steps"].get(key) or {}).get("overrides") or {}
+        mods = ov.get("scf_modifications") if isinstance(ov.get("scf_modifications"), dict) else {}
+        if ov.get("soc") is True and str(ov.get("soc_guess") or "").lower() == "guesspnoso" \
+                and states[j] is False:
+            raise SpecError(f"steps.{key}.overrides.soc_guess: GUESSPNOSO starts from an unrestricted "
+                            f"one-component run (manual p. 173), and {pkey} runs closed shell; make {pkey} "
+                            f"spin-polarized (scf_modifications \"SPIN\": true) or drop soc_guess")
+        # SPINLOCK is written only in a spin-polarized deck (CRYSTAL stops on one in a closed-shell
+        # run); opt2d12 refuses the deck, so refuse the plan before any job runs.
+        if mods.get("SPINLOCK") and states[i] is False:
+            raise SpecError(f"steps.{key}.overrides.scf_modifications.SPINLOCK: a SPINLOCK needs a "
+                            f"spin-polarized deck, and {key} runs closed shell like {pkey}; add "
+                            f"\"SPIN\": true to its scf_modifications or drop SPINLOCK")
+        if "SPIN" not in mods:
+            continue
+        spin = "spin-polarized (SPIN)" if mods["SPIN"] else "closed shell (no SPIN)"
+        if states[j] is None:
+            out.setdefault(key, []).append(
+                f"{key}: {spin}; a structure whose {pkey} ran "
+                f"{'closed shell' if mods['SPIN'] else 'spin-polarized'} starts this step from a fresh SCF "
+                f"guess, not {pkey}'s wavefunction (CRYSTAL cannot restart across a spin change)")
+        elif states[j] != mods["SPIN"]:
+            out.setdefault(key, []).append(
+                f"{key}: {spin} after the {'closed-shell' if mods['SPIN'] else 'spin-polarized'} {pkey}: it "
+                f"starts from a fresh SCF guess, not {pkey}'s wavefunction (CRYSTAL cannot restart across a "
+                f"spin change)")
+    return out
+
+
+def step_warnings(spec: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Every step's warnings: SOC (soc_warnings), SCF (scf_warnings) and spin changes (spin_warnings)."""
+    out = soc_warnings(spec)
+    for extra in (scf_warnings(spec), spin_warnings(spec)):
+        for key, msgs in extra.items():
+            out.setdefault(key, []).extend(msgs)
     return out
 
 
@@ -559,15 +938,34 @@ def apply_spec(plan: Dict[str, Any], spec: Dict[str, Any], work_dir: Optional[Un
                 cfg["expert_config_file"] = str(target)
             o["settings"] = "spec settings_file"
         if entry.get("overrides"):
+            ov = entry["overrides"]
             if i == 0 and cif:
-                _merge(plan["cif_conversion_config"], entry["overrides"])
+                _merge(plan["cif_conversion_config"], ov)
+            elif (t.rstrip("0123456789") or t) == "TAU":
+                cfg["tau"] = check_options({**(cfg.get("tau") or {}), **ov})
             else:
-                _merge(cfg, entry["overrides"])
+                _merge(cfg, ov)
+                rt = ov.get(RELAXATION_KEY)
+                if isinstance(rt, (int, float)) and isinstance(cfg.get("d3_config"), dict):
+                    cfg["d3_config"]["relaxation_time"] = rt
             o["settings"] = "spec overrides" if "settings" not in o else "spec settings_file + overrides"
         if entry.get("resources"):
             _set_resources(cfg, entry["resources"])
             for k in entry["resources"]:
                 o[k] = "spec"
+        elif (t.rstrip("0123456789") or t) == "TAU":
+            # the strained single points run as the SP they strain does: its resources set
+            # here, with 1.5x its walltime
+            sp = next((j for j in range(i - 1, -1, -1) if (seq[j].rstrip("0123456789") or seq[j]) == "SP"), None)
+            sp_res = dict((spec["steps"].get(f"{seq[sp]}_{sp + 1}") or {}).get("resources") or {}) \
+                if sp is not None else {}
+            if sp_res:
+                from mace.workflow.tau_step import scale_walltime
+                if sp_res.get("walltime"):
+                    sp_res["walltime"] = scale_walltime(sp_res["walltime"])
+                _set_resources(cfg, sp_res)
+                for k in sp_res:
+                    o[k] = f"spec ({seq[sp]}_{sp + 1}" + (", 1.5x)" if k == "walltime" else ")")
         origins[key] = o
     return origins
 
@@ -620,7 +1018,7 @@ def resolve_defaults(spec: Dict[str, Any], work_dir: Union[str, Path] = ".") -> 
         _apply_walltime(plan["step_configurations"], spec["execution"]["walltime"])
     spec_origins = apply_spec(plan, spec)
     cif = spec["inputs"]["type"] == "cif"
-    warnings = soc_warnings(spec)
+    warnings = step_warnings(spec)
     out: Dict[str, Any] = {}
     for i, t in enumerate(spec["sequence"]):
         key = f"{t}_{i + 1}"
@@ -637,7 +1035,7 @@ def resolve_defaults(spec: Dict[str, Any], work_dir: Union[str, Path] = ".") -> 
         origins = {}
         for k, v in res.items():
             if k in so:
-                origins[k] = "spec"
+                origins[k] = so[k] if str(so[k]).startswith("spec (") else "spec"
             elif k == "walltime" and spec["execution"]["walltime"]:
                 origins[k] = "spec (execution.walltime)"
             else:
@@ -648,6 +1046,8 @@ def resolve_defaults(spec: Dict[str, Any], work_dir: Union[str, Path] = ".") -> 
             settings_origin = "builtin (cif2d12 defaults)" if cif else "deck"
         elif step_kind(t) == "d3":
             settings_origin = "builtin (opt2d3 defaults)"
+        elif step_kind(t) == "TAU":
+            settings_origin = "builtin (TAU defaults)"
         else:
             settings_origin = "parent"
         settings = copy.deepcopy(plan["cif_conversion_config"]) if (i == 0 and cif) else \
@@ -669,7 +1069,7 @@ def build_plan(spec: Dict[str, Any], work_dir: Union[str, Path], db_path: str = 
     meta = {"label": spec.get("label"), "spec_version": spec["version"],
             "template": spec.get("template"), "source": spec.get("_source")}
 
-    for msgs in soc_warnings(spec).values():
+    for msgs in step_warnings(spec).values():
         for m in msgs:
             print(f"Warning: {m}")
 

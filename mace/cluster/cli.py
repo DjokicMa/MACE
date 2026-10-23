@@ -175,16 +175,22 @@ def reservations_text(v) -> str:
 def quota_text(v) -> str:
     from mace.cluster.quotas import human_bytes
     rows = []
+    kinds = {"home": "Home", "scratch": "Scratch", "research": "Research"}
     for r in v["rows"]:
         lvl = {"warning": "WARNING", "critical": "CRITICAL", "info": "(not your quota)"}.get(r.get("level"), "")
-        rows.append([r["label"], f"{human_bytes(r.get('space_used_b'))} / {human_bytes(r.get('space_limit_b'))}",
+        rows.append([r["label"], kinds.get(r.get("space") or "", ""), r.get("path") or "",
+                     f"{human_bytes(r.get('space_used_b'))} / {human_bytes(r.get('space_limit_b'))}",
                      R.pct(r.get("space_pct")),
                      f"{R.num(r.get('files_used'))} / {R.num(r.get('files_limit'))}", R.pct(r.get("files_pct")),
                      r["source"], lvl])
-    out = [R.table(["Space", "Used / limit", "Space %", "Files used / limit", "Files %", "Source", "Level"], rows,
-                   right=(2, 4))] if rows else []
+    out = [R.table(["Space", "Type", "Folder", "Used / limit", "Quota %", "Files used / limit", "Files %",
+                    "Source", "Level"], rows, right=(4, 6))] if rows else []
     out.append(f"Levels: warning from {v['warn_percent']} %, critical from {v['critical_percent']} % "
                f"([quota] in site.toml).")
+    quiet = [s for s in (v.get("research") or []) if not s.get("has_quota")]
+    if quiet:
+        out.append("Research spaces you can use, with no quota row from the site tool: "
+                   + ", ".join(s["path"] for s in quiet))
     out += v.get("warnings") or []
     return "\n".join(out + _meta_lines(v))          # _meta_lines prints the notes
 
@@ -223,7 +229,7 @@ def _level_lines(pr) -> list:
     out = []
     mode = pr.get("mode")
     for lv in pr["levels"]:
-        if lv["depth"] > 0 and lv["status"] == "done" and mode not in ("scf", "freq"):
+        if lv["depth"] > 0 and lv["status"] == "done" and mode not in ("scf", "cphf", "freq"):
             continue
         pad = "  " * (lv["depth"] + 1)
         out.append(pad + lv["text"])

@@ -12,6 +12,8 @@
   says which works, read-only (-NoNet: no ssh logins or DNS lookups); -FixConfig prints a suggested
   ~/.ssh/config block (never written). The same checks and words as mace gui connect --check.
   -UpdateRemote release|preview|latest runs mace update on the cluster first (as --update-remote).
+  -Browser app (the default) opens MACE GUI in its own window of Brave, Chrome, Chromium, Edge or
+  Vivaldi (no tabs or address bar); -Browser tab, or no such browser, opens a browser tab.
 
   Downloaded scripts are blocked by Windows: run Unblock-File .\mace-gui-connect.ps1 once, then
   powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway <user>@<gateway> -Node <node> -Dir <folder>
@@ -34,6 +36,7 @@ param(
   [string[]]$SshOption = @(),
   [string[]]$Root = @(),
   [switch]$NoOpen,
+  [ValidateSet("", "app", "tab")][string]$Browser = "",
   [switch]$DryRun,
   [switch]$Manual,
   [switch]$Check,
@@ -71,6 +74,56 @@ function Win-Quote([string]$s) {
   return '"' + ($s -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
 }
 
+# ssh.exe, even when PATH lost it (a PowerShell or VS Code terminal started with a broken PATH):
+# PATH first, then Windows' own OpenSSH, Win32-OpenSSH, Git for Windows (usr\bin) and VS Code's
+# remote.SSH.path. The folder found goes to the front of this session's PATH, so ssh-keygen,
+# ssh-add and ssh's own helpers run too. Same places as mace gui connect (sshfind.py).
+$script:SshFound = @{}
+function Find-Native([string]$name) {
+  if ($script:SshFound.ContainsKey($name)) { return $script:SshFound[$name] }
+  $hit = $null
+  $leaf = if ($env:OS -eq "Windows_NT") { "$name.exe" } else { $name }      # pwsh on Linux or macOS: no .exe
+  $c = Get-Command $leaf -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($c) { $hit = @{ Path = "" + $c.Source; OnPath = $true; Source = "PATH" } }
+  elseif ($env:OS -eq "Windows_NT") {
+    $root = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
+    $cand = @()
+    if ($env:APPDATA) {
+      foreach ($app in @("Code", "Code - Insiders", "VSCodium")) {
+        $sf = Join-Path $env:APPDATA "$app\User\settings.json"
+        if (Test-Path -LiteralPath $sf -PathType Leaf) {
+          $m = [regex]::Match((Get-Content -LiteralPath $sf -Raw -ErrorAction SilentlyContinue), '"remote\.SSH\.path"\s*:\s*"((?:[^"\\]|\\.)*)"')
+          if ($m.Success) { $v = $m.Groups[1].Value -replace '\\\\', '\'; if ($name -eq "ssh") { $cand += ,@("VS Code setting", $v) } else { $cand += ,@("VS Code setting", (Join-Path (Split-Path $v) "$name.exe")) } }
+        }
+      }
+    }
+    $cand += ,@("Windows OpenSSH", "$root\System32\OpenSSH\$name.exe")
+    $cand += ,@("Windows OpenSSH", "$root\Sysnative\OpenSSH\$name.exe")
+    $cand += ,@("Win32-OpenSSH", "$env:ProgramFiles\OpenSSH\$name.exe")
+    $cand += ,@("Git for Windows", "$env:ProgramFiles\Git\usr\bin\$name.exe")
+    if (${env:ProgramFiles(x86)}) { $cand += ,@("Git for Windows", "${env:ProgramFiles(x86)}\Git\usr\bin\$name.exe") }
+    if ($env:LOCALAPPDATA) { $cand += ,@("Git for Windows", "$env:LOCALAPPDATA\Programs\Git\usr\bin\$name.exe") }
+    foreach ($k in $cand) {
+      if ($k[1] -and (Test-Path -LiteralPath $k[1] -PathType Leaf)) { $hit = @{ Path = $k[1]; OnPath = $false; Source = $k[0] }; break }
+    }
+    if ($hit) { $env:Path = (Split-Path $hit.Path) + ";" + $env:Path }
+  }
+  $script:SshFound[$name] = $hit
+  return $hit
+}
+function Native-Path([string]$exe) {
+  if (@("ssh", "ssh-keygen", "ssh-add") -notcontains $exe) { return $exe }
+  $f = Find-Native $exe
+  if ($f) { return $f.Path }
+  if ($env:OS -eq "Windows_NT") { return "$exe.exe" }
+  return $exe
+}
+function Ssh-Install-Help {
+  $w = ($env:OS -eq "Windows_NT")
+  if (-not $w) { return "Install the OpenSSH client (the openssh-client or openssh package)." }
+  return "No ssh.exe on PATH, in System32\OpenSSH, Program Files\OpenSSH, Git for Windows (usr\bin) or VS Code's remote.SSH.path. Windows 10 and 11 include the OpenSSH client as an optional feature: in an administrator PowerShell run  Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0  (or Settings > Apps > Optional features > Add a feature > OpenSSH Client), then open a new PowerShell and run  ssh -V. Git for Windows (git-scm.com) also brings an ssh."
+}
+
 # Every native program (ssh -V, ssh -G) runs through Invoke-Native, never as
 # "& ssh ... 2>&1" or "2>$null": in Windows PowerShell 5.1 a redirected stderr
 # line of a native command becomes an ErrorRecord (NativeCommandError), and
@@ -80,7 +133,7 @@ function Win-Quote([string]$s) {
 # Process with both streams read here keeps PowerShell's streams out of it.
 function Invoke-Native([string]$exe, [string[]]$argList) {
   $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = $exe
+  $psi.FileName = (Native-Path $exe)
   $psi.Arguments = (@($argList | ForEach-Object { Win-Quote $_ }) -join " ")
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
@@ -115,8 +168,16 @@ function Unquote-Basic([string]$s) {
     })
 }
 
+# connect.toml where mace gui connect keeps it (config_path in connect.py):
+# %APPDATA% on Windows, else $XDG_CONFIG_HOME or ~/.config (pwsh on Linux/macOS)
+function Connect-Toml {
+  if ($env:OS -eq "Windows_NT" -and $env:APPDATA) { return (Join-Path $env:APPDATA "mace\connect.toml") }
+  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME ".config" }
+  return (Join-Path (Join-Path $base "mace") "connect.toml")
+}
+
 function Read-Profile([string]$want) {
-  $conf = Join-Path $env:APPDATA "mace\connect.toml"
+  $conf = Connect-Toml
   $p = @{}
   if (-not (Test-Path $conf)) { return $p }
   $lines = Get-Content -LiteralPath $conf -Encoding UTF8     # mace gui connect writes UTF-8 (5.1 reads ANSI otherwise)
@@ -175,9 +236,27 @@ $MaceV = Pick $Mace "mace" $D_MACE
 $SetupV = Pick $Setup "setup" $D_SETUP
 $CondaV = Pick $Conda "conda" $D_CONDA
 $LocalPortV = [int](Pick $(if ($LocalPort -gt 0) { $LocalPort } else { $null }) "local_port" $D_LOCAL_PORT)
+# powershell -File hands a list parameter over as ONE string: -SshOption "-o","A=B" arrives as "-o,A=B". An option
+# letter followed by a comma ("-o,") never occurs in a real option, so such a string is split back into its words
+# (a comma inside a value, as in HostKeyAlgorithms=a,b, is kept). From a session, & .\mace-gui-connect.ps1 -SshOption
+# "-o","A=B" needs no splitting.
+function Split-OptionWords([string[]]$words) {
+  $out = @()
+  foreach ($w in $words) {
+    if ($w -match '^-[A-Za-z],') {
+      foreach ($part in ($w -split ',(?=-[A-Za-z],)')) {
+        $out += @($part.Substring(0, 2), $part.Substring(3))
+      }
+    } else { $out += $w }
+  }
+  return $out
+}
+$SshOption = @(Split-OptionWords $SshOption)
 $SshOptions = @(if ($SshOption.Count) { $SshOption } elseif ($P.ContainsKey("ssh_options")) { $P["ssh_options"] } else { $D_SSH_OPTIONS })
 $Roots = @(if ($Root.Count) { $Root } elseif ($P.ContainsKey("roots")) { $P["roots"] } else { $D_ROOTS })
 $OpenV = if ($NoOpen) { $false } elseif ($P.ContainsKey("open")) { $P["open"] } else { $D_OPEN }
+# app (its own window) unless -Browser tab, or a $env:BROWSER of yours without -Browser (appwindow.py)
+$BrowserMode = if ($Browser) { $Browser } elseif ($env:BROWSER) { "tab" } else { "app" }
 # A path under THIS computer's home folder is a ~ that a shell expanded here
 # (-Mace ~/mace/mace_cli from bash or pwsh on Linux/macOS arrives as
 # /home/you/mace/mace_cli, which the node lacks when its home is elsewhere):
@@ -220,7 +299,7 @@ function Test-EmailLike([string]$gw) {
   if ($gw -notmatch '@([^@]+)$') { return $false }
   $h = $Matches[1].ToLower()
   if ($h -notmatch '^[a-z0-9-]+\.[a-z]{2,}$') { return $false }
-  $cfg = Join-Path $env:USERPROFILE ".ssh\config"
+  $cfg = Join-Path $HOME ".ssh\config"
   if (Test-Path -LiteralPath $cfg) {
     foreach ($l in Get-Content -LiteralPath $cfg) {
       if ($l -match '^\s*Host(?:\s+|\s*=\s*)(.+)$') {
@@ -235,7 +314,7 @@ function Test-EmailLike([string]$gw) {
   return $true
 }
 if ($GatewayV -and -not ($Check -or $FixConfig) -and (Test-EmailLike $GatewayV)) {
-  $conf = Join-Path $env:APPDATA "mace\connect.toml"
+  $conf = Connect-Toml
   $pn = if ($ProfileName) { "$ProfileName " } else { "" }
   Write-Warning "The gateway $GatewayV looks like an email address. It should be user@login-host (your cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting anyway; to fix the profile in $conf, run: mace gui connect $($pn)--gateway <user@login-host> --save (or pass -Gateway to this script)."
 }
@@ -251,6 +330,16 @@ function HomePath([string]$s) {
   if ($s -eq "~") { return '"$HOME"' }
   if ($s.StartsWith("~/")) { return '"$HOME"/' + (ShQuote $s.Substring(2)) }
   return ShQuote $s
+}
+# A key path as one argument of a fix line's shell (shell_path in connect_check.py): PowerShell's
+# single quotes on Windows, POSIX sh's elsewhere; a leading ~/ stays outside the quotes.
+function Key-Arg([string]$p) {
+  $head = ""; $rest = $p
+  if ($p.StartsWith("~/") -or $p.StartsWith("~\")) { $head = $p.Substring(0, 2); $rest = $p.Substring(2) }
+  $plain = if ($OnWindows) { $rest.Replace("\", "/") } else { $rest }
+  if ($rest -eq "" -or $plain -match '^[A-Za-z0-9_@%+=:,./-]+$') { return $head + $rest }
+  if ($OnWindows) { return $head + "'" + $rest.Replace("'", "''") + "'" }
+  return $head + (ShQuote $rest)
 }
 # When the mace command is not on the node's PATH (the default "mace", or a
 # one-word path that is not there), the node's shell tries mace_cli in that
@@ -329,12 +418,78 @@ function Node-Target {
   }
   return $target
 }
-# -o ConnectTimeout=20 unless an -SshOption or your ssh config (ssh -G) sets one: a command-line -o
-# would beat the config's own value (a slow VPN's). Val: yours, else 20, for the nested hop's inner
-# ssh (CONNECT_TIMEOUT_S, config_connect_timeout in connect.py)
-function Ct-Setup([string]$h) {
+# The jump hosts before the destination: the -J list, else a ProxyJump (or ProxyCommand) your ssh
+# config sets for it. Through them the destination's ConnectTimeout also covers the logins to them
+# (a passphrase prompt, 2FA): Prompt unless each has BatchMode yes, and then 120 s, not 20
+# (jump_chain, prompt_wait and PROMPT_TIMEOUT_S in connect.py)
+$script:Chain = @()
+$script:Prompt = $false
+$script:WaitS = "20"
+function Chain-Setup([string]$dest) {
+  $c = @()
+  if ($NodeV -and $GatewayV -and $HopV -ne "nested") { $c = @(($(if ($JumpV) { "$JumpV," } else { "" }) + $GatewayV) -split ',') }
+  elseif ($JumpV) { $c = @($JumpV -split ',') }
+  else {
+    $g = Ssh-G $dest
+    $pj = "" + @($g["proxyjump"])[0]; $pc = "" + @($g["proxycommand"])[0]
+    if ($pj -and $pj -ne "none") { $c = @($pj -split ',') }
+    elseif ($pc -and $pc -ne "none") { $c = @("proxycommand") }
+  }
+  $c = @($c | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  $prompt = $false
+  foreach ($h in $c) {
+    if ($h -eq "proxycommand") { $prompt = $true; break }
+    if (("" + @((Ssh-G ($h -replace ':\d+$', ''))["batchmode"])[0]) -ne "yes") { $prompt = $true; break }
+  }
+  $script:Chain = $c; $script:Prompt = $prompt
+}
+# The first jump host's HostName when a TCP connection to it does not open within its ConnectTimeout
+# (yours, else 20), else "": -J's own ssh gets none of our options, so this keeps an unreachable
+# gateway a fast failure under the 120 s (first_hop_timed_out in connect.py)
+function First-Hop-TimedOut {
+  if (-not $script:Chain.Count -or $script:Chain[0] -eq "proxycommand") { return "" }
+  $h = $script:Chain[0]
+  $spec = $h -replace ':\d+$', ''
+  $port = 0
+  if ($spec -ne $h) { $port = [int]$h.Substring($spec.Length + 1) }
+  $g = Ssh-G $spec
+  if (-not $g.Count) { return "" }
+  foreach ($k in @("proxyjump", "proxycommand")) { $v = "" + @($g[$k])[0]; if ($v -and $v -ne "none") { return "" } }
+  $hn = "" + @($g["hostname"])[0]; if (-not $hn) { $hn = ($spec -split '@')[-1] }
+  if (-not $port) { $pp = "" + @($g["port"])[0]; $port = $(if ($pp -match '^\d+$') { [int]$pp } else { 22 }) }
+  $t = "" + @($g["connecttimeout"])[0]
+  $sec = $(if ($t -match '^\d+$' -and [int]$t -gt 0) { [int]$t } else { 20 })
+  $tc = New-Object System.Net.Sockets.TcpClient
+  $late = $false
+  try { $late = -not ($tc.ConnectAsync($hn, $port)).Wait($sec * 1000) } catch { $late = $false } finally { $tc.Close() }
+  if ($late) { return $hn }
+  return ""
+}
+# Unloaded: a key file ssh offers the first host that has a passphrase while the agent holds none of
+# the keys offered there, so ssh asks for it on every hop; AgentUp when an agent answers (unloaded_key
+# in connect_check.py). ssh-keygen -y -P "" only tells whether a key has one.
+$script:Unloaded = ""
+$script:AgentUp = $false
+function Unloaded-Key {
+  $first = if ($GatewayV) { $GatewayV } else { $NodeV }
+  $keys = @(Existing-Files (Ssh-G $first))
+  if (-not $keys.Count) { return }
+  $ar = Run-Native "ssh-add" @("-l")
+  $script:AgentUp = ($ar.Code -eq 0 -or $ar.Code -eq 1)
+  $fps = @($ar.Out | Where-Object { $_ -match '^\d+ \S+' } | ForEach-Object { ($_ -split '\s+')[1] })
+  foreach ($f in $keys) { $fp = Fingerprint $f; if ($fp -and $fps -contains $fp) { return } }
+  foreach ($f in $keys) {
+    if ((Run-Native "ssh-keygen" @("-y", "-P", "", "-f", (XPath $f))).Code -ne 0) { $script:Unloaded = $f; return }
+  }
+}
+# -o ConnectTimeout=20 (120 with Prompt) unless an -SshOption or your ssh config (ssh -G) sets one: a
+# command-line -o would beat the config's own value (a slow VPN's). Val: yours, else 20, for the nested
+# hop's inner ssh; WaitS: the one the connection gets (CONNECT_TIMEOUT_S, config_connect_timeout in
+# connect.py)
+function Ct-Setup([string]$h, [bool]$prompt = $false) {
   $joined = ($SshOptions -join " ")
-  $opts = @("-o", "ConnectTimeout=20")
+  $wait = $(if ($prompt) { "120" } else { "20" })
+  $opts = @("-o", "ConnectTimeout=$wait")
   $v = ""
   if ($joined -match '(?i)connecttimeout') { $opts = @() }
   if ($joined -match '(?i)connecttimeout[ =]*(\d+)') { $v = $Matches[1] }
@@ -342,13 +497,15 @@ function Ct-Setup([string]$h) {
     $c = "" + @((Ssh-G $h)["connecttimeout"])[0]
     if ($c -match '^\d+$' -and [int]$c -gt 0) { $v = $c; $opts = @() }
   }
-  return @{ Opts = $opts; Val = $(if ($v) { $v } else { "20" }) }
+  return @{ Opts = $opts; Val = $(if ($v) { $v } else { "20" }); Wait = $(if ($v) { $v } else { $wait }) }
 }
 function Build-Argv([int]$lp, [int]$rp, [int]$gp) {
   $a = New-Object System.Collections.ArrayList
   $opts = @("-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4")
   $dest = if (-not $NodeV) { $GatewayV } elseif (-not $GatewayV) { $NodeV } elseif ($HopV -eq "nested") { $GatewayV } else { Node-Target }
-  $ct = Ct-Setup $dest
+  Chain-Setup $dest
+  $ct = Ct-Setup $dest $script:Prompt
+  $script:WaitS = $ct.Wait
   $opts += $ct.Opts
   $rcmd = Remote-Command $rp
   if (-not $NodeV -or -not $GatewayV) {
@@ -434,7 +591,8 @@ function Unreach([string[]]$lines, [string]$node) {
 
 # ------------------------------------------------------------------ -Check and -FixConfig
 # The same checks and words as mace gui connect --check (connect_check.py):
-# read-only; the private half of a key is never opened.
+# read-only. A private key is opened only when the ssh-agent service is disabled,
+# by ssh-keygen -y -P "" (has it a passphrase?), and only its exit code is kept.
 $OnWindows = ($env:OS -eq "Windows_NT")
 $script:CkFails = 0
 $script:CkHopFails = 0
@@ -486,6 +644,7 @@ function Node-Refused([string[]]$lines) {
 function Ck-Classify([string]$h, [string[]]$lines, $code, [string]$hop = "") {
   $lines = @($lines | Where-Object { "$_".Trim() })
   $u = Unreach $lines $(if ($hop) { $NodeV } else { "" })
+  if ($u -and $hop -and ($u[0] -eq "UNKNOWN" -or $u[0] -eq "the host")) { Ck FAIL "$NodeV did not answer through the gateway $GatewayV in time (ssh calls it UNKNOWN port 65535): it may be down or not accept logins" "pick another node (-Node), then check again"; return }
   if ($u) { Ck FAIL "cannot reach host $($u[0]) ($($u[1]))" "check the name, and your network or VPN (ssh -v $($u[0]) true shows where it stops)"; return }
   if (($lines -join "`n") -match "Host key verification failed|IDENTIFICATION HAS CHANGED") {
     Ck FAIL "ssh does not know the host key of $h yet, or it changed" "ssh $h true (once, in this terminal, to check and accept the key)"; return
@@ -513,12 +672,16 @@ function Run-Check {
   $pn = if ($ProfileName) { "${ProfileName}: " } else { "" }
   Write-Output "Checking the ssh setup for $pn$what (read-only; nothing is changed)"
   # 1. ssh
-  $sshCmd = Get-Command ssh -ErrorAction SilentlyContinue
-  if (-not $sshCmd) {
+  $sshFound = Find-Native "ssh"
+  if (-not $sshFound) {
     Ck FAIL "no ssh command on PATH: connect needs the OpenSSH client" "Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 (in an administrator PowerShell)"
-    Write-Output "Verdict: fix the FAIL lines above, then check again."; $script:CkRc = 1; return
+    if ($OnWindows) { Ck INFO "looked in System32 OpenSSH, Program Files OpenSSH, Git for Windows (usr bin) and VS Code's remote.SSH.path" }
+    Write-Output "Verdict: fix the FAIL lines above, then check again."; $script:CkRc = 2; return
   }
-  $sshPath = "" + $sshCmd.Source
+  $sshPath = "" + $sshFound.Path
+  if (-not $sshFound.OnPath) {
+    Ck WARN "ssh is not on your PATH, but $sshPath exists ($($sshFound.Source)); this check and mace gui connect use it" "add $(Split-Path $sshPath) to your user PATH (Settings > System > About > Advanced system settings > Environment Variables), then open a new terminal"
+  }
   $ver = "" + @((Run-Native "ssh" @("-V")).Out)[0]
   Ck OK "ssh: $ver ($sshPath)"
   if ($OnWindows) {
@@ -591,7 +754,7 @@ function Run-Check {
             foreach ($f in $missing) { $fp = Fingerprint $f; if ($fp -and $agentFps -contains $fp) { $held = $f; break } }
           }
           if ($held) { Ck OK "the jump hop offers $NodeV your gateway key (the agent holds $held)" }
-          else { Ck WARN ("$NodeV gets none of " + ($missing -join ", ") + " from your ssh config, and the agent does not hold them, so a plain ssh -J $GatewayV $NodeV would ask for the password of $NodeV") "the connection adds them for you (above); for plain ssh too, add a Host block for the node (-FixConfig prints one) or run ssh-add $($missing[0])" }
+          else { Ck WARN ("$NodeV gets none of " + ($missing -join ", ") + " from your ssh config, and the agent does not hold them, so a plain ssh -J $GatewayV $NodeV would ask for the password of $NodeV") "the connection adds them for you (above); for plain ssh too, add a Host block for the node (-FixConfig prints one) or run ssh-add $(Key-Arg $missing[0])" }
         }
       }
     }
@@ -599,12 +762,22 @@ function Run-Check {
   # 4. the agent: fingerprints only
   $key = if ($gfiles.Count) { $gfiles[0] } else { "~/.ssh/id_ed25519_cluster" }
   if ($OnWindows -and -not $svc) { Ck WARN "no OpenSSH Authentication Agent service (ssh-agent) on this computer" "add the OpenSSH Client in Settings, Optional features" }
-  elseif ($OnWindows -and "$($svc.StartType)" -eq "Disabled") { Ck FAIL "the OpenSSH Authentication Agent service (ssh-agent) is disabled" "in an administrator PowerShell: Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent" }
+  elseif ($OnWindows -and "$($svc.StartType)" -eq "Disabled") {
+    # ssh needs no agent for keys without a passphrase, nor when a live probe logs in: then only a WARN.
+    # A passphrase key with the probes skipped stays a FAIL; with probes, a WARN now and a FAIL after them if no login worked.
+    $plain = ($gfiles.Count -gt 0)
+    foreach ($kf in $gfiles) { if ($plain -and (Run-Native "ssh-keygen" @("-y", "-P", "", "-f", (XPath $kf))).Code -ne 0) { $plain = $false } }
+    $dtext = "the OpenSSH Authentication Agent service (ssh-agent) is disabled"
+    $dfix = "in an administrator PowerShell: Get-Service ssh-agent | Set-Service -StartupType Automatic; Start-Service ssh-agent"
+    if ($plain) { Ck WARN $dtext $dfix }
+    elseif ($NoNet) { Ck FAIL $dtext $dfix }
+    else { $script:AgentDeferred = @($dtext, $dfix); Ck WARN $dtext $dfix }
+  }
   elseif ($OnWindows -and "$($svc.Status)" -ne "Running") { Ck WARN "the OpenSSH Authentication Agent service (ssh-agent) is $($svc.Status) (startup type $($svc.StartType))" "Start-Service ssh-agent" }
-  elseif ($agentRun.Code -eq 1) { Ck WARN "the ssh agent holds no keys" "ssh-add $key" }
+  elseif ($agentRun.Code -eq 1) { Ck WARN "the ssh agent holds no keys" "ssh-add $(Key-Arg $key)" }
   elseif ($agentRun.Code -ne 0) {
     $why = "" + @($agentRun.Out)[0]; if (-not $why) { $why = "no answer" }
-    Ck WARN "cannot reach an ssh agent ($why)" "Start-Service ssh-agent, then ssh-add $key"
+    Ck WARN "cannot reach an ssh agent ($why)" "Start-Service ssh-agent, then ssh-add $(Key-Arg $key)"
   }
   else {
     $shown = @($agentRun.Out | Where-Object { $_ -match '^\d+ \S+' } | ForEach-Object { $w = $_ -split '\s+'; if ($w[-1].StartsWith("(")) { "$($w[1]) $($w[-1])" } else { $w[1] } })
@@ -615,7 +788,7 @@ function Run-Check {
       $fp = Fingerprint $f
       if (-not $fp) { Ck INFO "$f.pub is missing, so the check cannot compare $f with the agent" "ssh-keygen -y -f $f > $f.pub" }
       elseif ($agentFps -contains $fp) { Ck OK "$f ($fp) is in the agent" }
-      else { Ck WARN "$f ($fp) is not in the agent: with a passphrase, ssh must ask for it on every hop, and a connection may have no terminal to ask on" "ssh-add $f" }
+      else { Ck WARN "$f ($fp) is not in the agent: with a passphrase, ssh must ask for it on every hop, and a connection may have no terminal to ask on" "ssh-add $(Key-Arg $f)" }
     }
   }
   # 5. permissions
@@ -649,6 +822,9 @@ function Run-Check {
         $script:CkHopFails++
       }
     }
+  }
+  if ($script:AgentDeferred -and -not ($res.jump -or $res.nested -or ((-not ($NodeV -and $GatewayV)) -and $res.gateway))) {
+    Ck FAIL $script:AgentDeferred[0] $script:AgentDeferred[1]
   }
   # 7. the verdict
   $others = $script:CkFails - $script:CkHopFails
@@ -762,11 +938,19 @@ function Invoke-UpdateRemote([string]$after = "Connecting anyway.") {
   $ua = @()
   if ($JumpV) { $ua += @("-J", $JumpV) }
   if ($interactive) { $ua += @("-t") } else { $ua += @("-o", "BatchMode=yes") }
-  $ct = Ct-Setup $uhost
+  # the jump hosts on the way to $uhost (the nested hop's): 120 s when one may prompt; the
+  # connection's own Chain and Prompt are kept (a local $HopV is what Chain-Setup reads here)
+  $keep = @($script:Chain, $script:Prompt)
+  $HopV = "nested"
+  Chain-Setup $uhost
+  $ct = Ct-Setup $uhost $script:Prompt
+  $slow = if ($script:Prompt) { First-Hop-TimedOut } else { "" }
+  $script:Chain, $script:Prompt = $keep
+  if ($slow) { Write-Warning "cannot reach host $slow (timeout), so mace update did not run. $after"; return }
   $ua += @($ct.Opts) + @($SshOptions) + @($uhost, ("exec bash -lc " + (ShQuote $uscript)))
   # one command line, quoted for CreateProcess as for the connection below; the console stays this window's
   $upsi = New-Object System.Diagnostics.ProcessStartInfo
-  $upsi.FileName = "ssh.exe"
+  $upsi.FileName = (Native-Path "ssh")
   $upsi.Arguments = (($ua | ForEach-Object { Win-Quote $_ }) -join " ")
   $upsi.UseShellExecute = $false
   try { $uproc = [System.Diagnostics.Process]::Start($upsi) }
@@ -793,6 +977,12 @@ if ($Manual) {
 }
 
 # ------------------------------------------------------------------ run
+$sshNow = Find-Native "ssh"
+if (-not $sshNow) { Fail (Ssh-Install-Help) 2 }
+if (-not $sshNow.OnPath) {
+  Write-Warning "ssh is not on your PATH; using $($sshNow.Path) ($($sshNow.Source)) for this run. To fix PATH for good, add $(Split-Path $sshNow.Path) to your user PATH (Settings > System > About > Advanced system settings > Environment Variables)."
+  if ($sshNow.Source -eq "Git for Windows") { Write-Warning "Git for Windows' ssh keeps its own agent: ssh-add in Git Bash, not the Windows OpenSSH agent. Windows' own client is the supported one." }
+}
 $sv = Invoke-Native "ssh" @("-V")
 $ver = "$($sv.Err)$($sv.Out)"
 if ($ver -match 'OpenSSH_for_Windows_(\d+)\.(\d+)' -and ([int]$Matches[1] -lt 8 -or ([int]$Matches[1] -eq 8 -and [int]$Matches[2] -lt 1)) -and ($JumpV -or ($NodeV -and $GatewayV -and $HopV -ne "nested"))) {
@@ -815,16 +1005,85 @@ $where = if ($NodeV) { $NodeV } else { $GatewayV }
 $unres = Gw-Unresolvable
 if ($unres) { Write-Warning "$unres matches no Host in ~/.ssh/config and does not resolve (DNS): check the gateway's name (your cluster's login host, e.g. login.example.edu). Connecting anyway." }
 if ($UpdateRemote) { Invoke-UpdateRemote }
+# ssh waits 120 s for the jump hosts now: a first one that does not answer fails fast here
+if ($script:Prompt) {
+  $slow = First-Hop-TimedOut
+  if ($slow) { Fail "cannot reach host $slow (timeout): check the name, and your network or VPN. -Check (with the same profile or options) tests each step of the connection." 1 }
+}
+Unloaded-Key
+if ($script:Unloaded) {
+  $ukey = $script:Unloaded
+  $uarg = Key-Arg $ukey
+  $and = '&&'      # pwsh on Linux or macOS: the POSIX shell line, as mace gui connect prints it there
+  $ucmd = if ($script:AgentUp) { "ssh-add $uarg" } elseif ($OnWindows) { "Start-Service ssh-agent, then ssh-add $uarg" } else { 'eval "$(ssh-agent)" ' + $and + ' ssh-add ' + $uarg }
+  $times = if ($NodeV -and $GatewayV -and $HopV -eq "jump") { "for the gateway and again for the node" } else { "on each connection" }
+  Write-Output "$ukey has a passphrase and no ssh agent holds it, so ssh asks for it $times. To type it once per session, first run: $ucmd"
+}
 Write-Output "Connecting to $where... (answer ssh's questions in this window: a password, 2FA, or on a first connection the host-key yes/no question)"
+if ($NodeV -and $GatewayV -and $HopV -eq "jump") {
+  Write-Output "(waiting for $NodeV through the gateway $GatewayV, up to $($script:WaitS) s; if $NodeV is down, press Ctrl+C and pick another node)"
+}
+
+# MACE GUI in its own window: a Chromium-family browser in app mode (--app), in a profile of its own
+# under MACE GUI's cache folder; Brave, Chrome, Chromium, Edge, Vivaldi, the first one found
+# (APP_BROWSERS in appwindow.py). Firefox has no app mode: then a browser tab.
+$AppBrowsers = @(
+  @("Brave", "BraveSoftware\Brave-Browser\Application\brave.exe", "Brave Browser", @("brave", "brave-browser", "brave-browser-stable")),
+  @("Chrome", "Google\Chrome\Application\chrome.exe", "Google Chrome", @("chrome", "google-chrome", "google-chrome-stable")),
+  @("Chromium", "Chromium\Application\chrome.exe", "Chromium", @("chromium", "chromium-browser")),
+  @("Edge", "Microsoft\Edge\Application\msedge.exe", "Microsoft Edge", @("msedge", "microsoft-edge", "microsoft-edge-stable")),
+  @("Vivaldi", "Vivaldi\Application\vivaldi.exe", "Vivaldi", @("vivaldi", "vivaldi-stable"))
+)
+function Find-AppBrowser {
+  foreach ($b in $AppBrowsers) {
+    $places = @()
+    if ($OnWindows) {
+      foreach ($v in @("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "LOCALAPPDATA")) {
+        $r = [Environment]::GetEnvironmentVariable($v)
+        if ($r) { $places += (Join-Path $r $b[1]) }
+      }
+    }
+    elseif ($IsMacOS) { foreach ($r in @("/Applications", (Join-Path $HOME "Applications"))) { $places += "$r/$($b[2]).app/Contents/MacOS/$($b[2])" } }
+    foreach ($pl in $places) { if (Test-Path -LiteralPath $pl -PathType Leaf) { return @($b[0], $pl) } }
+    foreach ($c in $b[3]) {
+      $cmd = Get-Command $c -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($cmd) { return @($b[0], ("" + $cmd.Source)) }
+    }
+  }
+  return $null
+}
+$script:AppTold = $false
+# the address in MACE GUI's own window (or a browser tab); what the browser prints stays out of this window
+function Open-Gui([string]$u) {
+  if ($BrowserMode -eq "app") {
+    $ab = Find-AppBrowser
+    if ($ab) {
+      $base = if ($env:MACE_GUI_STATE_DIR) { $env:MACE_GUI_STATE_DIR } elseif ($OnWindows -and $env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "mace\gui" } elseif ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME "mace/gui" } else { Join-Path $HOME ".cache/mace/gui" }
+      $appProfile = Join-Path $base "app-profile"
+      try { [void](New-Item -ItemType Directory -Force -Path $appProfile) } catch {}
+      $a = @("--app=$u", "--user-data-dir=$appProfile", "--no-first-run", "--no-default-browser-check")
+      if (-not $OnWindows -and -not $IsMacOS) { $a += "--class=MACE" }
+      $sp = @{ FilePath = $ab[1]; ArgumentList = ((@($a | ForEach-Object { Win-Quote $_ })) -join " ") }
+      if (-not $OnWindows) { $sp.RedirectStandardOutput = (Join-Path $base "browser.out.log"); $sp.RedirectStandardError = (Join-Path $base "browser.log") }
+      $ok = $false
+      try { Start-Process @sp; $ok = $true } catch { $ok = $false }
+      if ($ok) {
+        if (-not $script:AppTold) { Write-Output "Opened MACE GUI in its own $($ab[0]) window (-Browser tab opens a browser tab instead)."; $script:AppTold = $true }
+        return
+      }
+    }
+  }
+  try { Start-Process $u } catch { Write-Warning "Could not open a browser; open the address below." }
+}
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = "ssh.exe"
+$psi.FileName = (Native-Path "ssh")
 $psi.Arguments = (($argv | ForEach-Object { Win-Quote $_ }) -join " ")
 $psi.UseShellExecute = $false
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $false
-$proc = [System.Diagnostics.Process]::Start($psi)
+try { $proc = [System.Diagnostics.Process]::Start($psi) } catch { Fail "ssh could not start ($_). $(Ssh-Install-Help)" 2 }
 $state = "wait"
 $timer = $null
 try {
@@ -839,7 +1098,7 @@ try {
       $url = if ($j.login) { $j.login -replace '^http://127\.0\.0\.1:\d+', "http://127.0.0.1:$LP" } else { "$($base)?token=$($j.token)" }
       if ($j.version) { Write-Output "MACE on ${where}: $($j.version)" }
       if ($j.reattached) { Write-Output "Reattached to the server still running on $where." }
-      if ($OpenV) { try { Start-Process $url } catch { Write-Warning "Could not open a browser; open the address below." } }
+      if ($OpenV) { Open-Gui $url }
       Write-Output "MACE GUI on ${where}: $url"
       Write-Output "Press Ctrl+C to stop the server on $where."
       $timer = New-Object System.Timers.Timer 60000
@@ -850,7 +1109,7 @@ try {
     elseif ($line -like "MACE_GUI_LOGIN *") {
       $j = $line.Substring(15) | ConvertFrom-Json
       $u = $j.url -replace '^http://127\.0\.0\.1:\d+', "http://127.0.0.1:$LP"
-      Write-Output "New sign-in link: $u"; if ($OpenV) { try { Start-Process $u } catch {} }
+      Write-Output "New sign-in link: $u"; if ($OpenV) { Open-Gui $u }
     }
     elseif ($line -like "MACE_GUI_STOPPED *") {
       if ($line -match '"browser"') { Write-Output "The server on $where was stopped from the browser." }
@@ -898,6 +1157,15 @@ if ($code -eq 255 -and $script:TrustCmd) {
   } else {
     Write-Warning "If ssh said ""Host key verification failed"": this computer has not connected to that host before. Check the key, then trust it once: run  $($script:TrustCmd)  in this window, compare the fingerprint with your cluster's, answer yes, and run this script again."
   }
+}
+if ($code -eq 255 -and $script:Chain.Count) {
+  # ssh's name for a target reached through a jump host (behind_jump_message in connect.py)
+  $jumped = ($NodeV -and $GatewayV -and $HopV -eq "jump")
+  $what = if ($jumped) { "the node $NodeV" } elseif ($GatewayV) { $GatewayV } else { $NodeV }
+  $via = @($script:Chain | Where-Object { $_ -ne "proxycommand" }) -join ", "
+  $through = if ($jumped) { "the gateway $GatewayV" } elseif ($via) { $via } else { "its proxy" }
+  $ukey = if ($script:Unloaded) { Key-Arg $script:Unloaded } else { "<your key>" }
+  Write-Warning "If ssh said Connection to UNKNOWN port 65535 timed out: $what did not answer through ${through}: it may be down or not accept logins (try another node, or -Check). Or the login took too long: ssh waited $($script:WaitS) s, and that includes logging in to $through (ssh calls the node UNKNOWN port 65535 then). If typing the passphrase or approving 2FA took longer, load your key into the agent once with ssh-add $ukey, so that ssh asks for the passphrase once instead of on each hop, or allow more time with -SshOption '-oConnectTimeout=300'."
 }
 if ($code -eq 255) {
   Write-Warning "If ssh said it cannot connect, timed out or could not resolve a host name: check that name, and your network or VPN. -Check (with the same profile or options) tests each step of the connection."

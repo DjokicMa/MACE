@@ -84,10 +84,16 @@ def functional_family(deck_text: str) -> str:
 def deck_calc_type(deck_text: str, out_text: str = "") -> str:
     from mace.utils import calc_detection as cd
     if out_text:
+        # an elastic/EOS/QHA run prints the OPTGEOM and FREQCALC (QHA) lines too
+        mechanics = cd.mechanics_output_type(out_text)
+        if mechanics:
+            return mechanics
         if cd.is_frequency_output(out_text):
             return "FREQ"
         if cd.is_optimization_output(out_text):
             return "OPT"
+        if cd.is_cphf_output(out_text):
+            return "CPHF"
         return "SP"
     return cd.d12_calc_type(cd.deck_records(deck_text))
 

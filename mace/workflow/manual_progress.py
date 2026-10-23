@@ -23,6 +23,7 @@ Two levels, matching what the flag was given:
     `mace workflow --interactive` asks — so SP functionals, BAND paths, DOSS
     windows and SLURM resources are yours, not defaults.
 """
+import re
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,6 +125,8 @@ def _interactive_plan(planner, sequence: List[str], input_dir: Path,
             "max_concurrent_jobs": max_jobs,
             "enable_material_tracking": True,
             "auto_progression": True,
+            # a cap somebody chose (--max-jobs, a spec's execution.max_jobs) is kept even when it is 200
+            **({"max_jobs_explicit": True} if max_jobs is not None else {}),
         },
     }
 
@@ -236,6 +239,32 @@ def position_in_sequence(calc_type: str, sequence: List[str]) -> Optional[int]:
     return None
 
 
+# opt2d12 --calc-type types that no template has a step for: each is a run of its own
+OWN_RUN_TYPES = ("ELASTIC", "EOS", "QHA", "CPHF")
+
+
+def missing_steps_message(decks: List[Path], sequence: List[str], calc_type_of: Callable[[Path], str],
+                          what: str = "the template") -> Optional[str]:
+    """Why ``decks`` cannot start a workflow of ``sequence``, or None: a deck
+    whose calculation type has no step in it would run as step 1 and start
+    nothing after it (MACE GUI offers only the templates that hold every
+    selected deck's type)."""
+    bad = []
+    for deck in decks:
+        calc_type = calc_type_of(Path(deck))
+        if position_in_sequence(calc_type, sequence) is None:
+            bad.append((Path(deck).name, calc_type))
+    if not bad:
+        return None
+    from mace.workflow.spec import _a
+    msg = (f"{what} ({', '.join(sequence)}) has no step for "
+           + ", ".join(f"{name} ({_a(calc_type)} deck)" for name, calc_type in bad))
+    if any(calc_type in OWN_RUN_TYPES for _, calc_type in bad):
+        msg += ("; ELASTIC, EOS, QHA and CPHF decks are not steps of a workflow template: submit them "
+                "without --progress")
+    return msg
+
+
 def describe_plan(plan_file: Path, workflow_id: str, sequence: List[str]) -> None:
     """Tell the user exactly what they just opted into."""
     ui.ok(f"\nWorkflow plan created: {plan_file.name}")
@@ -317,3 +346,174 @@ def own_step_scripts(plan: Dict[str, Any], base_dir: Path) -> Dict[str, Path]:
             if name and name.endswith(".sh") and (own / name).is_file():
                 out.setdefault(name[:-3].rsplit("_", 1)[0], own / name)
     return out
+
+
+# ------------------------------------------------------------------ the first step
+# A workflow never writes in the decks' folder: each deck runs in its own step
+# folder, workflow_outputs/<id>/step_NNN_<TYPE>/<material>/, as every later step
+# does. The files a deck's job script reads beside it ($DIR/$JOB.<ext>,
+# mace/submission/submitcrystal23.sh) go with it: a staged density matrix
+# (.f20), an EXTERNAL geometry (.ext, or the file the deck's own job script
+# copies to fort.34, staged as .ext), and its own .f9 when the deck restarts
+# from it (GUESSP, GUESSPSO) or is a properties deck (.d3: Pproperties reads
+# the SCF run's wavefunction as $JOB.f9, mace/submission/submit_prop.sh).
+_COMPANIONS = (".f20", ".ext")
+_GUESSP = re.compile(r"^[ \t]*GUESSP\w*[ \t]*$", re.I | re.M)
+
+
+# A deck changed after its output was written is run again: that output is
+# of the deck as it was. The slack covers a folder copied without its file
+# times (cp -r, unzip), where a deck can land a moment after its output.
+_EDITED_SLACK_S = 120
+
+
+def edited_after_output(deck: Path) -> bool:
+    """True when ``deck`` was changed after its own ``.out`` was written."""
+    try:
+        return (Path(deck).stat().st_mtime
+                > Path(deck).with_suffix(".out").stat().st_mtime + _EDITED_SLACK_S)
+    except OSError:
+        return False
+
+
+def finished_output(deck: Path, calc_type: str) -> Optional[Path]:
+    """``deck``'s own output when it is a finished run of ``calc_type`` (the
+    completion checker's verdict, which the job callback reads too), else
+    None: a failed, stopped or unfinished run is run again, and so is a deck
+    changed after its output was written. A symlinked ``.out`` is not the
+    deck's own output (MACE GUI never follows one out of its folder, and
+    the launch and its preview count the same outputs)."""
+    out = Path(deck).with_suffix(".out")
+    if out.is_symlink() or not out.is_file() or edited_after_output(deck):
+        return None
+    from mace.completion_checker import CALC_TYPE_TO_BUCKET, categorize_output_file
+    want = CALC_TYPE_TO_BUCKET.get(calc_type.rstrip("0123456789") or calc_type)
+    try:
+        return out if want and categorize_output_file(out)[0] == want else None
+    except Exception:
+        return None
+
+
+def step_folder(base_dir: Path, workflow_id: str, step: int, calc_type: str,
+                material_id: str) -> Path:
+    """Where a step of ``material_id`` runs (the engine's layout)."""
+    return (Path(base_dir).resolve() / "workflow_outputs" / workflow_id
+            / f"step_{step:03d}_{calc_type}" / material_id)
+
+
+def stage_deck(deck: Path, folder: Path, stem: str) -> Path:
+    """A copy of ``deck`` as ``folder/<stem><suffix>``, with the files its
+    job script reads beside it, renamed alike. The deck and its files are
+    only read."""
+    import shutil
+    deck = Path(deck)
+    folder.mkdir(parents=True, exist_ok=True)
+    staged = folder / f"{stem}{deck.suffix}"
+    shutil.copy2(deck, staged)
+    exts = list(_COMPANIONS)
+    if deck.suffix.lower() == ".d3" or _GUESSP.search(deck.read_text(errors="replace")):
+        exts.append(".f9")
+    for ext in exts:
+        src = deck.with_suffix(ext)
+        if src.is_file():
+            shutil.copy2(src, staged.with_suffix(ext))
+    from mace.submission.external_geometry import deck_keyword, fort34_source
+    if deck_keyword(deck):
+        # what the deck's job would stage as fort.34: the step's job script
+        # (MACE's) stages <stem>.ext
+        src = fort34_source(deck)
+        if src is not None:
+            shutil.copy2(src, staged.with_suffix(".ext"))
+    return staged
+
+
+def _warn_restart_starts_over(deck: Path) -> None:
+    """An OPTGEOM RESTART reads OPTINFO.DAT from the scratch directory of the
+    deck's earlier run, which the job script finds through the deck's
+    folder (.<JOB>.scratch, and the directory's .mace_submit_dir must name
+    that folder): run from its step folder, the deck gets a scratch
+    directory of its own, and the job drops RESTART and starts over."""
+    if Path(deck).suffix.lower() != ".d12":
+        return
+    from mace.recovery.opt_restart import has_optgeom_restart
+    try:
+        restart = has_optgeom_restart(Path(deck).read_text(errors="replace"))
+    except OSError:
+        return
+    if restart:
+        ui.warn(f"{Path(deck).name} continues an optimization (OPTGEOM RESTART), but its step folder "
+                f"runs it in a new scratch directory without the OPTINFO.DAT of its earlier run: the "
+                f"job drops RESTART and starts the optimization over from the deck's geometry. To "
+                f"continue it, run it where it is (mace submit {Path(deck).name}, or mace recover) "
+                f"and start the workflow from its finished output.")
+
+
+def material_names(decks: List[Path]) -> Dict[str, Path]:
+    """{material_id: deck} of the decks a workflow starts from. Raises
+    ValueError when two decks give the same material name (they would share
+    a folder and a name in every later step)."""
+    from mace.database.materials import create_material_id_from_file
+    seen: Dict[str, Path] = {}
+    for deck in decks:
+        deck = Path(deck).resolve()
+        mid = create_material_id_from_file(str(deck))
+        if mid in seen:
+            raise ValueError(f"{seen[mid].name} and {deck.name} give the same material name {mid}; "
+                             f"rename one (each material runs in its own folder of the workflow)")
+        seen[mid] = deck
+    return seen
+
+
+def first_steps(decks: List[Path], base_dir: Path, workflow_id: str, sequence: List[str],
+                calc_type_of: Callable[[Path], str], rerun_finished: bool = False):
+    """The decks of a launched plan, split into (to run, finished):
+
+    - to run: ``(staged deck, material_id, calc_type, folder)``, each deck
+      copied into its step folder (``stage_deck``), where its job script is
+      written and submitted;
+    - finished: ``(deck, material_id, calc_type, output)``, a deck whose own
+      output is a finished run of its type. It is not run again: its output
+      is read where it is and starts the next steps. With
+      ``rerun_finished`` every deck is run.
+
+    Raises ValueError when two decks give the same material name
+    (``material_names``), or when a staged EXTERNAL deck has no geometry
+    file (``missing_fort34_message``)."""
+    from mace.submission.external_geometry import missing_fort34_message
+    run, done = [], []
+    for mid, deck in material_names(decks).items():
+        calc_type = calc_type_of(deck)
+        out = None if rerun_finished else finished_output(deck, calc_type)
+        if out is None and not rerun_finished and edited_after_output(deck):
+            ui.info(f"{deck.name} changed after {deck.with_suffix('.out').name} was written: "
+                    f"it runs again")
+        if out is not None:
+            done.append((deck, mid, calc_type, out))
+            continue
+        folder = step_folder(base_dir, workflow_id, position_in_sequence(calc_type, sequence) or 1,
+                             calc_type, mid)
+        run.append((stage_deck(deck, folder, f"{mid}_{calc_type.lower()}"), mid, calc_type, folder))
+        _warn_restart_starts_over(deck)
+    missing = [m for m in (missing_fort34_message(staged) for staged, *_ in run) if m]
+    if missing:
+        raise ValueError("\n".join(missing))
+    return run, done
+
+
+def record_finished(manager, deck: Path, material_id: str, calc_type: str, out: Path,
+                    stamp: Optional[Callable[[str, str], None]] = None) -> Optional[str]:
+    """A finished deck of the plan as a completed row of the workflow's
+    database: its deck, folder and output where they are. The engine then
+    starts its next steps from that output (``mace workflow --process``)."""
+    if not manager.enable_tracking:
+        return None
+    if not manager.db.get_material(material_id):
+        _mid, formula, metadata = manager.extract_material_info_from_d12(deck)
+        manager.db.create_material(material_id=material_id, formula=formula, source_type="d12",
+                                   source_file=str(deck), metadata=metadata)
+    calc_id = manager.db.create_calculation(material_id=material_id, calc_type=calc_type,
+                                            input_file=str(deck), work_dir=str(Path(deck).parent))
+    if stamp:
+        stamp(calc_id, calc_type)
+    manager.db.update_calculation_status(calc_id, "completed", output_file=str(out))
+    return calc_id

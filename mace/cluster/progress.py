@@ -750,7 +750,7 @@ def freq_progress(text: str, lines: Sequence[str], ended: bool, deck_text: str =
                     out["low_s"] = max(per * (remaining - 1) * FREQ_LOW_FACTOR, out["low_s"] - in_disp)
                 out["confidence"] = "rough"
                 out["per_displacement_s"] = per
-                out["basis"] += (f"; about {_fmt_dur(out['low_s'])} - {_fmt_dur(out['high_s'])} left at about "
+                out["basis"] += (f"; {_about(out['low_s'], out['high_s'])} left at about "
                                  f"{_fmt_dur(per)} per displacement, from the {computed} finished in this run")
                 if restored:
                     out["basis"] += f" ({restored} restored from FREQINFO.DAT)"
@@ -790,6 +790,14 @@ def _span(lo, hi) -> str:
     return hi_t if lo_t == hi_t else f"{lo_t} - {hi_t}"
 
 
+def _about(lo, hi) -> str:
+    """"about 3 min - 6 min", or "under 5 min" when the low end is a few seconds ("about 0 s - 5 min" read as
+    nonsense next to "left")."""
+    if lo is not None and hi is not None and lo < 10 and hi >= 60:
+        return f"under {_fmt_dur(hi)}"
+    return f"about {_span(lo, hi)}"
+
+
 def _nspan(lo, hi) -> str:
     return f"{hi}" if lo == hi else f"{lo}-{hi}"
 
@@ -827,7 +835,7 @@ def level_text(lv: Dict[str, Any]) -> str:
             return f"Total: unknown ({lv['unknown_reason'] or 'no estimate yet'})"
         if hi_s is None:
             return f"Total at least {_fmt_dur(lo_s)} left ({lv['unknown_reason']})"
-        return f"Total about {_span(lo_s, hi_s)} left ({lv['confidence']})"
+        return f"Total {_about(lo_s, hi_s)} left ({lv['confidence']})"
     if i == "opt.points":
         cur = lv["current"]
         if cnt["low"] is None:
@@ -854,7 +862,7 @@ def level_text(lv: Dict[str, Any]) -> str:
                 run = (f"; running {_fmt_dur(info['in_point_s'])} of about "
                        f"{_span(info['point_low_s'], info['point_high_s'])} per point")
         elif info.get("point_low_s") is not None:
-            run = f"; about {_span(info['point_low_s'], info['point_high_s'])} per point"
+            run = f"; {_about(info['point_low_s'], info['point_high_s'])} per point"
         return f"Next point's SCF: {rng} cycles (from earlier points){run}"
     if i == "opt.first_scf":
         de = (f" (|DE| {_sci(info['detot'])}" + (f", threshold {_sci(info['toldee'])})" if info.get("toldee") else ")")
@@ -888,8 +896,8 @@ def level_text(lv: Dict[str, Any]) -> str:
         if st == "done":
             return f"After the SCF: done in {_fmt_dur(lv['done_s'])}"
         if st == "running":
-            return f"After the SCF (gradient, analysis, files): running, about {_span(lo_s, hi_s)} left"
-        return f"After the SCF (gradient, analysis, files): about {_span(lo_s, hi_s)}"
+            return f"After the SCF (gradient, analysis, files): running, {_about(lo_s, hi_s)} left"
+        return f"After the SCF (gradient, analysis, files): {_about(lo_s, hi_s)}"
     if i == "freq.preopt":
         if st == "done":
             return f"Preoptimization: done ({lv['current']} points)"
@@ -906,7 +914,7 @@ def level_text(lv: Dict[str, Any]) -> str:
         if st == "done":
             return f"{name}: done in {_fmt_dur(lv['done_s'])}"
         if st == "pending" or lv["current"] is None:
-            return f"{name}: pending, about {_span(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else f"{name}: pending"
+            return f"{name}: pending, {_about(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else f"{name}: pending"
         txt = f"{name}: field direction {info.get('direction', '?')} ({lv['current']} of {info.get('directions') or cnt['exact']})"
         if info.get("cycle") is not None:
             txt += f", cycle {info['cycle']}"
@@ -932,12 +940,12 @@ def level_text(lv: Dict[str, Any]) -> str:
                 return "Central point: restarting from FREQINFO.DAT"
             if info.get("scf_done"):
                 return "Central point (SCF + gradient): running, gradient"
-            est = f", about {_span(lo_s, hi_s)} left" if lo_s is not None and hi_s is not None else ""
+            est = f", {_about(lo_s, hi_s)} left" if lo_s is not None and hi_s is not None else ""
             if lv["current"] is None:
                 return f"Central point (SCF + gradient): running, before its first SCF cycle{est}"
             return f"Central point (SCF + gradient): running, SCF cycle {lv['current']}{est}"
         if lo_s is not None and hi_s is not None:
-            return f"Central point (SCF + gradient): pending, about {_span(lo_s, hi_s)}"
+            return f"Central point (SCF + gradient): pending, {_about(lo_s, hi_s)}"
         return "Central point (SCF + gradient): pending"
     if i == "freq.displacements":
         total = cnt["exact"]
@@ -980,7 +988,7 @@ def level_text(lv: Dict[str, Any]) -> str:
         if st == "pending":
             return f"{lv['label']}: {cnt['exact'] or 'an unknown number of'} {cnt['unit']} pending"
         if lo_s is not None and hi_s is not None:
-            return head + f", about {_span(lv['per_unit_s'] * MULTI_TIME_LOW, lv['per_unit_s'] * MULTI_TIME_HIGH)} each; {_span(lo_s, hi_s)} left (rough)"
+            return head + f", {_about(lv['per_unit_s'] * MULTI_TIME_LOW, lv['per_unit_s'] * MULTI_TIME_HIGH)} each; {_span(lo_s, hi_s)} left (rough)"
         return head + f" ({lv['unknown_reason']})"
     if i in ("eos.preopt", "elastcon.preopt"):
         return f"Preoptimization: done in {_fmt_dur(lv['done_s'])}" if st == "done" and lv["done_s"] else (
@@ -989,7 +997,7 @@ def level_text(lv: Dict[str, Any]) -> str:
         name = lv["label"]
         if st == "done":
             return f"{name}: done in {_fmt_dur(lv['done_s'])}" if lv["done_s"] is not None else f"{name}: done"
-        est = f"about {_span(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else ""
+        est = f"{_about(lo_s, hi_s)}" if lo_s is not None and hi_s is not None else ""
         if st == "running":
             return f"{name}: running{_so_far(info)}" + (f", {est} left" if est else "")
         return f"{name}: pending" + (f", {est}" if est else "")
@@ -1061,7 +1069,7 @@ def _total_basis(tot: Dict[str, Any], rem: Sequence[Dict[str, Any]]) -> str:
     elif hi is None:
         head = f"at least {_fmt_dur(lo)} left in total ({tot['unknown_reason']})"
     else:
-        head = f"about {_span(lo, hi)} left in total"
+        head = f"{_about(lo, hi)} left in total"
     tot["info"]["basis_head"] = head
     return head + (f": {parts}" if parts else "")
 
@@ -1671,7 +1679,11 @@ def multi_kind(deck_text: str) -> Optional[str]:
 def multi_plan(kind: str, deck_text: str) -> Dict[str, Any]:
     """How many units (volumes, strained configurations, X-H distances) the
     deck asks for, and whether a preoptimization comes first."""
-    blk = deck_block(deck_text, {"eos": "EOS", "elastcon": "ELASTCON", "anharm": "ANHARM"}[kind]) or []
+    blk = deck_block(deck_text, {"eos": "EOS", "elastcon": "ELASTCON", "anharm": "ANHARM"}[kind])
+    if blk is None and kind == "elastcon":      # ELAPIEZO, PIEZOCON, PHOTOELA: the same strain loop
+        blk = next((b for b in (deck_block(deck_text, k) for k in ("ELAPIEZO", "PIEZOCON", "PHOTOELA"))
+                    if b is not None), None)
+    blk = blk or []
 
     def after(word: str) -> Optional[List[str]]:
         if word in blk:
@@ -1976,12 +1988,24 @@ def risk_sentence(level: Optional[str], tracked: Optional[bool], cfg: Dict[str, 
 
 
 # ------------------------------------------------------------------ entry
+# An elastic, EOS or QHA run prints the OPTGEOM (and, QHA, FREQCALC) lines of
+# each strained cell or volume (calc_detection.mechanics_output_type): its own
+# kind first, as mace.cluster.history.deck_calc_type does. The elastic modules
+# share ELASTCON's strain loop; QHA has no progress model of its own.
+MECHANICS_MODES = {"ELASTIC": "elastcon", "EOS": "eos", "QHA": "qha"}
+
+
 def mode_of(text: str) -> str:
     from mace.utils import calc_detection as cd
+    mechanics = cd.mechanics_output_type(text)
+    if mechanics:
+        return MECHANICS_MODES[mechanics]
     if cd.is_frequency_output(text):
         return "freq"
     if cd.is_optimization_output(text):
         return "opt"
+    if cd.is_cphf_output(text):         # its SCF ended; the CPHF/CPKS block runs (its progress is the SCF's)
+        return "cphf"
     if cd.is_band_output(text) or cd.is_doss_output(text) or cd.is_transport_output(text) or \
             cd.is_charge_potential_output(text) or "CRYSTAL - PROPERTIES - TYPE OF CALCULATION" in text[:400_000]:
         return "properties"             # (the header: a properties run before its first block finishes)
@@ -2066,8 +2090,8 @@ def _progress(out_path: Path, scratch_dir=None, job: Optional[Dict[str, Any]] = 
     now_ref = _time.time() if elapsed is not None else snap.get("mtime")
     stages: List[Dict[str, Any]] = []
     kind = multi_kind(deck_text) if mode in ("opt", "scf", "freq") else None
-    if kind:
-        mode = res["mode"] = kind
+    if kind or mode in MECHANICS_MODES.values():
+        mode = res["mode"] = kind or mode
         # each volume / strain ends with its own OPT END: only CRYSTAL's end of the whole run counts
         if ended and "TOTAL CPU TIME" not in text[-20000:] and "EEEEEEEEEE TERMINATION" not in text:
             ended = res["ended"] = None
@@ -2122,14 +2146,16 @@ def _progress(out_path: Path, scratch_dir=None, job: Optional[Dict[str, Any]] = 
             parsed_thr["toldee_scf"] = {"value": 10.0 ** -int(m.group(1)), "source": "out"}
         stages = freq_levels(fp, st, lines, scratch, ended, threshold_notes(parsed_thr, "freq"),
                              start=start, now_ref=now_ref if elapsed is not None else None)
-    elif mode == "scf":
+    elif mode in ("scf", "cphf"):
         parsed = parse_out(out_path, text, snap["size"])
         sp = scf_progress(parsed, lines)
-        res.update(stage="end" if ended else "scf", done=sp["cycles"], scf=sp, parser=parsed.get("via"))
+        res.update(stage="end" if ended else mode, done=sp["cycles"], scf=sp, parser=parsed.get("via"))
         res["eta"] = {"low_s": sp["low_s"], "high_s": sp["high_s"], "basis": sp["basis"],
                       "confidence": sp["confidence"]}
         res["summary"] = f"SCF cycle {sp['cycles']}" + (f", |DE| {_sci(abs(sp['last_detot']))}"
                                                         if sp["last_detot"] is not None else "")
+        if mode == "cphf":
+            res["summary"] = f"CPHF/CPKS after the SCF ({sp['cycles']} cycles)"
         stages = sp_levels(sp, lines, text, deck_text, ended,
                            threshold_notes(parsed.get("thresholds") or {}, "sp"))
     elif mode == "properties":

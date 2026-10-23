@@ -667,13 +667,18 @@ class Tracker:
                 continue
             if settings.get("run_mode") != "local" or settings.get("host") != self.host:
                 continue
-            try:
-                os.kill(pid, 0)
-                continue                                # still running
-            except ProcessLookupError:
-                pass
-            except PermissionError:
-                continue
+            if os.name == "nt":
+                from mace.gui.registry import pid_alive     # os.kill(pid, 0) would end the process on Windows
+                if pid_alive(pid):
+                    continue                            # still running
+            else:
+                try:
+                    os.kill(pid, 0)
+                    continue                            # still running
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    continue
             self.db.update_calculation_status(
                 calc["calc_id"], "failed", error_type="local_lost",
                 error_message=f"mace run (pid {pid} on {self.host}) ended without recording a result")
@@ -965,6 +970,9 @@ class Claims:
             pid = int(m.group(1))
             if pid == os.getpid():
                 return False
+            if os.name == "nt":
+                from mace.gui.registry import pid_alive     # os.kill(pid, 0) would end the process on Windows
+                return pid_alive(pid)
             try:
                 os.kill(pid, 0)
             except ProcessLookupError:
@@ -1135,7 +1143,8 @@ def _main(argv, started) -> int:
         say(f"mace run: warning: {w}", err=True)
     for d in decks:
         if d.calc_type in ("OPT", "FREQ"):
-            say(f"mace run: warning: {d.path.name} is a {d.calc_type}, which rarely fits on a dev "
+            from mace.workflow.spec import _a
+            say(f"mace run: warning: {d.path.name} is {_a(d.calc_type)}, which rarely fits on a dev "
                 f"node; it is stopped at the timeout ({fmt_duration(opts.timeout)})", err=True)
     if opts.dry_run:
         print_plan(decks, opts)

@@ -36,6 +36,12 @@ _fmt = progress_mod._fmt_dur
 QUEUE_LABEL = "queue wait estimate from SLURM"
 
 
+def _about(lo: Optional[float], hi: Optional[float]) -> str:
+    if lo is None or hi is None:
+        return f"about {_span(lo, hi)}"
+    return progress_mod._about(lo, hi)
+
+
 def _span(lo: Optional[float], hi: Optional[float]) -> str:
     if lo is None:
         return "unknown"
@@ -124,7 +130,7 @@ def array_total(array_job: str, squeue_rows: Sequence[Dict[str, Any]], acct_rows
                else "a running task is past the longest finished one")
         text = f"Array {array_job}: {counts}; at least {_fmt(lo)} until the last task ends ({why})"
     else:
-        text = f"Array {array_job}: {counts}; about {_span(lo, hi)} until the last task ends (rough)"
+        text = f"Array {array_job}: {counts}; {_about(lo, hi)} until the last task ends (rough)"
     return {"id": "array", "label": f"Array {array_job}", "low_s": lo, "high_s": hi,
             "confidence": "rough" if lo is not None else "unknown", "text": text,
             "basis": (f"{per}; a pending task starts at its {QUEUE_LABEL}" if pend else per)}
@@ -257,7 +263,7 @@ def workflow_total(job_dir: Path, job_id: str, out: Optional[Path], cores: Optio
         text = (f"Workflow {wf}: {len(remaining)} step(s) after this one ({names}); at least {_fmt(lo)} of run time"
                 + (f" ({', '.join(unknown)} without an estimate)" if unknown else "") + queue_note)
     else:
-        text = (f"Workflow {wf}: {len(remaining)} step(s) after this one ({names}); about {_span(lo, hi)} of run "
+        text = (f"Workflow {wf}: {len(remaining)} step(s) after this one ({names}); {_about(lo, hi)} of run "
                 f"time in total (rough){queue_note}")
     basis = ("each step from the history model (the nearest finished runs of that calc type, scaled to this "
              "system's AOs and k points; 10-90 % of their predictions) plus this job's own estimate")

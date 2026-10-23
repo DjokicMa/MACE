@@ -641,7 +641,8 @@ class WorkflowExecutor:
         if not workflow_sequence:
             validation_errors.append("Empty workflow sequence")
         else:
-            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']
+            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS', 'TAU',
+                                'ELASTIC', 'EOS', 'QHA', 'CPHF']
             for calc_type in workflow_sequence:
                 # Planner legitimately emits numbered types (OPT2, SP2, BAND3...)
                 base_type = calc_type.rstrip('0123456789')
@@ -698,7 +699,8 @@ class WorkflowExecutor:
                     "with `mace engine --action process`)")
 
         # Max concurrent jobs
-        max_concurrent = budget.normalize_cap(execution_settings.get('max_concurrent_jobs'))
+        max_concurrent = budget.normalize_cap(execution_settings.get('max_concurrent_jobs'),
+                                              explicit=bool(execution_settings.get('max_jobs_explicit')))
         ui.info(f"   • Max concurrent jobs: "
                 f"{max_concurrent if max_concurrent else 'none (shares your queue budget, mace queue status)'}")
 
@@ -859,8 +861,7 @@ class WorkflowExecutor:
         self._held = []
         submitted_jobs = self.execute_step(plan, workflow_id, first_step, 1, d12_files, step_dir)
         if self.db is not None:
-            budget.register(self.db.db_path, workflow_id,
-                            (plan.get('execution_settings') or {}).get('max_concurrent_jobs'))
+            budget.register(self.db.db_path, workflow_id, budget.plan_cap(plan))
         if self._held:
             cfg = budget.resolve(quiet=True)
             ui.info(f"Submitted {len(submitted_jobs)}, held {len(self._held)} ({cfg.describe()}); "
@@ -1222,7 +1223,7 @@ class WorkflowExecutor:
         if calc_type == 'OPT2' or base_type == 'OPT':
             specific_template = f"submitcrystal23_opt_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['SP', 'FREQ']:
+        elif base_type in ['SP', 'FREQ', 'ELASTIC', 'EOS', 'QHA', 'CPHF']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
         elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
@@ -1386,7 +1387,7 @@ class WorkflowExecutor:
         if calc_type == 'OPT2' or base_type == 'OPT':
             specific_template = f"submitcrystal23_opt_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['SP', 'FREQ']:
+        elif base_type in ['SP', 'FREQ', 'ELASTIC', 'EOS', 'QHA', 'CPHF']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
         elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
@@ -2417,6 +2418,10 @@ fi'''
             if "custom_tolerances" in config.get("frequency_settings", {}):
                 crystal_opt_config["custom_tolerances"] = config["frequency_settings"]["custom_tolerances"]
         
+        # ELASTIC, EOS, QHA, CPHF: the module block's settings (d12_calc_elastic)
+        if calc_type.rstrip("0123456789") in ("ELASTIC", "EOS", "QHA", "CPHF") and "elastic_settings" in config:
+            crystal_opt_config["elastic_settings"] = config["elastic_settings"]
+
         # Add modifications for SP and other calculation types
         if "tolerance_modifications" in config:
             crystal_opt_config["tolerance_modifications"] = config["tolerance_modifications"]

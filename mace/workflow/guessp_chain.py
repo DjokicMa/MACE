@@ -18,9 +18,13 @@ used. So everything here answers "no" unless both decks can be read and agree:
 * the basis set (the BASISSET name, or the whole external basis block) - the
   manual's "same basis functions and shells". A basis change needs GUESDUAL
   (p. 113), which MACE does not write.
-* the spin treatment (UHF / ROHF / DFT SPIN) - a closed-shell matrix as the
-  guess of a spin-polarized run, or the reverse, is not described in the
-  manual.
+* the spin treatment (UHF / ROHF / DFT SPIN) - the manual does not describe
+  a closed-shell matrix as the guess of a spin-polarized run, or the reverse;
+  CRYSTAL23's fort.20 reader stops on it ("ERROR **** READFG **** RESTART NOT
+  POSSIBLE - OPEN-CLOSED SHELL INCOMPATIBILITY", measured for a GUESSPNOSO
+  deck from a closed-shell parent), and a closed-shell matrix has no spin
+  density to start an open-shell SCF from. A workflow step that turns SPIN
+  on or off (scf_modifications SPIN) therefore starts from a fresh guess.
 
 Refused outright:
 
@@ -30,7 +34,16 @@ Refused outright:
   (p. 173), not with a 1c GUESSP.
 
 The functional may differ (the manual's "computational conditions"); a
-3c method that also changes the basis is caught by the basis comparison.
+3c method that also changes the basis is caught by the basis comparison. So
+may the k-point mesh (a step's kpoint_modifications, SHRINK): the matrix read
+back is the direct-lattice P0 (p. 114), not a function of the k points, and
+the mesh is not compared here.
+
+The geometry-block modules (ELASTCON and the other elastic modes, EOS, QHA,
+CPHF) run their first SCF on the deck's own structure, so the same rules
+decide: the manual asks nothing more of their guess, and recommends GUESSP for
+a CPHF run (p. 275). Their block opens after the atom list like OPTGEOM or
+FREQCALC, and is not part of the structure.
 """
 import re
 import shutil
@@ -38,8 +51,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Records after the atom list that end the part of the geometry block that
-# defines the structure.
-_GEOMETRY_STOP = {"OPTGEOM", "FREQCALC", "END", "ENDG", "ENDGEOM", "BASISSET"}
+# defines the structure: the blocks MACE writes there (OPTGEOM, FREQCALC, the
+# elastic modes of d12_calc_elastic.ELASTIC_MODES, EOS, QHA, CPHF) and the
+# block ends. A module record read as part of the structure refused the
+# module's GUESSP as "the symmetry or the atom list differs".
+_GEOMETRY_STOP = {"OPTGEOM", "FREQCALC", "ELASTCON", "ELAPIEZO", "PIEZOCON", "PIEZOCP", "PHOTOELA",
+                  "EOS", "QHA", "CPHF", "END", "ENDG", "ENDGEOM", "BASISSET"}
 # Lines that close the geometry block or one of its sub-blocks.
 _BLOCK_ENDS = {"END", "ENDG", "ENDGEOM", "ENDOPT", "ENDFREQ"}
 _SPIN_KEYS = {"UHF", "ROHF", "SPIN"}
@@ -151,7 +168,8 @@ def refusal(source_deck: str, target_deck: str) -> Optional[str]:
     if src_basis != tgt_basis:
         return "the basis set differs from the previous step"
     if spin_treatment(source_deck) != spin_treatment(target_deck):
-        return "the spin treatment (UHF/ROHF/SPIN) differs from the previous step"
+        return ("the spin treatment (UHF/ROHF/SPIN) differs from the previous step: CRYSTAL stops on such a "
+                "matrix (RESTART NOT POSSIBLE - OPEN-CLOSED SHELL INCOMPATIBILITY), so it starts from a fresh guess")
     return None
 
 

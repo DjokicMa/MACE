@@ -55,6 +55,7 @@ from mace.workflow.plan_functionals import normalize_plan_functionals
 from mace.workflow.context import new_workflow_id
 from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config, opt2d3_default_transport_config
 from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
+from mace.workflow.common.constants import MODULE_STEP_TYPES
 from mace.utils.piped_answers import read_answer, stop_if_out_of_step
 
 # The job-script generators (submitcrystal23.sh, submit_prop.sh): one copy, in
@@ -134,7 +135,16 @@ except ImportError as e:
 # geometry optimization or frequency calculation in 2c (manual p. 166), and
 # properties from a 2c wavefunction are only those of manual sec. 6.4
 # (p. 183), which has no BOLTZTRA (TRANSPORT) and no POT3/POTC (POTENTIAL).
-_NOT_FROM_A_SOC_RUN = ("OPT", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
+_NOT_FROM_A_SOC_RUN = ("OPT", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS",
+                       # opt2d12's modules optimize strained cells or run CPHF (manual p. 166)
+                       "ELASTIC", "EOS", "QHA", "CPHF")
+# opt2d12's modules as workflow steps (the planner's menus)
+MODULE_STEP_DESCRIPTIONS = {
+    "ELASTIC": "Elastic, piezoelectric or photoelastic constants",
+    "EOS": "Equation of state",
+    "QHA": "Quasi-harmonic approximation",
+    "CPHF": "Dielectric response (CPHF/KS)",
+}
 # ...of which these are errors, not warnings: CRYSTAL23 crashes on them in
 # 2c rather than refusing them (ORBITALS: NEWK segfaults, spec sec. 6).
 _NEVER_FROM_A_SOC_RUN = ("ORBITALS",)
@@ -174,13 +184,17 @@ def soc_plan_problems(sequence: List[str],
     for i, after in enumerate(sequence[1:], start=1):
         base = after.rstrip("0123456789") or after
         before = sequence[i - 1]
-        if base in _NOT_FROM_A_SOC_RUN and base not in ("OPT", "FREQ"):
+        if base in _NOT_FROM_A_SOC_RUN and base not in ("OPT", "FREQ") + MODULE_STEP_TYPES:
             # A properties step reads the wavefunction of the nearest SP or
             # OPT before it, not of the step before it (the engine's
             # _find_dependency_in_sequence): SP, BAND, DOSS, TRANSPORT takes
             # TRANSPORT from the SP.
             before = next((s for s in reversed(sequence[:i])
                            if (s.rstrip("0123456789") or s) in ("SP", "OPT")), before)
+        if base in MODULE_STEP_TYPES:
+            # a module step is built from the nearest OPT, the nearest SP without one
+            before = next((s for want in ("OPT", "SP") for s in reversed(sequence[:i])
+                           if (s.rstrip("0123456789") or s) == want), before)
         if before in soc_steps and base in _NEVER_FROM_A_SOC_RUN:
             errors.append(f"{after} follows the SOC step {before}: {_soc_refusal()}")
         elif before in soc_steps and base in _NOT_FROM_A_SOC_RUN:
@@ -296,6 +310,16 @@ def _account_label(resources):
         return site.account_label(resources["account"])
     return site.account_label(_site_account())
 
+def _stand_in_fermi(out_file) -> None:
+    """A sample output's stand-in Fermi level, so opt2d3 keeps TRANSPORT's ranges relative to E_F (each
+    material's deck places them around its own)."""
+    try:
+        from mace.workflow.dummy_file_creator import append_stand_in_fermi
+        append_stand_in_fermi(Path(out_file))
+    except Exception:
+        pass
+
+
 class WorkflowPlanner:
     """
     Comprehensive workflow planning system for CRYSTAL calculations.
@@ -376,7 +400,17 @@ class WorkflowPlanner:
                 "depends_on": ["SP", "OPT"],  # Requires wavefunction from SP or OPT
                 "generates": ["orbitals"],
             },
+            # the relaxation time of a TRANSPORT step after it (tau_step.py)
+            "TAU": {
+                "name": "Relaxation Time (deformation potentials)",
+                "depends_on": ["SP"],  # strained single points of the SP deck
+                "generates": ["relaxation_time"],
+            },
         }
+        # opt2d12's modules (ELASTIC, EOS, QHA, CPHF): from the OPT before them (the SP without one)
+        from mace.workflow.common.constants import CALC_TYPES as _CALC_TYPES
+        for _t in MODULE_STEP_TYPES:
+            self.calc_types[_t] = dict(_CALC_TYPES[_t])
 
         # Numbered calculations (OPT2, SP2, etc.) are handled dynamically
         # They have the same dependencies as their base types
@@ -384,9 +418,8 @@ class WorkflowPlanner:
         # Predefined workflow templates: the one list (constants.py). The
         # menu keeps the numbers it always had (piped answers and the default
         # "3" stay valid), so a template added later comes after "custom".
-        from mace.workflow.common.constants import WORKFLOW_TEMPLATES
-        menu = ["basic_opt", "opt_sp", "full_electronic", "double_opt", "complete",
-                "transport_analysis", "charge_analysis", "combined_analysis"]
+        from mace.workflow.common.constants import PLANNER_TEMPLATE_MENU, WORKFLOW_TEMPLATES
+        menu = list(PLANNER_TEMPLATE_MENU)
         self.workflow_templates = {k: list(WORKFLOW_TEMPLATES[k]) for k in menu}
         self.workflow_templates["custom"] = "user_defined"
         for k, seq in WORKFLOW_TEMPLATES.items():
@@ -1085,6 +1118,8 @@ class WorkflowPlanner:
                         "TRANSPORT": "Transport Properties",
                         "CHARGE+POTENTIAL": "Charge Density & Electrostatic Potential",
                         "ORBITALS": "Orbitals as Molden files",
+                        "TAU": "Relaxation time from deformation potentials (for TRANSPORT)",
+                        **MODULE_STEP_DESCRIPTIONS,
                     }.get(base, base)
                     ui.info(f"  {i}. {calc_type} - {desc}")
                 ui.info("\nEnter number or type name directly")
@@ -1110,7 +1145,8 @@ class WorkflowPlanner:
                     else:
                         ui.err(f"Cannot add {calc} - check dependencies")
                 # Handle base calculations (OPT, SP, etc.) - auto-number them
-                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
+                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS", "TAU",
+                              *MODULE_STEP_TYPES]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
@@ -1140,7 +1176,8 @@ class WorkflowPlanner:
                 calc = input("\nInsert calculation type: ").strip().upper()
 
                 # Handle numbered calculations
-                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]:
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS", "TAU",
+                            *MODULE_STEP_TYPES]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
 
                     ui.info(f"\nCurrent sequence: {' → '.join(sequence)}")
@@ -1186,7 +1223,8 @@ class WorkflowPlanner:
     def _get_available_calc_types(self, current_sequence: List[str]) -> List[str]:
         """Get list of available calculation types with proper numbering"""
         available = []
-        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"]
+        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS", "TAU",
+                      *MODULE_STEP_TYPES]
 
         for base_type in base_types:
             # Count how many of this type already exist
@@ -1240,6 +1278,7 @@ class WorkflowPlanner:
                 "BAND": "Band Structure",
                 "DOSS": "Density of States",
                 "FREQ": "Vibrational Frequencies",
+                **MODULE_STEP_DESCRIPTIONS,
             }.get(base, base)
 
             # Determine source
@@ -1271,6 +1310,11 @@ class WorkflowPlanner:
                         break
                 else:
                     source = "From previous step"
+            elif base in MODULE_STEP_TYPES:
+                # the most recent OPT, the most recent SP without one (the engine's choice)
+                from mace.workflow.status import parent_index
+                j = parent_index(list(sequence), i)
+                source = f"From {sequence[j]} (step {j + 1})" if j is not None else "From previous step"
             else:
                 source = "From previous step"
 
@@ -1307,6 +1351,12 @@ class WorkflowPlanner:
         elif base_type == "FREQ":
             # FREQ needs at least one OPT
             return any(calc.startswith("OPT") for calc in sequence)
+        elif base_type == "TAU":
+            # TAU strains an SP deck
+            return any(calc.startswith("SP") for calc in sequence)
+        elif base_type in MODULE_STEP_TYPES:
+            # opt2d12's modules: at the geometry of an OPT (or an SP) before them
+            return any(calc.startswith("OPT") or calc.startswith("SP") for calc in sequence)
         elif base_type == "OPT":
             # OPT can always be added
             return True
@@ -1420,6 +1470,24 @@ class WorkflowPlanner:
             elif calc_type.startswith("TRANSPORT"):
                 # Transport calculations (TRANSPORT, TRANSPORT2, etc.)
                 config = self.configure_analysis_step("TRANSPORT", i + 1)
+                from mace.workflow.tau_step import tau_before
+                tau = tau_before(sequence, calc_type)
+                if tau:
+                    config["relaxation_time"] = "auto"
+                    ui.info(f"  Relaxation time (RELAXTIM): from the {tau} step (deformation potentials; "
+                            f"10 fs when it cannot be computed)")
+                else:
+                    ui.info("  (The relaxation time can come from deformation potentials: add a TAU step "
+                            "before TRANSPORT.)")
+                step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.startswith("TAU"):
+                config = self.configure_tau_step(calc_type, i + 1)
+                step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.rstrip("0123456789") in MODULE_STEP_TYPES:
+                # ELASTIC, EOS, QHA, CPHF: opt2d12's module questions
+                config = self.configure_module_step(calc_type, i + 1)
                 step_configs[f"{calc_type}_{i + 1}"] = config
 
             elif calc_type.startswith("CHARGE+POTENTIAL"):
@@ -1437,6 +1505,58 @@ class WorkflowPlanner:
             step_configs[f"{calc_type}_{i + 1}"]["slurm_config"] = slurm_config
 
         return step_configs
+
+    def configure_module_step(self, calc_type: str, step_num: int) -> Dict[str, Any]:
+        """An ELASTIC, EOS, QHA or CPHF step: opt2d12's module deck
+        (CRYSTALOptToD12 with the step's "elastic_settings") at the geometry
+        and method of the OPT before it (the SP's without one). The questions
+        are opt2d12's own (d12_calc_elastic.configure_elastic); blank answers
+        keep CRYSTAL's defaults."""
+        import d12_calc_elastic as E
+        base = calc_type.rstrip("0123456789") or calc_type
+        ui.info(f"  {MODULE_STEP_DESCRIPTIONS.get(base, base)} ({base}): one deck per structure, written by")
+        ui.info("  mace opt2d12 from the OPT before it (the SP's without one): its geometry, functional, basis set")
+        ui.info(f"  and SCF settings, with SCF TOLDEE at least {E.QHA_TOLDEE if base == 'QHA' else E.MODULE_TOLDEE} "
+                f"and SCF MAXCYCLE at least 200. Nothing is built from it.")
+        invalid = 0
+        while True:
+            try:
+                settings = E.configure_elastic(base, "CRYSTAL", ask=lambda p: read_answer("    " + p))
+                break
+            except E.ElasticSettingsError as e:
+                ui.err(f"    {e}")
+                invalid += 1
+                stop_if_out_of_step(invalid, f"{base} settings", f"values {base} takes")
+        return {
+            "calculation_type": base,
+            "source": "CRYSTALOptToD12.py",
+            "inherit_settings": True,
+            "elastic_settings": settings,
+        }
+
+    def configure_tau_step(self, calc_type: str, step_num: int) -> Dict[str, Any]:
+        """The TAU step: strained single points of the SP, fitted to the
+        relaxation time of the TRANSPORT step after it (tau_step.py)."""
+        from mace.workflow.tau_step import TauOptionError, check_options
+        opts = check_options({})
+        ui.info("  Strained single points of the SP (4 per axis, the axes from the symmetry: one for a cubic")
+        ui.info("  crystal), fitted to the deformation potential E1 and the elastic constant C; the masses come")
+        ui.info("  from the workflow's BAND and DOSS runs. TRANSPORT then runs with RELAXTIM = tau (10 fs when")
+        ui.info("  tau cannot be computed: a metal, failed runs, no mass; the reason is recorded).")
+        if yes_no_prompt("  Change the relaxation-time settings?", "no"):
+            ans = {"carrier": get_user_input("  Carrier", {"1": "auto", "2": "electron", "3": "hole"}, "1")}
+            ans["carrier"] = {"1": "auto", "2": "electron", "3": "hole"}.get(ans["carrier"], ans["carrier"])
+            for key, prompt in (("m_star", "  Effective mass m* in m_e (auto: from BAND/DOSS) [auto]: "),
+                                ("axes", "  Axes to strain, e.g. x z (auto: from the symmetry) [auto]: ")):
+                v = read_answer(prompt).strip()
+                if v and v.lower() != "auto":
+                    ans[key] = v
+            ans["strict"] = yes_no_prompt("  Hold TRANSPORT when tau falls back or the fit is poor?", "no")
+            try:
+                opts = check_options(ans)
+            except TauOptionError as e:
+                ui.err(f"  {e}; the defaults are used")
+        return {"calculation_type": "TAU", "source": "mace.transport.strain", "tau": opts}
 
     def configure_optimization_step(
         self, calc_type: str, step_num: int
@@ -1611,7 +1731,7 @@ class WorkflowPlanner:
         choice = self._ask_convergence_level(
             "      Choose convergence level (0-3) [0]: ", SCF_TOLERANCE_PRESETS,
             "'Use tight convergence?'", "3",
-            "Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11)",
+            f"{SCF_TOLERANCE_PRESETS['3']['name']} ({describe_scf_preset('3')})",
             "0", "0 (keep the previous step's tolerances)")
         if choice in SCF_TOLERANCE_PRESETS:
             ui.info(f"      Using {SCF_TOLERANCE_PRESETS[choice]['name']} convergence: "
@@ -1636,6 +1756,8 @@ class WorkflowPlanner:
         if modify_grid:
             config["grid_modifications"] = self._get_grid_modifications()
 
+        self._ask_step_spin(config)
+        self._ask_step_kpoints(config)
         return config
 
     def _get_expert_sp_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
@@ -1708,18 +1830,25 @@ class WorkflowPlanner:
         ui.info("        5: POB-DZVP-REV2 (double-zeta, faster)")
         ui.info("        6: STO-3G (minimal, very fast)")
         ui.info("        7: Custom basis set")
+        # MACE's bundled external libraries (explicit basis input, as a SOC deck needs); a later step
+        # may switch between internal and external sets in either direction
+        ui.info("        8: TZVP-REV2 external (MACE's bundled full.basis.triplezeta)")
+        ui.info("        9: DZVP-REV2 external (MACE's bundled full.basis.doublezeta)")
 
         invalid = 0
         while True:
-            basis_choice = input("      Choose basis set (1-7) [1]: ").strip() or "1"
-            if basis_choice in ["1", "2", "3", "4", "5", "6", "7"]:
+            basis_choice = input("      Choose basis set (1-9) [1]: ").strip() or "1"
+            if basis_choice in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
                 break
             invalid += 1
-            stop_if_out_of_step(invalid, "Choose basis set (1-7)", "a number from 1 to 7")
-            ui.info("      Please enter a number from 1 to 7")
+            stop_if_out_of_step(invalid, "Choose basis set (1-9)", "a number from 1 to 9")
+            ui.info("      Please enter a number from 1 to 9")
 
         if basis_choice == "1":
             modifications["inherit_basis"] = True
+        elif basis_choice in ("8", "9"):
+            modifications["new_basis"] = {"8": "full.basis.triplezeta", "9": "full.basis.doublezeta"}[basis_choice]
+            modifications["basis_set_type"] = "EXTERNAL"
         else:
             basis_map = {
                 "2": "POB-TZVP-REV2",
@@ -1742,29 +1871,97 @@ class WorkflowPlanner:
         """Get SCF modification settings"""
         modifications = {}
 
+        # The step's scf_modifications (d12_constants.SCF_MODIFICATION_KEYS): a blank answer keeps the
+        # parent's value for each structure. Each answer is checked as the deck writer checks it
+        # (check_scf_modifications), so FMIXING 150 or TOLDEE 0 is asked again here instead of
+        # stopping the step's deck when the workflow reaches it.
+        from mace.workflow.spec import _d12_constants
+        C = _d12_constants()
+
+        def ask(key: str, prompt: str) -> None:
+            invalid = 0
+            while True:
+                answer = input(prompt).strip()
+                if not answer:
+                    return
+                try:
+                    modifications.update(C.check_scf_modifications({key: answer}))
+                    return
+                except ValueError as exc:
+                    invalid += 1
+                    stop_if_out_of_step(invalid, prompt, f"a valid {key} or blank")
+                    ui.err(f"      {exc}; enter another value or leave it blank")
+
         # TOLDEE
         ui.info("\n      SCF convergence threshold (TOLDEE):")
-        ui.info("        Current/inherited: 7 (default)")
+        ui.info("        Blank keeps the parent step's value")
         ui.info("        Common values: 7 (standard), 8 (tighter), 9 (very tight), 10+ (ultra-tight)")
-        toldee = input("      New TOLDEE value [keep current]: ").strip()
-        if toldee:
-            try:
-                modifications["TOLDEE"] = int(toldee)
-            except ValueError:
-                ui.err("      Invalid TOLDEE, keeping current")
+        ask("TOLDEE", "      New TOLDEE value [keep current]: ")
+
+        # MAXCYCLE
+        ui.info("\n      SCF cycle limit (MAXCYCLE):")
+        ui.info("        Blank keeps the parent step's value (a FREQ step's is at least 200)")
+        ask("MAXCYCLE", "      New MAXCYCLE value [keep current]: ")
 
         # FMIXING
         ui.info("\n      SCF mixing factor (FMIXING):")
-        ui.info("        Current/inherited: 30 (default)")
+        ui.info("        Blank keeps the parent step's value")
         ui.info("        Common values: 30 (standard), 20 (more stable), 50 (aggressive)")
-        fmixing = input("      New FMIXING value [keep current]: ").strip()
-        if fmixing:
-            try:
-                modifications["FMIXING"] = int(fmixing)
-            except ValueError:
-                ui.err("      Invalid FMIXING, keeping current")
+        ask("FMIXING", "      New FMIXING value [keep current]: ")
+
+        # The mixing method
+        method = input("      SCF mixing method (DIIS, BROYDEN, ANDERSON) [keep current]: ").strip().upper()
+        if method in ("DIIS", "BROYDEN", "ANDERSON"):
+            modifications["METHOD"] = method
+        elif method:
+            ui.err("      Not DIIS, BROYDEN or ANDERSON, keeping current")
 
         return modifications
+
+    def _ask_step_spin(self, config: Dict[str, Any], indent: str = "    ") -> None:
+        """The step's spin polarization (scf_modifications SPIN): blank keeps the parent step's for each
+        structure; a change starts the step from a fresh SCF guess (CRYSTAL cannot restart from a
+        wavefunction of the other spin treatment)."""
+        ui.info(f"\n{indent}Spin polarization for this step:")
+        ui.info(f"{indent}  Blank keeps the parent step's (MACE's default is spin-polarized)")
+        ui.info(f"{indent}  A change starts the step from a fresh SCF guess, not the parent's wavefunction")
+        invalid = 0
+        while True:
+            answer = input(f"{indent}Spin-polarized (y), closed shell (n) [keep current]: ").strip().lower()
+            if answer in ("", "y", "yes", "n", "no"):
+                break
+            invalid += 1
+            stop_if_out_of_step(invalid, "Spin-polarized (y), closed shell (n)", "y, n or blank")
+            ui.info(f"{indent}Please enter y, n or leave it blank")
+        if answer:
+            mods = config.get("scf_modifications")
+            if not isinstance(mods, dict):
+                mods = config["scf_modifications"] = {}
+            mods["SPIN"] = answer.startswith("y")
+            if not mods["SPIN"]:
+                mods.pop("SPINLOCK", None)
+
+    def _ask_step_kpoints(self, config: Dict[str, Any], indent: str = "    ") -> None:
+        """The step's k-point mesh (kpoint_modifications): blank keeps the parent step's SHRINK for each
+        structure; a mesh is CRYSTAL's SHRINK record, "auto" MACE's density rule from each structure's cell.
+        A changed mesh keeps the GUESSP restart (the manual lets computational conditions change)."""
+        from mace.workflow.spec import _d12_constants
+        C = _d12_constants()
+        ui.info(f"\n{indent}k-point mesh (SHRINK) for this step:")
+        ui.info(f"{indent}  Blank keeps the parent step's mesh for each structure")
+        ui.info(f"{indent}  IS ISP (8 16), per axis IS1 IS2 IS3 (8 8 4; a slab's third is 1, a polymer's")
+        ui.info(f"{indent}  second and third), or auto (MACE's mesh from each structure's cell)")
+        invalid = 0
+        while True:
+            answer = input(f"{indent}k-point mesh [keep current]: ").strip()
+            mesh = C.k_mesh_text(answer) if answer else None
+            if not answer or mesh:
+                break
+            invalid += 1
+            stop_if_out_of_step(invalid, "k-point mesh", "1 to 3 whole numbers, auto or blank")
+            ui.info(f"{indent}Please enter 1 to 3 whole numbers (8 16 or 8 8 4), auto, or leave it blank")
+        if mesh:
+            config["kpoint_modifications"] = {"new_k_points": mesh}
 
     def _get_grid_modifications(self) -> Dict[str, Any]:
         """Get DFT grid modification settings"""
@@ -1932,14 +2129,13 @@ class WorkflowPlanner:
         ui.info(f"\n  Using basic {calc_type} configuration:")
         
         if calc_type == "BAND":
-            ui.info("    - Automatic k-path from the space group, as high-symmetry labels")
+            ui.info("    - Automatic SeeK-path k-path (the cell's full path, as k-point vectors)")
             ui.info("    - All available bands included")
             ui.info("    - 1000 k points along the path (opt2d3's defaults)")
             
         elif calc_type == "DOSS":
-            ui.info("    - Total DOS only (no projections)")
-            ui.info("    - 1000 energy points")
-            ui.info("    - Energy range: -20 to 20 eV")
+            ui.info("    - DOS projected on each element's orbital types, with element totals")
+            ui.info("    - All bands at the Standard energy step (0.02 eV; 1000-20000 points) (opt2d3's defaults)")
             
         elif calc_type == "TRANSPORT":
             ui.info("    - Chemical potential range: -2 to +2 eV relative to Fermi")
@@ -1983,7 +2179,13 @@ class WorkflowPlanner:
                 ui.info("    3. Literature path with vectors (comprehensive)")
                 ui.info("    4. SeeK-path full paths (extended Bravais lattice notation)")
                 
-                format_choice = self._ask_menu_choice("  Select format [1]: ", ["1", "2", "3", "4"], "1")
+                ui.info("    (Enter: SeeK-path for a 3D crystal, the labels for a slab or polymer)")
+                format_choice = self._ask_menu_choice("  Select format [4]: ", ["1", "2", "3", "4", "default"],
+                                                      "default")
+                if format_choice == "default":
+                    # opt2d3's Enter (Crystal_d3/d3_kpoints.default_band_format)
+                    format_choice = "4"
+                    config["kpath_default"] = True
                 format_map = {
                     "1": "labels",
                     "2": "vectors",
@@ -2058,9 +2260,8 @@ class WorkflowPlanner:
                 self.get_safe_float_input("  Energy maximum (eV) [20]: ", 20),
             ]
             
-            # Number of points
-            config["n_points"] = self.get_safe_integer_input(
-                "  Number of energy points [10000]: ", 10000)
+            # Energy resolution: opt2d3's choices (each structure's points follow from the step)
+            config.update(self._ask_doss_resolution())
             
         elif calc_type == "TRANSPORT":
             ui.info("\n  Advanced TRANSPORT configuration:")
@@ -2103,6 +2304,9 @@ class WorkflowPlanner:
             # Relaxation time
             config["relaxation_time"] = self.get_safe_float_input(
                 "  Relaxation time (fs) [10]: ", 10)
+
+            # BOLTZTRA's k mesh: opt2d3's choices (each structure's IS follows from the spacing)
+            config.update(self._ask_transport_k())
             
         elif calc_type == "CHARGE+POTENTIAL":
             ui.info(f"\n  Advanced {calc_type} configuration:")
@@ -2192,8 +2396,10 @@ class WorkflowPlanner:
             ui.info("    - Mode: FREQCALC (gamma point vibrational analysis)")
             ui.info("    - IR/Raman intensities: No (faster calculation), or the parent's")
             ui.info("      own when it is a FREQ calculation")
-            ui.info("    - SCF tolerances: opt2d12's FREQ default (TOLINTEG 9 9 9 11 38,")
-            ui.info("      TOLDEE 11), or the parent's own when it is a FREQ calculation")
+            ui.info(f"    - SCF tolerances: opt2d12's FREQ default ({describe_scf_preset(FREQ_SCF_LEVEL)},")
+            ui.info("      the parent's value wherever it is tighter), or the parent's own when it is")
+            ui.info("      a FREQ calculation")
+            ui.info("    - SCF MAXCYCLE: the parent's, at least 200 (800 when it has none)")
             ui.info("\n  📊 Resource estimate:")
             ui.info("    - Time: ~1-3x optimization time")
             ui.info("    - Memory: Similar to optimization")
@@ -2667,8 +2873,12 @@ class WorkflowPlanner:
                 )
 
             # No tolerances in the plan: opt2d12's FREQ default applies
-            ui.info("\n  SCF tolerances: opt2d12's FREQ default (TOLINTEG 9 9 9 11 38, TOLDEE 11),")
-            ui.info("  or the parent's own when it is a FREQ calculation")
+            ui.info(f"\n  SCF tolerances: opt2d12's FREQ default ({describe_scf_preset(FREQ_SCF_LEVEL)},")
+            ui.info("  the parent's value wherever it is tighter), or the parent's own when it is a")
+            ui.info("  FREQ calculation")
+            ui.info("  SCF MAXCYCLE: the parent's, at least 200 (800 when it has none)")
+            self._ask_step_spin(config, indent="  ")
+            self._ask_step_kpoints(config, indent="  ")
 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
@@ -2880,6 +3090,8 @@ class WorkflowPlanner:
         ui.info("\n    Convergence tolerances:")
         config["custom_tolerances"] = self._get_custom_tolerances()
 
+        self._ask_step_spin(config)
+        self._ask_step_kpoints(config)
         return config
 
     def _get_expert_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
@@ -3468,6 +3680,7 @@ class WorkflowPlanner:
                 creator = DummyFileCreator()
                 d12_settings = creator.extract_d12_settings(real_d12_path)
                 creator.create_dummy_out(sample_out, d12_settings)
+                _stand_in_fermi(sample_out)
             elif DummyFileCreator:
                 # Create minimal dummy output file
                 creator = DummyFileCreator()
@@ -3610,6 +3823,7 @@ class WorkflowPlanner:
             creator = DummyFileCreator()
             d12_settings = creator.extract_d12_settings(template_d12)
             creator.create_dummy_out(sample_out, d12_settings)
+            _stand_in_fermi(sample_out)
         else:
             # Fallback to minimal dummy file
             with open(sample_out, "w") as f:
@@ -4239,6 +4453,17 @@ class WorkflowPlanner:
                 "walltime_factor": 1.0,
                 "memory_factor": 1.0,
             },
+            # the strained single points: the SP's job, 1.5x its walltime
+            "TAU": {
+                "walltime_factor": 0.645,
+                "memory_factor": 0.8,
+            },
+            # opt2d12's modules: the OPT's week (each is many SCFs); strained
+            # (ELASTIC) and displaced (QHA) cells lose the symmetry: FREQ's memory
+            "ELASTIC": {"walltime_factor": 1.0, "memory_factor": 1.5},
+            "EOS": {"walltime_factor": 1.0, "memory_factor": 1.0},
+            "QHA": {"walltime_factor": 1.0, "memory_factor": 1.5},
+            "CPHF": {"walltime_factor": 1.0, "memory_factor": 1.0},
         }
 
         # Use base type for lookup (so BAND2, BAND3 etc use BAND scaling)
@@ -4305,6 +4530,79 @@ class WorkflowPlanner:
                 stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_choices)}")
                 ui.warn(f"⚠️  Invalid choice '{user_input}'. Valid options: {', '.join(valid_choices)}")
                 continue
+
+    def _ask_transport_k(self) -> Dict[str, Any]:
+        """A TRANSPORT step's k mesh, as opt2d3 asks it (Crystal_d3/d3_config.transport_mesh): a preset
+        spacing (Standard by default), the parent's mesh, another spacing, or an IS as given."""
+        d3_dir = str(Path(__file__).parent.parent.parent / "Crystal_d3")
+        if d3_dir not in sys.path:
+            sys.path.insert(0, d3_dir)
+        import d3_config as C
+        ui.info("\n  k-point mesh for the transport distribution (each structure's IS follows from the spacing;")
+        ui.info("  never coarser than its SCF's):")
+        ui.info("    1. Screening - the parent SCF's mesh")
+        std = "/".join(f"{C.TRANSPORT_K_STANDARD[d]:g}" for d in (3, 2, 1))
+        fine = "/".join(f"{C.TRANSPORT_K_FINE[d]:g}" for d in (3, 2, 1))
+        ui.info(f"    2. Standard - {std} 1/Å k spacing (3D/2D/1D)")
+        ui.info(f"    3. Fine - {fine} 1/Å k spacing (3D/2D/1D)")
+        ui.info("    4. Another k spacing (1/Å)")
+        ui.info("    5. A shrinking factor IS, as given")
+        choice = self.get_safe_integer_input("  Select k-point mesh [2]: ", 2, min_val=1, max_val=5)
+        if choice <= 3:
+            return {"k_resolution": C.TRANSPORT_K_RESOLUTIONS[choice - 1]}
+        if choice == 4:
+            return {"k_resolution": "spacing", "k_spacing": self.get_safe_float_input(
+                f"  k-point spacing (1/Å) [{C.TRANSPORT_K_STANDARD[3]:g}]: ", C.TRANSPORT_K_STANDARD[3], min_val=1e-6)}
+        return {"k_resolution": "is", "newk_is": self.get_safe_integer_input("  NEWK shrinking factor IS [12]: ", 12)}
+
+    def _ask_doss_resolution(self) -> Dict[str, Any]:
+        """A DOSS step's energy resolution, as opt2d3 asks it (Crystal_d3/d3_config): a preset step
+        (Standard by default), another step, or a number of points written as given."""
+        d3_dir = str(Path(__file__).parent.parent.parent / "Crystal_d3")
+        if d3_dir not in sys.path:
+            sys.path.insert(0, d3_dir)
+        import d3_config as C
+        ui.info("\n  Energy resolution (the energy step of the DOS grid; each structure's points follow from it):")
+        ui.info(f"    1. Screening - {C.DOSS_STEP_PRESETS['screening']} eV step")
+        ui.info(f"    2. Standard - {C.DOSS_STEP_PRESETS['standard']} eV step")
+        ui.info(f"    3. Fine - {C.DOSS_STEP_PRESETS['fine']} eV step")
+        ui.info("    4. Another energy step (eV)")
+        ui.info("    5. A number of energy points, as given (e.g. 1000 to screen many structures)")
+        choice = self.get_safe_integer_input("  Select energy resolution [2]: ", 2, min_val=1, max_val=5)
+        if choice <= 3:
+            out = {"energy_resolution": C.DOSS_RESOLUTIONS[choice - 1], "n_points": "auto"}
+        elif choice == 4:
+            step = self.get_safe_float_input(f"  DOS energy step (eV) [{C.DOSS_DEFAULT_STEP_EV}]: ",
+                                             C.DOSS_DEFAULT_STEP_EV, min_val=1e-6)
+            out = {"energy_resolution": "step", "energy_step_ev": step, "n_points": "auto"}
+        else:
+            out = None
+        if out is not None:
+            # opt2d3's default: over every band (core levels to the highest virtual bands) a fine step needs
+            # tens of thousands of points, so above DOSS_WINDOW_OFFER_NPTS the deck covers a window around E_F
+            # (3D, 2D; its bounds moved into band gaps by a BAND run of the SCF), or a 1D structure's valence and
+            # low conduction bands by index, since CRYSTAL needs a window's bounds in gaps (the deck writer applies
+            # it per material, as every route does); No keeps every band
+            lo, hi = C.DOSS_DEFAULT_WINDOW_EV
+            ui.info(f"\n  Over all bands this step needs more than {C.DOSS_WINDOW_OFFER_NPTS} points for most "
+                    "structures (the core levels are hundreds of eV below E_F).")
+            if yes_no_prompt(f"  Use a window around E_F ({lo:g} to +{hi:g} eV; a 1D structure: its bands by "
+                             f"index) instead?", "yes"):
+                lo_ev = self.get_safe_float_input(f"  Window below E_F (eV) [{lo:g}]: ", lo, max_val=-1e-6)
+                hi_ev = self.get_safe_float_input(f"  Window above E_F (eV) [{hi:g}]: ", hi, min_val=1e-6)
+                if (lo_ev, hi_ev) != (lo, hi):
+                    out["energy_window"] = list(C.doss_window_ha(lo_ev, hi_ev))
+                raw = read_answer("  1D: conduction bands above the highest occupied band [auto]: ").strip().lower()
+                while raw not in ("", "auto") and not (raw.isdigit() and int(raw) >= 1):
+                    raw = read_answer("  A number of bands (at least 1), or Enter for auto: ").strip().lower()
+                if raw not in ("", "auto"):
+                    out["conduction_bands"] = int(raw)
+            else:
+                out["all_bands"] = True
+            return out
+        return {"energy_resolution": "points",
+                "n_points": self.get_safe_integer_input("  Number of energy points [1000]: ", 1000, min_val=2,
+                                                        max_val=C.DOSS_MAX_NPTS)}
 
     def get_safe_integer_input(
         self, prompt: str, default: int, min_val: int = 1, max_val: int = None

@@ -74,6 +74,28 @@ def _same_numbers(a: str, b: str, tol: float = 1e-6) -> bool:
     return True
 
 
+def carry_external_geometry(original: Path, fixed: Path) -> Optional[Path]:
+    """A fixed deck under a new name that reads its geometry from fort.34
+    (EXTERNAL/DLVINPUT): the file the failed job staged as fort.34
+    (external_geometry.fort34_source: what its own job script copies, else
+    <stem>.ext) copied to <fixed stem>.ext, which the job script MACE writes
+    for the fixed deck stages. Without it the recovered job has no geometry.
+    Returns the .ext written, or None."""
+    from mace.submission.external_geometry import deck_keyword, fort34_source
+    original, fixed = Path(original), Path(fixed)
+    if deck_keyword(fixed) is None:
+        return None
+    src = fort34_source(original)
+    dst = fixed.with_suffix('.ext')
+    if src is None:
+        print(f"{fixed.name} reads its geometry from fort.34, and {original.name} has none to take along")
+        return None
+    if src.resolve() != dst.resolve():
+        shutil.copy2(src, dst)
+        print(f"EXTERNAL geometry: {src.name} copied to {dst.name}")
+    return dst
+
+
 def _resolve_job_script(calc: Dict) -> Optional[Path]:
     """The job script recorded for a calc, or the <input>.sh convention.
 
@@ -587,6 +609,7 @@ class ErrorRecoveryEngine:
                     
                     # Copy fixed file back
                     shutil.copy2(temp_input, fixed_path)
+                    carry_external_geometry(original_input, fixed_path)
 
                     print(f"SHRINK fix applied successfully: {fixed_path}")
                     # (fixed input, no job-script change)
@@ -798,6 +821,7 @@ class ErrorRecoveryEngine:
                 f.writelines(updated_lines)
                 
             if found_maxcycle or found_fmixing:
+                carry_external_geometry(original_input, fixed_path)
                 print(f"Convergence parameters updated: {fixed_path}")
                 # (fixed input, no job-script change)
                 return (fixed_path, None)

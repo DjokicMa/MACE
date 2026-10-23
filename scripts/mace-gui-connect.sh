@@ -48,6 +48,9 @@ Options:
   --ssh-option OPT   an extra ssh argument (repeatable)
   --root DIR         a folder File > Open Folder may switch to (repeatable)
   --no-open          print the URL; do not open a browser
+  --browser B        app: MACE GUI in its own window of Brave, Chrome, Chromium, Edge
+                     or Vivaldi (the default when one is installed); tab: a browser
+                     tab (also the default when $BROWSER is set)
   --dry-run          print the ssh command (one argument per line) and exit
   --check            check ssh, its config, keys, agent and permissions, try each
                      hop with only `true`, and say which works (read-only)
@@ -69,6 +72,7 @@ EOF
 # ------------------------------------------------------------------ options
 PROFILE=""
 F_GATEWAY="" F_JUMP="" F_NODE="" F_HOP="" F_DIR="" F_MACE="" F_SETUP="" F_CONDA="" F_LOCAL_PORT="" F_OPEN=""
+F_BROWSER=""
 F_SSH_OPTIONS=() F_ROOTS=()
 HAVE_SSH_OPTIONS=0 HAVE_ROOTS=0
 DRY_RUN=0 CHECK=0 NO_NET=0 FIX_CONFIG=0 UPDATE_REMOTE=""
@@ -89,6 +93,9 @@ while [ $# -gt 0 ]; do
     --ssh-option=*) F_SSH_OPTIONS+=("${1#--ssh-option=}"); HAVE_SSH_OPTIONS=1; shift ;;
     --root) need "$@"; F_ROOTS+=("$2"); HAVE_ROOTS=1; shift 2 ;;
     --no-open) F_OPEN="0"; shift ;;
+    --browser|--browser=*)
+      if [ "$1" = --browser ]; then need "$@"; F_BROWSER="$2"; shift 2; else F_BROWSER="${1#--browser=}"; shift; fi
+      case "$F_BROWSER" in app|tab) ;; *) echo "mace-gui-connect: --browser takes app or tab" >&2; exit 2 ;; esac ;;
     --dry-run) DRY_RUN=1; shift ;;
     --check) CHECK=1; shift ;;
     --no-net) NO_NET=1; shift ;;
@@ -272,6 +279,9 @@ SETUP="$(pick "$F_SETUP" "$P_SETUP" "$D_SETUP")"
 CONDA="$(pick "$F_CONDA" "$P_CONDA" "$D_CONDA")"
 LOCAL_PORT="$(pick "$F_LOCAL_PORT" "$P_LOCAL_PORT" "$D_LOCAL_PORT")"
 OPEN="$(pick "$F_OPEN" "$P_OPEN" "$D_OPEN")"
+# app (its own window) unless --browser tab, or a $BROWSER of yours without --browser (appwindow.py)
+BROWSER_MODE="$F_BROWSER"
+[ -n "$BROWSER_MODE" ] || { if [ -n "${BROWSER:-}" ]; then BROWSER_MODE=tab; else BROWSER_MODE=app; fi; }
 SSH_OPTIONS=() ROOTS=()
 if [ "$HAVE_SSH_OPTIONS" = 1 ]; then SSH_OPTIONS=("${F_SSH_OPTIONS[@]}")
 elif [ "$P_HAVE_SSH_OPTIONS" = 1 ]; then SSH_OPTIONS=("${P_SSH_OPTIONS[@]}")
@@ -466,12 +476,70 @@ EOF4
   fi
 }
 
-# -o ConnectTimeout=20 unless an --ssh-option or your ssh config (ssh -G) sets one: a command-line
-# -o would beat the config's own value (a slow VPN's). CT_VAL: yours, else 20, for the nested
-# hop's inner ssh (CONNECT_TIMEOUT_S, config_connect_timeout in connect.py)
-ct_setup() {  # $1 = the host the options apply to -> CT_OPTS, CT_VAL
+# The jump hosts before the destination: the -J list, else a ProxyJump (or ProxyCommand) your ssh
+# config sets for it. With them, the destination's ConnectTimeout also covers the logins to them
+# (a passphrase prompt, 2FA): PROMPT=1 unless each has BatchMode yes, and then 120 s, not 20
+# (jump_chain, prompt_wait and PROMPT_TIMEOUT_S in connect.py)
+chain_setup() {  # $1 = the destination -> CHAIN (one host per line, or proxycommand), PROMPT
+  local g pj pc h bm
+  CHAIN="" PROMPT=0
+  if [ -n "$NODE" ] && [ -n "$GATEWAY" ] && [ "$HOP" != nested ]; then CHAIN="${JUMP:+$JUMP,}$GATEWAY"
+  elif [ -n "$JUMP" ]; then CHAIN="$JUMP"
+  else
+    g="$(ssh -G "$1" 2>/dev/null </dev/null)"
+    pj="$(g_val proxyjump "$g" | head -n 1)"; pc="$(g_val proxycommand "$g" | head -n 1)"
+    if [ -n "$pj" ] && [ "$pj" != none ]; then CHAIN="$pj"
+    elif [ -n "$pc" ] && [ "$pc" != none ]; then CHAIN=proxycommand; fi
+  fi
+  CHAIN="$(printf '%s\n' "$CHAIN" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$')"
+  while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    if [ "$h" = proxycommand ]; then PROMPT=1; break; fi
+    bm="$(ssh -G "$(printf '%s' "$h" | sed 's/:[0-9][0-9]*$//')" 2>/dev/null </dev/null | awk '$1 == "batchmode" { print $2; exit }')"
+    if [ "$bm" != yes ]; then PROMPT=1; break; fi
+  done <<EOF6
+$CHAIN
+EOF6
+  return 0
+}
+# The first jump host's HostName in SLOW when a TCP connection to it does not open within its
+# ConnectTimeout (yours, else 20): -J's own ssh gets none of our options, so this keeps an
+# unreachable gateway a fast failure under the 120 s (first_hop_timed_out in connect.py)
+first_hop_timed_out() {
+  local h spec port g hn t pid i
+  SLOW=""
+  h="$(printf '%s\n' "$CHAIN" | head -n 1)"
+  [ -n "$h" ] && [ "$h" != proxycommand ] || return 1
+  spec="$(printf '%s' "$h" | sed 's/:[0-9][0-9]*$//')"; port=""
+  [ "$spec" != "$h" ] && port="${h##*:}"
+  g="$(ssh -G "$spec" 2>/dev/null </dev/null)"
+  [ -n "$g" ] || return 1
+  case "$(g_val proxyjump "$g" | head -n 1)" in ""|none) ;; *) return 1 ;; esac
+  case "$(g_val proxycommand "$g" | head -n 1)" in ""|none) ;; *) return 1 ;; esac
+  hn="$(g_val hostname "$g" | head -n 1)"; hn="${hn:-${spec##*@}}"
+  [ -n "$port" ] || port="$(g_val port "$g" | head -n 1)"
+  case "$port" in ""|*[!0-9]*) port=22 ;; esac
+  t="$(g_val connecttimeout "$g" | head -n 1)"
+  case "$t" in ""|0|*[!0-9]*) t=20 ;; esac
+  ( exec 5<>"/dev/tcp/$hn/$port" ) 2>/dev/null &
+  pid=$!
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$i" -ge $((t * 10)) ]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; SLOW="$hn"; return 0; fi
+    sleep 0.1; i=$((i + 1))
+  done
+  wait "$pid" 2>/dev/null
+  return 1
+}
+# -o ConnectTimeout=20 (120 with PROMPT=1) unless an --ssh-option or your ssh config (ssh -G) sets
+# one: a command-line -o would beat the config's own value (a slow VPN's). CT_VAL: yours, else 20,
+# for the nested hop's inner ssh; WAIT_S: the one the connection gets (CONNECT_TIMEOUT_S,
+# config_connect_timeout in connect.py)
+ct_setup() {  # $1 = the host the options apply to -> CT_OPTS, CT_VAL, WAIT_S
   local v=""
-  CT_OPTS=(-o ConnectTimeout=20) CT_VAL=20
+  WAIT_S=20
+  [ "${PROMPT:-0}" = 1 ] && WAIT_S=120
+  CT_OPTS=(-o "ConnectTimeout=$WAIT_S") CT_VAL=20
   if [ ${#SSH_OPTIONS[@]} -gt 0 ]; then
     v="$(printf '%s ' "${SSH_OPTIONS[@]}" | tr '[:upper:]' '[:lower:]')"
     case "$v" in *connecttimeout*) CT_OPTS=() ;; esac
@@ -481,7 +549,7 @@ ct_setup() {  # $1 = the host the options apply to -> CT_OPTS, CT_VAL
     v="$(ssh -G "$1" 2>/dev/null </dev/null | awk '$1 == "connecttimeout" && $2 ~ /^[0-9]+$/ && $2 > 0 { print $2; exit }')"
     [ -n "$v" ] && CT_OPTS=()
   fi
-  [ -n "$v" ] && CT_VAL="$v"
+  [ -n "$v" ] && CT_VAL="$v" WAIT_S="$v"
   return 0
 }
 build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
@@ -491,6 +559,7 @@ build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   jumps="$JUMP"
   # TRUST_CMD: the line that asks once to trust the host key(s) this session needs (host_key_trust_command)
   if [ -z "$NODE" ] || [ -z "$GATEWAY" ]; then
+    chain_setup "${NODE:-$GATEWAY}"
     ct_setup "${NODE:-$GATEWAY}"
     TRUST_CMD="ssh ${jumps:+-J $jumps }${NODE:-$GATEWAY} true"
     [ -n "$jumps" ] && ARGV+=(-J "$jumps")
@@ -502,6 +571,7 @@ build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   fi
   if [ "$HOP" = nested ]; then
     TRUST_CMD="ssh ${jumps:+-J $jumps }$GATEWAY true"
+    chain_setup "$GATEWAY"
     ct_setup "$GATEWAY"
     local inner
     inner="ssh -o BatchMode=yes -o ConnectTimeout=$CT_VAL -o ExitOnForwardFailure=yes -L 127.0.0.1:$gp:127.0.0.1:$rp $(shq "$NODE") $(shq "$rcmd")"
@@ -515,6 +585,7 @@ build_argv() {  # $1 local port, $2 remote port, $3 gateway-side port -> ARGV
   local target
   target="$(node_target)"
   node_keys "$target"
+  chain_setup "$target"
   ct_setup "$target"
   TRUST_CMD="ssh -J ${jumps:+$jumps,}$GATEWAY $target true"
   ARGV+=(-J "${jumps:+$jumps,}$GATEWAY")
@@ -649,6 +720,51 @@ agent_load() {  # -> AGENT_RC, AGENT_OUT: ssh-add -l (with the gateway's Identit
   esac
   AGENT_FPS="$(printf '%s\n' "$AGENT_OUT" | awk '$1 ~ /^[0-9]+$/ { print $2 }')"
 }
+# A node that is down (or hangs) behind the gateway: through -J, ssh can tell that only when the
+# node's ConnectTimeout runs out (120 s while a prompt may need it). Beside the connection, a second
+# login to the gateway that cannot prompt (BatchMode: an agent's key or one without a passphrase;
+# else it says nothing) asks whether the node's ssh sends its first bytes within 8 s; its last line,
+# MACE_NODE_PROBE <code>, goes to $TMPD/probe (124: nothing came; node_probe in connect.py)
+node_probe() {
+  local g hn port ct pj=()
+  g="$(ssh -G "$(node_target)" 2>/dev/null </dev/null)"
+  hn="$(g_val hostname "$g" | head -n 1)"; hn="${hn:-${NODE##*@}}"
+  port="$(g_val port "$g" | head -n 1)"
+  case "$port" in ""|*[!0-9]*) port=22 ;; esac
+  ct=(-o ConnectTimeout=20)
+  case "$(ssh -G "$GATEWAY" 2>/dev/null </dev/null | awk '$1 == "connecttimeout" { print $2; exit }')" in
+    ""|none|0) ;; *) ct=() ;;
+  esac
+  [ -n "$JUMP" ] && pj=(-J "$JUMP")
+  printf '%s\n' "timeout 8 bash -c 'exec 3<>/dev/tcp/\"\$0\"/\"\$1\" && head -c 4 <&3' $(shq "$hn") $port" 'c=$?' 'echo' \
+    'echo "MACE_NODE_PROBE $c"' \
+    | ssh ${pj[@]+"${pj[@]}"} -T -o BatchMode=yes ${ct[@]+"${ct[@]}"} "$GATEWAY" "bash -s" > "$TMPD/probe.part" 2>/dev/null
+  mv "$TMPD/probe.part" "$TMPD/probe" 2>/dev/null
+}
+# UNLOADED: a key file ssh offers the first host that has a passphrase while the agent holds none
+# of the keys offered there, so ssh asks for it on every hop; AGENT_UP=1 when an agent answers
+# (unloaded_key in connect_check.py). ssh-keygen -y -P "" only tells whether a key has one.
+unloaded_key() {
+  local f fp keys
+  UNLOADED="" AGENT_UP=0
+  CK_G="$(ssh -G "${GATEWAY:-$NODE}" 2>/dev/null </dev/null)"
+  keys="$(existing_files "$CK_G")"
+  [ -n "$keys" ] || return 1
+  agent_load
+  case "$AGENT_RC" in 0|1) AGENT_UP=1 ;; esac
+  while IFS= read -r f; do
+    fp="$(fingerprint "$f")"
+    if [ -n "$fp" ] && printf '%s\n' "$AGENT_FPS" | grep -qxF -- "$fp"; then return 1; fi
+  done <<EOF7
+$keys
+EOF7
+  while IFS= read -r f; do
+    if ! ssh-keygen -y -P "" -f "$(xpath "$f")" >/dev/null 2>&1 </dev/null; then UNLOADED="$f"; return 0; fi
+  done <<EOF8
+$keys
+EOF8
+  return 1
+}
 node_refused() {  # $1 ssh's messages: the node refused the login, not the gateway (node_auth_refused)
   local d nh gh
   case "$1" in *"Host key verification failed"*) return 1 ;; esac
@@ -661,6 +777,10 @@ node_refused() {  # $1 ssh's messages: the node refused the login, not the gatew
 ck_classify() {  # $1 host, $2 ssh's messages, $3 exit code, $4 "jump" for the node hop
   local last methods
   if unreach "$2" "${4:+$NODE}"; then
+    if [ -n "${4:-}" ] && { [ "$UR_HOST" = UNKNOWN ] || [ "$UR_HOST" = "the host" ]; }; then
+      ck FAIL "$NODE did not answer through the gateway $GATEWAY in time (ssh calls it UNKNOWN port 65535): it may be down or not accept logins" "pick another node (--node), then check again"
+      return
+    fi
     ck FAIL "cannot reach host $UR_HOST ($UR_WHY)" "check the name, and your network or VPN (ssh -v $UR_HOST true shows where it stops)"
     return
   fi
@@ -701,7 +821,7 @@ run_check() {
   if ! command -v ssh >/dev/null 2>&1; then
     ck FAIL "no ssh command on PATH: connect needs the OpenSSH client" "install the OpenSSH client (the openssh-client or openssh package)"
     echo "Verdict: fix the FAIL lines above, then check again."
-    return 1
+    return 2
   fi
   ck OK "ssh: $(ssh -V 2>&1 | head -n 1) ($(command -v ssh))"
   # 2. the gateway (ssh -G)
@@ -969,13 +1089,18 @@ TMPD="$(mktemp -d "${TMPDIR:-/tmp}/mace-gui-connect.XXXXXX")" || exit 1
 chmod 700 "$TMPD"
 SSH_PID=""
 PINGER=""
+NODE_PROBE=""
 cleanup() {
   trap - INT TERM HUP EXIT
+  [ -n "$NODE_PROBE" ] && kill "$NODE_PROBE" 2>/dev/null
   if [ -n "$SSH_PID" ]; then
     { echo detach >&4; } 2>/dev/null
     exec 4>&- 2>/dev/null
     for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$SSH_PID" 2>/dev/null || break; sleep 0.5; done
+    HELPERS="$(pgrep -P "$SSH_PID" 2>/dev/null)"
     kill "$SSH_PID" 2>/dev/null
+    # shellcheck disable=SC2086  # one pid per word
+    [ -n "$HELPERS" ] && kill $HELPERS 2>/dev/null
   fi
   [ -n "$PINGER" ] && kill "$PINGER" 2>/dev/null
   rm -rf "$TMPD"
@@ -984,12 +1109,73 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 trap cleanup EXIT
 
+# MACE GUI in its own window: a Chromium-family browser in app mode (--app), in a profile of its
+# own under MACE GUI's cache folder; Brave, Chrome, Chromium, Edge, Vivaldi, the first one found
+# (APP_BROWSERS in appwindow.py). Firefox has no app mode: then a browser tab.
+app_browser() {  # -> APP_NAME, APP_EXE
+  local spec name bundle winp root v c
+  APP_NAME="" APP_EXE=""
+  for spec in "Brave|Brave Browser|BraveSoftware/Brave-Browser/Application/brave.exe|brave-browser brave-browser-stable brave" \
+              "Chrome|Google Chrome|Google/Chrome/Application/chrome.exe|google-chrome google-chrome-stable chrome" \
+              "Chromium|Chromium|Chromium/Application/chrome.exe|chromium chromium-browser" \
+              "Edge|Microsoft Edge|Microsoft/Edge/Application/msedge.exe|microsoft-edge microsoft-edge-stable msedge" \
+              "Vivaldi|Vivaldi|Vivaldi/Application/vivaldi.exe|vivaldi vivaldi-stable"; do
+    name="${spec%%|*}"; spec="${spec#*|}"; bundle="${spec%%|*}"; spec="${spec#*|}"; winp="${spec%%|*}"; spec="${spec#*|}"
+    case "$(uname -s 2>/dev/null)" in
+      Darwin)
+        for root in /Applications "$HOME/Applications"; do
+          if [ -x "$root/$bundle.app/Contents/MacOS/$bundle" ]; then
+            APP_NAME="$name" APP_EXE="$root/$bundle.app/Contents/MacOS/$bundle"; return 0
+          fi
+        done ;;
+      CYGWIN*|MSYS*|MINGW*)
+        for v in ProgramFiles PROGRAMFILES 'ProgramFiles(x86)' 'PROGRAMFILES(X86)' LOCALAPPDATA; do
+          root="$(printenv "$v" 2>/dev/null)"
+          [ -n "$root" ] || continue
+          c="$(winpath "$root")/$winp"
+          if [ -f "$c" ]; then APP_NAME="$name" APP_EXE="$c"; return 0; fi
+        done ;;
+    esac
+    for c in $spec; do
+      if command -v "$c" >/dev/null 2>&1; then APP_NAME="$name" APP_EXE="$(command -v "$c")"; return 0; fi
+    done
+  done
+  return 1
+}
+app_command() {  # $1 the URL -> APP_ARGV: the app window's command line (app_command in appwindow.py)
+  local base sys
+  sys="$(uname -s 2>/dev/null)"
+  case "$sys" in
+    CYGWIN*|MSYS*|MINGW*) base="$(winpath "${LOCALAPPDATA:-$HOME}")/mace/gui" ;;
+    *) base="${XDG_CACHE_HOME:-$HOME/.cache}/mace/gui" ;;
+  esac
+  [ -n "${MACE_GUI_STATE_DIR:-}" ] && base="$MACE_GUI_STATE_DIR"
+  mkdir -p "$base/app-profile" 2>/dev/null
+  APP_LOG="$base/browser.log"
+  APP_PROFILE="$base/app-profile"
+  case "$sys" in CYGWIN*|MSYS*|MINGW*) command -v cygpath >/dev/null 2>&1 && APP_PROFILE="$(cygpath -w "$APP_PROFILE")" ;; esac
+  APP_ARGV=("$APP_EXE" "--app=$1" "--user-data-dir=$APP_PROFILE" --no-first-run --no-default-browser-check)
+  case "$sys" in Darwin|CYGWIN*|MSYS*|MINGW*) ;; *) APP_ARGV+=(--class=MACE) ;; esac
+}
+# what the browser or the desktop's opener prints (KDE's "kf.iconthemes: ..." lines) stays out of this terminal
 open_browser() {
   if [ "$OPEN" = 0 ]; then return; fi
+  if [ "$BROWSER_MODE" = app ] && app_browser; then
+    app_command "$1"
+    # its own session: closing this terminal does not close the window
+    if command -v setsid >/dev/null 2>&1; then setsid "${APP_ARGV[@]}" >>"$APP_LOG" 2>&1 </dev/null &
+    else nohup "${APP_ARGV[@]}" >>"$APP_LOG" 2>&1 </dev/null &
+    fi
+    if [ -z "${APP_TOLD:-}" ]; then
+      echo "Opened MACE GUI in its own $APP_NAME window (--browser tab opens a browser tab instead)."
+      APP_TOLD=1
+    fi
+    return
+  fi
   if [ -n "${BROWSER:-}" ]; then "$BROWSER" "$1" >/dev/null 2>&1 &
-  elif command -v open >/dev/null 2>&1 && [ "$(uname)" = Darwin ]; then open "$1"
+  elif command -v open >/dev/null 2>&1 && [ "$(uname)" = Darwin ]; then open "$1" >/dev/null 2>&1
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
-  elif command -v cygstart >/dev/null 2>&1; then cygstart "$1"
+  elif command -v cygstart >/dev/null 2>&1; then cygstart "$1" >/dev/null 2>&1
   fi
 }
 
@@ -1055,9 +1241,18 @@ if [ -n "$UPDATE_REMOTE" ]; then
   echo "Updating MACE on $UHOST ($UPDATE_REMOTE) ..."
   UJ=()
   [ -n "$JUMP" ] && UJ=(-J "$JUMP")
+  # the jump hosts on the way to $UHOST (the nested hop's): 120 s when one may prompt
+  UHOP="$HOP"; HOP=nested
+  chain_setup "$UHOST"
+  HOP="$UHOP"
   ct_setup "$UHOST"
   URC=0
-  ssh ${UJ[@]+"${UJ[@]}"} "${UOPTS[@]}" ${CT_OPTS[@]+"${CT_OPTS[@]}"} ${SSH_OPTIONS[@]+"${SSH_OPTIONS[@]}"} "$UHOST" "exec bash -lc $(shq "$USCRIPT")" || URC=$?
+  if [ "$PROMPT" = 1 ] && first_hop_timed_out; then
+    echo "mace-gui-connect: cannot reach host $SLOW (timeout): check the name, and your network or VPN." >&2
+    URC=255
+  else
+    ssh ${UJ[@]+"${UJ[@]}"} "${UOPTS[@]}" ${CT_OPTS[@]+"${CT_OPTS[@]}"} ${SSH_OPTIONS[@]+"${SSH_OPTIONS[@]}"} "$UHOST" "exec bash -lc $(shq "$USCRIPT")" || URC=$?
+  fi
   case "$URC" in
     0) ;;
     1) echo "mace-gui-connect: the MACE on $UHOST was not updated (you said no). Connecting anyway." >&2 ;;
@@ -1079,10 +1274,32 @@ mkfifo "$TMPD/in"
 RP="$(rand_port)"
 GP="$(rand_port)"
 build_argv "$LP" "$RP" "$GP"
+# ssh waits 120 s for the jump hosts now: a first one that does not answer fails fast here
+if [ "$PROMPT" = 1 ] && first_hop_timed_out; then
+  echo "mace-gui-connect: cannot reach host $SLOW (timeout): check the name, and your network or VPN." >&2
+  echo "mace-gui-connect: $0 --check (with the same profile or flags) tests each step of the connection." >&2
+  exit 1
+fi
+UNLOADED=""
+if unloaded_key; then
+  if [ "$AGENT_UP" = 1 ]; then UCMD="ssh-add $UNLOADED"; else UCMD="eval \"\$(ssh-agent)\" && ssh-add $UNLOADED"; fi
+  TIMES="on each connection"
+  [ "$HOP" = jump ] && [ -n "$NODE" ] && [ -n "$GATEWAY" ] && TIMES="for the gateway and again for the node"
+  echo "$UNLOADED has a passphrase and no ssh agent holds it, so ssh asks for it $TIMES. To type it once per session, first run: $UCMD"
+fi
 if [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then echo "Connecting to $WHERE through $GATEWAY..."; else echo "Connecting to $WHERE..."; fi
 echo "(answer ssh's questions here: a password, 2FA, or on a first connection the host-key yes/no question)"
+JUMPED=0
+if [ "$HOP" = jump ] && [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then
+  JUMPED=1
+  echo "(waiting for $NODE through the gateway $GATEWAY, up to $WAIT_S s; if $NODE is down, press Ctrl+C and pick another node)"
+fi
 "${ARGV[@]}" < "$TMPD/in" > "$TMPD/out" 2> >(err_filter) &
 SSH_PID=$!
+if [ "$JUMPED" = 1 ]; then
+  node_probe &
+  NODE_PROBE=$!
+fi
 exec 4>"$TMPD/in"
 STATE="wait"
 handle_line() {  # one line of ssh's stdout; returns 1 when the session is over
@@ -1144,6 +1361,17 @@ while :; do
     continue
   fi
   PARTIAL="$PARTIAL$CHUNK"
+  if [ "$STATE" = wait ] && [ -f "$TMPD/probe" ] && grep -qx 'MACE_NODE_PROBE 124' "$TMPD/probe"; then
+    echo "mace-gui-connect: the node $NODE did not answer through the gateway $GATEWAY: it may be down or not accept logins (its ssh sent nothing within 8 s when the gateway tried it). Try another node, or $0 --check." >&2
+    # its -J helper (ssh -W) too: it would wait on for the node that does not answer
+    HELPERS="$(pgrep -P "$SSH_PID" 2>/dev/null)"
+    kill "$SSH_PID" 2>/dev/null
+    # shellcheck disable=SC2086  # one pid per word
+    [ -n "$HELPERS" ] && kill $HELPERS 2>/dev/null
+    SSH_PID=""                # gone: cleanup has nothing to say to it (a write to its stdin would be a SIGPIPE)
+    exec 4>&- 2>/dev/null
+    exit 1
+  fi
   if ! kill -0 "$SSH_PID" 2>/dev/null; then
     # ssh is gone: what it wrote last, then stop
     while IFS= read -r CHUNK <&3; do handle_line "$PARTIAL$CHUNK" || break 2; PARTIAL=""; done
@@ -1227,6 +1455,13 @@ case "$ERR" in
     exit 1 ;;
 esac
 key_failed && { key_hint; exit 1; }
+if [ "$CODE" = 255 ] && unreach "$ERR" "$NODE" && { [ "$UR_HOST" = UNKNOWN ] || { [ "$UR_HOST" = "the host" ] && [ -n "$CHAIN" ]; }; }; then
+  # ssh's name for a target reached through a jump host: it did not answer in time (behind_jump_message)
+  if [ "$HOP" = jump ] && [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then WHAT="the node $NODE" THROUGH="the gateway $GATEWAY"
+  else VIA="$(printf '%s\n' "$CHAIN" | grep -vx proxycommand | joined)"; WHAT="${GATEWAY:-$NODE}" THROUGH="${VIA:-its proxy}"; fi
+  echo "mace-gui-connect: $WHAT did not answer through $THROUGH: it may be down or not accept logins (try another node, or $0 --check). Or the login took too long: ssh waited $WAIT_S s, and that includes logging in to $THROUGH (ssh calls the node UNKNOWN port 65535 then). If typing the passphrase or approving 2FA took longer, load your key into the agent once with ssh-add ${UNLOADED:-<your key>}, so that ssh asks for the passphrase once instead of on each hop, or allow more time with --ssh-option=-oConnectTimeout=300." >&2
+  exit 1
+fi
 if [ "$CODE" = 255 ] && unreach "$ERR" "$NODE"; then
   echo "mace-gui-connect: cannot reach host $UR_HOST ($UR_WHY): check the name, and your network or VPN." >&2
   echo "mace-gui-connect: $0 --check (with the same profile or flags) tests each step of the connection." >&2

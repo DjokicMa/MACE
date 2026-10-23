@@ -328,6 +328,10 @@ class EnhancedCrystalQueueManager:
             elif calc_type == 'FREQ':
                 return str(self.script_paths.get('submitcrystal23_freq',
                           self.script_paths.get('submitcrystal23')))
+            elif calc_type in ['ELASTIC', 'EOS', 'QHA', 'CPHF'] or calc_type.rstrip('0123456789') == 'TAU':
+                # (a TAU step's strained single point resubmitted keeps its
+                # job's resources: carry_resources_from)
+                return str(self.script_paths.get('submitcrystal23'))
             elif calc_type == 'BAND':
                 return str(self.script_paths.get('submit_prop_band',
                           self.script_paths.get('submit_prop')))
@@ -338,7 +342,8 @@ class EnhancedCrystalQueueManager:
                 return str(self.script_paths.get('submit_prop'))
         else:
             # In repository context, use general scripts
-            if calc_type in ['OPT', 'SP', 'FREQ']:
+            if calc_type in ['OPT', 'SP', 'FREQ', 'ELASTIC', 'EOS', 'QHA', 'CPHF'] \
+                    or calc_type.rstrip('0123456789') == 'TAU':
                 return str(self.script_paths.get('submitcrystal23'))
             elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']:
                 return str(self.script_paths.get('submit_prop'))
@@ -775,6 +780,10 @@ class EnhancedCrystalQueueManager:
         if (not self.organize_outputs) and (not self.is_workflow_context):
             # Submit the original file as-is: no copy, no rename, no extra subfolder.
             return calc_dir, Path(d12_file).resolve()
+        if calc_type.rstrip('0123456789') == 'TAU':
+            # the strained single points of a TAU step share its folder: each
+            # keeps its own deck name (its strain), a recovery deck included
+            return calc_dir, calc_dir / Path(d12_file).name
         is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'ORBITALS']
         file_extension = '.d3' if is_d3_calc else '.d12'
         return calc_dir, calc_dir / f"{material_id}_{calc_type.lower()}{file_extension}"
@@ -937,7 +946,7 @@ class EnhancedCrystalQueueManager:
             os.chdir(original_cwd)
 
     def submit_calculations_as_arrays(self, files: List[Path], max_running: Optional[int] = None,
-                                      stamp=None) -> List[Tuple[Optional[str], Optional[str]]]:
+                                      stamp=None, folders=None) -> List[Tuple[Optional[str], Optional[str]]]:
         """`mace submit --array --track`: submit_calculation for many decks,
         with the job scripts of identical requests submitted as job arrays.
 
@@ -950,7 +959,12 @@ class EnhancedCrystalQueueManager:
         generator submits by itself, goes in as an ordinary job. If any array
         is refused, the held ones are removed and no row gets a job id (as a
         failed single submission leaves it). ``stamp(calc_id, calc_type)``
-        writes the workflow settings first (--progress).
+        writes the workflow settings first (--progress). ``folders`` maps a
+        deck (str path) to its (material_id, folder): a workflow's first step,
+        staged in its step folder (--progress, --progress-plan), whose arrays
+        are written in that step's folder (workflow_outputs/<id>/
+        step_NNN_<TYPE>/.mace_arrays, as the workflow's later steps), not in
+        the decks' folder.
         Returns [(calc_id, job_id or None)].
         """
         from mace.submission import job_array
@@ -966,7 +980,8 @@ class EnhancedCrystalQueueManager:
                 results.append((None, None))
                 continue
             try:
-                prep = self._prepare_calculation(Path(f))
+                mid, folder = (folders or {}).get(str(f), (None, None))
+                prep = self._prepare_calculation(Path(f), material_id=mid, work_dir=folder)
             except Exception as e:
                 print(f"  Failed to prepare {Path(f).name}: {e}")
                 results.append((None, None))
@@ -989,17 +1004,27 @@ class EnhancedCrystalQueueManager:
             else:
                 deferred.append(prep)
 
+        # the folder each member's arrays go in: a staged first step's step
+        # folder, else the decks' folder
+        staged = {Path(folder).resolve() for _mid, folder in (folders or {}).values() if folder}
+        by_base: Dict[Path, list] = {}
+        for m in members:
+            base = Path(m.dir).resolve().parent if Path(m.dir).resolve() in staged else Path(self.d12_dir)
+            by_base.setdefault(base, []).append(m)
         try:
-            arrays, singles = job_array.plan_groups(members)
+            planned = [(base, *job_array.plan_groups(ms)) for base, ms in by_base.items()]
         except job_array.ArrayRefusal as e:
             print(f"Error: {e}")
             return results + [(m.calc_id, None) for m in members] + \
                 [(p[4], None) for p in deferred]
-        types = {m.data['prep'][1].lower() for g in arrays for m in g.members}
-        label = types.pop() if len(types) == 1 else 'mixed'
+        singles = [s for _base, _groups, ones in planned for s in ones]
+
+        def label(groups):
+            types = {m.data['prep'][1].lower() for g in groups for m in g.members}
+            return types.pop() if len(types) == 1 else 'mixed'
         try:
-            prepared = job_array.prepare_arrays(arrays, self.d12_dir, label, max_running) \
-                if arrays else []
+            prepared = [p for base, groups, _singles in planned if groups
+                        for p in job_array.prepare_arrays(groups, base, label(groups), max_running)]
         except Exception as e:
             print(f"Error: could not write the job arrays: {e}")
             return results + [(m.calc_id, None) for m in members] + \
@@ -1885,11 +1910,14 @@ class EnhancedCrystalQueueManager:
         # Update file records
         self.update_file_records(calc)
         
-        # Extract and store properties from completed calculation
-        self.extract_and_store_properties(calc)
-        
-        # Update material information with formula and space group
-        self.update_material_information(calc)
+        # A TAU step's strained single point is not the structure: its band
+        # gap and space group are the strained cell's (the step fits them)
+        if str(calc.get('calc_type') or '').rstrip('0123456789') != 'TAU':
+            # Extract and store properties from completed calculation
+            self.extract_and_store_properties(calc)
+
+            # Update material information with formula and space group
+            self.update_material_information(calc)
             
         # Plan next calculation in workflow — workflow runs only. A manual
         # `mace submit` reaches this callback too, and progressing it built a
@@ -2257,6 +2285,26 @@ class EnhancedCrystalQueueManager:
         if not self.db:
             return 0
         try:
+            calc = self.db.get_calculation(calc_id) or {}
+            try:
+                member = json.loads(calc.get('settings_json') or '{}').get('tau_member')
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                member = None
+            if member:
+                # the strained runs of a TAU step share material and type: the
+                # lineage is the runs of the same member
+                with self.db._get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT calc_id, settings_json FROM calculations WHERE material_id = ? AND calc_type = ?"
+                        " AND status = 'resubmitted' AND calc_id != ?",
+                        (calc.get('material_id'), calc.get('calc_type'), calc_id)).fetchall()
+                spent = 0
+                for _, sj in rows:
+                    try:
+                        spent += json.loads(sj or '{}').get('tau_member') == member
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        pass
+                return int(calc.get('recovery_attempts') or 0) + spent
             # MaterialDatabase has no execute_query method — the old call
             # raised AttributeError, the bare except returned 0, and
             # max_recovery_attempts was never enforced
@@ -2386,7 +2434,9 @@ class EnhancedCrystalQueueManager:
                 parent_settings = json.loads(calc.get('settings_json') or '{}')
                 lineage = {k: parent_settings[k] for k in
                            ('workflow_id', 'workflow_step', 'workflow_calc_type',
-                            'crystal_module', 'crystal_module_source')
+                            'crystal_module', 'crystal_module_source',
+                            # a TAU step's job group: which member it runs
+                            'tau_group', 'tau_member', 'tau_axis', 'tau_strain', 'step_number')
                            if k in parent_settings}
                 if lineage:
                     new_calc = self.db.get_calculation(new_calc_id)
@@ -2436,8 +2486,15 @@ class EnhancedCrystalQueueManager:
             
             print(f"  🔍 Extracting properties from {Path(output_file).name}")
             
-            # Initialize property extractor with same database
+            # Initialize property extractor with same database; the slow
+            # derived properties (a Bader partition, a packing grid) are left to
+            # `mace analyze --extract-properties` (MACE_DERIVED_EXPENSIVE=1: here too)
             extractor = CrystalPropertyExtractor(self.db_path)
+            try:
+                from mace.properties import registry
+                extractor.skip_derived = frozenset(registry.expensive())
+            except Exception:
+                pass
             
             # Extract properties
             properties = extractor.extract_all_properties(
@@ -2890,13 +2947,29 @@ class EnhancedCrystalQueueManager:
         except Exception:
             pass
 
+    @staticmethod
+    def _analyze_finished_phonopy_set():
+        """The job script exports the job (JOB) and its folder (DIR): when that
+        folder is a phonopy displacement set (mace opt2d12 --calc-type PHONOPY)
+        and every job of it has ended, analyze it as mace analyze phonopy does.
+        Never fails the callback."""
+        try:
+            from mace.phonopy_bridge.cli import analyze_when_complete
+            analyze_when_complete(os.environ.get("DIR"), os.environ.get("JOB"))
+        except Exception as e:
+            print(f"  phonopy analysis skipped: {e}")
+
     def run_callback_check(self, mode='completion'):
         """Run a single callback check cycle based on trigger mode."""
         self._forget_missing_crystal_module()
+        if mode == 'completion':
+            # The last displaced job of a phonopy set to end runs the set's
+            # analysis (mace analyze phonopy), once, outside the queue lock.
+            self._analyze_finished_phonopy_set()
         # Apply throttling to reduce simultaneous callbacks
         if self.throttler:
             self.throttler.throttle(f"callback_{mode}")
-            
+
         # Inside a MACE job array task: the tasks of one array have the same
         # request and often end together, so the lock is waited for longer
         # (within the task's walltime), and the task's own row is recorded

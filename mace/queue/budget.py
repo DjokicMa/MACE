@@ -979,23 +979,34 @@ def _live_rows(conn, workflow_id: Optional[str]) -> int:
     return n
 
 
-def normalize_cap(cap) -> Optional[int]:
+def normalize_cap(cap, explicit: bool = False) -> Optional[int]:
     """An explicit max_jobs, or None: unset, invalid, or the 200 every plan
-    up to 1.1.5 stored whether the user chose it or not."""
-    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1 or cap == 200:
+    up to 1.1.5 stored whether the user chose it or not. A plan since 1.1.6
+    records that its cap was chosen (execution_settings.max_jobs_explicit,
+    ``explicit``), so a chosen 200 counts."""
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1 or (cap == 200 and not explicit):
         return None
     return cap
+
+
+def plan_cap(plan) -> Optional[int]:
+    """The cap a plan's execution settings carry (normalize_cap with the plan's own flag)."""
+    ex = (plan or {}).get("execution_settings") or {}
+    return normalize_cap(ex.get("max_concurrent_jobs"), explicit=bool(ex.get("max_jobs_explicit")))
 
 
 def workflow_cap(db_path, workflow_id: str) -> Optional[int]:
     entry = (_registry().get("dbs") or {}).get(str(Path(db_path).resolve())) or {}
     caps = entry.get("caps") or {}
     if workflow_id in caps:
-        return normalize_cap(caps[workflow_id])
+        c = normalize_cap(caps[workflow_id])
+        if c is not None or caps[workflow_id] != 200:
+            return c
+        # a 200 in the registry is the old default or a chosen cap: only the plan says which
     plan = find_plan(db_path, workflow_id)
     if plan is None:
         return None
-    return normalize_cap((plan.get("execution_settings") or {}).get("max_concurrent_jobs"))
+    return plan_cap(plan)
 
 
 def workflow_folder(db_path, workflow_id: str) -> Optional[Path]:

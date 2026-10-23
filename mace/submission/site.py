@@ -151,7 +151,8 @@ KNOWN = {"slurm": {"account", "partition", "qos", "constraint", "extra"},
          "queue": {"max_jobs", "reserve", "budget", "limit", "order", "followup_share", "sentinel"},
          "local_run": {"gateway_message", "module_message", "max_time"},
          "resources": {"ntasks", "nodes", "cpus_per_task", "mem", "mem_per_cpu", "walltime", "auto", "properties",
-                       "OPT", "SP", "FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"},
+                       "OPT", "SP", "FREQ", "ELASTIC", "EOS", "QHA", "CPHF",
+                       "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS"},
          "mpi": {"launcher", "srun_mpi", "env"},
          "paths": {"scratch"},
          "crystal": {"bin_dir", "scf", "properties"},
@@ -163,7 +164,7 @@ LEVEL_KEYS = RESOURCE_KEYS + ("walltime",)
 TABLE_KEYS = LEVEL_KEYS + ("auto",)
 # the calculation types a [resources.<TYPE>] table names (mace.utils.calc_detection:
 # d12_calc_type, PROPERTY_CALC_TYPES); a properties type also takes [resources.properties]
-SCF_TYPES = ("OPT", "SP", "FREQ")
+SCF_TYPES = ("OPT", "SP", "FREQ", "ELASTIC", "EOS", "QHA", "CPHF")
 PROP_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
 RESOURCE_TYPES = SCF_TYPES + PROP_TYPES
 # a default walltime: D-HH:MM:SS, D-HH:MM, D-HH or HH:MM:SS (SLURM's forms without the
@@ -276,7 +277,7 @@ INIT_TEXT = """\
 # ntasks = @PROP_NTASKS_PADDED@# the same keys, for Pproperties jobs only
 # mem    = "@PROP_MEM@"
 # A table per calculation type wins over [resources.properties] and [resources] (OPT, SP, FREQ,
-# BAND, DOSS, TRANSPORT, "CHARGE+POTENTIAL", ORBITALS), for example 16 cores for every job, 4 for properties
+# ELASTIC, EOS, QHA, CPHF, BAND, DOSS, TRANSPORT, "CHARGE+POTENTIAL", ORBITALS), for example 16 cores for every job, 4 for properties
 # jobs and 64 cores for 3 days for frequencies:
 #   [resources]            ntasks = 16
 #   [resources.properties] ntasks = 4

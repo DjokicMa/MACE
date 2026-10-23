@@ -31,6 +31,10 @@ recovering  the latest attempt was resubmitted by recovery
 blocked     its parent failed or was canceled, or the parent was processed
             and this step was not created
 
+A TAU step is one node for its job group (its strained single points):
+``group`` counts them (done / total), ``tau`` is the fit's result once it is
+there, and a TRANSPORT after it is ``waiting`` until then.
+
 Works for workflows started from the CLI, the GUI, and plans written by
 MACE 1.1.4 and 1.1.5 (ids without the random suffix included).
 """
@@ -41,7 +45,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from mace.workflow.common.constants import CALC_TYPES
+from mace.workflow.common.constants import CALC_TYPES, MODULE_STEP_TYPES
 from mace.workflow.control import read_control, state_of
 
 PLAN_RE = re.compile(r"^workflow_plan_(\d{8}_\d{6}(?:_[0-9a-f]{4})?)\.json$")
@@ -201,11 +205,22 @@ def parent_index(sequence: List[str], i: int) -> Optional[int]:
     depends on (CALC_TYPES), else the step before it."""
     if i <= 0:
         return None
+    if base_type(sequence[i]) in MODULE_STEP_TYPES:
+        # ELASTIC, EOS, QHA, CPHF: the nearest OPT (the engine's choice, as for
+        # FREQ), the nearest SP in a chain without one
+        for want in ("OPT", "SP"):
+            for j in range(i - 1, -1, -1):
+                if base_type(sequence[j]) == want:
+                    return j
     deps = CALC_TYPES.get(base_type(sequence[i]), {}).get("depends_on") or []
     for j in range(i - 1, -1, -1):
         if base_type(sequence[j]) in deps:
             return j
-    return i - 1
+    # nothing is built from a module step: an OPT after one starts from the step before it
+    j = i - 1
+    while j > 0 and base_type(sequence[j]) in MODULE_STEP_TYPES:
+        j -= 1
+    return j
 
 
 # a job MACE submitted this recently and squeue does not list yet is queued (the
@@ -285,6 +300,45 @@ def _node(row_list: List[Dict[str, Any]], sq: Optional[List[Dict[str, Any]]],
     }
 
 
+def _tau_node(row_list: List[Dict[str, Any]], sq: Optional[List[Dict[str, Any]]],
+              now: Optional[datetime] = None) -> Dict[str, Any]:
+    """A TAU step's node: its strained runs as one group (tau_step.py)."""
+    from mace.workflow import tau_step
+    work = next((Path(r["work_dir"]) for r in row_list if r.get("work_dir")), None)
+    manifest = tau_step.read_json(work / tau_step.MANIFEST) if work else None
+    summary = tau_step.read_json(work / tau_step.SUMMARY) if work else None
+    names = {m["member"]: Path(m["deck"]).stem for m in (manifest or {}).get("members") or []}
+    by: Dict[str, List[Dict[str, Any]]] = {}
+    for r in row_list:
+        m = tau_step._member_of(r, names) if names else r.get("calc_id")
+        by.setdefault(m or r.get("calc_id"), []).append(r)
+    members = [dict(_node(rs, sq, now), member=m) for m, rs in by.items()]
+    states = [x["state"] for x in members]
+    total = len(names) or len(members)
+    node = _node(row_list, sq, now)
+    if summary is not None:
+        node["state"] = "completed"
+    elif any(st in ("running", "ending") for st in states):
+        node["state"] = "running"
+    elif any(st in ("queued", "held", "recovering") for st in states):
+        node["state"] = "queued"
+    elif len(members) >= total and all(st in ("completed", "failed", "canceled") for st in states):
+        node["state"] = "waiting"             # the fit waits for the BAND / DOSS runs (the masses)
+        node["reason"] = "the strained runs have finished; the fit waits for the masses (BAND, DOSS)"
+    node["group"] = {"total": total, "done": states.count("completed"),
+                     "failed": sum(st in ("failed", "canceled") for st in states),
+                     "running": sum(st in ("running", "ending") for st in states), "members": members}
+    node["attempts"] = 1
+    if summary is not None:
+        node["tau"] = {k: summary.get(k) for k in ("used_fs", "computed_fs", "fallback", "reason",
+                                                    "low_confidence", "held", "carrier", "carrier_reason",
+                                                    "axis", "axes", "axes_reason", "results", "warnings",
+                                                    "members", "temperature_k", "json")}
+        node["tau"]["line"] = tau_step.line(summary)
+        node["tau"]["dir"] = str(work)
+    return node
+
+
 def workflow_status(folder: Union[str, Path], workflow_id: str,
                     squeue: Optional[List[Dict[str, Any]]] = None, use_squeue: bool = True,
                     stale_minutes: float = STALE_MINUTES, now: Optional[datetime] = None,
@@ -321,8 +375,26 @@ def workflow_status(folder: Union[str, Path], workflow_id: str,
         nodes: List[Dict[str, Any]] = []
         for i, step in enumerate(sequence):
             mine = [r for r in rows if r.get("material_id") == mid and r.get("calc_type") == step]
-            if mine:
+            tau = _tau_of(sequence, step)
+            if mine and base_type(step) == "TAU":
+                node = _tau_node(mine, sq, now)
+            elif mine:
                 node = _node(mine, sq, now)
+                rt = _settings(mine[-1]).get("relaxation_time")
+                if isinstance(rt, dict) and rt.get("relaxation_time_fs") is not None:
+                    node["relaxation_time"] = rt
+            elif tau and nodes[sequence.index(tau)]["state"] != "completed":
+                # a TRANSPORT after a TAU step starts once its tau is known
+                t_node = nodes[sequence.index(tau)]
+                node = {"state": "planned", "attempts": 0}
+                if t_node["state"] in ("blocked", "canceled", "paused"):
+                    node["state"] = t_node["state"]
+                elif t_node["state"] != "planned":
+                    node["state"] = "waiting"
+                    node["reason"] = f"waiting for its relaxation time ({tau}_{sequence.index(tau) + 1})"
+            elif tau and (nodes[sequence.index(tau)].get("tau") or {}).get("held"):
+                node = {"state": "held", "attempts": 0,
+                        "reason": f"the {tau} step is strict: {nodes[sequence.index(tau)]['tau']['line']}"}
             else:
                 node = {"state": "planned", "attempts": 0}
                 p = parent_index(sequence, i)
@@ -477,6 +549,13 @@ def list_workflows(folder: Union[str, Path], use_squeue: bool = False,
 
 
 # ------------------------------------------------------------------ text
+def _tau_of(sequence: List[str], step: str) -> Optional[str]:
+    if base_type(step) != "TRANSPORT":
+        return None
+    from mace.workflow.tau_step import tau_before
+    return tau_before(sequence, step)
+
+
 def format_status(st: Dict[str, Any]) -> str:
     lines = [f"Workflow {st['workflow_id']}" + (f" ({st['label']})" if st.get("label") else ""),
              f"  State:    {st['state']}" + ("" if st["auto_progression"] else "  (auto_progression off)"),
@@ -492,8 +571,16 @@ def format_status(st: Dict[str, Any]) -> str:
         cells = []
         for n in m["nodes"]:
             cell = n["state"] + (f"x{n['attempts']}" if n.get("attempts", 0) > 1 else "")
+            if n.get("group") and n["state"] != "completed":
+                cell += f" {n['group']['done']}/{n['group']['total']}"
             cells.append(f"{cell:<11}")
         lines.append(f"  {m['material_id']:<{width}}  " + "  ".join(cells))
+    taus = [(m["material_id"], n) for m in st["materials"] for n in m["nodes"] if n.get("tau")]
+    if taus:
+        lines.append("")
+        lines.append("  Relaxation time:")
+        for mid, n in taus:
+            lines.append(f"    {mid} {n['step']}: {n['tau']['line']}")
     running = [(m["material_id"], n) for m in st["materials"] for n in m["nodes"] if n.get("eta")]
     if running:
         lines.append("")
