@@ -1,0 +1,20 @@
+data_hBN_monolayer
+_chemical_name_common 'hexagonal boron nitride monolayer'
+_cell_length_a 2.5040
+_cell_length_b 2.5040
+_cell_length_c 20.0000
+_cell_angle_alpha 90.00
+_cell_angle_beta 90.00
+_cell_angle_gamma 120.00
+_symmetry_space_group_name_H-M 'P -6 m 2'
+_symmetry_Int_Tables_number 187
+
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+B1 B 0.3333333333 0.6666666667 0.0000000000 1.0
+N1 N 0.6666666667 0.3333333333 0.0000000000 1.0

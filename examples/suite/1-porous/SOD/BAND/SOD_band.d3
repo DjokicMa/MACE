@@ -1,0 +1,10 @@
+BAND
+SOD - Band Structure - SeeKPath (no.I) - GAMMA-H-N-GAMMA-P-H-|-P-N
+6 4 1000 1 288 1 0
+0 0 0  2 -2 2
+2 -2 2  0 0 2
+0 0 2  0 0 0
+0 0 0  1 1 1
+1 1 1  2 -2 2
+1 1 1  0 0 2
+END

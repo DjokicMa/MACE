@@ -1,0 +1,2414 @@
+{
+ "kind": "mace-example-suite",
+ "schema": 1,
+ "title": "MACE example suite",
+ "calc_types": [
+  "OPT",
+  "SP",
+  "FREQ",
+  "BAND",
+  "DOSS",
+  "TRANSPORT",
+  "CHARGE+POTENTIAL",
+  "ORBITALS",
+  "PHONON_BAND",
+  "PHONON_DOS",
+  "ELASTIC",
+  "EOS",
+  "QHA",
+  "CPHF"
+ ],
+ "provenance": "Output files are unmodified copies of CRYSTAL23 runs by the Mendoza group (the group's own data, shared for use with MACE), of files in MACE's tests/data, or of CRYSTAL23 runs made for this suite on the MSU HPCC from the decks next to them; each file's origin is in `source`. Wavefunction (fort.9) and scratch files are not included. Input decks marked \"written by mace\" were generated from those outputs by MACE itself. Cube grids are decimated by 2 along each axis (by 4 for the polyacetylene grids, 100 x 518 x 404 points in CRYSTAL's run). The diamond decks embed a published pob-TZVP-type carbon basis set.",
+ "archetypes": [
+  {
+   "id": "porous",
+   "folder": "1-porous",
+   "title": "Porous framework (zeolite/MOF/COF-like)",
+   "entries": [
+    {
+     "id": "SOD",
+     "title": "Sodalite framework, pure silica (idealized)",
+     "formula": "Si12O24",
+     "atoms": 36,
+     "dimensionality": 3,
+     "method": "HSEsol-3c / SOLDEF2MSVP, CRYSTAL, I-43m",
+     "notes": "The corpus holds no porous MOF/COF/zeolite output, so every run here was made on the MSU HPCC for this suite. The start geometry is the ideal SOD net (all Si-O 1.610 A, tetrahedral), optimized by the OPT run; cages of about 5.5 A diameter. SP runs at the OPT geometry and the BAND, DOSS, TRANSPORT and CHARGE+POTENTIAL runs read its wavefunction.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/OPT/SOD_opt.d12",
+        "1-porous/SOD/OPT/SOD_opt.out"
+       ],
+       "note": "run on the MSU HPCC for this suite"
+      },
+      "SP": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/SP/SOD_sp.d12",
+        "1-porous/SOD/SP/SOD_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry"
+      },
+      "BAND": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/BAND/SOD_band.d3",
+        "1-porous/SOD/BAND/SOD_band.BAND.DAT",
+        "1-porous/SOD/BAND/SOD_band.f25",
+        "1-porous/SOD/BAND/SOD_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/DOSS/SOD_doss.d3",
+        "1-porous/SOD/DOSS/SOD_doss.DOSS.DAT",
+        "1-porous/SOD/DOSS/SOD_doss.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/TRANSPORT/SOD_transport.d3",
+        "1-porous/SOD/TRANSPORT/SOD_transport.KAPPA.DAT",
+        "1-porous/SOD/TRANSPORT/SOD_transport.SEEBECK.DAT",
+        "1-porous/SOD/TRANSPORT/SOD_transport.SIGMA.DAT",
+        "1-porous/SOD/TRANSPORT/SOD_transport.SIGMAS.DAT",
+        "1-porous/SOD/TRANSPORT/SOD_transport.TDF.DAT",
+        "1-porous/SOD/TRANSPORT/SOD_transport.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential.d3",
+        "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential.out",
+        "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_DENS.CUBE",
+        "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_POT.CUBE",
+        "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_SPIN.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "FREQ": {
+       "status": "real",
+       "files": [
+        "1-porous/SOD/FREQ/SOD_freq.d12",
+        "1-porous/SOD/FREQ/SOD_freq.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "dense-3d",
+   "folder": "2-dense-3d",
+   "title": "Dense 3D crystal",
+   "entries": [
+    {
+     "id": "diamond",
+     "title": "Diamond (2-atom primitive cell)",
+     "formula": "C2",
+     "atoms": 2,
+     "dimensionality": 3,
+     "method": "B3LYP-D3 / pob-TZVP-type carbon basis (external, in the deck), CRYSTAL, spin-polarized default",
+     "notes": "The suite's full-coverage 3D entry: the group's OPT run, then SP from it and every other calculation from that SP, all decks written by MACE. The decks embed a published pob-TZVP-type carbon basis.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/OPT/diamond_opt.d12",
+        "2-dense-3d/diamond/OPT/diamond_opt.out",
+        "2-dense-3d/diamond/OPT/diamond_opt.cif"
+       ]
+      },
+      "SP": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/SP/diamond_sp.d12",
+        "2-dense-3d/diamond/SP/diamond_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry (a = 3.5448 A); spin-polarized, closed shell (alpha = beta)"
+      },
+      "FREQ": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/FREQ/diamond_freq.d12",
+        "2-dense-3d/diamond/FREQ/diamond_freq.out",
+        "2-dense-3d/diamond/FREQ/diamond_freq_IRSPEC.DAT",
+        "2-dense-3d/diamond/FREQ/diamond_freq_RAMSPEC.DAT"
+       ],
+       "note": "run on the MSU HPCC for this suite; F2g (Raman active, IR inactive) at 1379.9 cm-1 with this method and basis (exp. 1332 cm-1); IR and Raman spectra; spin-polarized CPKS, about 7 h on 16 cores"
+      },
+      "PHONON_BAND": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.d12",
+        "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.PHONBANDS.DAT",
+        "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.f25",
+        "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2x2x2; X-GAMMA-L-W-GAMMA as integer records; all real (0 to 1388 cm-1, the optical branch overbending above its Gamma value of 1380 cm-1)"
+      },
+      "PHONON_DOS": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.d12",
+        "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.PHONDOS.DAT",
+        "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.f25",
+        "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2x2x2 (8 k points); 0-2000 cm-1, 200 bins, atom-projected; the Gamma optical (F2g, Raman) mode at 1380 cm-1 with this method and basis (exp. 1332 cm-1), zone-boundary modes 583-1318 cm-1, all real"
+      },
+      "ELASTIC": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/ELASTIC/diamond_elastic.d12",
+        "2-dense-3d/diamond/ELASTIC/diamond_elastic.ELASINFO.DAT",
+        "2-dense-3d/diamond/ELASTIC/diamond_elastic.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; C11 1150.4, C12 122.6, C44 618.2 GPa; K_Hill 465.2 GPa"
+      },
+      "EOS": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/EOS/diamond_eos.d12",
+        "2-dense-3d/diamond/EOS/diamond_eos.EOSINFO.DAT",
+        "2-dense-3d/diamond/EOS/diamond_eos.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; Birch-Murnaghan B0 464.5 GPa, V0 11.142 A^3, 7 volumes"
+      },
+      "QHA": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/QHA/diamond_qha.d12",
+        "2-dense-3d/diamond/QHA/diamond_qha.EOSINFO.DAT",
+        "2-dense-3d/diamond/QHA/diamond_qha.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; CRYSTAL's default QHA of the 2-atom cell: Gamma-only phonons at 4 volumes (only the Raman mode enters, so the thermal expansion is near zero; a supercell, mace elastic --scelphono, gives a physical one); K_T(300 K) 458.9 GPa"
+      },
+      "CPHF": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/CPHF/diamond_cphf.d12",
+        "2-dense-3d/diamond/CPHF/diamond_cphf.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; eps_inf 5.387 (exp. 5.7), n 2.321"
+      },
+      "BAND": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/BAND/diamond_band.d3",
+        "2-dense-3d/diamond/BAND/diamond_band.BAND.DAT",
+        "2-dense-3d/diamond/BAND/diamond_band.f25",
+        "2-dense-3d/diamond/BAND/diamond_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SeeK-path path; indirect gap 5.99 eV (B3LYP-D3), alpha = beta"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/DOSS/diamond_doss.d3",
+        "2-dense-3d/diamond/DOSS/diamond_doss.DOSS.DAT",
+        "2-dense-3d/diamond/DOSS/diamond_doss.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; E_F -24.2 to +15 eV, opt2d3's default window with its lower bound moved below the valence band by the BAND run, at the Standard energy step (1959 points, 0.02 eV apart; E_F from the BAND run, the SP's spins being locked), projected on C s, p, d"
+      },
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.d3",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.KAPPA.DAT",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.SEEBECK.DAT",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMA.DAT",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMAS.DAT",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.TDF.DAT",
+        "2-dense-3d/diamond/TRANSPORT/diamond_transport.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential.d3",
+        "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential.out",
+        "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_DENS.CUBE",
+        "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_POT.CUBE",
+        "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_SPIN.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "ORBITALS": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/diamond/ORBITALS/diamond_orbitals.d3",
+        "2-dense-3d/diamond/ORBITALS/diamond_orbitals.out",
+        "2-dense-3d/diamond/ORBITALS/diamond_orbitals_orb_00001_K000_real.molden"
+       ],
+       "note": "run on the MSU HPCC for this suite; the ALPHA orbitals pass the GUI's orthonormality check; CRYSTAL23 writes the BETA coefficients of this spin-polarized closed-shell run as numbers that are not orbitals, so only ALPHA is drawn (alpha = beta here)"
+      }
+     }
+    },
+    {
+     "id": "C1-RCSR-bcu-f",
+     "title": "Carbon net bcu-f (RCSR), 8 atoms",
+     "formula": "C8",
+     "atoms": 8,
+     "dimensionality": 3,
+     "method": "CRYSTAL BOLTZTRA run",
+     "notes": "A 3D carbon net from the group's RCSR screening; only its transport run is shipped.",
+     "cells": {
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.d3",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.out",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.KAPPA.dat",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SEEBECK.dat",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMA.dat",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMAS.dat",
+        "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.TDF.dat"
+       ],
+       "note": "BOLTZTRA: Seebeck, conductivity, electronic thermal conductivity, TDF"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "slab-2d",
+   "folder": "3-slab-2d",
+   "title": "2D material / slab",
+   "entries": [
+    {
+     "id": "hBN",
+     "title": "Hexagonal boron nitride monolayer",
+     "formula": "BN",
+     "atoms": 2,
+     "dimensionality": 2,
+     "method": "HSEsol-3c / SOLDEF2MSVP, SLAB (layer group 78, p-6m2), spin-polarized default",
+     "notes": "A wide-gap insulator, two atoms, the suite's full-coverage 2D entry: OPT from the textbook monolayer, SP at its geometry and every other calculation from that SP.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/OPT/hBN_opt.d12",
+        "3-slab-2d/hBN/OPT/hBN_opt.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; a = 2.4949 A"
+      },
+      "SP": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/SP/hBN_sp.d12",
+        "3-slab-2d/hBN/SP/hBN_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry; spin-polarized, closed shell (alpha = beta)"
+      },
+      "FREQ": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/FREQ/hBN_freq.d12",
+        "3-slab-2d/hBN/FREQ/hBN_freq.out",
+        "3-slab-2d/hBN/FREQ/hBN_freq_IRSPEC.DAT",
+        "3-slab-2d/hBN/FREQ/hBN_freq_RAMSPEC.DAT"
+       ],
+       "note": "run on the MSU HPCC for this suite; ZO 835 cm-1, E' (LO/TO) 1415 cm-1, IR and Raman spectra; all real"
+      },
+      "PHONON_BAND": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.d12",
+        "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.PHONBANDS.DAT",
+        "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.f25",
+        "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2x2; M-Gamma-K up to 1412 cm-1; acoustic branches -3.5 cm-1 at Gamma (numerical noise)"
+      },
+      "PHONON_DOS": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.d12",
+        "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.PHONDOS.DAT",
+        "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.f25",
+        "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2x2; 0-2000 cm-1, 200 bins, atom-projected"
+      },
+      "ELASTIC": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/ELASTIC/hBN_elastic.d12",
+        "3-slab-2d/hBN/ELASTIC/hBN_elastic.ELASINFO.DAT",
+        "3-slab-2d/hBN/ELASTIC/hBN_elastic.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; C11 3.827, C12 0.873, C66 1.477 Ha (2D): E 293 N/m, Poisson ratio 0.228"
+      },
+      "QHA": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/QHA/hBN_qha.d12",
+        "3-slab-2d/hBN/QHA/hBN_qha.EOSINFO.DAT",
+        "3-slab-2d/hBN/QHA/hBN_qha.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; the 2D QHA: area S(300 K) 5.419 A^2, K_T 1871 GPa A"
+      },
+      "CPHF": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/CPHF/hBN_cphf.d12",
+        "3-slab-2d/hBN/CPHF/hBN_cphf.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; polarizability alpha_xx 30.6, alpha_zz 4.7 bohr^3 (no dielectric tensor for a slab)"
+      },
+      "BAND": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/BAND/hBN_band.d3",
+        "3-slab-2d/hBN/BAND/hBN_band.BAND.DAT",
+        "3-slab-2d/hBN/BAND/hBN_band.f25",
+        "3-slab-2d/hBN/BAND/hBN_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; M-Gamma-K label path; direct gap 5.99 eV at K (HSEsol-3c), alpha = beta"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/DOSS/hBN_doss.d3",
+        "3-slab-2d/hBN/DOSS/hBN_doss.DOSS.DAT",
+        "3-slab-2d/hBN/DOSS/hBN_doss.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.d3",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.KAPPA.DAT",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.SEEBECK.DAT",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMA.DAT",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMAS.DAT",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.TDF.DAT",
+        "3-slab-2d/hBN/TRANSPORT/hBN_transport.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential.d3",
+        "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential.out",
+        "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_DENS.CUBE",
+        "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_POT.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction; the spin density is zero everywhere (a closed-shell result), so its SPIN cube is not shipped"
+      },
+      "ORBITALS": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/hBN/ORBITALS/hBN_orbitals.d3",
+        "3-slab-2d/hBN/ORBITALS/hBN_orbitals.out",
+        "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00001_K000_real.molden",
+        "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00002_K100_real.molden"
+       ],
+       "note": "run on the MSU HPCC for this suite; the ALPHA orbitals pass the GUI's orthonormality check; CRYSTAL23 writes the BETA coefficients of this spin-polarized closed-shell run as numbers that are not orbitals, so only ALPHA is drawn (alpha = beta here)"
+      },
+      "EOS": {
+       "status": "n/a",
+       "reason": "EOS scans the cell volume with volume-constrained optimizations (CRYSTAL23 manual, ch. 12, p.282), which CRYSTAL23 runs for 3D systems only (p.12: \"Constant volume or pressure constrained geometry optimizations (3D only)\"); probe runs of EOS on h-BN and polyacetylene stopped with \"FOR EOS CALCULATION THE SYSTEM MUST BE 3D\""
+      }
+     }
+    },
+    {
+     "id": "graphene",
+     "title": "Graphene monolayer (compact cell)",
+     "formula": "C2",
+     "atoms": 2,
+     "dimensionality": 2,
+     "method": "HSEsol-3c / SOLDEF2MSVP, SLAB (layer group 80), spin-polarized, SMEAR 0.001 Ha",
+     "notes": "Two atoms: every run here takes minutes. A semimetal: Fermi smearing and Broyden mixing in the SP deck (and the OPT deck written from it) are what let its SCF converge; the BAND, DOSS, TRANSPORT and CHARGE+POTENTIAL decks read the SP wavefunction. The full-coverage 2D entry is h-BN.",
+     "cells": {
+      "SP": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/SP/graphene_sp.d12",
+        "3-slab-2d/graphene/SP/graphene_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; graphene a = 2.4612 A as a SLAB in layer group 80, spin-polarized; Fermi smearing 0.001 Ha and Broyden mixing, without which graphene's SCF oscillated"
+      },
+      "OPT": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/OPT/graphene_opt.d12",
+        "3-slab-2d/graphene/OPT/graphene_opt.out"
+       ],
+       "note": "run on the MSU HPCC for this suite"
+      },
+      "FREQ": {
+       "status": "n/a",
+       "reason": "no usable FREQ for this semimetal: without Fermi smearing its SCF oscillates (the FREQ run stopped with SCF ENDED - TOO MANY CYCLES at 200 cycles), and with smearing CRYSTAL23's analytic gradients, from which FREQCALC builds the Hessian, are not reliable for a conducting system (CRYSTAL23 manual, SMEAR, p.127). FREQ runs from smeared SPs (Broyden mixing) gave the E2g (G) mode at 235 cm-1 with SMEAR 0.005 and at -719 cm-1 with SMEAR 0.001, where graphene's is near 1580 cm-1, so no FREQ deck or output is shipped"
+      },
+      "BAND": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/BAND/graphene_band.d3",
+        "3-slab-2d/graphene/BAND/graphene_band.BAND.DAT",
+        "3-slab-2d/graphene/BAND/graphene_band.f25",
+        "3-slab-2d/graphene/BAND/graphene_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/DOSS/graphene_doss.d3",
+        "3-slab-2d/graphene/DOSS/graphene_doss.DOSS.DAT",
+        "3-slab-2d/graphene/DOSS/graphene_doss.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.d3",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.KAPPA.DAT",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.SEEBECK.DAT",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMA.DAT",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMAS.DAT",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.TDF.DAT",
+        "3-slab-2d/graphene/TRANSPORT/graphene_transport.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential.d3",
+        "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential.out",
+        "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_DENS.CUBE",
+        "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_POT.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction; the spin density is zero everywhere (a closed-shell result), so its SPIN cube is not shipped"
+      }
+     }
+    },
+    {
+     "id": "4LG_AA",
+     "title": "Four-layer graphene, 2x2 cell",
+     "formula": "C96",
+     "atoms": 96,
+     "dimensionality": 2,
+     "method": "HSEsol-3c / SOLDEF2MSVP, SLAB",
+     "notes": "A larger real slab: optimization trajectory and density of states.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.d12",
+        "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.out",
+        "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.cif"
+       ],
+       "note": "four AA-stacked graphene layers in a 2x2 cell; 20 optimization points"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.d3",
+        "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.out",
+        "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.DOSS.DAT",
+        "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.f25"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "polymer-1d",
+   "folder": "4-polymer-1d",
+   "title": "1D polymer",
+   "entries": [
+    {
+     "id": "polyacetylene",
+     "title": "trans-Polyacetylene (CH)x chain",
+     "formula": "C2H2",
+     "atoms": 4,
+     "dimensionality": 1,
+     "method": "HSEsol-3c / SOLDEF2MSVP, POLYMER (rod group 1), spin-polarized default",
+     "notes": "A conjugated polymer with alternating single and double bonds, 4 atoms per repeat, the suite's full-coverage 1D entry. The start geometry uses literature bond lengths; the OPT run relaxes the chain and the repeat length, SP runs at its geometry and every other calculation starts from that SP.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/OPT/polyacetylene_opt.d12",
+        "4-polymer-1d/polyacetylene/OPT/polyacetylene_opt.out"
+       ],
+       "note": "run on the MSU HPCC for this suite"
+      },
+      "SP": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/SP/polyacetylene_sp.d12",
+        "4-polymer-1d/polyacetylene/SP/polyacetylene_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry; spin-polarized, closed shell (alpha = beta)"
+      },
+      "FREQ": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq.d12",
+        "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq.out",
+        "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_IRSPEC.DAT",
+        "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_RAMSPEC.DAT"
+       ],
+       "note": "run on the MSU HPCC for this suite; 339.7 to 3150.3 cm-1, all real (four zero modes: three translations and the rotation about the chain); IR and Raman spectra"
+      },
+      "PHONON_BAND": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.d12",
+        "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.PHONBANDS.DAT",
+        "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.f25",
+        "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2, Gamma-X; the optical branches are real (up to 3150 cm-1); the four zero modes of Gamma come out at -58.6 to 0.1 cm-1, as the dispersion does not project out the rotation about the chain the Gamma FREQ run does (Eckart), and are positive beyond 9% of Gamma-X"
+      },
+      "PHONON_DOS": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.d12",
+        "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.PHONDOS.DAT",
+        "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.f25",
+        "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; SCELPHONO 2; 0-4000 cm-1, 200 bins, atom-projected"
+      },
+      "ELASTIC": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.d12",
+        "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.ELASINFO.DAT",
+        "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; C11 4.804 Ha (along the chain; 1D)"
+      },
+      "QHA": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.d12",
+        "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.EOSINFO.DAT",
+        "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; the 1D QHA: length L(300 K) 2.466 A, K_T 8462 GPa A^2"
+      },
+      "CPHF": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/CPHF/polyacetylene_cphf.d12",
+        "4-polymer-1d/polyacetylene/CPHF/polyacetylene_cphf.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; polarizability alpha_xx 2264 (along the chain), alpha_yy 17.4, alpha_zz 5.6 bohr^3"
+      },
+      "BAND": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.d3",
+        "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.BAND.DAT",
+        "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.f25",
+        "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; Gamma-X; direct gap 0.92 eV at X (HSEsol-3c), alpha = beta"
+      },
+      "DOSS": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.d3",
+        "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.DOSS.DAT",
+        "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction"
+      },
+      "TRANSPORT": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.d3",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.KAPPA.DAT",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SEEBECK.DAT",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMA.DAT",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMAS.DAT",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.TDF.DAT",
+        "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction; for a chain BOLTZTRA writes the components along the chain axis only (S_xx, sigma_xx, kappa_xx)"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential.d3",
+        "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential.out",
+        "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_DENS.CUBE",
+        "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_POT.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction; the spin density is zero everywhere (a closed-shell result), so its SPIN cube is not shipped"
+      },
+      "ORBITALS": {
+       "status": "real",
+       "files": [
+        "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals.d3",
+        "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals.out",
+        "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00001_K000_real.molden",
+        "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00002_K100_real.molden"
+       ],
+       "note": "run on the MSU HPCC for this suite; the ALPHA orbitals pass the GUI's orthonormality check; CRYSTAL23 writes the BETA coefficients of this spin-polarized closed-shell run as numbers that are not orbitals, so only ALPHA is drawn (alpha = beta here)"
+      },
+      "EOS": {
+       "status": "n/a",
+       "reason": "EOS scans the cell volume with volume-constrained optimizations (CRYSTAL23 manual, ch. 12, p.282), which CRYSTAL23 runs for 3D systems only (p.12: \"Constant volume or pressure constrained geometry optimizations (3D only)\"); probe runs of EOS on h-BN and polyacetylene stopped with \"FOR EOS CALCULATION THE SYSTEM MUST BE 3D\""
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "molecule-0d",
+   "folder": "5-molecule-0d",
+   "title": "0D molecule",
+   "entries": [
+    {
+     "id": "EC",
+     "title": "Ethylene carbonate (isolated molecule)",
+     "formula": "C3H4O3",
+     "atoms": 10,
+     "dimensionality": 0,
+     "method": "HSEsol-3c / SOLDEF2MSVP, MOLECULE, spin-polarized default",
+     "notes": "A 10-atom organic carbonate (a Li-ion electrolyte solvent), the suite's full-coverage 0D entry: the group's OPT run, then SP from it and every other calculation from that SP, all decks written by MACE.",
+     "cells": {
+      "OPT": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/OPT/EC_opt.d12",
+        "5-molecule-0d/EC/OPT/EC_opt.out",
+        "5-molecule-0d/EC/OPT/EC_opt.cif"
+       ]
+      },
+      "SP": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/SP/EC_sp.d12",
+        "5-molecule-0d/EC/SP/EC_sp.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; at the optimized geometry; spin-polarized, closed shell (alpha = beta)"
+      },
+      "FREQ": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/FREQ/EC_freq.d12",
+        "5-molecule-0d/EC/FREQ/EC_freq.out",
+        "5-molecule-0d/EC/FREQ/EC_freq_IRSPEC.DAT",
+        "5-molecule-0d/EC/FREQ/EC_freq_RAMSPEC.DAT"
+       ],
+       "note": "run on the MSU HPCC for this suite; 158 to 3123 cm-1, all real (C=O stretch 1987 cm-1); IR and Raman spectra"
+      },
+      "PHONON_DOS": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.d12",
+        "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.f25",
+        "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; the Gamma-only phonon DOS of the molecule (manual p.236), 0-4000 cm-1, 200 bins: 3N = 30 states"
+      },
+      "CPHF": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/CPHF/EC_cphf.d12",
+        "5-molecule-0d/EC/CPHF/EC_cphf.out"
+       ],
+       "note": "run on the MSU HPCC for this suite; polarizability tensor, mean alpha 35.5 bohr^3 (no dielectric tensor for a molecule)"
+      },
+      "CHARGE+POTENTIAL": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential.d3",
+        "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential.out",
+        "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_DENS.CUBE",
+        "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_POT.CUBE"
+       ],
+       "note": "run on the MSU HPCC for this suite; from the SP wavefunction; the spin density is zero everywhere (a closed-shell result), so its SPIN cube is not shipped"
+      },
+      "ORBITALS": {
+       "status": "real",
+       "files": [
+        "5-molecule-0d/EC/ORBITALS/EC_orbitals.d3",
+        "5-molecule-0d/EC/ORBITALS/EC_orbitals.out",
+        "5-molecule-0d/EC/ORBITALS/EC_orbitals_orb.molden"
+       ],
+       "note": "run on the MSU HPCC for this suite; the ALPHA orbitals pass the GUI's orthonormality check; CRYSTAL23 writes the BETA coefficients of this spin-polarized closed-shell run as zeros, so only ALPHA is drawn (alpha = beta here)"
+      },
+      "BAND": {
+       "status": "n/a",
+       "reason": "a molecule has no band structure (CRYSTAL23 manual, BAND: \"does not run for molecules\", p.309)"
+      },
+      "DOSS": {
+       "status": "n/a",
+       "reason": "CRYSTAL computes no density of states for a molecule (CRYSTAL23 manual, DOSS: \"do not run for molecules\", p.320)"
+      },
+      "TRANSPORT": {
+       "status": "n/a",
+       "reason": "BOLTZTRA's transport distribution function sums band velocities over the k points of the Brillouin zone (CRYSTAL23 manual, eq. 14.4, p.314), and a molecule has no bands (BAND: \"does not run for molecules\", p.309)"
+      },
+      "PHONON_BAND": {
+       "status": "n/a",
+       "reason": "a phonon dispersion samples k points defined by a SCELPHONO supercell of a 1D, 2D or 3D periodic system (CRYSTAL23 manual, pp.232-233; SCELPHONO takes a 3D, 2D or 1D expansion matrix, p.73); CRYSTAL23 stops a MOLECULE at SCELPHONO (SUPERCELL OPTION NOT ALLOWED FOR MOLECULES)"
+      },
+      "ELASTIC": {
+       "status": "n/a",
+       "reason": "elastic constants are strain derivatives along the periodic directions, and the elements of a non-periodic direction are null by definition (CRYSTAL23 manual, ch. 13, p.288): a molecule has none; a probe run of ELASTCON on EC stopped with \"SYSTEM MUST BE PERIODIC FOR ELAPIEZO\""
+      },
+      "EOS": {
+       "status": "n/a",
+       "reason": "EOS scans the cell volume with volume-constrained optimizations (CRYSTAL23 manual, ch. 12, p.282), which CRYSTAL23 runs for 3D systems only (p.12: \"Constant volume or pressure constrained geometry optimizations (3D only)\"); a molecule has no cell volume"
+      },
+      "QHA": {
+       "status": "n/a",
+       "reason": "QHA fits phonon frequencies against the cell volume, relaxing the structure at each volume (CRYSTAL23 manual, sec. 9.2, p.253); it is generalized to 1D and 2D systems (p.14), not to molecules: a probe run of QHA on EC stopped with \"ELASTIC OPTION NOT ALLOWED FOR MOLECULES\""
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "files": [
+  {
+   "path": "1-porous/SOD/BAND/SOD_band.BAND.DAT",
+   "bytes": 7525536,
+   "sha256": "523259025f34876e7999d91e67beb3d2185394072a90c45ac3c24a4f28c2ca51",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_band.BAND.DAT)",
+   "stored": "1-porous/SOD/BAND/SOD_band.BAND.DAT.xz",
+   "stored_bytes": 217524
+  },
+  {
+   "path": "1-porous/SOD/BAND/SOD_band.d3",
+   "bytes": 175,
+   "sha256": "17c4251de4176791175a056886b87ca82baa397d8f5e06ecc912e09640cc1008",
+   "source": "written by `mace opt2d3 -t BAND` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "1-porous/SOD/BAND/SOD_band.f25",
+   "bytes": 7016340,
+   "sha256": "ebdec96f6a3178b30d7cc64605ff13cf4868ad9698494cfd850e87efda77a75e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_band.f25)",
+   "stored": "1-porous/SOD/BAND/SOD_band.f25.xz",
+   "stored_bytes": 331700
+  },
+  {
+   "path": "1-porous/SOD/BAND/SOD_band.out",
+   "bytes": 264964,
+   "sha256": "9af5010e79475e134678df4deb20f84409bd9f7e769931eb5c01dcc1de937698",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_band.out)",
+   "stored": "1-porous/SOD/BAND/SOD_band.out.xz",
+   "stored_bytes": 3132
+  },
+  {
+   "path": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential.d3",
+   "bytes": 23,
+   "sha256": "0b84f21ed9daf27baf5c7aacffacdfdee65ddcf2c4b4421ccd09c63575c9c102",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential.out",
+   "bytes": 13255,
+   "sha256": "06660da3f8b59819e87c86502bfc0e6c73f776efd60ec50ea9a516f10a8d9cb9",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_charge+potential.out)"
+  },
+  {
+   "path": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_DENS.CUBE",
+   "bytes": 1647182,
+   "sha256": "c54878f892676bd869f86ad116edb7df8a76725d30b330faca320ac380b23665",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 174728
+  },
+  {
+   "path": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_POT.CUBE",
+   "bytes": 1647177,
+   "sha256": "75db8d60018c98f8f5be384347583ff34268feacce2b1e9ce8ba7995315dd784",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 171124
+  },
+  {
+   "path": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_SPIN.CUBE",
+   "bytes": 1647181,
+   "sha256": "30225da4794e6619daf028583355c17e7408fabca6ab1aeed541a00fc52852ec",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_charge+potential_SPIN.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "1-porous/SOD/CHARGE+POTENTIAL/SOD_charge+potential_SPIN.CUBE.xz",
+   "stored_bytes": 186632
+  },
+  {
+   "path": "1-porous/SOD/DOSS/SOD_doss.DOSS.DAT",
+   "bytes": 476207,
+   "sha256": "fc3326a0633127e164cff5934e1aa285a5bc1a4d3ff22350a975b9e845658537",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_doss.DOSS.DAT)",
+   "stored": "1-porous/SOD/DOSS/SOD_doss.DOSS.DAT.xz",
+   "stored_bytes": 32200
+  },
+  {
+   "path": "1-porous/SOD/DOSS/SOD_doss.d3",
+   "bytes": 2259,
+   "sha256": "559185a6508f2a340502f31a93bf9e65d5ecb01740cea8e0435cd5265132353f",
+   "source": "written by `mace opt2d3 -t DOSS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "1-porous/SOD/DOSS/SOD_doss.out",
+   "bytes": 923771,
+   "sha256": "35ba9d4258926b01f78e1ae7ce61e2073b6e0c130be4239836d8e9e23de2a483",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_doss.out)",
+   "stored": "1-porous/SOD/DOSS/SOD_doss.out.xz",
+   "stored_bytes": 61264
+  },
+  {
+   "path": "1-porous/SOD/FREQ/SOD_freq.d12",
+   "bytes": 396,
+   "sha256": "48a572b1ee1b67dce653fdc5492a778a3c38c5db6f059352252eeb926344050a",
+   "source": "written by `mace opt2d12 --calc-type FREQ` from the OPT output of the run above"
+  },
+  {
+   "path": "1-porous/SOD/FREQ/SOD_freq.out",
+   "bytes": 100040,
+   "sha256": "e6f6454c84e2307771cfd4ac950342ec101e7e82476cc6654a8f6b1056a957a9",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_freq.out)",
+   "stored": "1-porous/SOD/FREQ/SOD_freq.out.xz",
+   "stored_bytes": 13084
+  },
+  {
+   "path": "1-porous/SOD/OPT/SOD_opt.d12",
+   "bytes": 415,
+   "sha256": "21aea767d4ea30bb63c963eac574d226a43f3dc19bc67d2753cd081a55b305dd",
+   "source": "written by `mace convert --batch` from SOD.cif"
+  },
+  {
+   "path": "1-porous/SOD/OPT/SOD_opt.out",
+   "bytes": 135713,
+   "sha256": "fd335798f052d9d2234e0ec5b991721a61b441b756a6308b72dad35d40001a78",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_opt.out)",
+   "stored": "1-porous/SOD/OPT/SOD_opt.out.xz",
+   "stored_bytes": 13804
+  },
+  {
+   "path": "1-porous/SOD/SP/SOD_sp.d12",
+   "bytes": 366,
+   "sha256": "6de06e9901e04b03e9ae00e274453312c4a2140a8dc42b49779307c4e507a89d",
+   "source": "written by `mace opt2d12 --calc-type SP` from the OPT output"
+  },
+  {
+   "path": "1-porous/SOD/SP/SOD_sp.out",
+   "bytes": 63996,
+   "sha256": "46f9510797d89fe10821ecaf60a9b0f654b08490697236750c57ff122bcd51ab",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_sp.out)",
+   "stored": "1-porous/SOD/SP/SOD_sp.out.xz",
+   "stored_bytes": 8636
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.KAPPA.DAT",
+   "bytes": 1734369,
+   "sha256": "5479c3f526fe220c6a083ef89aa1156534b41b987a14a334fe446321e4b6df4d",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.KAPPA.DAT)",
+   "stored": "1-porous/SOD/TRANSPORT/SOD_transport.KAPPA.DAT.xz",
+   "stored_bytes": 93424
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.SEEBECK.DAT",
+   "bytes": 1173963,
+   "sha256": "84135cac237f2b435620eeed5501c071ed1c3c77e76ce0f12c5b5a2adc647d4c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.SEEBECK.DAT)",
+   "stored": "1-porous/SOD/TRANSPORT/SOD_transport.SEEBECK.DAT.xz",
+   "stored_bytes": 75840
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.SIGMA.DAT",
+   "bytes": 1734441,
+   "sha256": "18965eda58aae56506f7372352ff10150eccd43b994f63a01f2f6d526233295e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.SIGMA.DAT)",
+   "stored": "1-porous/SOD/TRANSPORT/SOD_transport.SIGMA.DAT.xz",
+   "stored_bytes": 95936
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.SIGMAS.DAT",
+   "bytes": 1734505,
+   "sha256": "181ab70becc25198ffeaad2f1c42b3869b08316755713a364a5ab5c60421b110",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.SIGMAS.DAT)",
+   "stored": "1-porous/SOD/TRANSPORT/SOD_transport.SIGMAS.DAT.xz",
+   "stored_bytes": 95904
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.TDF.DAT",
+   "bytes": 245745,
+   "sha256": "bad7b7bb4216744c0a57c891f305ffadcb3aa63d90babed9f07f280a96ac9286",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.TDF.DAT)",
+   "stored": "1-porous/SOD/TRANSPORT/SOD_transport.TDF.DAT.xz",
+   "stored_bytes": 14444
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.d3",
+   "bytes": 161,
+   "sha256": "8063f4e0b8a1470ad5a28eef337dee63e29e52fce1d725f4705a7b610d1535a7",
+   "source": "written by `mace opt2d3 -t TRANSPORT` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "1-porous/SOD/TRANSPORT/SOD_transport.out",
+   "bytes": 14397,
+   "sha256": "9b4e17a5c4dea482a60254917d6c49c4b042ce9a46c66e6b45e717da7a2e9e6e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (SOD_transport.out)"
+  },
+  {
+   "path": "1-porous/SOD/structure/SOD.cif",
+   "bytes": 514,
+   "sha256": "7fe1339f3561a8dea28219c8b93ea5618a0e8f6cdc4eb9fee3a4b29afb57c90d",
+   "source": "built here: sodalite topology, idealized Si-O 1.610 A, Si-O-Si 145 degrees"
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.KAPPA.dat",
+   "bytes": 100772,
+   "sha256": "fc172358610a4161f7c2ab3d196c951343e2f2c8449dba66d46d387e34d72d92",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.KAPPA.dat",
+   "stored": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.KAPPA.dat.xz",
+   "stored_bytes": 18588
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SEEBECK.dat",
+   "bytes": 139041,
+   "sha256": "0440ab93f9980dc7d4d7f07e9ed184ab284893b4a6571e028a19e9e2299cbcba",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.SEEBECK.dat",
+   "stored": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SEEBECK.dat.xz",
+   "stored_bytes": 27296
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMA.dat",
+   "bytes": 100808,
+   "sha256": "9dc36e53583b6dc79b5c885b8fa78fa7e05dfabcc4ce1b25035b36e62cb10ad7",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.SIGMA.dat",
+   "stored": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMA.dat.xz",
+   "stored_bytes": 18820
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMAS.dat",
+   "bytes": 100840,
+   "sha256": "4c4586352b489a5d211583fcb828d410abf7b2b9c537ef554eb4f2302847816e",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.SIGMAS.dat",
+   "stored": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.SIGMAS.dat.xz",
+   "stored_bytes": 19964
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.TDF.dat",
+   "bytes": 147,
+   "sha256": "798098472f3c2ff0739304711b06709f13fe1c445f663c944eec305843b477fd",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.TDF.dat"
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.d3",
+   "bytes": 114,
+   "sha256": "ba562f62fc6359bb5dafd630268fe99ecb09771b92d9d5996267e11cca102a0f",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.d3"
+  },
+  {
+   "path": "2-dense-3d/C1-RCSR-bcu-f/TRANSPORT/bcu-f_transport.out",
+   "bytes": 30455,
+   "sha256": "f5bb649aabe8c5b96c457d239dcc1bb594c1ca5e2616d1c884167f086499d7f1",
+   "source": "group corpus: TRANSPORT/C1-RCSR-bcu-f_optimized_TRANSPORT.out"
+  },
+  {
+   "path": "2-dense-3d/diamond/BAND/diamond_band.BAND.DAT",
+   "bytes": 966984,
+   "sha256": "365745b85d11944d108cf70807939db3eda907ac5624191f499f6b8bf06a2eb7",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_band.BAND.DAT)",
+   "stored": "2-dense-3d/diamond/BAND/diamond_band.BAND.DAT.xz",
+   "stored_bytes": 45780
+  },
+  {
+   "path": "2-dense-3d/diamond/BAND/diamond_band.d3",
+   "bytes": 174,
+   "sha256": "2e4734f50c6aaf51610bd7e0b7be8f6d7d4651b9f2800e812e4460e4918efb0f",
+   "source": "written by `mace opt2d3 -t BAND` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/BAND/diamond_band.f25",
+   "bytes": 878208,
+   "sha256": "a82869e434128eefe582f548c6509f8cd52c7692b3b7bbcf5bc0ec6ad7eabaff",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_band.f25)",
+   "stored": "2-dense-3d/diamond/BAND/diamond_band.f25.xz",
+   "stored_bytes": 60244
+  },
+  {
+   "path": "2-dense-3d/diamond/BAND/diamond_band.out",
+   "bytes": 263823,
+   "sha256": "b1f0eab638543b96ece90755520c98b6d6eee7bb98dada29e7e9c4f1d2a85f82",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_band.out)",
+   "stored": "2-dense-3d/diamond/BAND/diamond_band.out.xz",
+   "stored_bytes": 3524
+  },
+  {
+   "path": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential.d3",
+   "bytes": 23,
+   "sha256": "0b84f21ed9daf27baf5c7aacffacdfdee65ddcf2c4b4421ccd09c63575c9c102",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential.out",
+   "bytes": 9752,
+   "sha256": "83d2b8e949d39b061a78729e5f4c5148dc3dcc7f477fe8a5ceb683ce2b54b51c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_charge+potential.out)"
+  },
+  {
+   "path": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_DENS.CUBE",
+   "bytes": 1646319,
+   "sha256": "240f87c32e3277dd61b2ebe536cd30ce3f5137c9dd3489092c3a92a917cb206a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 164856
+  },
+  {
+   "path": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_POT.CUBE",
+   "bytes": 1646314,
+   "sha256": "c0f3507c2e1c57788d555668d6004ed107faf005d5f91e50f6455797bb81ca44",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 165504
+  },
+  {
+   "path": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_SPIN.CUBE",
+   "bytes": 1646318,
+   "sha256": "0466ff41df1b10b2a971bc452f54e220cbf42abd83561587ebc5f579f29b04d8",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_charge+potential_SPIN.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "2-dense-3d/diamond/CHARGE+POTENTIAL/diamond_charge+potential_SPIN.CUBE.xz",
+   "stored_bytes": 173624
+  },
+  {
+   "path": "2-dense-3d/diamond/CPHF/diamond_cphf.d12",
+   "bytes": 936,
+   "sha256": "d39f2b9e998afb868d16a9861a7525e078f7e6011110bc6afef2803f4885d6f8",
+   "source": "written by `mace opt2d12 --calc-type CPHF` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/CPHF/diamond_cphf.out",
+   "bytes": 47322,
+   "sha256": "124147072b7d3647e2ab327b92c19de7baf00ce32bcb1aa14a2defea0a16a3ce",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_cphf.out)",
+   "stored": "2-dense-3d/diamond/CPHF/diamond_cphf.out.xz",
+   "stored_bytes": 8152
+  },
+  {
+   "path": "2-dense-3d/diamond/DOSS/diamond_doss.DOSS.DAT",
+   "bytes": 286499,
+   "sha256": "22122b20302c7fe99e6ad1f36501ea70f1eb956ea62c7fe1beb7c22c79593c4e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_doss.DOSS.DAT)",
+   "stored": "2-dense-3d/diamond/DOSS/diamond_doss.DOSS.DAT.xz",
+   "stored_bytes": 19868
+  },
+  {
+   "path": "2-dense-3d/diamond/DOSS/diamond_doss.d3",
+   "bytes": 321,
+   "sha256": "caa9e0fc5894172c65f0f8e5c73c63cce838c4f3f59af27744b776520bd93561",
+   "source": "written by `mace opt2d3 -t DOSS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/DOSS/diamond_doss.out",
+   "bytes": 553549,
+   "sha256": "73fef1b1c4ffe8b1e7d931221a567d796782ee0fea0d2e59f120d6ffa9ac5aa4",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_doss.out)",
+   "stored": "2-dense-3d/diamond/DOSS/diamond_doss.out.xz",
+   "stored_bytes": 34356
+  },
+  {
+   "path": "2-dense-3d/diamond/ELASTIC/diamond_elastic.ELASINFO.DAT",
+   "bytes": 2281,
+   "sha256": "d5cb89edebdb949847308a2f20da194f14b0b608f59a9d598bb21c1e05055be9",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_elastic.ELASINFO.DAT)"
+  },
+  {
+   "path": "2-dense-3d/diamond/ELASTIC/diamond_elastic.d12",
+   "bytes": 944,
+   "sha256": "84d5efe19d64571429807800b260a0783650d01e99585898bae0e8de98b7b585",
+   "source": "written by `mace opt2d12 --calc-type ELASTIC` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/ELASTIC/diamond_elastic.out",
+   "bytes": 46314,
+   "sha256": "84db76145cbd6d3e81bd7f07fc7040555e965c98b413fc395efa960465b86f0a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_elastic.out)",
+   "stored": "2-dense-3d/diamond/ELASTIC/diamond_elastic.out.xz",
+   "stored_bytes": 8784
+  },
+  {
+   "path": "2-dense-3d/diamond/EOS/diamond_eos.EOSINFO.DAT",
+   "bytes": 968,
+   "sha256": "059858ce1f5cc9a424b560f87dd784c504f84d0029c7b4a32f6269d802c0e942",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_eos.EOSINFO.DAT)"
+  },
+  {
+   "path": "2-dense-3d/diamond/EOS/diamond_eos.d12",
+   "bytes": 934,
+   "sha256": "adbb3ee5221f9c49dc8e739637611d25980a82bb6672bfc3cb673eaeaa9c424d",
+   "source": "written by `mace opt2d12 --calc-type EOS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/EOS/diamond_eos.out",
+   "bytes": 328914,
+   "sha256": "7222d5e491755a18291e8b1da805c21f35da0bc384246ce3198b441e3d9d9f88",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_eos.out)",
+   "stored": "2-dense-3d/diamond/EOS/diamond_eos.out.xz",
+   "stored_bytes": 19608
+  },
+  {
+   "path": "2-dense-3d/diamond/FREQ/diamond_freq.d12",
+   "bytes": 1027,
+   "sha256": "04b10340b8370a8945506bce9cd16cdd04d654072ca8951465ceefa37eeae196",
+   "source": "written by `mace opt2d12`, FREQ template 4 (IR + Raman spectra) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/FREQ/diamond_freq.out",
+   "bytes": 247566,
+   "sha256": "660804d68f9c576a669a896d3642f0ab3900fe2a9c90eddd63e6b4faa6b3f761",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_freq.out)",
+   "stored": "2-dense-3d/diamond/FREQ/diamond_freq.out.xz",
+   "stored_bytes": 18856
+  },
+  {
+   "path": "2-dense-3d/diamond/FREQ/diamond_freq_IRSPEC.DAT",
+   "bytes": 472118,
+   "sha256": "ea5a5c0f4e97fceb736d1368816337520cfd43bc1635b397651c2ab37c8889f2",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_freq_IRSPEC.DAT)",
+   "stored": "2-dense-3d/diamond/FREQ/diamond_freq_IRSPEC.DAT.xz",
+   "stored_bytes": 10752
+  },
+  {
+   "path": "2-dense-3d/diamond/FREQ/diamond_freq_RAMSPEC.DAT",
+   "bytes": 524131,
+   "sha256": "70c8fb48dadc85b7bf4db123bda503437142d2ed5bf567eb21a30af48c2c29aa",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_freq_RAMSPEC.DAT)",
+   "stored": "2-dense-3d/diamond/FREQ/diamond_freq_RAMSPEC.DAT.xz",
+   "stored_bytes": 71696
+  },
+  {
+   "path": "2-dense-3d/diamond/OPT/diamond_opt.cif",
+   "bytes": 421,
+   "sha256": "a32902b01404d4c5b2b4b30548e2919ff54874be438b1a71b826ca71d2f6021e",
+   "source": "group corpus: CIFs/1_dia_opt_rev1.cif"
+  },
+  {
+   "path": "2-dense-3d/diamond/OPT/diamond_opt.d12",
+   "bytes": 1033,
+   "sha256": "ecb68edf674243095091b0b43df639e8edc1a8e2a111cab9c2b9687f0c00e23a",
+   "source": "group corpus: OPT/1_dia_opt_rev1.d12"
+  },
+  {
+   "path": "2-dense-3d/diamond/OPT/diamond_opt.out",
+   "bytes": 61419,
+   "sha256": "e3da436c613d48f56ae16d06f31fc8131e7eba0351bfe7c1944fdfbe9cb4dd5d",
+   "source": "group corpus: OPT/1_dia_opt_rev1.out",
+   "stored": "2-dense-3d/diamond/OPT/diamond_opt.out.xz",
+   "stored_bytes": 8948
+  },
+  {
+   "path": "2-dense-3d/diamond/ORBITALS/diamond_orbitals.d3",
+   "bytes": 51,
+   "sha256": "2e4a335edfb47a598faadf9a64882d4215a76718c1976fa4210712df8d4300f1",
+   "source": "written by `mace opt2d3 -t ORBITALS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/ORBITALS/diamond_orbitals.out",
+   "bytes": 9782,
+   "sha256": "f343aad8249ee4ea3bbae7721a747db8589f5b13cf64a99789c853d23a1e12ca",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_orbitals.out)"
+  },
+  {
+   "path": "2-dense-3d/diamond/ORBITALS/diamond_orbitals_orb_00001_K000_real.molden",
+   "bytes": 63822,
+   "sha256": "b3e7cc50c51bcab83ba086d2cdd615f5c131fffee6551a47004a185273156748",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_orbitals_orb_00001_K000_real.molden)",
+   "stored": "2-dense-3d/diamond/ORBITALS/diamond_orbitals_orb_00001_K000_real.molden.xz",
+   "stored_bytes": 2064
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.PHONBANDS.DAT",
+   "bytes": 37236,
+   "sha256": "ccd3fd35d1e1a67b31c51b6c608e8f8965c61a2ef2d79b8a94e387aa8b7316eb",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_band.PHONBANDS.DAT)",
+   "stored": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.PHONBANDS.DAT.xz",
+   "stored_bytes": 5344
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.d12",
+   "bytes": 1113,
+   "sha256": "c2dfe6a56ae4627c8bf14cf2df583575d22f41434f7e465c4e777096281b19d2",
+   "source": "written by `mace opt2d12`, FREQ template 6 (phonon band structure) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.f25",
+   "bytes": 29425,
+   "sha256": "4e15edb0970ce6652d3c5eae024fa63a63f01877970c4d74199a459e6bec0f77",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_band.f25)"
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.out",
+   "bytes": 296084,
+   "sha256": "589edda53e84f231976d1e6dbf89778e4f7ba61d3d4b3859bd80a7923103e737",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_band.out)",
+   "stored": "2-dense-3d/diamond/PHONON_BAND/diamond_phonon_band.out.xz",
+   "stored_bytes": 31024
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.PHONDOS.DAT",
+   "bytes": 9923,
+   "sha256": "0a588f9b124487dcd023a2f53b1123485815106fd938f5c5edbe8ad66f1eb9e0",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_dos.PHONDOS.DAT)"
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.d12",
+   "bytes": 1012,
+   "sha256": "70ab3b163325074b4d64b2d101ea72b104704c6b8f3b6c3a4ecae1bc07fcc7c8",
+   "source": "written by `mace opt2d12`, FREQ template 7 (phonon density of states) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.f25",
+   "bytes": 2545,
+   "sha256": "9ab9d51bc4b2d150c798ca18a4a5be172188c310ad850890f1d479e8cc5e2d46",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_dos.f25)"
+  },
+  {
+   "path": "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.out",
+   "bytes": 100015,
+   "sha256": "c645e8f15613596f6b551afc46ce76f6dbc5dac113cc8321f4acdfb738fd5d0f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_phonon_dos.out)",
+   "stored": "2-dense-3d/diamond/PHONON_DOS/diamond_phonon_dos.out.xz",
+   "stored_bytes": 13256
+  },
+  {
+   "path": "2-dense-3d/diamond/QHA/diamond_qha.EOSINFO.DAT",
+   "bytes": 3348,
+   "sha256": "f717ccc0dc0d0139c8ba7677c5ba67ec55e9d6385fe2d11c8b1117442a05c5f2",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_qha.EOSINFO.DAT)"
+  },
+  {
+   "path": "2-dense-3d/diamond/QHA/diamond_qha.d12",
+   "bytes": 935,
+   "sha256": "4a72d1d990b70547ce025945d39b2d0ee94605cf717fa56b962b83e51ec91d08",
+   "source": "written by `mace opt2d12 --calc-type QHA` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/QHA/diamond_qha.out",
+   "bytes": 676871,
+   "sha256": "c7a06b6364b95ecbc457202ba6105c65ee56af8c41d8cf3d35f4bc8c8760d8cd",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_qha.out)",
+   "stored": "2-dense-3d/diamond/QHA/diamond_qha.out.xz",
+   "stored_bytes": 46040
+  },
+  {
+   "path": "2-dense-3d/diamond/SP/diamond_sp.d12",
+   "bytes": 926,
+   "sha256": "7c707d07b2271f06c40b23dde6e04ca2bb51989428538999ef374ac84ee178a6",
+   "source": "written by `mace opt2d12 --calc-type SP` from the OPT output"
+  },
+  {
+   "path": "2-dense-3d/diamond/SP/diamond_sp.out",
+   "bytes": 38712,
+   "sha256": "21b971dd1dc1aa27781b89ac7f6d65c03ea8b5b02355f8bacb75575919f41a70",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_sp.out)",
+   "stored": "2-dense-3d/diamond/SP/diamond_sp.out.xz",
+   "stored_bytes": 6936
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.KAPPA.DAT",
+   "bytes": 1734369,
+   "sha256": "7635dc905b9f60ee00cce24093001b2441ed9324880177d1e46f0041aa6ad42a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.KAPPA.DAT)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.KAPPA.DAT.xz",
+   "stored_bytes": 197620
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SEEBECK.DAT",
+   "bytes": 1173963,
+   "sha256": "634fbed54a46fb75fc60bb9b2eb7addd33425f06f7a163e45cfdf1f904014d09",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.SEEBECK.DAT)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SEEBECK.DAT.xz",
+   "stored_bytes": 160872
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMA.DAT",
+   "bytes": 1734441,
+   "sha256": "1265cccfaca45583732873d838eb2be077385c7e4995178a64088163f99359a3",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.SIGMA.DAT)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMA.DAT.xz",
+   "stored_bytes": 195620
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMAS.DAT",
+   "bytes": 1734505,
+   "sha256": "33ba41f83d9626eaf7a50dcf7d4cc658b517107b01eeb91bf244d5a90e6200a7",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.SIGMAS.DAT)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.SIGMAS.DAT.xz",
+   "stored_bytes": 202940
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.TDF.DAT",
+   "bytes": 245745,
+   "sha256": "95999440d5b13f3cf5e0f1e7254d6356fbcd503ff71e067f784f725ffeff16d1",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.TDF.DAT)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.TDF.DAT.xz",
+   "stored_bytes": 18836
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.d3",
+   "bytes": 159,
+   "sha256": "5c1a79cc56904d2acecc81c5d95594a9a9ba28281975cbd98b27e3b54feb2925",
+   "source": "written by `mace opt2d3 -t TRANSPORT` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "2-dense-3d/diamond/TRANSPORT/diamond_transport.out",
+   "bytes": 57972,
+   "sha256": "c84365fca9494aa9fa4541e24702aac0d7c10bd5d232e79aee94811b6164e9a4",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (diamond_transport.out)",
+   "stored": "2-dense-3d/diamond/TRANSPORT/diamond_transport.out.xz",
+   "stored_bytes": 8260
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.DOSS.DAT",
+   "bytes": 730485,
+   "sha256": "565a82f9e5934e48d70134a2d3be2c8b5a92fa2c9d8d5f3d1af18881e6eb4448",
+   "source": "group corpus: DOSS/4LG_2x2_AA_opt_HSESOL3C_optimized_doss.DOSS.DAT",
+   "stored": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.DOSS.DAT.xz",
+   "stored_bytes": 112456
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.d3",
+   "bytes": 12313,
+   "sha256": "75dca9f57dcf5bb0c7cde5fccb5f6802b7c220c73bac7f39e62940cd4da33ba5",
+   "source": "group corpus: DOSS/4LG_2x2_AA_opt_HSESOL3C_optimized_doss.d3"
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.f25",
+   "bytes": 609690,
+   "sha256": "c3c3f479c85f9780921146c1c7e22821a1f6123eb001f6cb4f1929ec45b50753",
+   "source": "group corpus: DOSS/4LG_2x2_AA_opt_HSESOL3C_optimized_doss.f25",
+   "stored": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.f25.xz",
+   "stored_bytes": 116352
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.out",
+   "bytes": 1361399,
+   "sha256": "330c4ae090a3a7762e99af97d4d75cfca15187d9ed26f0a6672cb7ca536c1798",
+   "source": "group corpus: DOSS/4LG_2x2_AA_opt_HSESOL3C_optimized_doss.out",
+   "stored": "3-slab-2d/4LG_AA/DOSS/4LG_AA_doss.out.xz",
+   "stored_bytes": 244860
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.cif",
+   "bytes": 5280,
+   "sha256": "544e2901b51799f7fa122d3a98ea6363f24253972e0c37c0676d304ef5272d78",
+   "source": "group corpus: OPT/4LG_2x2_AA_opt_HSESOL3C_optimized.cif"
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.d12",
+   "bytes": 6733,
+   "sha256": "191117f28792a528fb17a34ab57f2697002abc2f8337f1961f62fc8487e3dfda",
+   "source": "group corpus: OPT/4LG_2x2_AA_opt_HSESOL3C_optimized.d12"
+  },
+  {
+   "path": "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.out",
+   "bytes": 1131876,
+   "sha256": "18a7e0b05467d7aa03797668e2fe6d33c45b37fd7b80397f925fc013a2c5023c",
+   "source": "group corpus: OPT/4LG_2x2_AA_opt_HSESOL3C_optimized.out",
+   "stored": "3-slab-2d/4LG_AA/OPT/4LG_AA_opt.out.xz",
+   "stored_bytes": 142920
+  },
+  {
+   "path": "3-slab-2d/graphene/BAND/graphene_band.BAND.DAT",
+   "bytes": 809400,
+   "sha256": "8775f7acf29ee2df6aebe869f217280f6ba9a35317974a6391d6ea8be6f79924",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_band.BAND.DAT)",
+   "stored": "3-slab-2d/graphene/BAND/graphene_band.BAND.DAT.xz",
+   "stored_bytes": 37428
+  },
+  {
+   "path": "3-slab-2d/graphene/BAND/graphene_band.d3",
+   "bytes": 101,
+   "sha256": "a28d65756ad304400fe02fd9c4bcdcea60d8835d798f013768903f83388d658c",
+   "source": "written by `mace opt2d3 -t BAND` from the real SP output (graphene SP run, layer group 80)"
+  },
+  {
+   "path": "3-slab-2d/graphene/BAND/graphene_band.f25",
+   "bytes": 730444,
+   "sha256": "e3c0ac7e148172016ce94cb3bae5eba78d069ceabdd4838be8864911abee1e72",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_band.f25)",
+   "stored": "3-slab-2d/graphene/BAND/graphene_band.f25.xz",
+   "stored_bytes": 49784
+  },
+  {
+   "path": "3-slab-2d/graphene/BAND/graphene_band.out",
+   "bytes": 261972,
+   "sha256": "b49c6ae762e99588fd1b9bd5c5ff40612f090e0ac3546bfc48b80efda15c1aa0",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_band.out)",
+   "stored": "3-slab-2d/graphene/BAND/graphene_band.out.xz",
+   "stored_bytes": 3128
+  },
+  {
+   "path": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential.d3",
+   "bytes": 65,
+   "sha256": "33ff1cb4fc22f242421c517d748656185b34e20baf45d3566f1a6d6ac32defdd",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` from the real SP output (graphene SP run, layer group 80)"
+  },
+  {
+   "path": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential.out",
+   "bytes": 9801,
+   "sha256": "1529d8b4ac31e2894e9ce805ceca5545f89edec3749677f416186169d416a251",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_charge+potential.out)"
+  },
+  {
+   "path": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_DENS.CUBE",
+   "bytes": 13265885,
+   "sha256": "3efac041f874a93b45341439841ed08ebb4da6439f0c68c20858bff4d8f33a5e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 2, 2, 1 along its axes (each stride divides that axis's point count)",
+   "stored": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 633128
+  },
+  {
+   "path": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_POT.CUBE",
+   "bytes": 13265880,
+   "sha256": "fbdb354f7856e1fd500a8c544397ca969a7c072a857c7ea8ab6a34c946988fff",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 2, 2, 1 along its axes (each stride divides that axis's point count)",
+   "stored": "3-slab-2d/graphene/CHARGE+POTENTIAL/graphene_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 685472
+  },
+  {
+   "path": "3-slab-2d/graphene/DOSS/graphene_doss.DOSS.DAT",
+   "bytes": 278761,
+   "sha256": "80fe72bd22732d5ee5e3bdca5189d50c55d07e3deca38b6c4e7e1fa7dd60422d",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_doss.DOSS.DAT)",
+   "stored": "3-slab-2d/graphene/DOSS/graphene_doss.DOSS.DAT.xz",
+   "stored_bytes": 24916
+  },
+  {
+   "path": "3-slab-2d/graphene/DOSS/graphene_doss.d3",
+   "bytes": 286,
+   "sha256": "a7795ad35d7793f5bf261605910c3acebf3befa74492d2f01a3c49695d3304e4",
+   "source": "written by `mace opt2d3 -t DOSS` from the real SP output (graphene SP run, layer group 80)"
+  },
+  {
+   "path": "3-slab-2d/graphene/DOSS/graphene_doss.out",
+   "bytes": 537510,
+   "sha256": "0ba71f7928f3076e1ff783f6e2db00fda326abd91609e4029ed6ee9782cfe3bb",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_doss.out)",
+   "stored": "3-slab-2d/graphene/DOSS/graphene_doss.out.xz",
+   "stored_bytes": 38332
+  },
+  {
+   "path": "3-slab-2d/graphene/OPT/graphene_opt.d12",
+   "bytes": 336,
+   "sha256": "d78dc57996656bea4e57f1a9ae89bd7b83f62c5927ffd94b763e2d12cb22cc07",
+   "source": "written by `mace opt2d12 --calc-type OPT` from the real SP output (graphene SP run, layer group 80)"
+  },
+  {
+   "path": "3-slab-2d/graphene/OPT/graphene_opt.out",
+   "bytes": 52164,
+   "sha256": "b843d0cbe4d4abed703c32394a181232db6ed7f5bd4dbc79a3dc84bfc9477d30",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_opt.out)",
+   "stored": "3-slab-2d/graphene/OPT/graphene_opt.out.xz",
+   "stored_bytes": 8468
+  },
+  {
+   "path": "3-slab-2d/graphene/SP/graphene_sp.d12",
+   "bytes": 277,
+   "sha256": "87acc5140b7042215ee2b11935fd44c9e690a4486c191145839420090bad190f",
+   "source": "tests/data/low_dim_groups/graphene_lg80.d12 with SPIN (MACE's default), SMEAR 0.001, FMIXING 80, BROYDEN 0.0001 50 2 and MAXCYCLE 200 in place of DIIS (the semimetal's SCF)"
+  },
+  {
+   "path": "3-slab-2d/graphene/SP/graphene_sp.out",
+   "bytes": 39213,
+   "sha256": "4529833480162272968217af9a45091beedffeec12fc5bcae7df2aabf536a87b",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_sp.out)",
+   "stored": "3-slab-2d/graphene/SP/graphene_sp.out.xz",
+   "stored_bytes": 7192
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.KAPPA.DAT",
+   "bytes": 1120809,
+   "sha256": "d5c6ca891f73f2751f8c4a905ea983a0c308bc279a1d3525ff241ca839e09284",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.KAPPA.DAT)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.KAPPA.DAT.xz",
+   "stored_bytes": 91176
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SEEBECK.DAT",
+   "bytes": 662663,
+   "sha256": "94d48a06e97865dd6ca6be2e1ac86a99a778f3e99c1ba4ff9e285170920ddf0e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.SEEBECK.DAT)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SEEBECK.DAT.xz",
+   "stored_bytes": 80704
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMA.DAT",
+   "bytes": 1120857,
+   "sha256": "704a69f578d13c532edbc5647a6f17883cb22a3d8b41efac533141502be03520",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.SIGMA.DAT)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMA.DAT.xz",
+   "stored_bytes": 88528
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMAS.DAT",
+   "bytes": 1120909,
+   "sha256": "df0a9e5a82a29bc2e04f68bcc696e9aed833c607052651ff98ba5558de01d986",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.SIGMAS.DAT)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.SIGMAS.DAT.xz",
+   "stored_bytes": 100432
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.TDF.DAT",
+   "bytes": 139623,
+   "sha256": "a5bf0e2eddb819bf5ea214047e252e589b8558eaed965607f678a458c7d7cf1a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.TDF.DAT)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.TDF.DAT.xz",
+   "stored_bytes": 13116
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.d3",
+   "bytes": 157,
+   "sha256": "d7925ff27c4d7087b778dc579b4096ae11cd38c0903872246e61440b6f5c9a91",
+   "source": "written by `mace opt2d3 -t TRANSPORT` from the real SP output (graphene SP run, layer group 80)"
+  },
+  {
+   "path": "3-slab-2d/graphene/TRANSPORT/graphene_transport.out",
+   "bytes": 67518,
+   "sha256": "9cc52ae6fd94d41206fd04b11af69397fea92ebfcb38bf458760d36048b3095f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (graphene_transport.out)",
+   "stored": "3-slab-2d/graphene/TRANSPORT/graphene_transport.out.xz",
+   "stored_bytes": 9124
+  },
+  {
+   "path": "3-slab-2d/hBN/BAND/hBN_band.BAND.DAT",
+   "bytes": 809400,
+   "sha256": "a4c1373dec507a8fb0f0c53e28258c0ce0f464eb43a79cf679aa304f87ddf1a8",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_band.BAND.DAT)",
+   "stored": "3-slab-2d/hBN/BAND/hBN_band.BAND.DAT.xz",
+   "stored_bytes": 35700
+  },
+  {
+   "path": "3-slab-2d/hBN/BAND/hBN_band.d3",
+   "bytes": 96,
+   "sha256": "bef049876843a24e546757fe49d41c2f0e8096be7350e75eff8c5d0cb9ee9e0b",
+   "source": "written by `mace opt2d3 -t BAND` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/BAND/hBN_band.f25",
+   "bytes": 730444,
+   "sha256": "b4975cac4c9045c31ffb02571f04133852bf588302c89058cc62e8070fdbdbcd",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_band.f25)",
+   "stored": "3-slab-2d/hBN/BAND/hBN_band.f25.xz",
+   "stored_bytes": 47740
+  },
+  {
+   "path": "3-slab-2d/hBN/BAND/hBN_band.out",
+   "bytes": 261972,
+   "sha256": "deefa0defc459cc70c3364bb0015d3f32682d424f6cbf608db28a5c07942a2fd",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_band.out)",
+   "stored": "3-slab-2d/hBN/BAND/hBN_band.out.xz",
+   "stored_bytes": 3028
+  },
+  {
+   "path": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential.d3",
+   "bytes": 65,
+   "sha256": "33ff1cb4fc22f242421c517d748656185b34e20baf45d3566f1a6d6ac32defdd",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential.out",
+   "bytes": 9801,
+   "sha256": "428eed8f0647fedb3fa8fae7d948439e686f834d0e4d530ad127231b1ef3fb43",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_charge+potential.out)"
+  },
+  {
+   "path": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_DENS.CUBE",
+   "bytes": 6550901,
+   "sha256": "e39653d5c5d31db753db8410063d95933cb461dd01b7991bd33bcd169eb3da87",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 594336
+  },
+  {
+   "path": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_POT.CUBE",
+   "bytes": 6550896,
+   "sha256": "917c854fcba2c52bf72ea8843bb42ee03c633f4b21e8e43ac4e9d04414bf4031",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 2 along each axis",
+   "stored": "3-slab-2d/hBN/CHARGE+POTENTIAL/hBN_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 688068
+  },
+  {
+   "path": "3-slab-2d/hBN/CPHF/hBN_cphf.d12",
+   "bytes": 353,
+   "sha256": "af95a68746844f6a3e2f2c3be51528585fe34d7980c42989f6e98d0837bcefdc",
+   "source": "written by `mace opt2d12 --calc-type CPHF` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/CPHF/hBN_cphf.out",
+   "bytes": 51451,
+   "sha256": "b9ad5d8fc63da78b10ce6d7b92984bd8171c062b0d9a961168563772b8722934",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_cphf.out)",
+   "stored": "3-slab-2d/hBN/CPHF/hBN_cphf.out.xz",
+   "stored_bytes": 8028
+  },
+  {
+   "path": "3-slab-2d/hBN/DOSS/hBN_doss.DOSS.DAT",
+   "bytes": 441359,
+   "sha256": "79fed99d1e17cc7a3731e9ad5e07562a9a56c6980eb672c7d913ab6b35aeed47",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_doss.DOSS.DAT)",
+   "stored": "3-slab-2d/hBN/DOSS/hBN_doss.DOSS.DAT.xz",
+   "stored_bytes": 31336
+  },
+  {
+   "path": "3-slab-2d/hBN/DOSS/hBN_doss.d3",
+   "bytes": 321,
+   "sha256": "065f4413ac3fd31f0a164496472d587a590868586e2e2baa456a4c99592f5c76",
+   "source": "written by `mace opt2d3 -t DOSS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/DOSS/hBN_doss.out",
+   "bytes": 845128,
+   "sha256": "f4f11d507235dbd8c3185ee65507f30e489ae6f2f835c4b567249c86fe4f376e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_doss.out)",
+   "stored": "3-slab-2d/hBN/DOSS/hBN_doss.out.xz",
+   "stored_bytes": 50916
+  },
+  {
+   "path": "3-slab-2d/hBN/ELASTIC/hBN_elastic.ELASINFO.DAT",
+   "bytes": 948,
+   "sha256": "9f23a6dde02b7152f845e4255229758d89d92e84aa96f13ff23e735eb8dd90cd",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_elastic.ELASINFO.DAT)"
+  },
+  {
+   "path": "3-slab-2d/hBN/ELASTIC/hBN_elastic.d12",
+   "bytes": 361,
+   "sha256": "32de69ce5170543624a8cc9fd09a88ddff8791c368a685fa05dec2ed63a3b942",
+   "source": "written by `mace opt2d12 --calc-type ELASTIC` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/ELASTIC/hBN_elastic.out",
+   "bytes": 44100,
+   "sha256": "752b8f06f7573797c5d606c3082e7a9848f4bd0fc206f3fe6d5be0cc2af5b269",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_elastic.out)",
+   "stored": "3-slab-2d/hBN/ELASTIC/hBN_elastic.out.xz",
+   "stored_bytes": 8092
+  },
+  {
+   "path": "3-slab-2d/hBN/FREQ/hBN_freq.d12",
+   "bytes": 444,
+   "sha256": "43c6849e767299580c7d7dd279af29a2f4a42d25e32f621a25ad83c0aae674c4",
+   "source": "written by `mace opt2d12`, FREQ template 4 (IR + Raman spectra) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/FREQ/hBN_freq.out",
+   "bytes": 144463,
+   "sha256": "23625a191ad8af21318512c3315f0865a7496733fe5da3aff6298ec85004c088",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_freq.out)",
+   "stored": "3-slab-2d/hBN/FREQ/hBN_freq.out.xz",
+   "stored_bytes": 15788
+  },
+  {
+   "path": "3-slab-2d/hBN/FREQ/hBN_freq_IRSPEC.DAT",
+   "bytes": 160040,
+   "sha256": "da020d0e5aa0f74d286bbe0e2a1a303530892dbbf9177ea768f0c1b5386f793f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_freq_IRSPEC.DAT)",
+   "stored": "3-slab-2d/hBN/FREQ/hBN_freq_IRSPEC.DAT.xz",
+   "stored_bytes": 19456
+  },
+  {
+   "path": "3-slab-2d/hBN/FREQ/hBN_freq_RAMSPEC.DAT",
+   "bytes": 524131,
+   "sha256": "0719f85963c5e27177fe4c1e4c393ce3383a6f81e74d628c7c3e0188b7821b7b",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_freq_RAMSPEC.DAT)",
+   "stored": "3-slab-2d/hBN/FREQ/hBN_freq_RAMSPEC.DAT.xz",
+   "stored_bytes": 70604
+  },
+  {
+   "path": "3-slab-2d/hBN/OPT/hBN_opt.d12",
+   "bytes": 400,
+   "sha256": "d4f56f30e79c3aedd6d44805874e51884b9f8137b0831a190b194894ee3290bf",
+   "source": "written by `mace convert --batch` from hBN.cif (SLAB, layer group 78)"
+  },
+  {
+   "path": "3-slab-2d/hBN/OPT/hBN_opt.out",
+   "bytes": 54804,
+   "sha256": "7e92ec1e68219d559e80d5039860cbddc3e9853b14e7411f971e020ec28af40c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_opt.out)",
+   "stored": "3-slab-2d/hBN/OPT/hBN_opt.out.xz",
+   "stored_bytes": 8560
+  },
+  {
+   "path": "3-slab-2d/hBN/ORBITALS/hBN_orbitals.d3",
+   "bytes": 47,
+   "sha256": "34b163ef040ee42f23f3f9db1fe010c79c3fee62539a3bd6e70b2ae9c15d9d18",
+   "source": "written by `mace opt2d3 -t ORBITALS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/ORBITALS/hBN_orbitals.out",
+   "bytes": 10598,
+   "sha256": "d17cce87c73915cc405f2b4fb442720cf370498e81806368370085dfe7230cb7",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_orbitals.out)"
+  },
+  {
+   "path": "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00001_K000_real.molden",
+   "bytes": 45272,
+   "sha256": "425069adfeacb4063d96be373b0ac675a8cc8777360808cfd641a7bfc344352f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_orbitals_orb_00001_K000_real.molden)",
+   "stored": "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00001_K000_real.molden.xz",
+   "stored_bytes": 3892
+  },
+  {
+   "path": "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00002_K100_real.molden",
+   "bytes": 45272,
+   "sha256": "9de39030e6b4898136b0f63bacc6111d836ca655c21ef6705f7e119c5ccddda1",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_orbitals_orb_00002_K100_real.molden)",
+   "stored": "3-slab-2d/hBN/ORBITALS/hBN_orbitals_orb_00002_K100_real.molden.xz",
+   "stored_bytes": 3968
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.PHONBANDS.DAT",
+   "bytes": 18876,
+   "sha256": "d36bc117ab3e124c2b73f3920cf2128ab413a300a2e657b4137a5abf993c9c64",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_band.PHONBANDS.DAT)"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.d12",
+   "bytes": 478,
+   "sha256": "04c3fb4a590d65dae1b998be2935311a890a9283d8951478a692e77eec5c8585",
+   "source": "written by `mace opt2d12`, FREQ template 6 (phonon band structure) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.f25",
+   "bytes": 14749,
+   "sha256": "4e5f9afabf502dac7245ef2d2b92119bb9b8c81648937eb71fc453c533ab9444",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_band.f25)"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.out",
+   "bytes": 172475,
+   "sha256": "7cea9ca4c95a1e7dc3e7e560181fa0a385b88567c0be975390e76ac687e55548",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_band.out)",
+   "stored": "3-slab-2d/hBN/PHONON_BAND/hBN_phonon_band.out.xz",
+   "stored_bytes": 19964
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.PHONDOS.DAT",
+   "bytes": 9923,
+   "sha256": "26fe28a94ac2571b9975de4dd2fc0c275adce786533487ba64834cd6addd3734",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_dos.PHONDOS.DAT)"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.d12",
+   "bytes": 419,
+   "sha256": "86224233d593fe23511a664e8956932e927488af4983a042a8f4b2d38e6eb699",
+   "source": "written by `mace opt2d12`, FREQ template 7 (phonon density of states) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.f25",
+   "bytes": 2545,
+   "sha256": "9f21b800148f2e252fa40a30e841e8a419b2587c64bea9924cbfc8eafa91699e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_dos.f25)"
+  },
+  {
+   "path": "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.out",
+   "bytes": 99469,
+   "sha256": "12656cb886b92bd2df1db6aa88a3de83cfa08230ba75acfa6642673419eff681",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_phonon_dos.out)",
+   "stored": "3-slab-2d/hBN/PHONON_DOS/hBN_phonon_dos.out.xz",
+   "stored_bytes": 12256
+  },
+  {
+   "path": "3-slab-2d/hBN/QHA/hBN_qha.EOSINFO.DAT",
+   "bytes": 3348,
+   "sha256": "4e86655282dac033980cae75f6d3410be6d373f00f20332aae26b3825402328b",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_qha.EOSINFO.DAT)"
+  },
+  {
+   "path": "3-slab-2d/hBN/QHA/hBN_qha.d12",
+   "bytes": 352,
+   "sha256": "b303f3e6eba8e7d54196ffd8eb336e4104f6051e4069217ae9e4bc54e850f45d",
+   "source": "written by `mace opt2d12 --calc-type QHA` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/QHA/hBN_qha.out",
+   "bytes": 473804,
+   "sha256": "c528d139f5ae545e6d91430a2d051f7a5b5faf8ea04a1c509785c4fdf5f4bdc2",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_qha.out)",
+   "stored": "3-slab-2d/hBN/QHA/hBN_qha.out.xz",
+   "stored_bytes": 32944
+  },
+  {
+   "path": "3-slab-2d/hBN/SP/hBN_sp.d12",
+   "bytes": 343,
+   "sha256": "7edcb87eee6e24666a48ac79d7fbcf87674f63eaf78adf574955950f04e5cbe2",
+   "source": "written by `mace opt2d12 --calc-type SP` from the OPT output"
+  },
+  {
+   "path": "3-slab-2d/hBN/SP/hBN_sp.out",
+   "bytes": 42586,
+   "sha256": "d1fbc0f16dfb770c7596d12910500f1259e9b5ea690870de01a703ae27f0afd0",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_sp.out)",
+   "stored": "3-slab-2d/hBN/SP/hBN_sp.out.xz",
+   "stored_bytes": 7236
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.KAPPA.DAT",
+   "bytes": 1120809,
+   "sha256": "1e1c6985b7febf1a833bfb51032999dbcb4a6f468d7b0f0dbfa7d83a0260b759",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.KAPPA.DAT)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.KAPPA.DAT.xz",
+   "stored_bytes": 70500
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SEEBECK.DAT",
+   "bytes": 662663,
+   "sha256": "c05879cfd2b1ed4872956255a8a1ebacf758e7491c2dec6d137db52f3be43fb8",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.SEEBECK.DAT)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SEEBECK.DAT.xz",
+   "stored_bytes": 50672
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMA.DAT",
+   "bytes": 1120857,
+   "sha256": "1b9dbf8a10613a76cd9ac0f4cfaa4775ac31e02834aa1af56df6953314eb78ef",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.SIGMA.DAT)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMA.DAT.xz",
+   "stored_bytes": 70928
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMAS.DAT",
+   "bytes": 1120909,
+   "sha256": "b5714d26752e9503fb3a5cb4d419180f3ba8c869bd08f461c3d1dd45cb31b007",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.SIGMAS.DAT)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.SIGMAS.DAT.xz",
+   "stored_bytes": 71888
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.TDF.DAT",
+   "bytes": 139623,
+   "sha256": "f389c20168e2572390dc5c09921a8fa6327534a78c5988d2f1f0ecad21e3ae87",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.TDF.DAT)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.TDF.DAT.xz",
+   "stored_bytes": 7036
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.d3",
+   "bytes": 161,
+   "sha256": "69316eae1fbe442bdd7ad0943463f2f16b6977af1b02eb75421072736aac947d",
+   "source": "written by `mace opt2d3 -t TRANSPORT` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "3-slab-2d/hBN/TRANSPORT/hBN_transport.out",
+   "bytes": 66641,
+   "sha256": "4c1149ed7868caeb506a11eb183a54c78249998197e993ed67a03d1d9faa099d",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (hBN_transport.out)",
+   "stored": "3-slab-2d/hBN/TRANSPORT/hBN_transport.out.xz",
+   "stored_bytes": 9012
+  },
+  {
+   "path": "3-slab-2d/hBN/structure/hBN.cif",
+   "bytes": 511,
+   "sha256": "b67c8992f66c46bdfe803ac748b019cd40ab444d3edd6f8cbee0f4c066a53413",
+   "source": "built here: planar h-BN monolayer, a = 2.504 A (bulk h-BN in-plane lattice constant), B-N 1.446 A, P-6m2"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.BAND.DAT",
+   "bytes": 913245,
+   "sha256": "be0370c5c47972d6b28a63d793f4296a32ee3b985d23bc4332bdc4297a6df735",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_band.BAND.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.BAND.DAT.xz",
+   "stored_bytes": 35388
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.d3",
+   "bytes": 90,
+   "sha256": "14e7016ff1e6e1d28280e0fead072f4babd2b4aa36227cbec7b80a5e1960a049",
+   "source": "written by `mace opt2d3 -t BAND` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.f25",
+   "bytes": 827556,
+   "sha256": "923b90c7e896cde45296356f38b3980cc023c8020864bc860419fb168ab14641",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_band.f25)",
+   "stored": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.f25.xz",
+   "stored_bytes": 57820
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.out",
+   "bytes": 261645,
+   "sha256": "22ffa02fc4cefe7f2c9356461c84abc049d8dd95bdd566d53704c56044c2522a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_band.out)",
+   "stored": "4-polymer-1d/polyacetylene/BAND/polyacetylene_band.out.xz",
+   "stored_bytes": 2908
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential.d3",
+   "bytes": 99,
+   "sha256": "8bd04812a9d73264f5f798a68e53fa4c75cc98d5f385d44fb205ee11b7e32d0d",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential.out",
+   "bytes": 10188,
+   "sha256": "492ebf36f984057232ccb4db90008a9f22b40d84b83ee3af2f692faab7c71e16",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_charge+potential.out)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_DENS.CUBE",
+   "bytes": 2460785,
+   "sha256": "0e322512fbec80d0d68b5f29f76b1067aac5b60da09ae383c3c7a6ff61e3e221",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 4, 7, 4 along its axes (each stride divides that axis's point count)",
+   "stored": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 412232
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_POT.CUBE",
+   "bytes": 2460780,
+   "sha256": "640c84474e5eb2b99f1c31dff3af4d0b385e2287dc27bbb4e36b0a9fb5aafa75",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 4, 7, 4 along its axes (each stride divides that axis's point count)",
+   "stored": "4-polymer-1d/polyacetylene/CHARGE+POTENTIAL/polyacetylene_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 297644
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CPHF/polyacetylene_cphf.d12",
+   "bytes": 454,
+   "sha256": "3f8de0b9e68841ccc3af8b90773e392b7548f332d802f71a1223d0a50e1a824a",
+   "source": "written by `mace opt2d12 --calc-type CPHF` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/CPHF/polyacetylene_cphf.out",
+   "bytes": 53045,
+   "sha256": "70b9c1a247c173e614a3c8b1723317ce8a35352a9ca2bbc80a3ff9287809472a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_cphf.out)",
+   "stored": "4-polymer-1d/polyacetylene/CPHF/polyacetylene_cphf.out.xz",
+   "stored_bytes": 7844
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.DOSS.DAT",
+   "bytes": 360451,
+   "sha256": "6ba6c9ac5a83bce38b3427c2471b77422a84cb5a2f08989352f4442d4bcafa19",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_doss.DOSS.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.DOSS.DAT.xz",
+   "stored_bytes": 31116
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.d3",
+   "bytes": 289,
+   "sha256": "6af5c22f0787ebfe384d321dc2f6d8a5980ab1340ab7de55ff5a2f1b3f89d25e",
+   "source": "written by `mace opt2d3 -t DOSS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.out",
+   "bytes": 696289,
+   "sha256": "279f1338241af2b8d10add50c1d0aab335beaf214a7f512f13d45c77dae3ff31",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_doss.out)",
+   "stored": "4-polymer-1d/polyacetylene/DOSS/polyacetylene_doss.out.xz",
+   "stored_bytes": 48192
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.ELASINFO.DAT",
+   "bytes": 729,
+   "sha256": "59d604a1edc24f7edfaa29d8989d184ef1e6696d2707d5ce7c8e0b269d06cacd",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_elastic.ELASINFO.DAT)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.d12",
+   "bytes": 462,
+   "sha256": "6300f56421629d15006d9495c8f6bc8c6003fe612e2f3842de48b87b412696fe",
+   "source": "written by `mace opt2d12 --calc-type ELASTIC` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.out",
+   "bytes": 42358,
+   "sha256": "e061725faca28a5dda61126c60f26a2ff4e80324855dc8e73cb35e7e4a035bf6",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_elastic.out)",
+   "stored": "4-polymer-1d/polyacetylene/ELASTIC/polyacetylene_elastic.out.xz",
+   "stored_bytes": 7904
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq.d12",
+   "bytes": 545,
+   "sha256": "2c9d5cf2559fb821049eaf25815a5b958f113ce4cce10c753316402e74ae9e8a",
+   "source": "written by `mace opt2d12`, FREQ template 4 (IR + Raman spectra) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq.out",
+   "bytes": 136018,
+   "sha256": "93ddc03dd9c495f4391f8c32c3a130903ecb38b59ef338be8e67880d730af435",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_freq.out)",
+   "stored": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq.out.xz",
+   "stored_bytes": 16780
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_IRSPEC.DAT",
+   "bytes": 160040,
+   "sha256": "eb4c6e738b0b1b8fa1e5e251941a92298eed3e65f9a76b8215e565418074f353",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_freq_IRSPEC.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_IRSPEC.DAT.xz",
+   "stored_bytes": 18856
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_RAMSPEC.DAT",
+   "bytes": 524131,
+   "sha256": "96a0159f1998a7cbbfe3755da552ebf28cef27214756f59f10a1592e1095cc95",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_freq_RAMSPEC.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/FREQ/polyacetylene_freq_RAMSPEC.DAT.xz",
+   "stored_bytes": 83412
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/OPT/polyacetylene_opt.d12",
+   "bytes": 504,
+   "sha256": "0dcbb8ff7f7d1d550be2e8ac8bba43e487fe372394ac86f99517b98f528d748b",
+   "source": "written by `mace convert --batch` from polyacetylene.cif (POLYMER, rod group 1)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/OPT/polyacetylene_opt.out",
+   "bytes": 58168,
+   "sha256": "671edaac63a86bc3fefadd0bada9848a834f833d9e3facb1c76a71a7fd5e92bc",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_opt.out)",
+   "stored": "4-polymer-1d/polyacetylene/OPT/polyacetylene_opt.out.xz",
+   "stored_bytes": 9124
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals.d3",
+   "bytes": 57,
+   "sha256": "755ae0830fa0a11255cec96e31c5d2c13f2816f335fad9d71bd3d45ee1cfb564",
+   "source": "written by `mace opt2d3 -t ORBITALS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals.out",
+   "bytes": 10784,
+   "sha256": "0867a3cef1a7080e653d387174ac8ee1467c28f247dcab818c1b61f124f08c64",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_orbitals.out)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00001_K000_real.molden",
+   "bytes": 57578,
+   "sha256": "6018b305e14f29620697f4e09f9cfc4ec889c09a69439b91e6d4093db918f812",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_orbitals_orb_00001_K000_real.molden)",
+   "stored": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00001_K000_real.molden.xz",
+   "stored_bytes": 8892
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00002_K100_real.molden",
+   "bytes": 57578,
+   "sha256": "666689a68a0447fcc13993f8d111357e785f443de82f429bf574e472f02f47a3",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_orbitals_orb_00002_K100_real.molden)",
+   "stored": "4-polymer-1d/polyacetylene/ORBITALS/polyacetylene_orbitals_orb_00002_K100_real.molden.xz",
+   "stored_bytes": 9112
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.PHONBANDS.DAT",
+   "bytes": 17528,
+   "sha256": "faf95be0f376a440c1ec1b04eb3a1116c1b29b4443fda2205518311ecc1e891c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_band.PHONBANDS.DAT)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.d12",
+   "bytes": 558,
+   "sha256": "6e2dc746ed4a2b49e6658e3e0d36fb2f5024266829043fb5f95e001a236c3ae7",
+   "source": "written by `mace opt2d12`, FREQ template 6 (phonon band structure) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.f25",
+   "bytes": 14711,
+   "sha256": "94a0acfeea55c902728746d22b3d21074d691b68a3d0eb2378ac6912fc79f33c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_band.f25)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.out",
+   "bytes": 142179,
+   "sha256": "1380440ca52526ed03e0a8c36ac953c2aa74a3c3a405e52a403f45b9c3d72923",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_band.out)",
+   "stored": "4-polymer-1d/polyacetylene/PHONON_BAND/polyacetylene_phonon_band.out.xz",
+   "stored_bytes": 17180
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.PHONDOS.DAT",
+   "bytes": 14723,
+   "sha256": "e6e263131086b65da57a096bee63f5869aa4026f9fd6f64678b710018941320f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_dos.PHONDOS.DAT)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.d12",
+   "bytes": 514,
+   "sha256": "efd12a36415a9746639af106d0a8b1e1f925ce451b7383ed546cb9eac9187e55",
+   "source": "written by `mace opt2d12`, FREQ template 7 (phonon density of states) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.f25",
+   "bytes": 2545,
+   "sha256": "70ae43160d3444f232e0c5e85f16fe2d65ece8b60ebdf4dc5a08ba75382c8151",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_dos.f25)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.out",
+   "bytes": 111644,
+   "sha256": "9356992441bb2ed6a3371a7015dc0cd99669c761b1cae4a100fe7504e2b40394",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_phonon_dos.out)",
+   "stored": "4-polymer-1d/polyacetylene/PHONON_DOS/polyacetylene_phonon_dos.out.xz",
+   "stored_bytes": 12836
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.EOSINFO.DAT",
+   "bytes": 10460,
+   "sha256": "19049172bdbdb133812432ef3e080ab45931755b09b9cad7da811b9d264126a5",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_qha.EOSINFO.DAT)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.d12",
+   "bytes": 453,
+   "sha256": "b21c7b8db4194d55818989e7cd9062cda80df43f6c1bbbe8cd574ec4e731518d",
+   "source": "written by `mace opt2d12 --calc-type QHA` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.out",
+   "bytes": 506955,
+   "sha256": "8bd6470d4872f331672501bb22d56abc3863a0a3266a44498d45135853828c39",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_qha.out)",
+   "stored": "4-polymer-1d/polyacetylene/QHA/polyacetylene_qha.out.xz",
+   "stored_bytes": 41464
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/SP/polyacetylene_sp.d12",
+   "bytes": 444,
+   "sha256": "981476e54a959c3f540600f37994bc5fde091d2afc1ddbea3cf4c29af83e3d97",
+   "source": "written by `mace opt2d12 --calc-type SP` from the OPT output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/SP/polyacetylene_sp.out",
+   "bytes": 42800,
+   "sha256": "5840f80e54390e573ea43ad117c00bca84ba43b9aa9683cf0c31cd665449532d",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_sp.out)",
+   "stored": "4-polymer-1d/polyacetylene/SP/polyacetylene_sp.out.xz",
+   "stored_bytes": 7096
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.KAPPA.DAT",
+   "bytes": 709999,
+   "sha256": "fab2710f6403930789115d63a5e19b62c3c2b73686c371d211e62f6e9a226ffe",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.KAPPA.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.KAPPA.DAT.xz",
+   "stored_bytes": 38472
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SEEBECK.DAT",
+   "bytes": 354998,
+   "sha256": "cde6943de2bcfeee427c090542997f918b1b49c6c55edbb62db2a9ffe5e4a83e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.SEEBECK.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SEEBECK.DAT.xz",
+   "stored_bytes": 39612
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMA.DAT",
+   "bytes": 710031,
+   "sha256": "ec7350384c549d4bb09efd622d0997c896cb27825e308a1d97eb54380ba2763f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.SIGMA.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMA.DAT.xz",
+   "stored_bytes": 37396
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMAS.DAT",
+   "bytes": 710075,
+   "sha256": "24d382096f3dc9e6fb6153cdd454a0a321d96ea8025bfe092568786d13b84c6a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.SIGMAS.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.SIGMAS.DAT.xz",
+   "stored_bytes": 40876
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.TDF.DAT",
+   "bytes": 68875,
+   "sha256": "bae84503a065b7dcc9d56919a2bc72322bfa119f8fd6b112c5f52af7b20d242e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.TDF.DAT)",
+   "stored": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.TDF.DAT.xz",
+   "stored_bytes": 2276
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.d3",
+   "bytes": 161,
+   "sha256": "6e3a1e390361fb64ddcb570b88a1105b5766d5b3b152bf92252cfa795b032f91",
+   "source": "written by `mace opt2d3 -t TRANSPORT` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/TRANSPORT/polyacetylene_transport.out",
+   "bytes": 13460,
+   "sha256": "73f814ce695d6d5908f94084b045a7990a1a830cd7c31a9d57545cd0ea0b748c",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (polyacetylene_transport.out)"
+  },
+  {
+   "path": "4-polymer-1d/polyacetylene/structure/polyacetylene.cif",
+   "bytes": 619,
+   "sha256": "abfeafb9c826cbecb4facfcab93df847bb2e08e3d59249908b865c3f14debb55",
+   "source": "built here: planar zigzag trans-(CH)x, C=C 1.36 A, C-C 1.44 A, C-H 1.09 A, repeat 2.46 A (literature values)"
+  },
+  {
+   "path": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential.d3",
+   "bytes": 47,
+   "sha256": "7b25f81e2c423ba6cff8fa036b9ebf8109007caeda66fc0b53b8a95cb90d7013",
+   "source": "written by `mace opt2d3 -t CHARGE+POTENTIAL` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential.out",
+   "bytes": 10819,
+   "sha256": "9b85d8bef26cc1de46f6b8e0d3cdd01adde5252704029398ca69f694058ac01d",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_charge+potential.out)"
+  },
+  {
+   "path": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_DENS.CUBE",
+   "bytes": 1613832,
+   "sha256": "f931a60bd424009bb8ab0ffe7989a5d6c7ddcf80e0bfed28e5d08b1f257e0ed1",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_charge+potential_DENS.CUBE)",
+   "note": "grid decimated by 2, 2, 3 along its axes (each stride divides that axis's point count)",
+   "stored": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_DENS.CUBE.xz",
+   "stored_bytes": 324776
+  },
+  {
+   "path": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_POT.CUBE",
+   "bytes": 1613827,
+   "sha256": "ec3ec77ede83295783f9cdf01cc06831793fea9bd00f371cd6ad4fc8c9d3aaea",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_charge+potential_POT.CUBE)",
+   "note": "grid decimated by 2, 2, 3 along its axes (each stride divides that axis's point count)",
+   "stored": "5-molecule-0d/EC/CHARGE+POTENTIAL/EC_charge+potential_POT.CUBE.xz",
+   "stored_bytes": 297244
+  },
+  {
+   "path": "5-molecule-0d/EC/CPHF/EC_cphf.d12",
+   "bytes": 711,
+   "sha256": "6f247919081d8191c0d66c017eb05e4e5a37472b9fd2342c95923e113aa559c1",
+   "source": "written by `mace opt2d12 --calc-type CPHF` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "5-molecule-0d/EC/CPHF/EC_cphf.out",
+   "bytes": 62736,
+   "sha256": "e05ec8fd1f215618ddc06e9e25ef9672b4abd6df9698c021e02af6c3594a71c8",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_cphf.out)",
+   "stored": "5-molecule-0d/EC/CPHF/EC_cphf.out.xz",
+   "stored_bytes": 8496
+  },
+  {
+   "path": "5-molecule-0d/EC/FREQ/EC_freq.d12",
+   "bytes": 802,
+   "sha256": "0cbdd02d060c797af2304731fa3a8b3b2b14c556e42750189314d7644ae65344",
+   "source": "written by `mace opt2d12`, FREQ template 4 (IR + Raman spectra) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "5-molecule-0d/EC/FREQ/EC_freq.out",
+   "bytes": 169799,
+   "sha256": "ed6c6a4cc1d6e81033224bb529002df2104221f4d6398b7443711a6e2212f1c0",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_freq.out)",
+   "stored": "5-molecule-0d/EC/FREQ/EC_freq.out.xz",
+   "stored_bytes": 23400
+  },
+  {
+   "path": "5-molecule-0d/EC/FREQ/EC_freq_IRSPEC.DAT",
+   "bytes": 160040,
+   "sha256": "75ff421a1866e504ad959e81e3df711e4ddbe1f75c26c9fce07baea98d139b90",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_freq_IRSPEC.DAT)",
+   "stored": "5-molecule-0d/EC/FREQ/EC_freq_IRSPEC.DAT.xz",
+   "stored_bytes": 21216
+  },
+  {
+   "path": "5-molecule-0d/EC/FREQ/EC_freq_RAMSPEC.DAT",
+   "bytes": 524131,
+   "sha256": "612332c8710a64f1a55eb1c1a499817a08b7fa9a8f2b2e283f709882a5733a78",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_freq_RAMSPEC.DAT)",
+   "stored": "5-molecule-0d/EC/FREQ/EC_freq_RAMSPEC.DAT.xz",
+   "stored_bytes": 94084
+  },
+  {
+   "path": "5-molecule-0d/EC/OPT/EC_opt.cif",
+   "bytes": 972,
+   "sha256": "90770f584cf92d4c245c98d1d65cce8f0642f4446e789b17f7c911e49dd42666",
+   "source": "group corpus: OPT/EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized.cif"
+  },
+  {
+   "path": "5-molecule-0d/EC/OPT/EC_opt.d12",
+   "bytes": 813,
+   "sha256": "12b97500b0a446902e0c6a45d69f43841f7f85e9aa3ed450014918cee0e06d9a",
+   "source": "group corpus: OPT/EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized.d12"
+  },
+  {
+   "path": "5-molecule-0d/EC/OPT/EC_opt.out",
+   "bytes": 72349,
+   "sha256": "85469153395093da1ea3f309a1b81de7f819f1da682c832f59ca675386244ac5",
+   "source": "group corpus: OPT/EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized.out",
+   "stored": "5-molecule-0d/EC/OPT/EC_opt.out.xz",
+   "stored_bytes": 9560
+  },
+  {
+   "path": "5-molecule-0d/EC/ORBITALS/EC_orbitals.d3",
+   "bytes": 41,
+   "sha256": "ff7fa31378fbae60edc5d0dcd158afcde59583a280386facf7d60e31b2184cf0",
+   "source": "written by `mace opt2d3 -t ORBITALS` (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "5-molecule-0d/EC/ORBITALS/EC_orbitals.out",
+   "bytes": 9494,
+   "sha256": "189a4700e8dd3fc91c736a9a68e8c983ac489f90ffd8b6b374e759c05834c38a",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_orbitals.out)"
+  },
+  {
+   "path": "5-molecule-0d/EC/ORBITALS/EC_orbitals_orb.molden",
+   "bytes": 440666,
+   "sha256": "1b368ca1e91a06be69402fbc9f4998022dc686edd59e3a353a1fd2868f4d27ac",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_orbitals_orb.molden)",
+   "stored": "5-molecule-0d/EC/ORBITALS/EC_orbitals_orb.molden.xz",
+   "stored_bytes": 43480
+  },
+  {
+   "path": "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.d12",
+   "bytes": 748,
+   "sha256": "5f49484686fe05773792c47e39a9c84d30fcc1fbd2851269576fbe2c286cea8a",
+   "source": "written by `mace opt2d12`, FREQ template 7 (phonon density of states) (\"Maximum frequency for DOS\" answered 4000 cm-1) from the SP output"
+  },
+  {
+   "path": "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.f25",
+   "bytes": 2545,
+   "sha256": "10515df56d5ec12e6fafdf336b475d52fce1d47aaadb11b199edf0300db58621",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_phonon_dos.f25)"
+  },
+  {
+   "path": "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.out",
+   "bytes": 176001,
+   "sha256": "200105f40f892e8baa7aaa45ffbb92707c5c3b25a091887696cc463f540f078e",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_phonon_dos.out)",
+   "stored": "5-molecule-0d/EC/PHONON_DOS/EC_phonon_dos.out.xz",
+   "stored_bytes": 16236
+  },
+  {
+   "path": "5-molecule-0d/EC/SP/EC_sp.d12",
+   "bytes": 701,
+   "sha256": "ea0bd132d7fb02db4748031f5564408513cf477a71fa29dd841da2c49ed1b972",
+   "source": "written by `mace opt2d12 --calc-type SP` from the OPT output"
+  },
+  {
+   "path": "5-molecule-0d/EC/SP/EC_sp.out",
+   "bytes": 61961,
+   "sha256": "9efb788d15177af1df0d6c286407b428d0993b4a52ee14dfe22a7d22aa3c5e5f",
+   "source": "CRYSTAL23 run on the MSU HPCC from the deck(s) above (EC_sp.out)",
+   "stored": "5-molecule-0d/EC/SP/EC_sp.out.xz",
+   "stored_bytes": 8344
+  }
+ ]
+}

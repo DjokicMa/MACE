@@ -1,0 +1,224 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS            1  OF            4  WORKING
+ PROCESS            2  OF            4  WORKING
+ PROCESS            3  OF            4  WORKING
+ PROCESS            0  OF            4  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 23 10 2026 TIME 11:21:06.6
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+
+ *******************************************************************************
+ polyacetylene_opt_sp_HSESOL3C_optimized                                         
+ CRYSTAL - PROPERTIES - TYPE OF CALCULATION :  UNRESTRICTED OPEN SHELL
+ *******************************************************************************
+ SPIN POLARIZED SYSTEM: SUMMED SPIN DENSITY    0.00000000
+
+ KOHN-SHAM HAMILTONIAN
+
+ (EXCHANGE)[CORRELATION] FUNCTIONAL:(HSEsol GGA)[PBEsol]
+
+ RANGE-SEPARATED HYBRID FUNCTIONAL 
+ OMEGA (SHORT-RANGE)[LONG-RANGE]:(    0.1100)[    0.0000]
+
+ HYBRID EXCHANGE - PERCENTAGE OF FOCK EXCHANGE    25.0000
+
+ SPIN POLARIZED DFT SELECTED
+
+ DIRECT LATTICE VECTOR COMPONENTS (ANGSTROM)
+         2.45932    0.00000    0.00000
+         0.00000  500.00000    0.00000
+         0.00000    0.00000  500.00000
+
+ LATTICE PARAMETERS  (ANGSTROM AND DEGREES) - PRIMITIVE CELL
+       A          B          C         ALPHA      BETA     GAMMA        VOLUME
+    2.45932  500.00000  500.00000     90.0000   90.0000   90.0000       2.45932
+ *******************************************************************************
+ N. OF ATOMS PER CELL         4 COULOMB OVERLAP TOL          (T1) 10**   -8
+ NUMBER OF SHELLS            18 COULOMB PENETRATION TOL      (T2) 10**   -8
+ NUMBER OF AO                34 EXCHANGE OVERLAP TOL         (T3) 10**   -8
+ N. OF ELECTRONS PER CELL    14 EXCHANGE PSEUDO OVP (F(G))   (T4) 10**   -9
+ CORE ELECTRONS PER CELL      4 EXCHANGE PSEUDO OVP (P(G))   (T5) 10**  -24
+ N. OF SYMMETRY OPERATORS     1 POLE ORDER IN MONO ZONE                   4
+ *******************************************************************************
+   ATOM N.AT.  SHELL    X(A)      Y(A)      Z(A)      EXAD       N.ELECT.
+ *******************************************************************************
+    1    6 C     7    -0.007     5.325     5.000   8.880E-01       6.105
+    2    6 C     7     1.191     4.675     5.000   8.880E-01       6.105
+    3    1 H     2    -0.007     6.420     5.000   1.756E-01       0.895
+    4    1 H     2     1.191     3.580     5.000   1.756E-01       0.895
+ *******************************************************************************
+ DE(K)                   0.000E+00  ENERGY LEVEL SHIFTING        0.00000
+ TOTAL ENERGY -7.7064915726853E+01  CONVERGENCE ON ENER       -3.774E-10
+ KIN. ENERGY   7.6474032788256E+01  VIR. COEFF.           1.05595205E+00
+ N. OF SCF CYCLES                7  FERMI ENERGY              -0.143E+00
+ WEIGHT OF F(I) IN F(I+1)      30
+ SHRINK. FACT.(MONKH.)    18  1  1  SHRINKING FACTOR(GILAT NET)       36
+ NUMBER OF K POINTS IN THE IBZ  10  CELL VOLUME (A.U.)          4.647445
+ *******************************************************************************
+
+ GCALCO - MAX INDICES DIRECT LATTICE VECTOR 13998     0     0
+ NO.OF VECTORS CREATED 6999 STARS 3500 RMAX 16261.41058 BOHR
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT gordsh1     TELAPSE        0.60 TCPU        0.17
+
+ MATRIX SIZE: P(G)    7690, F(G)    2350, P(G) IRR    4166, F(G) IRR    2470
+ MAX G-VECTOR INDEX FOR 1- AND 2-ELECTRON INTEGRALS  11
+
+
+ CAPPA:IS1 18;IS2  1;IS3  1; K PTS MONK NET  10; SYMMOPS:K SPACE   2;G SPACE   1
+
+
+ CAPPA:IS1284;IS2  1;IS3  1; K PTS MONK NET 143; SYMMOPS:K SPACE   2;G SPACE   1
+
+ *******************************************************************************
+ RESTART WITH NEW K POINTS NET
+ *******************************************************************************
+ POINTS IN THE IBZ                 143 POINTS(GILAT NET)               285
+ SHRINK FACTORS(MONK.)       284  1  1 SHRINK FACTOR(GILAT)            568
+ *******************************************************************************
+ *** K POINTS COORDINATES (OBLIQUE COORDINATES IN UNITS OF IS =284)
+   1-R(  0  0  0)   2-C(  1  0  0)   3-C(  2  0  0)   4-C(  3  0  0)
+   5-C(  4  0  0)   6-C(  5  0  0)   7-C(  6  0  0)   8-C(  7  0  0)
+   9-C(  8  0  0)  10-C(  9  0  0)  11-C( 10  0  0)  12-C( 11  0  0)
+  13-C( 12  0  0)  14-C( 13  0  0)  15-C( 14  0  0)  16-C( 15  0  0)
+  17-C( 16  0  0)  18-C( 17  0  0)  19-C( 18  0  0)  20-C( 19  0  0)
+  21-C( 20  0  0)  22-C( 21  0  0)  23-C( 22  0  0)  24-C( 23  0  0)
+  25-C( 24  0  0)  26-C( 25  0  0)  27-C( 26  0  0)  28-C( 27  0  0)
+  29-C( 28  0  0)  30-C( 29  0  0)  31-C( 30  0  0)  32-C( 31  0  0)
+  33-C( 32  0  0)  34-C( 33  0  0)  35-C( 34  0  0)  36-C( 35  0  0)
+  37-C( 36  0  0)  38-C( 37  0  0)  39-C( 38  0  0)  40-C( 39  0  0)
+  41-C( 40  0  0)  42-C( 41  0  0)  43-C( 42  0  0)  44-C( 43  0  0)
+  45-C( 44  0  0)  46-C( 45  0  0)  47-C( 46  0  0)  48-C( 47  0  0)
+  49-C( 48  0  0)  50-C( 49  0  0)  51-C( 50  0  0)  52-C( 51  0  0)
+  53-C( 52  0  0)  54-C( 53  0  0)  55-C( 54  0  0)  56-C( 55  0  0)
+  57-C( 56  0  0)  58-C( 57  0  0)  59-C( 58  0  0)  60-C( 59  0  0)
+  61-C( 60  0  0)  62-C( 61  0  0)  63-C( 62  0  0)  64-C( 63  0  0)
+  65-C( 64  0  0)  66-C( 65  0  0)  67-C( 66  0  0)  68-C( 67  0  0)
+  69-C( 68  0  0)  70-C( 69  0  0)  71-C( 70  0  0)  72-C( 71  0  0)
+  73-C( 72  0  0)  74-C( 73  0  0)  75-C( 74  0  0)  76-C( 75  0  0)
+  77-C( 76  0  0)  78-C( 77  0  0)  79-C( 78  0  0)  80-C( 79  0  0)
+  81-C( 80  0  0)  82-C( 81  0  0)  83-C( 82  0  0)  84-C( 83  0  0)
+  85-C( 84  0  0)  86-C( 85  0  0)  87-C( 86  0  0)  88-C( 87  0  0)
+  89-C( 88  0  0)  90-C( 89  0  0)  91-C( 90  0  0)  92-C( 91  0  0)
+  93-C( 92  0  0)  94-C( 93  0  0)  95-C( 94  0  0)  96-C( 95  0  0)
+  97-C( 96  0  0)  98-C( 97  0  0)  99-C( 98  0  0) 100-C( 99  0  0)
+ 101-C(100  0  0) 102-C(101  0  0) 103-C(102  0  0) 104-C(103  0  0)
+ 105-C(104  0  0) 106-C(105  0  0) 107-C(106  0  0) 108-C(107  0  0)
+ 109-C(108  0  0) 110-C(109  0  0) 111-C(110  0  0) 112-C(111  0  0)
+ 113-C(112  0  0) 114-C(113  0  0) 115-C(114  0  0) 116-C(115  0  0)
+ 117-C(116  0  0) 118-C(117  0  0) 119-C(118  0  0) 120-C(119  0  0)
+ 121-C(120  0  0) 122-C(121  0  0) 123-C(122  0  0) 124-C(123  0  0)
+ 125-C(124  0  0) 126-C(125  0  0) 127-C(126  0  0) 128-C(127  0  0)
+ 129-C(128  0  0) 130-C(129  0  0) 131-C(130  0  0) 132-C(131  0  0)
+ 133-C(132  0  0) 134-C(133  0  0) 135-C(134  0  0) 136-C(135  0  0)
+ 137-C(136  0  0) 138-C(137  0  0) 139-C(138  0  0) 140-C(139  0  0)
+ 141-C(140  0  0) 142-C(141  0  0) 143-R(142  0  0)
+
+ FERMI ENERGY AND DENSITY MATRIX CALCULATION ON COMPUTED EIGENVECTORS
+ DENSITY MATRIX AT SCF CYCLE (  7+1)
+
+
+    ALPHA      ELECTRONS
+ INSULATING STATE
+ TOP OF VALENCE BANDS -    BAND      7; K  143; EIG -1.4252096E-01 AU
+ TOP OF VALENCE BANDS -    BAND      7; K    1; EIG -3.3740412E-01 AU
+ BOTTOM OF VIRTUAL BANDS - BAND      8; K  143; EIG -1.0861879E-01 AU
+ DIRECT ENERGY BAND GAP:   0.9225 eV
+ BOTTOM OF VIRTUAL BANDS - BAND      8; K    1; EIG  9.1141200E-02 AU
+
+    BETA       ELECTRONS
+ INSULATING STATE
+ TOP OF VALENCE BANDS -    BAND      7; K  143; EIG -1.4252096E-01 AU
+ TOP OF VALENCE BANDS -    BAND      7; K    1; EIG -3.3740412E-01 AU
+ BOTTOM OF VIRTUAL BANDS - BAND      8; K  143; EIG -1.0861879E-01 AU
+ DIRECT ENERGY BAND GAP:   0.9225 eV
+ BOTTOM OF VIRTUAL BANDS - BAND      8; K    1; EIG  9.1141200E-02 AU
+
+ CORE DENSITY MATRIX CALCULATION
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT NEWK        TELAPSE        0.68 TCPU        0.23
+ *******************************************************************************
+
+           THERMOELECTRIC AND ELECTRONIC TRANSPORT PROPERTIES CALCULATION
+
+ (Physical Constants: CODATA 2014 NIST, arXiv:1507.07956 http://physics.nist.gov/cuu/Constants/index.html)
+
+ *******************************************************************************
+  RELAXATION TIME (fs):                 10.0000
+  MIN TEMPERATURE VALUE (K):           100.0000
+  MAX TEMPERATURE VALUE (K):           800.0000
+  STEP TEMPERATURE VALUE (K):           50.0000
+  MIN CHEMICAL POTENTIAL VALUE (eV):    -5.2884
+  MAX CHEMICAL POTENTIAL VALUE (eV):    -1.2884
+  STEP CHEMICAL POTENTIAL VALUE (eV):    0.0100
+  MIN TDF VALUE (eV):                   -8.2884
+  MAX TDF VALUE (eV):                    1.7116
+  STEP TDF VALUE (eV):                   0.0100
+  SMEARING FACTOR:                       0.0000
+  SMEARING SCHEME:                      GAUSSIAN
+ *******************************************************************************
+ TDF CALCULATION IN PROGRESS...
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT SMAT        TELAPSE        0.75 TCPU        0.26
+ TDF CALCULATION PERFORMED
+ TDF CALCULATED ALONG THE XX DIRECTION
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT TDF_CALC    TELAPSE        0.82 TCPU        0.34
+ INFORMATION **** boltzao_main **** THE DETERMINANT OF THE CONDUCTIVITY MATRIX IS VERY SMALL
+ INFORMATION **** boltzao_main **** SEEBECK COEFFICIENTS ARE CLOSE TO INFINITE SO WE SET THEM TO ZERO
+ ALPHA AND BETA ELECTRICAL CONDUCTIVITY DATA WRITTEN ON SIGMA.DAT
+ ALPHA AND BETA ELECTRICAL CONDUCTIVITY * SEEBECK COEFFICIENT DATA WRITTEN ON SIGMAS.DAT
+ SEEBECK COEFFICIENT DATA WRITTEN ON SEEBECK.DAT
+ ALPHA AND BETA ELECTRICAL THERMAL CONDUCTIVITY DATA WRITTEN ON KAPPA.DAT
+ ALPHA AND BETA TRANSPORT DISTRIBUTION FUNCTION DATA WRITTEN ON TDF.DAT
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT BOLTZTRA    TELAPSE        1.36 TCPU        0.86
+ ENDPROP   
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE        1.36 TCPU        0.86
+ EEEEEEEEEE TERMINATION  DATE 23 10 2026 TIME 11:21:07.3
+NODE    0 CPU TIME =         0.860
+NODE    1 CPU TIME =         0.911
+NODE    2 CPU TIME =         0.900
+NODE    3 CPU TIME =         0.872
+    TOTAL CPU TIME =         3.544

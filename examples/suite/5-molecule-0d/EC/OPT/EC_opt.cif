@@ -1,0 +1,32 @@
+data_EC_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized
+
+_cell_length_a    42.729181
+_cell_length_b    43.837782
+_cell_length_c    42.860513
+_cell_angle_alpha 90.000000
+_cell_angle_beta  90.000000
+_cell_angle_gamma 90.000000
+
+_symmetry_space_group_name_H-M  'P 1'
+_symmetry_Int_Tables_number     1
+
+loop_
+_symmetry_equiv_pos_as_xyz
+  'x, y, z'
+
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+C1       C      0.484684     0.517018     0.491215
+C2       C      0.518781     0.525417     0.498027
+O1       O      0.479671     0.491272     0.510692
+O2       O      0.531221     0.497887     0.510318
+C3       C      0.507550     0.479489     0.519501
+O3       O      0.510793     0.456227     0.533370
+H1       H      0.480889     0.510615     0.466630
+H2       H      0.468064     0.535164     0.497327
+H3       H      0.520915     0.543773     0.515483
+H4       H      0.531936     0.532098     0.477107

@@ -2,6 +2,7 @@
 """Rebuild the `mace gui` example folder in this directory.
 
     python examples/gui/build_examples.py
+    python examples/gui/build_examples.py --suite --corpus /path/to/test   # examples/suite (build_suite.py)
 
 Textbook structures are built here from their experimental lattice
 constants. The CRYSTAL outputs are copies of files MACE's own tests already
@@ -140,6 +141,21 @@ def database():
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+                                 epilog="Without --suite: the `mace gui` example folder (examples/gui).")
+    ap.add_argument("--suite", action="store_true",
+                    help="build the five-archetype suite (examples/suite, build_suite.py) instead")
+    ap.add_argument("--corpus", default=None,
+                    help="--suite: the CRYSTAL output corpus (default: $MACE_TEST_CORPUS, else the repository's test/)")
+    ap.add_argument("--results", default=None, help="finished runs of deck-only cells: <archetype folder>/<entry>/<calc>/")
+    a = ap.parse_args()
+    if a.suite:
+        # the five-archetype suite (examples/suite); needs the output corpus: --corpus PATH
+        import build_suite
+        build_suite.build(Path(a.corpus or __import__("os").environ.get("MACE_TEST_CORPUS") or REPO / "test"),
+                          Path(a.results) if a.results else None)
+        return
     (HERE / "structures").mkdir(exist_ok=True)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
