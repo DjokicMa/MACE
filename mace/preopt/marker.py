@@ -15,10 +15,11 @@ _LINE = re.compile(r"^#\s*mace-preopt:\s*(.*)$")
 _SAFE = re.compile(r"[^A-Za-z0-9_.:+-]")
 
 
-def line(method_ran: str, model: Optional[str] = None) -> str:
+def line(method_ran: str, model: Optional[str] = None, academic: bool = False) -> str:
+    """The marker; an academic-only model's (MACE-OFF) carries license=academic."""
     m = _SAFE.sub("_", method_ran or "-")
     mid = _SAFE.sub("_", model) if model else "-"
-    return f"{PREFIX} method={m} model={mid} version=1"
+    return f"{PREFIX} method={m} model={mid} version=1" + (" license=academic" if academic else "")
 
 
 def comment(label: str, license_: Optional[str]) -> str:
@@ -35,7 +36,7 @@ def parse(text: str) -> Optional[Dict[str, str]]:
             out = {}
             for tok in m.group(1).split():
                 k, _, v = tok.partition("=")
-                if k in ("method", "model", "version"):
+                if k in ("method", "model", "version", "license"):
                     out[k] = v
             if out.get("method"):
                 return out

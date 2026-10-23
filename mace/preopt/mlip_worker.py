@@ -1,10 +1,17 @@
 """The ML-potential worker: a standalone script run in the ML interpreter.
 
-    python -I mlip_worker.py --model-id ID --backend mace_mp|chgnet --weights PATH
-                             --device cpu|cuda:0 --dtype float32|float64 --threads K [--socket PATH]
+    python -I mlip_worker.py --model-id ID --backend mace_mp|chgnet|orb|mattersim|fairchem
+                             --weights PATH --device cpu|cuda:0|auto --dtype float32|float64
+                             --threads K [--socket PATH] [--variant NAME] [--task HEAD]
+                             [--gpu-mem-fraction F]
+
+``--device auto`` takes cuda:0 when torch sees a GPU (the client has already
+narrowed CUDA_VISIBLE_DEVICES to one GPU, GPU 0 unless the user chose
+another), else the CPU; the hello reports which one it took.
 
 It is never imported as ``mace.*``: inside the ML environment ``import mace``
-must be ACEsuit's mace-torch, which is unrelated to this MACE tool. ``-I``
+must be ACEsuit's mace-torch (MACE-MP), which is unrelated to this
+MACE tool. ``-I``
 (isolated mode) keeps PYTHONPATH and the script directory off sys.path, and
 the worker checks before loading anything that ``mace`` really belongs to
 the installed ``mace-torch`` distribution (exit 3 otherwise).
@@ -14,13 +21,16 @@ prints ``{"op": "hello", ...}`` on stdout. Then requests come on stdin (pipe
 mode) or over the Unix socket ``--socket`` (one connection at a time):
 
     {"id": n, "op": "calc", "numbers": [...], "cell": [[3x3]], "positions": [[Nx3]],
-     "pbc": [b, b, b], "properties": ["energy", "forces", "stress"]}
+     "pbc": [b, b, b], "properties": ["energy", "forces", "stress"],
+     "charge": q, "spin": m, "task": "omol"}     (charge/spin/task only for the models that take them)
     -> {"id": n, "ok": true, "energy": E, "forces": [[...]], "stress": [6]}   (eV, Å; ase Voigt)
     -> {"id": n, "ok": false, "kind": "nan"|"oom"|"elements"|"exception", "error": "..."}
     {"op": "ping"} -> {"op": "pong"};  {"op": "quit"} or stdin EOF -> exit 0
 
 The worker never downloads anything: the model is given as a local file
-(mace_mp) or ships inside the chgnet wheel.
+(mace_mp, orb, mattersim), ships inside the chgnet wheel, or (fairchem: UMA)
+is read from the Hugging Face cache, offline, after ``mace mlip fetch``
+downloaded it with the user's own access.
 """
 import argparse
 import json
@@ -57,9 +67,12 @@ def _fail(code, msg):
     os._exit(code)
 
 
+MACE_TORCH_BACKENDS = ("mace_mp",)
+
+
 def self_check(backend):
     """mace_mp: 'mace' must be the module the mace-torch distribution installed."""
-    if backend != "mace_mp":
+    if backend not in MACE_TORCH_BACKENDS:
         return
     import importlib
     import importlib.metadata as md
@@ -83,26 +96,70 @@ def self_check(backend):
         _fail(3, f"package name clash: mace.calculators.mace_mp is not importable: {exc}")
 
 
+def pick_device(requested, torch):
+    """auto: cuda:0 when torch sees a GPU, else cpu."""
+    if requested == "auto":
+        try:
+            return "cuda:0" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            return "cpu"
+    return requested
+
+
+def _weights(args):
+    if not args.weights or not os.path.isfile(args.weights):
+        _fail(4, f"weights file not found: {args.weights!r}")
+    return args.weights
+
+
 def load(args):
     import torch
     torch.set_num_threads(max(1, int(args.threads)))
-    dev = args.device
+    dev = pick_device(args.device, torch)
+    args.device = dev
     if dev.startswith("cuda"):
-        torch.cuda.set_per_process_memory_fraction(0.15, 0)
+        torch.cuda.set_per_process_memory_fraction(min(1.0, max(0.01, float(args.gpu_mem_fraction))), 0)
     versions = {"python": "%d.%d.%d" % sys.version_info[:3], "torch": torch.__version__}
     import ase
     versions["ase"] = ase.__version__
     import importlib.metadata as md
-    if args.backend == "mace_mp":
+    if args.backend in MACE_TORCH_BACKENDS:
         from mace.calculators import mace_mp
-        if not args.weights or not os.path.isfile(args.weights):
-            _fail(4, f"weights file not found: {args.weights!r}")
-        calc = mace_mp(model=args.weights, device=dev, default_dtype=args.dtype)
+        calc = mace_mp(model=_weights(args), device=dev, default_dtype=args.dtype)
         versions["mace-torch"] = md.version("mace-torch")
         try:
             z = sorted(int(x) for x in calc.z_table.zs)
         except Exception:
             z = list(range(1, 90))
+    elif args.backend == "orb":
+        from orb_models.forcefield import pretrained
+        try:
+            from orb_models.forcefield.inference.calculator import ORBCalculator
+        except ImportError:                       # orb-models before 0.6
+            from orb_models.forcefield.calculator import ORBCalculator
+        loader = pretrained.ORB_PRETRAINED_MODELS.get(args.variant)
+        if loader is None:
+            _fail(4, f"orb-models has no model {args.variant!r} (installed version {md.version('orb-models')})")
+        precision = args.dtype if args.dtype in ("float32-high", "float32-highest", "float64") else "float32-high"
+        got = loader(weights_path=_weights(args), device=dev, precision=precision, compile=False)
+        if isinstance(got, tuple):
+            calc = ORBCalculator(got[0], atoms_adapter=got[1], device=dev)
+        else:
+            calc = ORBCalculator(got, device=dev)
+        versions["orb-models"] = md.version("orb-models")
+        z = list(range(1, 119))
+    elif args.backend == "mattersim":
+        from mattersim.forcefield import MatterSimCalculator
+        calc = MatterSimCalculator(load_path=_weights(args), device=dev)
+        versions["mattersim"] = md.version("mattersim")
+        z = list(range(1, 95))
+    elif args.backend == "fairchem":
+        os.environ["HF_HUB_OFFLINE"] = "1"            # the weights were fetched with the user's own access
+        from fairchem.core import FAIRChemCalculator, pretrained_mlip
+        unit = pretrained_mlip.get_predict_unit(args.variant, device="cuda" if dev.startswith("cuda") else "cpu")
+        calc = TaskCalcs(lambda task: FAIRChemCalculator(unit, task_name=task), args.task or "omat")
+        versions["fairchem-core"] = md.version("fairchem-core")
+        z = list(range(1, 101))
     elif args.backend == "chgnet":
         from chgnet.model import CHGNet
         from chgnet.model.dynamics import CHGNetCalculator
@@ -115,6 +172,20 @@ def load(args):
     return calc, z, versions
 
 
+class TaskCalcs:
+    """One calculator per task head over one loaded model (UMA): the head is
+    chosen per call."""
+
+    def __init__(self, make, default):
+        self.make, self.default, self.calcs = make, default, {}
+
+    def get(self, task):
+        task = task or self.default
+        if task not in self.calcs:
+            self.calcs[task] = self.make(task)
+        return self.calcs[task]
+
+
 def compute(calc, msg, zset):
     from ase import Atoms
     import numpy as np
@@ -124,7 +195,10 @@ def compute(calc, msg, zset):
         return {"id": msg.get("id"), "ok": False, "kind": "elements",
                 "error": f"the model has no parameters for Z = {missing}"}
     atoms = Atoms(numbers=nums, cell=msg["cell"], positions=msg["positions"], pbc=msg.get("pbc", [True] * 3))
-    atoms.calc = calc
+    if "charge" in msg:                   # OrbMol-v2, UMA omol: total charge and spin multiplicity (2S+1)
+        atoms.info["charge"] = int(msg["charge"])
+        atoms.info["spin"] = int(msg["spin"])
+    atoms.calc = calc.get(msg.get("task")) if isinstance(calc, TaskCalcs) else calc
     props = msg.get("properties") or ["energy", "forces"]
     e = float(atoms.get_potential_energy())
     out = {"id": msg.get("id"), "ok": True, "energy": e}
@@ -228,6 +302,9 @@ def main():
     ap.add_argument("--dtype", default="float32")
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--socket", default=None)
+    ap.add_argument("--variant", default="")
+    ap.add_argument("--task", default="")
+    ap.add_argument("--gpu-mem-fraction", type=float, default=0.15)
     args = ap.parse_args()
     claim_stdout()
     import warnings
@@ -237,7 +314,7 @@ def main():
     calc, z, versions = load(args)
     srv = bind_socket(args.socket) if args.socket else None
     mod = None
-    if args.backend == "mace_mp":
+    if args.backend in MACE_TORCH_BACKENDS:
         import mace
         mod = os.path.realpath(mace.__file__)
     hello = {"op": "hello", "protocol": PROTOCOL, "model": args.model_id, "backend": args.backend,

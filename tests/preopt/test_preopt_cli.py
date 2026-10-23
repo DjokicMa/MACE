@@ -57,7 +57,7 @@ def test_springs_default_writes_cif_json_and_follow_up(work):
 
 
 @pytest.mark.parametrize("argv", [("Si.cif", "--method", "bogus"), ("Si.cif", "--method", "mlip:omat-24"),
-                                  ("Si.cif", "--fmax", "-1"), ("Si.cif", "--device", "gpu0"), ()])
+                                  ("Si.cif", "--fmax", "-1"), ("Si.cif", "--device", "gpu0"), ("Si.cif", "--bonds", "all"), ()])
 def test_usage_errors_exit_2(work, argv):
     rc, out, err = mace("preopt", *argv, cwd=work)
     assert rc == 2, (out, err)
@@ -75,10 +75,33 @@ def test_missing_xtb_writes_springs_and_exits_3(work, monkeypatch):
 
 
 def test_nothing_to_clean_is_exit_1(work):
-    from ase.build import bulk
-    bulk("Cu", "fcc", a=3.61, cubic=True).write(str(work / "Cu.cif"))
-    rc, out, err = mace("preopt", "Cu.cif", cwd=work)
-    assert rc == 1 and "nothing to clean" in err and not (work / "Cu_preopt.cif").exists()
+    from ase import Atoms
+    Atoms("Ar", cell=[10.0, 10.0, 10.0], pbc=True).write(str(work / "Ar.cif"))     # a lone atom: no bond to hold
+    rc, out, err = mace("preopt", "Ar.cif", cwd=work)
+    assert rc == 1 and "nothing to clean" in err and not (work / "Ar_preopt.cif").exists()
+    rc, out, err = mace("preopt", "Ar.cif", "--bonds", "lenient", cwd=work)
+    assert rc == 1 and "nothing to clean" in err
+    rc, out, err = mace("preopt", "Ar.cif", "--bonds", "none", cwd=work)             # the repulsion alone runs
+    assert rc == 0 and (work / "Ar_preopt.cif").exists(), err
+
+
+def test_bonds_held_is_the_guis(work):
+    """--bonds is Clean › Bonds held: the springs hold the viewer's bonds (shown), 1.2 x (lenient) or none,
+    the same as the GUI's Clean for the same structure, and the provenance records it."""
+    from ase.io import read
+    from mace.gui import clean as C
+    from mace.utils.cif_symbols import read_cif
+    atoms = read_cif(work / "MgO.cif")
+    atoms.rattle(0.08, seed=3)
+    atoms.write(str(work / "r.cif"))
+    start = read(str(work / "r.cif"))
+    for held in ("shown", "lenient", "none"):
+        rc, out, err = mace("preopt", "r.cif", "--bonds", held, "--no-symmetry", "--force", "--json", cwd=work)
+        assert rc == 0, err
+        prov = json.loads(out)
+        assert prov["bonds_held"] == held and prov["method_ran"] == "springs"
+        ref = C.clean(start, keep_symmetry=False, bonds_held=held)
+        assert prov["steps_taken"] == ref["steps"], (held, prov["steps_taken"], ref["steps"])
 
 
 MGO_DECK = """MgO test deck
@@ -140,9 +163,10 @@ def test_every_geometry_editing_keyword_is_refused(work):
         assert deckscan.scan((work / "k.d12").read_text())["geometry_edits"] == [kw], kw
     rc, out, err = mace("preopt", "k.d12", cwd=work)          # the last one (GHOSTS) through the CLI
     assert rc == 1 and "builds its geometry with GHOSTS" in err
-    for kind in ("SLAB", "POLYMER", "MOLECULE", "EXTERNAL"):
+    for kind in ("SLAB", "POLYMER", "MOLECULE", "HELIX", "EXTERNAL"):
         text = MGO_DECK.format(edits="", basis_extra="", scf_extra="").replace("CRYSTAL\n", f"{kind}\n", 1)
-        assert deckscan.scan(text)["geometry_edits"] == [kind]
+        # 1.1.6: a dimensionality is not an edit (the deck lists its atoms); HELIX and EXTERNAL still are
+        assert deckscan.scan(text)["geometry_edits"] == ([] if kind in ("SLAB", "POLYMER", "MOLECULE") else [kind])
     plain = deckscan.scan(MGO_DECK.format(edits="", basis_extra="", scf_extra="CHEMOD\n1\n1 2.0\n"))
     assert plain["geometry_edits"] == [] and plain["charge_records"] == ["CHEMOD"]
 
@@ -215,7 +239,8 @@ def test_cifout_round_trip_and_p1_fallback(tmp_path):
                                   ("mlip", "fetch", "--help")])
 def test_help(work, argv):
     rc, out, err = mace(*argv, cwd=work)
-    assert rc == 0 and f"Usage: mace {argv[0]}" in out and "Command to run" not in out
+    # mlip fetch --help is the subcommand's own argparse help ("usage: mace mlip fetch")
+    assert rc == 0 and f"usage: mace {argv[0]}" in out.lower() and "Command to run" not in out
     if argv[0] == "preopt":
         assert "the next CRYSTAL step" in " ".join(out.split()) and "docs/preopt.md" in out
         # the --threads default as proc.default_threads computes it, SLURM included

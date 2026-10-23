@@ -83,7 +83,10 @@ def defaults_for(method: str) -> Dict[str, float]:
 
 def spacegroup(atoms, symprec: float = 1e-3) -> Optional[Dict[str, Any]]:
     """spglib's group of ``atoms``: number, Hall number, symbol and the
-    number of operations in this cell; None without a group."""
+    number of operations in this cell; None without a group (and for a
+    slab, polymer or molecule: a space group needs a 3D lattice)."""
+    if not all(bool(x) for x in atoms.pbc):
+        return None
     import spglib
     try:
         ds = spglib.get_symmetry_dataset((atoms.cell.array, atoms.get_scaled_positions(), atoms.numbers),
@@ -137,9 +140,9 @@ def _gaps(atoms):
         order = np.argsort(x)
         xs, rs = x[order], rad[order]
         nxt = np.roll(np.arange(len(xs)), -1)
-        gaps = (xs[nxt] - xs) % d
-        if len(xs) == 1:
-            gaps = np.array([d])
+        # the gap after the last atom wraps through the cell face; atoms at one height (a planar molecule
+        # perpendicular to this axis) leave the whole height d there, not 0 (which (x0 - xn) % d gave)
+        gaps = np.append(np.diff(xs), xs[0] + d - xs[-1])
         free = gaps - rs - rs[nxt]
         out.append((float(max(free.max(), 0.0)), float(gaps.max())))
     return out
@@ -324,16 +327,21 @@ def resolve_tier(method: str, *, threads: int = 1, device: str = "cpu", mlip_lea
         path, xenv = st["path"], st.get("env")
 
         def factory(atoms, charge=0, uhf=0, **_):
-            return gfnff.GFNFF(xtb=path, charge=charge, uhf=uhf, canceled=canceled, nice=nice, env=xenv)
+            from . import lowdim
+            mol = not any(bool(x) for x in atoms.pbc)
+            calc = gfnff.GFNFF(xtb=path, charge=charge, uhf=uhf, canceled=canceled, nice=nice, env=xenv,
+                               periodic=not mol)
+            # a molecule runs as a molecule; a slab or polymer in a box with lowdim.VACUUM Å along its open axes
+            return lowdim.Boxed(calc) if lowdim.is_low_dim(atoms) and not mol else calc
         return Tier(method, kind, info["label"], True, "", factory, info)
     if kind == "mlip":
         from . import detect, registry
         mid = method.split(":", 1)[1]
         model = registry.get(mid)
         if model is None:
-            return Tier(method, kind, f"ML potential {mid}", False, f"no ML model {mid!r} in the registry")
+            return Tier(method, kind, f"ML potential {mid}", False, registry.unknown(mid, prefix="mlip:"))
         info = registry.provenance_info(model)
-        label = f"ML potential: {model['label']}"
+        label = f"ML potential: {registry.tag(model)}"
         if mlip_lease is not None and (mlip_lease.get("model") != mid or mlip_lease.get("error")):
             why = mlip_lease.get("error") or (f"the GUI loads one ML model per Clean ({mlip_lease.get('model')}); "
                                               f"pick {model['label']} as the method to run it")
@@ -352,7 +360,10 @@ def resolve_tier(method: str, *, threads: int = 1, device: str = "cpu", mlip_lea
             hello = calc.info.get("hello") or {}
             info["versions"] = hello.get("versions") or info.get("versions", {})
             info["device_text"] = calc.info.get("device") or mlip_client.device_mapping(device)[2]
-            return calc
+            from . import lowdim
+            if lowdim.molecule_as_is(model, atoms):
+                return calc
+            return lowdim.Boxed(calc) if lowdim.is_low_dim(atoms) else calc
         return Tier(method, kind, label, True, "", factory, info)
     raise ValueError(f"no tier for {method!r}")
 
@@ -458,8 +469,13 @@ def refusal(tier: Tier, atoms, *, charge: int, auto: bool, relax_cell: bool, rou
         if heavy:
             from ase.data import chemical_symbols
             return f"Z > {MAX_Z_GFNFF} ({', '.join(chemical_symbols[z] for z in heavy)}): GFN-FF gives wrong energies there"
-    both = _gaps(atoms)
-    vac = [i for i, (g, _) in enumerate(both) if g >= VACUUM_GAP]
+    if not all(bool(x) for x in atoms.pbc):
+        # a slab, polymer or molecule: no images along its non-periodic axes (the tiers see a copy boxed with
+        # lowdim.VACUUM Å), and a cell relaxation moves only the periodic directions
+        both, vac = [], []
+    else:
+        both = _gaps(atoms)
+        vac = [i for i, (g, _) in enumerate(both) if g >= VACUUM_GAP]
     if tier.kind == "gfnff":
         thin = [i for i in vac if both[i][1] < GFNFF_MIN_VACUUM]
         if thin:
@@ -508,12 +524,18 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
                 threads: Optional[int] = None, device: str = "cpu", canceled: Optional[Callable[[], bool]] = None,
                 progress: Optional[Callable[[float, str], None]] = None, mlip_lease=None, fallback: bool = True,
                 route: str = "cli", explicit_time_limit: bool = False, nice: int = 0,
-                resolve: Optional[Callable[..., Tier]] = None) -> PreoptResult:
+                resolve: Optional[Callable[..., Tier]] = None,
+                bond_rule: Optional[Dict[str, Any]] = None, bonds_held: str = "shown") -> PreoptResult:
     """Pre-optimize a copy of ``atoms`` (see the module doc). Raises
     ``mace.gui.clean.NothingToClean`` for springs without bonds,
-    ``proc.Canceled`` on a cancel, ``NoResult`` with ``fallback=False``."""
+    ``proc.Canceled`` on a cancel, ``NoResult`` with ``fallback=False``.
+    ``bond_rule`` (``mace.gui.structures.bond_rule``): the bonds the springs
+    hold, as the document's viewer draws them (None: the default rule);
+    ``bonds_held`` (``mace.gui.clean.BONDS_HELD``, ``--bonds``): that rule,
+    the lenient one (1.2 x) or none (the repulsion only)."""
     from mace.gui import clean as C
     kind = method_kind(method)
+    bonds_held = C.check_bonds_held(bonds_held)
     resolve = resolve or resolve_tier
     threads = threads or proc.default_threads()
     canceled = canceled or (lambda: False)
@@ -542,17 +564,29 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
             sym_info["text"] = line
             warnings.append(line)
     sg_ref = spacegroup(start, symprec)
-    v_start = start.get_volume()
+    from . import lowdim
+    low_dim = lowdim.is_low_dim(start)
+    v_start = lowdim.measure(start)            # volume, or a slab's area, a polymer's length; None: a molecule
+
+    def dv_pct(a):
+        v = lowdim.measure(a)
+        return None if v is None or not v_start else 100.0 * (v - v_start) / v_start
+    if low_dim:
+        dim = ("molecule", "polymer", "slab")[lowdim.dimensionality(start)]
+        notes.append(f"a {dim}: no space group is kept or checked; nothing wraps or sees an image along its "
+                     "non-periodic axes" + ("" if not relax_cell else
+                                            (", and only the periodic directions of the cell relax" if any(start.pbc)
+                                             else "; a molecule keeps its box (no cell to relax)")))
 
     params = {"charge": int(charge), "uhf": int(uhf), "keep_symmetry": bool(keep_symmetry), "symprec": symprec,
               "symmetrize_tol": symmetrize_tol, "relax_cell": bool(relax_cell), "threads": threads,
-              "device": device}
+              "device": device, "pbc": [bool(x) for x in start.pbc], "bonds_held": bonds_held}
     attempts: List[Dict[str, Any]] = []
 
     # 2. the springs baseline
     sd = TIER_DEFAULTS["springs"]
-    vac = vacuum_axes(start) if relax_cell else []
-    b_relax = relax_cell
+    vac = vacuum_axes(start) if relax_cell and not low_dim else []
+    b_relax = relax_cell and (not low_dim or any(start.pbc))
     if vac and kind == "springs":
         warnings.append("the cell has vacuum (a slab or a molecule in a box): relaxing it with the spring model "
                         "shrinks the vacuum")
@@ -571,7 +605,7 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
     nothing = False
     try:
         base = C.clean(start, keep_symmetry=keep_symmetry, relax_cell=b_relax, symprec=symprec, fmax=b_fmax,
-                       max_steps=b_steps, time_limit=b_limit,
+                       max_steps=b_steps, time_limit=b_limit, bond_rule=bond_rule, bonds_held=bonds_held,
                        should_stop=_hook(canceled, progress, b_steps, b_limit, lo, hi,
                                          "" if kind == "springs" else "springs: "))
     except C.NothingToClean as exc:
@@ -585,11 +619,13 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
     if canceled():
         raise proc.Canceled("canceled")
     b_atoms = base["atoms"]
+    for line in base.get("notes") or []:
+        notes.append(f"springs: {line}")
     g_b = spacegroup(b_atoms, symprec)
     ch_b = group_change(sg_ref, g_b)
     attempts.append(_attempt("springs", "ok", "nothing to clean" if nothing else "", steps=base["steps"],
                              converged=base["converged"], dE_eV=base["energy_after"] - base["energy_before"],
-                             dV_pct=100.0 * (b_atoms.get_volume() - v_start) / v_start,
+                             dV_pct=dv_pct(b_atoms),
                              sg_before=sg_name(sg_ref), sg_after=sg_name(g_b), sg_change=ch_b,
                              max_shift_A=_max_shift(start, b_atoms), seconds=time.monotonic() - t0))
     springs_gain = f"springs: {_gain_text(sg_ref, g_b, 'the spring model')}" if ch_b == "gain" else None
@@ -675,7 +711,7 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
         e0, e1 = float(res["energy_before"]), float(res["energy_after"])
         g1 = spacegroup(a1, symprec) if _finite(a1) else None
         ch = group_change(sg_ref, g1)
-        dv = 100.0 * (a1.get_volume() - v_start) / v_start if _finite(a1) else float("nan")
+        dv = (dv_pct(a1) if _finite(a1) else float("nan"))
         att = _attempt(m, "ok", steps=res["steps"], converged=res["converged"], dE_eV=e1 - e0, dV_pct=dv,
                        sg_before=sg_name(sg_ref), sg_after=sg_name(g1), sg_change=ch,
                        max_shift_A=_max_shift(start, a1) if _finite(a1) else None, seconds=time.monotonic() - t1)
@@ -685,8 +721,9 @@ def preoptimize(atoms, method: str = "springs", *, charge: int = 0, uhf: int = 0
             bad = "non-finite positions, cell or energy"
         elif e1 > e0 + max(1e-4, 1e-6 * abs(e0)):
             bad = f"energy rose by {e1 - e0:.3g} eV"
-        elif abs(dv) > 100 * DV_LIMIT:
-            bad = f"volume changed by {dv:+.1f} % (more than {100 * DV_LIMIT:g} %)"
+        elif dv is not None and abs(dv) > 100 * DV_LIMIT:
+            word = {3: "volume", 2: "area", 1: "length"}.get(lowdim.dimensionality(start), "volume")
+            bad = f"{word} changed by {dv:+.1f} % (more than {100 * DV_LIMIT:g} %)"
         else:
             cc = close_contacts(start, a1)
             if cc:
@@ -753,12 +790,15 @@ def provenance(r: PreoptResult, *, input_name: Optional[str] = None, input_sha25
         "symmetrize": ({"before": sg_name(r.symmetrize["before"]), "after": sg_name(r.symmetrize["after"]),
                         "dV_pct": r.symmetrize["dV_pct"], "text": r.symmetrize.get("text")}
                        if r.symmetrize else None),
+        "pbc": p.get("pbc"),
         "relax_cell": p["relax_cell"], "fmax": p.get("fmax"), "steps": p.get("steps"),
+        "bonds_held": p.get("bonds_held"),
         "time_limit": p.get("time_limit"),
         "space_group": {"input": sg_name(r.sg_input), "reference": sg_name(r.sg_ref), "result": sg_name(r.sg_final)},
         "converged": (r.report or {}).get("converged"), "steps_taken": (r.report or {}).get("steps"),
         "warnings": r.warnings, "notes": r.notes, "output_cif": output_mode,
         "starting_geometry_only": True,
+        "academic": bool(info.get("academic")) and r.method_ran != "springs",
         "utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     if r.classification:

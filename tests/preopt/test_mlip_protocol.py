@@ -54,6 +54,7 @@ def reaped_and_gone(p):
 def test_launch_argv_and_env(tmp_path, monkeypatch, device, visible, wdev):
     from mace.preopt import mlip_client
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
     monkeypatch.setenv("PYTHONPATH", "/repo")
     monkeypatch.setenv("MACE_HOME", "/m")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
@@ -63,6 +64,7 @@ def test_launch_argv_and_env(tmp_path, monkeypatch, device, visible, wdev):
     assert argv[argv.index("--device") + 1] == wdev and argv[argv.index("--threads") + 1] == "3"
     assert argv[argv.index("--dtype") + 1] == "float32" and argv[argv.index("--weights") + 1] == "/w.model"
     assert env["CUDA_VISIBLE_DEVICES"] == visible and env["OMP_NUM_THREADS"] == "3"
+    assert env["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"          # GPU numbers as nvidia-smi's
     assert env["MACE_MLIP_NO_DOWNLOAD"] == "1" and env["HF_HUB_OFFLINE"] == "1" and env["TMPDIR"] == str(tmp_path)
     assert env["LD_LIBRARY_PATH"] == "/opt/lib"
     assert not [k for k in env if k.startswith("PYTHON")] and [k for k in env if k.startswith("MACE_")] == ["MACE_MLIP_NO_DOWNLOAD"]

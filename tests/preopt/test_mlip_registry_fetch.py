@@ -24,7 +24,9 @@ def test_registry_ships_two_allowed_models():
     models = registry.load()
     assert [m["id"] for m in models] == ["acesuit-mace-mpa-0-medium", "chgnet-0.3.0"]
     assert registry.default_id() == "acesuit-mace-mpa-0-medium" and registry.fallback_id() == "chgnet-0.3.0"
-    assert registry.ALLOWED_LICENSES == frozenset({"MIT", "BSD-3-Clause", "BSD-3-Clause-LBNL", "Apache-2.0"})
+    assert registry.ALLOWED_LICENSES == frozenset({"MIT", "BSD-3-Clause", "BSD-3-Clause-LBNL", "Apache-2.0",
+                                                   "FAIR-Chemistry-License-1.0"})
+    assert registry.ACADEMIC_LICENSES == frozenset({"ASL"})
     mpa = registry.get("acesuit-mace-mpa-0-medium")
     assert mpa["label"] == "MACE-MPA-0 (ACEsuit mace-torch)" and "unrelated to, this MACE tool" in mpa["unrelated_note"]
     assert mpa["weights"]["sha256"] == "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638"
@@ -62,12 +64,57 @@ def test_registry_rejects_disallowed_models(bad, tmp_path):
         registry.load(p)
 
 
-def test_no_asl_or_meta_model_ids_anywhere():
+def test_commercial_safe_by_default_academic_only_as_opt_in():
+    """Commercial-safe by default (MIT MACE): nothing academic-only is a default,
+    a fallback, listed without asking, or in the preopt scope's plain list;
+    academic-only models (MACE-OFF, ASL) are marked, fetched from upstream and
+    tagged. Meta's UMA is commercial-OK (FAIR Chemistry License) but gated."""
     from mace.preopt import registry
-    words = re.compile(r"\b(omat|fairchem|uma|grace|asl)\b", re.I)
-    for m in registry.load():
-        for field in (m["id"], m["code"]["package"]):
-            assert not words.search(field.replace("-", " ")), field
+    every = registry.load(scope=None, include_academic=True)
+    plain = registry.load(scope=None)
+    academic = [m for m in every if m.get("academic")]
+    assert {m["id"] for m in academic} == {"acesuit-mace-off24-medium", "acesuit-mace-off23-medium"}
+    assert not any(m.get("academic") for m in plain) and not any(m.get("academic") for m in registry.load())
+    for m in academic:
+        assert m["weights"]["license"] == "ASL" and not m.get("default") and not m.get("fallback")
+        assert m["weights"]["url"].startswith("https://raw.githubusercontent.com/ACEsuit/mace-off/")
+        assert "(academic license)" in registry.tag(m)
+    for m in every:
+        assert m["code"]["license"] in registry.ALLOWED_LICENSES
+        if not m.get("academic"):
+            assert m["weights"]["license"] in registry.ALLOWED_LICENSES
+    assert registry.default_id() == registry.default_id("calc") == "acesuit-mace-mpa-0-medium"
+    uma = [m for m in every if m["backend"] == "fairchem"]
+    assert uma and all(m.get("gated") and m["env"] == "fairchem" and m["scopes"] == ["calc"] for m in uma)
+    assert registry.get("acesuit-mace-off24-medium")["id"] == "acesuit-mace-off24-medium"   # by id: gated at use
+
+
+@pytest.mark.parametrize("bad", ["default", "license", "nourl"])
+def test_an_academic_entry_must_be_marked_licensed_and_opt_in(bad, tmp_path):
+    from mace.preopt import registry
+    data = _raw()
+    off = copy.deepcopy(next(m for m in data["models"] if m["id"] == "acesuit-mace-off24-medium"))
+    off["id"] = "evil-off"
+    if bad == "default":
+        off["default"] = True
+    elif bad == "license":
+        off["weights"]["license"] = "MIT-but-not-really"
+        off["academic"] = True
+    else:
+        off["weights"].pop("url")
+    data["models"].append(off)
+    p = tmp_path / "reg.json"
+    p.write_text(json.dumps(data))
+    with pytest.raises(registry.RegistryError):
+        registry.load(p)
+    # an ASL model that is not marked academic is rejected outright
+    data = _raw()
+    off = copy.deepcopy(next(m for m in data["models"] if m["id"] == "acesuit-mace-off24-medium"))
+    off["id"], off["academic"] = "sneaky", False
+    data["models"].append(off)
+    p.write_text(json.dumps(data))
+    with pytest.raises(registry.RegistryError):
+        registry.load(p)
 
 
 # --- fetch ----------------------------------------------------------------------------
@@ -193,7 +240,10 @@ def test_setup_without_python_only_prints(tmp_path):
     assert rc == 0
     for s in ("--system-site-packages", "mace-torch==0.3.16 chgnet==0.4.2", "about 80 MB",
               "https://download.pytorch.org/whl/cpu", "CUDA build of several GB", "df -h DIR",
-              "mace mlip setup --python DIR/bin/python", "mace mlip fetch acesuit-mace-mpa-0-medium"):
+              "mace mlip setup --python DIR/bin/python", "mace mlip fetch acesuit-mace-mpa-0-medium",
+              # a module Python on a cluster (MSU HPCC): pip 22.3 failed, PYTHONPATH leaked, libpython
+              "DIR/bin/python -m pip install --upgrade pip", "unset PYTHONPATH", "libpython",
+              "46,000 files"):
         assert s in out, s
     assert not (tmp_path / "config" / "mace" / "mlip.json").exists()
     assert set(os.listdir(os.environ["TMPDIR"])) <= before | {f"mace-preopt-{os.getuid()}"}
@@ -213,6 +263,37 @@ def test_setup_records_only_a_passing_interpreter(tmp_path):
     assert not (tmp_path / "config" / "mace" / "mlip.json").exists()
     rc, out = mlip("setup", "--python", str(tmp_path / "nope"))
     assert rc == 1 and "not an executable file" in out
+
+
+def test_environment_in_the_default_place_is_found_without_a_record(tmp_path, monkeypatch):
+    """$XDG_DATA_HOME/mace-tool/mlip/venv, beside the weights: found with no
+    MACE_MLIP_PYTHON and no mlip.json; a record or the variable still wins."""
+    from mace.preopt import detect, registry
+    chg = registry.get("chgnet-0.3.0")
+    default = tmp_path / "data" / "mace-tool" / "mlip" / "venv"
+    assert detect.default_env_dir() == default
+    assert detect.python_source() == (None, "") and detect.mlip_status(chg)["status"] == "needs_setup"
+    rc, out = mlip("setup")
+    assert rc == 0 and f"DIR = {default}" in out and "the record wins over the default" in out
+    rc, out = mlip("list")
+    assert rc == 0 and f"ML environment: none (MACE looks in {default};" in out
+    fake = F.make_fake_python(default)
+    assert detect.python_source() == (str(fake), "the default location")
+    st = detect.mlip_status(chg)
+    assert st["status"] == "ready" and st["python"] == str(fake)
+    monkeypatch.setenv("MACE_MLIP_DIR", str(tmp_path / "weights"))     # moves the weights, not the environment
+    assert detect.configured_python() == str(fake)
+    monkeypatch.delenv("MACE_MLIP_DIR")
+    rc, out = mlip("list")
+    assert rc == 0 and f"ML environment: {fake} (the default location)" in out and "status: ready" in out
+    rc, out = mlip("list", "--json")
+    data = json.loads(out)
+    assert data["python"] == str(fake) and data["python_source"] == "the default location"
+    other = F.make_fake_python(tmp_path / "elsewhere")
+    detect.save_python(str(other))                                     # the record wins over the default
+    assert detect.python_source() == (str(other), f"recorded in {detect.config_path()}")
+    monkeypatch.setenv("MACE_MLIP_PYTHON", str(fake))                  # and the variable over both
+    assert detect.python_source() == (str(fake), "MACE_MLIP_PYTHON")
 
 
 def test_mlip_list_statuses(tmp_path, monkeypatch):
@@ -317,6 +398,49 @@ def test_probe_env_keeps_ld_library_path(tmp_path, monkeypatch):
     assert detect.probe(str(v / "bin/python"), recheck=True)["status"] == "ok"
     monkeypatch.setenv("LD_LIBRARY_PATH", "/elsewhere")
     assert detect.probe(str(v / "bin/python"), recheck=True)["status"] == "failed"
+
+
+def test_cached_probe_is_not_reused_under_another_library_path(tmp_path, monkeypatch):
+    """HPCC: an environment probed on a dev node (Python module loaded) read
+    "ready" from the cache on the gateway, where its python cannot start."""
+    from mace.preopt import detect
+    v = _fake_venv(tmp_path, tmp_path / "base4", "venv_gw")
+    py = str(v / "bin/python")
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    monkeypatch.setenv("NEEDS_LD", str(lib))
+    monkeypatch.setenv("LD_LIBRARY_PATH", str(lib))
+    k_dev = detect.cache_key(py)
+    assert detect.probe(py)["status"] == "ok"                   # cached under the dev node's key
+    monkeypatch.delenv("LD_LIBRARY_PATH")
+    detect._MEM.clear()                                         # a new process on the gateway
+    assert detect.cache_key(py) != k_dev
+    assert detect.probe(py)["status"] == "failed"               # probed again, not read from the cache
+    monkeypatch.setenv("LD_LIBRARY_PATH", str(lib))
+    detect._MEM.clear()
+    assert detect.probe(py).get("cached") is True               # the dev node still reuses its probe
+
+
+def test_failed_probe_of_a_recorded_environment_does_not_say_set_one_up(tmp_path, monkeypatch):
+    from mace.preopt import detect, registry
+    v = tmp_path / "venv" / "bin"
+    v.mkdir(parents=True)
+    (v / "python").write_text("#!/bin/sh\necho \"$0: error while loading shared libraries: libpython3.11.so.1.0: "
+                              "cannot open shared object file: No such file or directory\" >&2\nexit 127\n")
+    (v / "python").chmod(0o755)
+    monkeypatch.setenv("MACE_MLIP_PYTHON", str(v / "python"))
+    st = detect.mlip_status(registry.get("acesuit-mace-mpa-0-medium"))
+    assert st["status"] == "import_failed" and "exit code 127" in st["reason"] and "libpython3.11" in st["reason"]
+    assert "set up an ML environment" not in st["hint"]
+    assert str(v / "python") in st["hint"] and "load the module" in st["hint"]
+    # record it again once the module is loaded (that records its library folder), or record another
+    assert detect.hint_commands(st["hint"]) == [f"mace mlip setup --python {v / 'python'}",
+                                                "mace mlip setup --python DIR/bin/python"]
+    (v / "python").write_text("#!/bin/sh\necho 'ImportError: broken' >&2\nexit 1\n")
+    st = detect.mlip_status(registry.get("chgnet-0.3.0"), recheck=True)
+    assert st["status"] == "import_failed" and "repair that environment" in st["hint"]
+    rc, out = mlip("list", env={"MACE_MLIP_PYTHON": str(v / "python")})
+    assert rc == 0 and "next: the ML environment (" in out and "set up an ML environment" not in out
 
 
 def test_fetch_falls_back_to_the_mirror_and_records_it(server):

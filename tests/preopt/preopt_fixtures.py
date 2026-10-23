@@ -48,6 +48,12 @@ def copper():
     return bulk("Cu", "fcc", a=3.61, cubic=True)
 
 
+def lone_atom():
+    """One argon atom in a 10 Å box: no bond to hold (copper has its metal bonds since 1.1.6)."""
+    from ase import Atoms
+    return Atoms("Ar", cell=[10.0, 10.0, 10.0], pbc=True)
+
+
 def t0_structures():
     """The six structures the springs regression (A1) is hashed on."""
     return {"Si": demo("Si.cif"), "NaCl": demo("NaCl.cif"), "MgO": demo("MgO.cif"),
@@ -60,10 +66,11 @@ def spring_hash(atoms, steps):
 
 # Spring results on the code before this feature: clean(atoms, time_limit=60),
 # every run converged. Byte hashes hold for the numpy/ase they were made with;
-# elsewhere the step counts are still compared.
+# elsewhere the step counts are still compared. Copper (1.1.6): the springs hold
+# the bonds the viewer draws, a metal's own included (it had nothing to clean).
 T0_ENV = ("1.26.4", "3.25.0")
 T0 = {"Si": (1, "2a4b70f288d56c50"), "NaCl": (1, "c4041029acc11dde"), "MgO": (1, "c53690fc835e7803"),
-      "MgO_rattled": (43, "3bc1453193de97d4"), "FSI_box": (120, "222ba2b981f35ddd"), "Cu": None}
+      "MgO_rattled": (43, "3bc1453193de97d4"), "FSI_box": (120, "222ba2b981f35ddd"), "Cu": (1, "782c6ba25e7e9585")}
 
 
 def t0_env_matches():
@@ -112,6 +119,61 @@ def make_fake_python(directory):
     p.write_text(_FAKE_PYTHON.format(exe=sys.executable, worker=str(FAKE_WORKER)))
     p.chmod(0o755)
     return p
+
+
+# mlip_install's tests: a fake base Python and its venv's python. The venv's python: pip logs its argv (and whether PYTHONPATH reached it); the probe answers
+VENV_PY = r'''#!{exe}
+import json, os, sys, time
+args = sys.argv[1:]
+log = os.environ.get("FAKE_LOG")
+if "-c" in args:
+    ok = {{"ok": True, "version": "1.0-fake"}}
+    print("MACE_PROBE_JSON " + json.dumps({{"python": "3.12.2", "prefix": sys.prefix, "packages": {{
+        "torch": ok, "ase": ok, "mace-torch": ok, "chgnet": ok}}}}))
+    sys.exit(0)
+if args[:2] == ["-m", "pip"]:
+    with open(log, "a") as fh:
+        fh.write(json.dumps({{"argv": args[2:], "pythonpath": "PYTHONPATH" in os.environ}}) + "\n")
+    print("Collecting things (fake pip)")
+    fail = os.environ.get("FAKE_PIP_FAIL")
+    if fail and fail in " ".join(args[2:]):
+        print("ERROR: fake failure"); sys.exit(1)
+    nap = os.environ.get("FAKE_PIP_SLEEP")
+    if nap and nap.split(":")[0] in " ".join(args[2:]):
+        time.sleep(float(nap.split(":")[1]))
+    sys.exit(0)
+sys.exit(3)
+'''
+
+# the base python: answers the version check and makes a venv-shaped folder
+BASE_PY = r'''#!{exe}
+import os, sys
+args = sys.argv[1:]
+if "-c" in args:
+    print("3 12 2"); sys.exit(0)
+if args[:2] == ["-m", "venv"]:
+    d = args[2]
+    os.makedirs(os.path.join(d, "bin"), exist_ok=True)
+    open(os.path.join(d, "pyvenv.cfg"), "w").write("home = /fake\ninclude-system-site-packages = false\n")
+    p = os.path.join(d, "bin", "python")
+    open(p, "w").write(open(os.environ["FAKE_VENV_PY"]).read())
+    os.chmod(p, 0o755)
+    print("created", d); sys.exit(0)
+sys.exit(3)
+'''
+
+
+def make_fake_base_python(directory, log):
+    """``directory/python3``: a fake base Python for mlip_install (its venv's
+    pip logs to ``log``); returns (path, the environment it needs)."""
+    import sys
+    b = Path(directory)
+    b.mkdir(parents=True, exist_ok=True)
+    (b / "venv_py").write_text(VENV_PY.format(exe=sys.executable))
+    base = b / "python3"
+    base.write_text(BASE_PY.format(exe=sys.executable))
+    base.chmod(0o755)
+    return base, {"FAKE_LOG": str(log), "FAKE_VENV_PY": str(b / "venv_py")}
 
 
 def load_fake_calc():

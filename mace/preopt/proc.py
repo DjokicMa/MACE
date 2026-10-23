@@ -51,17 +51,37 @@ def child_env(base: Optional[Dict[str, str]] = None, **force: str) -> Dict[str, 
     return env
 
 
+def _uid() -> Optional[int]:
+    """This user's uid; None on Windows, which has none (os.getuid is POSIX only)."""
+    getuid = getattr(os, "getuid", None)
+    return getuid() if getuid is not None else None
+
+
+def _user_tag() -> str:
+    """The temp root's per-user part: the uid, or on Windows the user name."""
+    uid = _uid()
+    if uid is not None:
+        return str(uid)
+    try:
+        import getpass
+        name = getpass.getuser()
+    except Exception:                      # no USERNAME and no pwd module
+        name = ""
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:40] or "user"
+
+
 def temp_root() -> Path:
     """The per-user root of every pre-optimization temp directory."""
-    root = Path(tempfile.gettempdir()) / f"mace-preopt-{os.getuid()}"
+    uid = _uid()
+    root = Path(tempfile.gettempdir()) / f"mace-preopt-{_user_tag()}"
     try:
         root.mkdir(mode=0o700, exist_ok=True)
     except FileExistsError:
         pass
     st = root.lstat()
-    if not root.is_dir() or root.is_symlink() or st.st_uid != os.getuid():
+    if not root.is_dir() or root.is_symlink() or (uid is not None and st.st_uid != uid):
         raise RuntimeError(f"{root} is not a private directory of this user")
-    if st.st_mode & 0o077:
+    if uid is not None and st.st_mode & 0o077:
         os.chmod(root, 0o700)
     return root
 
@@ -78,6 +98,9 @@ def remove(path) -> None:
 
 
 def _alive(pid: int) -> bool:
+    if os.name == "nt":
+        from mace.gui.registry import pid_alive     # os.kill(pid, 0) would end the process on Windows
+        return pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -90,7 +113,9 @@ def _alive(pid: int) -> bool:
 def _live_cwds() -> list:
     """Working directories of this user's live processes (Linux /proc)."""
     out = []
-    uid = os.getuid()
+    uid = _uid()
+    if uid is None:
+        return out
     try:
         entries = os.listdir("/proc")
     except OSError:
@@ -111,6 +136,9 @@ def sweep() -> int:
     """Remove the temp directories of dead processes; returns how many went.
     A directory whose owner pid is alive, or that a live process of this user
     has as (or under) its working directory, is kept."""
+    if os.name == "nt":
+        # os.kill(pid, 0) is no liveness check there (signal 0 is CTRL_C_EVENT): nothing is removed
+        return 0
     try:
         root = temp_root()
     except (OSError, RuntimeError):
@@ -137,9 +165,12 @@ def stop(proc: subprocess.Popen, grace: float = 2.0) -> None:
     """SIGTERM to the child's process group, SIGKILL after ``grace`` s, then reap."""
     if proc is None or proc.poll() is not None:
         return
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+    killpg = getattr(os, "killpg", None)              # POSIX only, as SIGKILL
+    for sig, wait in ((signal.SIGTERM, grace), (getattr(signal, "SIGKILL", signal.SIGTERM), 5.0)):
         try:
-            os.killpg(proc.pid, sig)
+            if killpg is None:
+                raise ProcessLookupError
+            killpg(proc.pid, sig)
         except (ProcessLookupError, PermissionError):
             try:
                 proc.send_signal(sig)

@@ -1,4 +1,14 @@
-"""``mace preopt``: pre-optimize a CIF or .d12 into a starting geometry.
+"""``mace preopt``: pre-optimize a structure into a starting geometry.
+
+Input: a CIF, a .d12 deck (CRYSTAL, or a group-1 SLAB, POLYMER or MOLECULE
+deck: 1.1.6), extended XYZ (its pbc kept, e.g. pbc="T T F" for a slab), XYZ
+(a molecule), POSCAR/CONTCAR/.vasp or a CRYSTAL .out (its last geometry; the
+way to start from a SLAB, POLYMER or MOLECULE deck in a group other than 1,
+which MACE does not expand). A slab, polymer or molecule keeps its
+periodicity: nothing wraps or sees an image along a non-periodic axis, only
+the periodic cell directions relax, and a molecule keeps its box. Its result
+is also written as ``<stem>_preopt.extxyz`` (the exact structure and pbc);
+the CIF holds it in a box with 15 Å of vacuum, P1.
 
 Writes ``OUTDIR/<stem>_preopt.cif`` (the input's space group and setting
 when the run kept it, else P1 with a warning) and ``<stem>_preopt.json``
@@ -43,6 +53,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--symmetrize", type=float, metavar="TOL")
     p.add_argument("--charge", type=int)
     p.add_argument("--uhf", type=int, default=0)
+    p.add_argument("--bonds", choices=("shown", "lenient", "none"), default="shown")
     p.add_argument("--fmax", type=float)
     p.add_argument("--steps", type=int)
     p.add_argument("--time-limit", type=float)
@@ -78,7 +89,26 @@ def read_input(path: Path):
         from mace.gui.structures import d12_atoms
         atoms, _ = d12_atoms(path)
         return atoms, atoms.info.get("spacegroup"), atoms.arrays.get("spacegroup_kinds"), scan
-    raise ValueError(f"{path.name}: mace preopt reads .cif and .d12 files")
+    low = path.name.lower()
+    if suffix in (".xyz", ".extxyz", ".vasp", ".poscar") or low.startswith(("poscar", "contcar")):
+        from ase.io import read
+        fmt = "vasp" if suffix in (".vasp", ".poscar") or low.startswith(("poscar", "contcar")) else "extxyz"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            atoms = read(str(path), format=fmt, index=-1)
+        if atoms.cell.rank == 0:
+            atoms.pbc = False                  # a plain XYZ: a molecule, no box
+        if any(atoms.pbc) and atoms.cell.rank < 3:
+            raise ValueError(f"{path.name}: periodic along {''.join('abc'[i] for i in range(3) if atoms.pbc[i])} "
+                             "but its cell has fewer than three vectors")
+        return atoms, None, None, None
+    if suffix in (".out", ".o", ".log"):
+        # a CRYSTAL output: its last geometry, through the GUI's reader (as mace calc and the GUI's
+        # Clean read it): a SLAB, POLYMER or MOLECULE run in any group keeps its pbc
+        from mace.calculators.structio import atoms_from_payload
+        from mace.gui.structures import read_structure
+        return atoms_from_payload(read_structure(path, -1)), None, None, None
+    raise ValueError(f"{path.name}: mace preopt reads .cif, .d12, .xyz/.extxyz, POSCAR and CRYSTAL .out files")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -92,8 +122,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.method.startswith("mlip:"):
         from . import registry
         if registry.get(args.method[5:]) is None:
-            _err(f"mace preopt: error: no ML model {args.method[5:]!r}; known: "
-                 + ", ".join(f"mlip:{i}" for i in registry.ids()))
+            _err(f"mace preopt: error: {registry.unknown(args.method[5:], prefix='mlip:')}")
             return 2
     try:
         from . import mlip_client
@@ -139,7 +168,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     outdir = Path(args.outdir) if args.outdir else src.resolve().parent
     stem = src.stem
     cif_out, json_out = outdir / f"{stem}_preopt.cif", outdir / f"{stem}_preopt.json"
-    exists = [p.name for p in (cif_out, json_out) if p.exists()]
+    low_dim = not all(bool(x) for x in atoms.pbc)
+    xyz_out = outdir / f"{stem}_preopt.extxyz" if low_dim else None
+    exists = [p.name for p in (cif_out, json_out, xyz_out) if p is not None and p.exists()]
     if exists and not args.force:
         _err(f"mace preopt: {', '.join(exists)} already exist in {outdir} (pass --force to overwrite)")
         return 1
@@ -162,7 +193,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                              symprec=args.symprec, symmetrize_tol=args.symmetrize, relax_cell=args.relax_cell,
                              fmax=args.fmax, steps=args.steps, time_limit=args.time_limit, threads=args.threads,
                              device=args.device, progress=progress, fallback=not args.no_fallback, route="cli",
-                             explicit_time_limit=args.time_limit is not None)
+                             explicit_time_limit=args.time_limit is not None, bonds_held=args.bonds)
     except C.NothingToClean as exc:
         _err(f"mace preopt: {exc}; nothing was written")
         return 1
@@ -182,15 +213,29 @@ def main(argv: Optional[List[str]] = None) -> int:
         label = r.label_ran
         if info.get("weights_license") and info.get("weights_license") != lic:
             lic = f"code {lic}, weights {info['weights_license']}"
-    header = [marker.comment(label, lic), marker.line(r.method_ran, info.get("model_id"))]
+    header = [marker.comment(label, lic), marker.line(r.method_ran, info.get("model_id"),
+                                                      academic=bool(info.get("academic")) and r.method_ran != "springs")]
     if info.get("unrelated_note"):
         header.insert(1, f"# {info['unrelated_note']}")
     keep = core.same_group(r.sg_final, r.sg_ref)
-    mode = cifout.write(cif_out, r.atoms, name=stem, header=header, spacegroup=sg, kinds=kinds, keep_group=keep,
-                        p1_reason=None)
+    if low_dim:
+        from mace.gui.structures import SAVE_VACUUM, boxed
+        from ase.io import write as awrite
+        dim = ("molecule", "polymer", "slab")[sum(bool(x) for x in r.atoms.pbc)]
+        mode = cifout.write(cif_out, boxed(r.atoms), name=stem, header=header, keep_group=False,
+                            p1_reason=f"a {dim}: written in a box with {SAVE_VACUUM:g} Å of vacuum")
+        out_atoms = r.atoms.copy()
+        out_atoms.calc = None
+        out_atoms.info = {}
+        awrite(str(xyz_out), out_atoms, format="extxyz")
+    else:
+        mode = cifout.write(cif_out, r.atoms, name=stem, header=header, spacegroup=sg, kinds=kinds, keep_group=keep,
+                            p1_reason=None)
     sha = hashlib.sha256(src.read_bytes()).hexdigest()
     prov = core.provenance(r, input_name=src.name, input_sha256=sha, output_mode=mode)
     prov["output"] = cif_out.name
+    if xyz_out is not None:
+        prov["output_extxyz"] = xyz_out.name
     json_out.write_text(json.dumps(prov, indent=2, default=str) + "\n")
 
     say = sys.stderr.write if args.json else sys.stdout.write
@@ -203,7 +248,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             say(f"  {a['method']}: {a['status']}{extra}\n")
     for w in r.warnings:
         say(f"warning: {w}\n")
-    if mode["mode"] == "p1":
+    if mode["mode"] == "p1" and low_dim:
+        say(f"note: {mode['reason']}; {xyz_out.name} keeps the structure and its periodicity exactly\n")
+    elif mode["mode"] == "p1":
         raised = (r.symmetrize and not core.same_group(r.sg_ref, r.sg_input) and r.sg_ref
                   and r.sg_ref["number"] > 1 and keep)
         if raised:
@@ -216,7 +263,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             say(f"warning: wrote a P1 CIF ({mode['reason']}): cif2d12 will build a P1 deck; check "
                 "symmetry_handling in your options\n")
-    say(f"Wrote {cif_out} and {json_out.name}\n")
+    say(f"Wrote {cif_out}" + (f", {xyz_out.name}" if xyz_out is not None else "") + f" and {json_out.name}\n")
     follow = FOLLOW_UP.format(cif=cif_out.name)
     if src.suffix.lower() == ".d12":
         follow += f" Use the options you saved for {src.name}."

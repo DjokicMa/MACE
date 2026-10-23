@@ -6,7 +6,8 @@ FAKE_MODE selects misbehavior: crash (exit mid-call), nan, hang (a call that
 never returns), bigforce, badhello (protocol 2), slowload (10 s before the
 hello), oom, chatty (prints to stdout while loading), slowcall (FAKE_SLOWCALL seconds per call). FAKE_HELLO_LOG gets
 one line per hello (one line = one model load); FAKE_ENV_LOG gets the
-worker's environment, cwd and argv as JSON. FAKE_MODE_FILE, when it exists,
+worker's environment, cwd and argv as JSON; FAKE_CALC_LOG one line per calc
+(the cell, pbc and positions the worker was sent). FAKE_MODE_FILE, when it exists,
 sets the mode again before every call (tests that change it mid-session).
 """
 import importlib.util
@@ -48,8 +49,8 @@ def _calc_class():
                 f[i] += g
                 f[j] -= g
                 vir += np.outer(g, d)
-            v = a.get_volume()
-            s = 0.5 * (vir + vir.T) / v
+            v = abs(np.linalg.det(a.cell.array))         # a molecule (zero cell): no stress, as in mace-torch
+            s = 0.5 * (vir + vir.T) / v if v > 1e-9 else np.zeros((3, 3))
             self.results = {"energy": e, "forces": f,
                             "stress": np.array([s[0, 0], s[1, 1], s[2, 2], s[1, 2], s[0, 2], s[0, 1]])}
     return Harmonic
@@ -95,6 +96,10 @@ def fake_compute(calc, msg, zset):
         time.sleep(float(os.environ.get("FAKE_SLOWCALL", "1")))
     if MODE == "oom":
         raise MemoryError()
+    calclog = os.environ.get("FAKE_CALC_LOG")
+    if calclog:
+        with open(calclog, "a") as fh:
+            fh.write(json.dumps({"cell": msg["cell"], "pbc": msg.get("pbc"), "positions": msg["positions"]}) + "\n")
     out = _real_compute(calc, msg, zset)
     if MODE == "nan" and out.get("ok"):
         return {"id": msg.get("id"), "ok": False, "kind": "nan", "error": "the model returned NaN or Inf"}
@@ -106,6 +111,7 @@ def fake_compute(calc, msg, zset):
 
 
 W.self_check = fake_self_check
+W.MACE_TORCH_BACKENDS = ()        # the harmonic stand-in serves mace_mp too: no mace-torch to import
 W.load = fake_load
 W.compute = fake_compute
 if MODE == "badhello":

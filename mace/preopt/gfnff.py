@@ -19,6 +19,13 @@ still stops after the per-call timeout. ``canceled()`` (pure) is polled
 every 50 ms; a cancel stops the process group within 2 s.
 
 xtb is LGPL-3.0 and only ever run as a separate program; it is not bundled.
+
+``method`` (1.1.6, for ``mace calc``; default ``gfnff``, the Clean tier as
+before): ``gfn2`` or ``gfn1`` run GFN2-xTB / GFN1-xTB instead. A periodic
+cell goes through xtb's tblite library (``--tblite``, energy, forces and the
+lattice gradient); a molecule (``periodic=False``, any method) is written as
+an xyz file and run as a molecule. Both xTB methods also leave the atomic charges in
+xtb's ``charges`` file, which become the ``charges`` result.
 """
 from __future__ import annotations
 
@@ -36,6 +43,17 @@ PER_CALL_TIMEOUT = 60.0
 _TOPOLOGY = ("gfnff_topo", "gfnff_charges", "gfnff_adjacency")
 _RESULTS = ("gradient", "gradlatt", "energy")
 _IGNORED = ("Could not read topology file",)
+
+METHODS = ("gfnff", "gfn2", "gfn1")
+XTB_CITATIONS = {
+    "gfn2": [{"text": "C. Bannwarth, S. Ehlert and S. Grimme, GFN2-xTB: an accurate and broadly parametrized "
+                      "self-consistent tight-binding quantum chemical method, J. Chem. Theory Comput. 15, 1652 (2019)",
+              "doi": "10.1021/acs.jctc.8b01176"}],
+    "gfn1": [{"text": "S. Grimme, C. Bannwarth and P. Shushkov, A robust and accurate tight-binding quantum chemical "
+                      "method for structures, vibrational frequencies, and noncovalent interactions of large molecular "
+                      "systems parametrized for all spd-block elements (Z = 1-86), J. Chem. Theory Comput. 13, 1989 "
+                      "(2017)", "doi": "10.1021/acs.jctc.7b00118"}],
+}
 
 CITATIONS = [
     {"text": "S. Spicher and S. Grimme, Robust atomistic modeling of materials, organometallic, and biochemical "
@@ -105,13 +123,17 @@ _Calculator, _ALL = _base()
 
 
 class GFNFF(_Calculator):
-    implemented_properties = ["energy", "free_energy", "forces", "stress"]
+    implemented_properties = ["energy", "free_energy", "forces", "stress", "charges"]
 
     def __init__(self, xtb: str = "xtb", charge: int = 0, uhf: int = 0,
                  canceled: Optional[Callable[[], bool]] = None, per_call_timeout: float = PER_CALL_TIMEOUT,
-                 nice: int = 0, env: Optional[Dict[str, str]] = None, **kw):
+                 nice: int = 0, env: Optional[Dict[str, str]] = None, method: str = "gfnff",
+                 periodic: bool = True, threads: int = 1, **kw):
         super().__init__(**kw)
+        if method not in METHODS:
+            raise ValueError(f"unknown xtb method {method!r}: use {', '.join(METHODS)}")
         self.xtb, self.charge, self.uhf = xtb, int(charge), int(uhf)
+        self.method, self.periodic, self.threads = method, bool(periodic), max(1, int(threads))
         # an automatically loaded xtb module's variables (PATH, LD_LIBRARY_PATH): for xtb's process only
         self.extra_env = dict(env or {})
         self.canceled = canceled
@@ -134,7 +156,11 @@ class GFNFF(_Calculator):
             pass
 
     def command(self, fn: str) -> List[str]:
-        cmd = [self.xtb, fn, "--gfnff", "--grad", "--chrg", str(self.charge), "--uhf", str(self.uhf)]
+        if self.method == "gfnff":
+            how = ["--gfnff"]
+        else:
+            how = ["--gfn", self.method[3:]] + (["--tblite"] if self.periodic else [])
+        cmd = [self.xtb, fn] + how + ["--grad", "--chrg", str(self.charge), "--uhf", str(self.uhf)]
         wrapper = shutil.which("timeout")
         if wrapper:
             cmd = [wrapper, "--kill-after=2", f"{self.per_call_timeout:g}"] + cmd
@@ -150,16 +176,22 @@ class GFNFF(_Calculator):
             raise GFNFFError("the GFN-FF calculator was closed")
         a = self.atoms
         wd = str(self.workdir)
-        for f in _TOPOLOGY + _RESULTS:                     # a fresh topology for every call
+        for f in _TOPOLOGY + _RESULTS + ("charges",):        # a fresh topology for every call
             p = os.path.join(wd, f)
             if os.path.exists(p):
                 os.remove(p)
         tmp = os.path.join(wd, "tmp")
         os.makedirs(tmp, exist_ok=True)
-        write(os.path.join(wd, "POSCAR"), a, format="vasp", direct=True, sort=False)
-        env = proc.child_env({**os.environ, **self.extra_env}, OMP_NUM_THREADS="1", OMP_STACKSIZE="512M", OMP_MAX_ACTIVE_LEVELS="1",
-                             MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", TMPDIR=tmp)
-        cmd = self.command("POSCAR")
+        if not self.periodic:
+            fn = "mol.xyz"
+            write(os.path.join(wd, fn), a, format="xyz")
+        else:
+            fn = "POSCAR"
+            write(os.path.join(wd, fn), a, format="vasp", direct=True, sort=False)
+        k = str(self.threads)
+        env = proc.child_env({**os.environ, **self.extra_env}, OMP_NUM_THREADS=k, OMP_STACKSIZE="512M", OMP_MAX_ACTIVE_LEVELS="1",
+                             MKL_NUM_THREADS=k, OPENBLAS_NUM_THREADS=k, TMPDIR=tmp)
+        cmd = self.command(fn)
         self.argv_seen = cmd
         with open(os.path.join(wd, "xtb.out"), "w") as out, open(os.path.join(wd, "xtb.err"), "w") as err:
             p = subprocess.Popen(cmd, cwd=wd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
@@ -175,6 +207,11 @@ class GFNFF(_Calculator):
         if rc != 0 or not os.path.exists(grad):
             errs = error_lines(stdout + "\n" + stderr)
             why = "segfault" if rc in (-11, 139) else f"exit code {rc}" if rc else "no gradient written"
+            if self.method != "gfnff":
+                name = "GFN2-xTB" if self.method == "gfn2" else "GFN1-xTB"
+                raise GFNFFError(f"{name} failed: xtb {why}" + (": " + " | ".join(errs[-3:]) if errs else "")
+                                 + (" (a crash in xtb's periodic tblite path: try GFN1-xTB, or the tblite "
+                                    "Python package)" if why == "segfault" and self.periodic else ""))
             raise GFNFFError("GFN-FF can't type this structure (common for MgO-like oxides and halides): "
                              f"xtb {why}" + (": " + " | ".join(errs[-3:]) if errs else ""))
         e = parse_total_energy(stdout) * Hartree
@@ -182,8 +219,19 @@ class GFNFF(_Calculator):
         g = parse_turbomole_block(open(grad).read(), n) * Hartree / Bohr
         self.results["energy"] = self.results["free_energy"] = e
         self.results["forces"] = -g
+        chg = os.path.join(wd, "charges")
+        if os.path.exists(chg):
+            try:
+                q = np.array([float(x.split()[0]) for x in open(chg).read().split("\n") if x.strip()])
+                if q.shape == (n,):
+                    self.results["charges"] = q
+            except (ValueError, IndexError):
+                pass
         lat = os.path.join(wd, "gradlatt")
-        if os.path.exists(lat):
+        if not self.periodic:
+            if "stress" in properties:
+                raise GFNFFError("a molecule has no stress")
+        elif os.path.exists(lat):
             G = parse_turbomole_block(open(lat).read(), 3) * Hartree / Bohr
             self.results["stress"] = stress_from_gradlatt(a.cell.array, G, a.get_volume())
         elif "stress" in properties:

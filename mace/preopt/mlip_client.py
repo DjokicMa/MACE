@@ -3,7 +3,9 @@
 ``WorkerProcess`` starts the worker in the ML interpreter and owns it:
 ``[python, -I, mlip_worker.py, ...]`` in a fresh private directory, its own
 session, the child environment of ``proc`` (no PYTHON*, no inherited MACE_*,
-thread counts and CUDA_VISIBLE_DEVICES forced, offline). It waits for the
+thread counts and CUDA_VISIBLE_DEVICES forced, offline; the interpreter's
+recorded library folders in front of LD_LIBRARY_PATH: see
+``detect.interpreter_env``). It waits for the
 worker's ``hello`` (up to 180 s, polling the pure ``canceled()`` every
 50 ms) and checks the protocol, the model id and the elements.
 
@@ -64,10 +66,26 @@ def device_mapping(device: str, environ: Optional[Dict[str, str]] = None) -> Tup
     SLURM, a site wrapper or a shared node's policy), cuda:N counts within
     that list, so the worker never sees a GPU the job was not given:
     "3,5" and cuda:1 -> CUDA_VISIBLE_DEVICES=5. An index outside the list, or
-    a cuda device when the list is empty ("" or -1, no GPU), is refused."""
+    a cuda device when the list is empty ("" or -1, no GPU), is refused.
+
+    auto (``mace calc``'s default): one GPU, GPU 0, unless the environment
+    already chose (CUDA_VISIBLE_DEVICES set by the user, SLURM or a site
+    wrapper: its first GPU); the worker then takes it when torch sees it and
+    falls back to the CPU otherwise. A second GPU is never used by default
+    (on a shared workstation it may be busy with someone else's training)."""
     device = str(device or "cpu")
     if device == "cpu":
         return "", "cpu", "cpu"
+    if device == "auto":
+        env = os.environ if environ is None else environ
+        if "CUDA_VISIBLE_DEVICES" not in env:
+            return "0", "auto", "auto: GPU 0 (CUDA_VISIBLE_DEVICES=0), or the CPU when torch sees no GPU"
+        inherited = env["CUDA_VISIBLE_DEVICES"].strip()
+        gpus = [g.strip() for g in inherited.split(",") if g.strip()]
+        if not gpus or gpus[0] in ("-1", "none", "NoDevFiles"):
+            return "", "cpu", f"auto: cpu (no GPU visible: CUDA_VISIBLE_DEVICES={inherited!r})"
+        return gpus[0], "auto", (f"auto: GPU {gpus[0]}, the first of CUDA_VISIBLE_DEVICES={inherited}, "
+                                 "or the CPU when torch sees no GPU")
     if not (device.startswith("cuda:") and device[5:].isdigit()):
         raise ValueError(f"device {device!r}: use cpu or cuda:N")
     n = device[5:]
@@ -88,14 +106,21 @@ def device_mapping(device: str, environ: Optional[Dict[str, str]] = None) -> Tup
 
 def launch(python: str, model: Dict[str, Any], *, weights: Optional[str], threads: int, device: str = "cpu",
            dtype: Optional[str] = None, socket_path: Optional[str] = None, workdir: Path,
-           nice: int = 0, environ: Optional[Dict[str, str]] = None) -> Tuple[List[str], Dict[str, str], str]:
+           nice: int = 0, environ: Optional[Dict[str, str]] = None,
+           gpu_mem_fraction: Optional[float] = None) -> Tuple[List[str], Dict[str, str], str]:
     """The worker's argv and environment (one place: the CLI, the GUI and the tests).
-    `environ`: the environment the device maps within (default os.environ)."""
+    `environ`: the environment the device maps within (default os.environ).
+    `gpu_mem_fraction`: the share of the GPU's memory the worker may take
+    (the worker's default, 0.15, when None: an interactive Clean)."""
     visible, wdev, text = device_mapping(device, environ)
     k = str(max(1, int(threads)))
     argv = [python, "-I", str(WORKER), "--model-id", model["id"], "--backend", model["backend"],
             "--weights", weights or "", "--device", wdev,
             "--dtype", dtype or (model.get("defaults") or {}).get("dtype", "float32"), "--threads", k]
+    if model.get("variant"):
+        argv += ["--variant", str(model["variant"])]
+    if gpu_mem_fraction is not None and wdev != "cpu":
+        argv += ["--gpu-mem-fraction", f"{float(gpu_mem_fraction):g}"]
     if socket_path:
         argv += ["--socket", socket_path]
     if nice > 0:
@@ -106,7 +131,11 @@ def launch(python: str, model: Dict[str, Any], *, weights: Optional[str], thread
     env = proc.child_env(OMP_NUM_THREADS=k, MKL_NUM_THREADS=k, OPENBLAS_NUM_THREADS=k,
                          CUDA_VISIBLE_DEVICES=visible, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
                          TMPDIR=str(workdir))
+    # GPU numbers as nvidia-smi gives them (CUDA's default order is fastest first): GPU 0 is nvidia-smi's GPU 0
+    env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     env["MACE_MLIP_NO_DOWNLOAD"] = "1"
+    from . import detect
+    detect.with_library_dirs(env, detect.library_dirs(python))      # a module Python's libpython folder
     return argv, env, text
 
 
@@ -150,13 +179,15 @@ class WorkerProcess:
 
     def __init__(self, python: str, model: Dict[str, Any], *, weights: Optional[str] = None, threads: int = 1,
                  device: str = "cpu", dtype: Optional[str] = None, use_socket: bool = False, nice: int = 0,
-                 canceled: Optional[Callable[[], bool]] = None, hello_timeout: float = HELLO_TIMEOUT):
+                 canceled: Optional[Callable[[], bool]] = None, hello_timeout: float = HELLO_TIMEOUT,
+                 gpu_mem_fraction: Optional[float] = None):
         self.model = model
         self.workdir = proc.private_dir("mlip")
         self.socket_path = str(self.workdir / "w.sock") if use_socket else None
         self.argv, self.env, self.device_text = launch(python, model, weights=weights, threads=threads,
                                                        device=device, dtype=dtype, socket_path=self.socket_path,
-                                                       workdir=self.workdir, nice=nice)
+                                                       workdir=self.workdir, nice=nice,
+                                                       gpu_mem_fraction=gpu_mem_fraction)
         self.log = self.workdir / "worker.log"
         self.p: Optional[subprocess.Popen] = None
         self.hello: Dict[str, Any] = {}
@@ -378,6 +409,8 @@ class MlipCalculator(_Calculator):
         self.canceled = canceled
         self.info = info or {}
         self.calls = 0
+        self.task = None                 # UMA's task head (omat, omol, ...), per call
+        self.charge_spin = None          # (total charge, spin multiplicity) for models that take them
 
     def calculate(self, atoms=None, properties=("energy",), system_changes=_ALL):
         import numpy as np
@@ -386,6 +419,10 @@ class MlipCalculator(_Calculator):
         props = ["energy", "forces"] + (["stress"] if "stress" in properties else [])
         msg = {"op": "calc", "numbers": [int(z) for z in a.numbers], "cell": a.cell.array.tolist(),
                "positions": a.positions.tolist(), "pbc": [bool(x) for x in a.pbc], "properties": props}
+        if self.task:
+            msg["task"] = self.task
+        if self.charge_spin is not None:
+            msg["charge"], msg["spin"] = int(self.charge_spin[0]), int(self.charge_spin[1])
         rep = self.transport.request(msg, call_timeout(len(a)), self.canceled)
         self.calls += 1
         if not rep.get("ok"):
@@ -419,7 +456,9 @@ class MlipCalculator(_Calculator):
 
 
 def make_calculator(model: Dict[str, Any], *, threads: int = 1, device: str = "cpu", lease=None,
-                    canceled=None, elements=None, nice: int = 0, python: Optional[str] = None) -> MlipCalculator:
+                    canceled=None, elements=None, nice: int = 0, python: Optional[str] = None,
+                    dtype: Optional[str] = None, gpu_mem_fraction: Optional[float] = None,
+                    hello_timeout: float = HELLO_TIMEOUT) -> MlipCalculator:
     """The CLI: start a worker of our own (pipe). The GUI: connect to the
     host's worker named by ``lease`` ({"socket", "hello"})."""
     from . import detect
@@ -428,19 +467,23 @@ def make_calculator(model: Dict[str, Any], *, threads: int = 1, device: str = "c
         _check_hello(hello, model["id"])
         _check_elements(hello, elements)
         return MlipCalculator(SocketClient(lease["socket"]), canceled=canceled, info={"hello": hello})
-    py = python or detect.configured_python()
+    py = python or detect.configured_python(model)
     if not py:
         raise MlipError("setup", "no ML environment is set up (mace mlip setup)")
     ws = detect.weights_status(model)
     if ws["status"] not in ("ready", "bundled"):
         raise MlipError("weights", ws.get("reason") or ws["status"])
-    w = WorkerProcess(py, model, weights=ws.get("path"), threads=threads, device=device, canceled=canceled, nice=nice)
+    w = WorkerProcess(py, model, weights=ws.get("path"), threads=threads, device=device, canceled=canceled, nice=nice,
+                      dtype=dtype, gpu_mem_fraction=gpu_mem_fraction, hello_timeout=hello_timeout)
     try:
         _check_elements(w.hello, elements)
     except MlipError:
         w.close()
         raise
-    return MlipCalculator(w, owner=w, canceled=canceled, info={"hello": w.hello, "device": w.device_text})
+    text = w.device_text
+    if device == "auto" and w.hello.get("device"):
+        text += f"; took {w.hello['device']}"
+    return MlipCalculator(w, owner=w, canceled=canceled, info={"hello": w.hello, "device": text})
 
 
 def _check_elements(hello, elements) -> None:

@@ -83,7 +83,7 @@ def test_springs_path_is_todays_clean():
     assert r.method_ran == "springs" and not r.fell_back
     assert r.atoms.positions.tobytes() == ref["atoms"].positions.tobytes() and r.report["steps"] == ref["steps"]
     with pytest.raises(C.NothingToClean):
-        core.preoptimize(F.copper(), "springs")
+        core.preoptimize(F.lone_atom(), "springs")
 
 
 def test_springs_progress_and_cancel_are_separate():
@@ -246,10 +246,10 @@ def test_not_installed_and_failed_tiers_keep_the_springs():
         core.preoptimize(F.wurtzite(), "gfnff", fallback=False, resolve=stub_resolver(boom))
 
 
-def test_metal_reaches_the_tier():
+def test_nothing_to_clean_reaches_the_tier():
     """No bonded pairs: the baseline is the unchanged input, the tier still runs."""
     from mace.preopt import core
-    r = core.preoptimize(F.copper(), "gfnff", resolve=stub_resolver(Stub))
+    r = core.preoptimize(F.lone_atom(), "gfnff", resolve=stub_resolver(Stub))
     assert r.method_ran == "gfnff" and r.attempts[0]["reason"] == "nothing to clean"
 
 
@@ -312,6 +312,12 @@ def test_spring_fallback_never_relaxes_a_cell_with_vacuum():
     from ase.build import bulk, surface
     from mace.preopt import core
     slab = surface(bulk("MgO", "rocksalt", a=4.21, cubic=True), (0, 0, 1), 4, vacuum=7.5)
+    # 1.1.6: a slab that says so (pbc T T F, as ase builds it) relaxes its periodic directions only; c stays
+    for method in ("gfnff", "springs"):
+        r = core.preoptimize(slab, method, relax_cell=True, resolve=stub_resolver(Stub), time_limit=3)
+        assert np.allclose(r.atoms.cell.array[2], slab.cell.array[2]), method
+        assert [bool(x) for x in r.atoms.pbc] == [True, True, False]
+    slab.pbc = True                     # the same slab as a 3D cell with vacuum: the cell is not relaxed
     for method in ("gfnff", "mlip:chgnet-0.3.0", "auto"):
         r = core.preoptimize(slab, method, relax_cell=True, resolve=stub_resolver(Stub))
         assert r.method_ran == "springs" and r.fell_back, method

@@ -13,8 +13,14 @@ against the CRYSTAL23 manual's list of geometry keywords (pp. 35-37:
 nanotubes", "From periodic structures to clusters", "Molecular crystals",
 "BSSE correction", "From crystals to nanorods/nanocrystals", "Gibbs-Wulff
 construction") plus GHOSTS (basis-set input) and the line-2 geometry kinds
-other than CRYSTAL. ``CHARGE_RECORDS`` are the records that make a deck
-charged (CHARGED, CHEMOD, DOPING); they are reported, not refused.
+other than CRYSTAL, SLAB, POLYMER and MOLECULE. ``CHARGE_RECORDS`` are the
+records that make a deck charged (CHARGED, CHEMOD, DOPING); they are
+reported, not refused.
+
+The dimensionality keyword of line 2 (SLAB, POLYMER, MOLECULE: 1.1.6) is
+not an edit: such a deck lists its own atoms, which MACE reads with their
+periodicity (group 1; a deck in another layer, rod or point group is refused
+by the reader, not here). HELIX, EXTERNAL and DLVINPUT still are.
 """
 from __future__ import annotations
 
@@ -33,6 +39,7 @@ GEOMETRY_EDITS = (
 )
 CHARGE_RECORDS = ("CHARGED", "CHEMOD", "DOPING")
 GEOMETRY_KINDS = ("CRYSTAL", "SLAB", "POLYMER", "HELIX", "MOLECULE", "EXTERNAL", "DLVINPUT")
+READ_KINDS = ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE")       # dimensionalities, not edits
 
 
 def _kw(line: str) -> str:
@@ -43,12 +50,12 @@ def _kw(line: str) -> str:
 def scan(text: str) -> Dict[str, List[str]]:
     """{"kind", "geometry_edits", "charge_records"}: the known keywords found
     after the title (each once, in deck order). A line-2 geometry kind other
-    than CRYSTAL is reported as an edit too."""
+    than CRYSTAL, SLAB, POLYMER and MOLECULE is reported as an edit too."""
     lines = text.splitlines()
     kind = _kw(lines[1]) if len(lines) > 1 else ""
     edits: List[str] = []
     charges: List[str] = []
-    if kind and kind != "CRYSTAL":
+    if kind and kind not in READ_KINDS:
         edits.append(kind if kind in GEOMETRY_KINDS else f"{kind} (line 2)")
     for ln in lines[2:]:
         k = _kw(ln)

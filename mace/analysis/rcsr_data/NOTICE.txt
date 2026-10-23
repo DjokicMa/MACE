@@ -1,0 +1,45 @@
+3dall.txt.xz holds the Reticular Chemistry Structure Resource (RCSR) list of
+3-periodic nets, unmodified, compressed with xz. MACE's topology analysis
+(mace analyze topology, the GUI's Topology tab) matches nets against it.
+
+Source
+  RCSR, http://rcsr.net (mirror: http://rcsr.anu.edu.au)
+  File: http://rcsr.net/data/3dall.txt (the list the RCSR 3-PERIODIC pages read)
+  Downloaded: 2026-10-22
+  Server Last-Modified: Wed, 28 Jan 2026 19:20:02 GMT (ETag "697a6162-456342")
+  The file has no version line of its own; the Last-Modified date and the
+  checksum below identify the copy.
+  Nets: 3645
+  3dall.txt     4547394 bytes  sha256 c143e8aa98a94fbec9f7ff30571269494b6e42895e2b57b219a40512801d2743
+  3dall.txt.xz   473292 bytes  sha256 72e9d4a4194ac8a677886a52ea5ae735b2fdc5a4739a7306fcd1aa4e0af12010
+
+Citation
+  M. O'Keeffe, M. A. Peskov, S. J. Ramsden and O. M. Yaghi, The Reticular
+  Chemistry Structure Resource (RCSR) Database of, and Symbols for, Crystal
+  Nets, Acc. Chem. Res. 41, 1782-1789 (2008), doi:10.1021/ar800124u.
+  Please cite it when you report a net symbol or reference data from RCSR.
+
+Credit
+  RCSR is maintained by Olaf Delgado-Friedrichs and Michael O'Keeffe. Its
+  data was collected by Omar Yaghi and Michael O'Keeffe (NSF SGER grant
+  DMR-0243082); Maxim Peskov prepared much of the tiling data; the site is
+  by Olaf Delgado-Friedrichs, after an earlier version by Stuart Ramsden,
+  with support and corrections from Vladislav Blatov, Stephen Hyde and
+  Davide M. Proserpio (RCSR's About page). Corrections to the data go to
+  RCSR (mokeeffe@asu.edu), not to MACE.
+
+Terms
+  RCSR offers the file as a free public download and states no license or
+  terms of use: none on its pages (home, About, Links, Systre), in the data
+  files, or in the source of the site (github.com/odf/RCSR,
+  github.com/odf/RCSR-content, the latter pre-packaged files for setting up
+  an RCSR mirror), as checked on 2026-10-22. MACE redistributes the file
+  unmodified with this attribution. The file is RCSR's work, not MACE's, and
+  MACE's MIT License does not cover it; if RCSR publishes terms, they govern
+  this file.
+
+Updating
+  A newer list you import (mace analyze rcsr import 3dall.txt, or Import on
+  the GUI's Topology tab) is used before this copy. To refresh the bundled
+  copy, download the file again, compress it with xz, and update the date,
+  sizes and checksums above (tests/test_rcsr_bundled.py checks them).

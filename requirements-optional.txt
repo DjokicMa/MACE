@@ -4,10 +4,18 @@
 # requirements-test.txt. seekpath is required and in requirements-test.txt.
 ase<4
 spglib<3
-# Finite-displacement phonons (`mace phonopy`); 4.7.2 tested. Needs spglib>=2.5.
+# Finite-displacement phonons (mace opt2d12 --calc-type PHONOPY, mace analyze phonopy); 4.7.2 tested. Needs spglib>=2.5.
 phonopy<5
 # The GUI's browser tests need selenium and Firefox: see requirements-gui-test.txt
 # (test-only, not needed to run `mace gui`).
 # Excel export (`mace database --action export --format excel` and the GUI's
 # Database export); 3.1.5 tested. CSV, JSON, LaTeX and HTML need nothing extra.
 openpyxl<4
+# mace calc (1.1.6): xtb (conda-forge "xtb>=6.7", LGPL-3.0) and dftb+ (conda-forge dftbplus, LGPL-3.0) are
+# external programs, and the ML potentials run in their own environment (mace mlip setup): nothing to pip-install here.
+# Zeo++ (optional second porosity engine for `mace analyze porosity --engine zeopp`):
+# not on PyPI. Build it from http://www.zeoplusplus.org (BSD-style LBNL license),
+# then put `network` on PATH or set MACE_ZEOPP=/path/to/network.
+# The official Model Context Protocol package (MIT) for `mace mcp`; without it
+# mace mcp uses its own built-in stdio transport. 1.30 and 2.3 tested.
+mcp<3

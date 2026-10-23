@@ -56,6 +56,349 @@
       ],
       "defaults": {"dtype": "float32", "fmax": 0.02, "steps": 300, "time_limit": 120},
       "limits": "PBE-like; takes no charge or spin input (its magnetic-moment head is not used); trained on MP GGA/GGA+U data"
+    },
+    {
+      "id": "acesuit-mace-mp-0b3-medium",
+      "label": "MACE-MP-0b3 medium (ACEsuit mace-torch)",
+      "family": "MACE-MP",
+      "unrelated_note": "ML potential from ACEsuit's mace-torch; not part of, and unrelated to, this MACE tool",
+      "backend": "mace_mp",
+      "scopes": [
+        "calc"
+      ],
+      "code": {
+        "package": "mace-torch",
+        "pin": "mace-torch==0.3.16",
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace/849f7e505ae386ff433c9c37eae4a666494feb5f/LICENSE.md"
+      },
+      "weights": {
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace-foundations/a2e6dec371933d3323a4439c37a8c51bfb4908f0/LICENSE",
+        "url": "https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0b3/mace-mp-0b3-medium.model",
+        "sha256": "2f2be696351ac9e94fbe01cdfb6f017679acdbd2db7645209ef55fec9826b012",
+        "size_bytes": 79472952,
+        "filename": "mace-mp-0b3-medium.model"
+      },
+      "training_data": [
+        "MPtrj (Materials Project trajectories, CC BY 4.0; Materials Project terms of use)"
+      ],
+      "citation": [
+        {
+          "text": "I. Batatia et al., A foundation model for atomistic materials chemistry, arXiv:2401.00096",
+          "doi": "10.48550/arXiv.2401.00096"
+        },
+        {
+          "text": "I. Batatia et al., MACE: Higher order equivariant message passing neural networks for fast and accurate force fields, NeurIPS 2022",
+          "doi": "10.48550/arXiv.2206.07697"
+        }
+      ],
+      "defaults": {
+        "dtype": "float64",
+        "fmax": 0.02,
+        "steps": 500,
+        "time_limit": 600
+      },
+      "limits": "PBE/PBE+U level (MPtrj); takes no charge or spin input; the MACE-MP-0b3 revision fixes some phonon issues of MACE-MP-0"
+    },
+    {
+      "id": "orb-v3-conservative-inf-mpa",
+      "label": "ORB-v3 conservative, MPtrj+Alexandria (orb-models)",
+      "family": "ORB-v3",
+      "unrelated_note": "ML potential from Orbital Materials' orb-models; not part of this MACE tool",
+      "backend": "orb", "requires_python": ">=3.12", "dims": [0, 1, 2, 3],
+      "variant": "orb-v3-conservative-inf-mpa",
+      "scopes": [
+        "calc"
+      ],
+      "code": {
+        "package": "orb-models",
+        "pin": "orb-models==0.7.0",
+        "license": "Apache-2.0",
+        "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE"
+      },
+      "weights": {
+        "license": "Apache-2.0",
+        "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE",
+        "url": "https://orbitalmaterials-public-models.s3.us-west-1.amazonaws.com/forcefields/orb-v3/orb-v3-conservative-inf-mpa-20250404.ckpt",
+        "sha256": "bd1840d1488f3cd01d213970d9618a63f971590ad45e5e83bf5404d4b95d216a",
+        "size_bytes": 102097517,
+        "filename": "orb-v3-conservative-inf-mpa-20250404.ckpt"
+      },
+      "training_data": [
+        "MPtrj (Materials Project trajectories, CC BY 4.0; Materials Project terms of use)",
+        "sAlex (subset of Alexandria, CC BY 4.0)"
+      ],
+      "citation": [
+        {
+          "text": "B. Rhodes et al., Orb-v3: atomistic simulation at scale, arXiv:2504.06231",
+          "doi": "10.48550/arXiv.2504.06231"
+        }
+      ],
+      "data_citation": [
+        {
+          "text": "Alexandria database: Th. Cavignac, J. Schmidt et al., AI-Driven expansion and application of the Alexandria database, J. Phys. Mater. 9, 025014 (2026)",
+          "doi": "10.1088/2515-7639/ae6620"
+        },
+        {
+          "text": "sAlex subset: L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771",
+          "doi": "10.48550/arXiv.2410.12771"
+        }
+      ],
+      "defaults": {
+        "dtype": "float32-high",
+        "fmax": 0.02,
+        "steps": 500,
+        "time_limit": 600
+      },
+      "limits": "PBE/PBE+U level; takes no charge or spin input"
+    },
+    {
+      "id": "orb-v3-conservative-inf-omat",
+      "label": "ORB-v3 conservative, OMat24 (orb-models)",
+      "family": "ORB-v3",
+      "unrelated_note": "ML potential from Orbital Materials' orb-models; not part of this MACE tool",
+      "backend": "orb", "requires_python": ">=3.12", "dims": [0, 1, 2, 3],
+      "variant": "orb-v3-conservative-inf-omat",
+      "scopes": [
+        "calc"
+      ],
+      "code": {
+        "package": "orb-models",
+        "pin": "orb-models==0.7.0",
+        "license": "Apache-2.0",
+        "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE"
+      },
+      "weights": {
+        "license": "Apache-2.0",
+        "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE",
+        "url": "https://orbitalmaterials-public-models.s3.us-west-1.amazonaws.com/forcefields/orb-v3/orb-v3-conservative-inf-omat-20250404.ckpt",
+        "sha256": "0a41ef1132ad9c41ee0c7b9d855fccabfefb97abe04625c97ec0d07930b6c0f0",
+        "size_bytes": 102097517,
+        "filename": "orb-v3-conservative-inf-omat-20250404.ckpt"
+      },
+      "training_data": [
+        "OMat24 (Open Materials 2024 dataset, CC BY 4.0)"
+      ],
+      "citation": [
+        {
+          "text": "B. Rhodes et al., Orb-v3: atomistic simulation at scale, arXiv:2504.06231",
+          "doi": "10.48550/arXiv.2504.06231"
+        }
+      ],
+      "data_citation": [
+        {
+          "text": "L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771",
+          "doi": "10.48550/arXiv.2410.12771"
+        }
+      ],
+      "defaults": {
+        "dtype": "float32-high",
+        "fmax": 0.02,
+        "steps": 500,
+        "time_limit": 600
+      },
+      "limits": "PBE/PBE+U level (OMat24 settings: energies are not Materials Project compatible); takes no charge or spin input"
+    },
+    {
+      "id": "mattersim-v1.0.0-1m",
+      "label": "MatterSim v1.0.0 1M (mattersim)",
+      "family": "MatterSim",
+      "unrelated_note": "ML potential from Microsoft's mattersim; not part of this MACE tool",
+      "backend": "mattersim",
+      "scopes": [
+        "calc"
+      ],
+      "code": {
+        "package": "mattersim",
+        "pin": "mattersim==1.2.5",
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/LICENSE.txt"
+      },
+      "weights": {
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/LICENSE.txt",
+        "url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/pretrained_models/mattersim-v1.0.0-1M.pth",
+        "sha256": "28b0b0b0f13efefee06b47ea4c9105a26bd3e2c8396da193430da96b3b49a8be",
+        "size_bytes": 17932943,
+        "filename": "mattersim-v1.0.0-1M.pth"
+      },
+      "training_data": [
+        "MatterSim's own PBE/PBE+U data across elements, temperatures and pressures (Microsoft Research; not public)"
+      ],
+      "citation": [
+        {
+          "text": "H. Yang et al., MatterSim: A deep learning atomistic model across elements, temperatures and pressures, arXiv:2405.04967",
+          "doi": "10.48550/arXiv.2405.04967"
+        }
+      ],
+      "defaults": {
+        "dtype": "float32",
+        "fmax": 0.02,
+        "steps": 500,
+        "time_limit": 600
+      },
+      "limits": "PBE/PBE+U level; takes no charge or spin input; report the exact checkpoint (MatterSim-v1.0.0-1M)"
+    },
+    {
+      "id": "mattersim-v1.0.0-5m",
+      "label": "MatterSim v1.0.0 5M (mattersim)",
+      "family": "MatterSim",
+      "unrelated_note": "ML potential from Microsoft's mattersim; not part of this MACE tool",
+      "backend": "mattersim",
+      "scopes": [
+        "calc"
+      ],
+      "code": {
+        "package": "mattersim",
+        "pin": "mattersim==1.2.5",
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/LICENSE.txt"
+      },
+      "weights": {
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/LICENSE.txt",
+        "url": "https://raw.githubusercontent.com/microsoft/mattersim/5c8477172ff2e0ad18ee822befa99aeb225697bc/pretrained_models/mattersim-v1.0.0-5M.pth",
+        "sha256": "e3df9fa708725e3d453140646c7d1838324b347a3d1214cf1440522146f872b5",
+        "size_bytes": 91176875,
+        "filename": "mattersim-v1.0.0-5M.pth"
+      },
+      "training_data": [
+        "MatterSim's own PBE/PBE+U data across elements, temperatures and pressures (Microsoft Research; not public)"
+      ],
+      "citation": [
+        {
+          "text": "H. Yang et al., MatterSim: A deep learning atomistic model across elements, temperatures and pressures, arXiv:2405.04967",
+          "doi": "10.48550/arXiv.2405.04967"
+        }
+      ],
+      "defaults": {
+        "dtype": "float32",
+        "fmax": 0.02,
+        "steps": 500,
+        "time_limit": 600
+      },
+      "limits": "PBE/PBE+U level; takes no charge or spin input; report the exact checkpoint (MatterSim-v1.0.0-5M)"
+    },
+    {
+      "id": "orbmol-v2",
+      "label": "OrbMol-v2 (orb-models)",
+      "family": "OrbMol",
+      "variant": "orbmol-v2",
+      "unrelated_note": "ML potential from Orbital Materials' orb-models; not part of this MACE tool",
+      "backend": "orb",
+      "scopes": ["calc"],
+      "requires_python": ">=3.12",
+      "charge_spin": ["*"],
+      "dims": [0, 3],
+      "stress": false,
+      "role": "molecules, ions, metal complexes and electrolytes (molecular chemistry); periodic 3D cells through Particle Mesh Ewald",
+      "code": {"package": "orb-models", "pin": "orb-models==0.7.0", "license": "Apache-2.0", "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE"},
+      "weights": {"license": "Apache-2.0", "license_text_url": "https://raw.githubusercontent.com/orbital-materials/orb-models/1794f852543600d1611d2a3728a95142574f5dc2/LICENSE", "url": "https://huggingface.co/Orbital-Materials/orbmol-v2/resolve/525a046f7959a6f61730c3ba9cd3afe24c4b1af9/orbmol-v2-teqabfhg-20260523.ckpt", "mirror_url": "https://orbitalmaterials-public-models.s3.us-west-1.amazonaws.com/forcefields/orbmol-v2-teqabfhg-20260523.ckpt", "sha256": "3dbef70b5fdc9124392181b0d8686c79f1c02bf5fefcb878a4eaa51d03e4f5e8", "size_bytes": 103552643, "filename": "orbmol-v2-teqabfhg-20260523.ckpt"},
+      "training_data": ["OMol25 (ωB97M-V/def2-TZVPD, CC BY 4.0)", "OPoly26 (ωB97M-V/def2-TZVPD polymers; Meta, gated dataset)"],
+      "citation": [
+        {"text": "OrbMol-v2 model card, Orbital Materials (Hugging Face Orbital-Materials/orbmol-v2, May 2026)"},
+        {"text": "B. Rhodes et al., Orb-v3: atomistic simulation at scale, arXiv:2504.06231", "doi": "10.48550/arXiv.2504.06231"}
+      ],
+      "data_citation": [
+        {"text": "D. S. Levine et al., The Open Molecules 2025 (OMol25) Dataset, Evaluations, and Models, arXiv:2505.08762", "doi": "10.48550/arXiv.2505.08762"}
+      ],
+      "defaults": {"dtype": "float32-high", "fmax": 0.02, "steps": 500, "time_limit": 600},
+      "limits": "Needs the total charge and spin multiplicity; molecules (0D) and periodic 3D cells (Particle Mesh Ewald through nvalchemiops; the first periodic call compiles its kernels, about 15 s on a CPU); no slabs or polymers (orb-models: 1D and 2D PBC are not supported); predicts no stress (no cell relaxation or NPT)"
+    },
+    {
+      "unrelated_note": "ML potential from Meta's fairchem; not part of this MACE tool",
+      "backend": "fairchem",
+      "family": "UMA (Meta fairchem)",
+      "env": "fairchem",
+      "scopes": ["calc"],
+      "requires_python": ">=3.11",
+      "gated": {"provider": "huggingface", "repo": "facebook/UMA", "page": "https://huggingface.co/facebook/UMA", "terms": "FAIR Chemistry License v1 (last updated May 14, 2025), with the FAIR Chemistry Acceptable Use Policy incorporated: a royalty-free license that includes commercial use, with trade-control, acknowledgment and patent-retaliation terms", "aup_url": "https://huggingface.co/facebook/UMA/blob/c5107e43d5e811dd7cb56f57533dc0eb550dee6b/USE_POLICY.md"},
+      "code": {"package": "fairchem-core", "pin": "fairchem-core==2.24.0", "license": "MIT", "torch": "torch==2.13.0", "license_text_url": "https://raw.githubusercontent.com/facebookresearch/fairchem/2c90046cc6ae8feb3e9321e3b2af4718c96082ac/LICENSE.md"},
+      "tasks": {"omat": "inorganic materials (OMat24, PBE/PBE+U)", "omol": "molecules (OMol25, ωB97M-V; needs charge and spin)", "oc20": "catalysis: adsorbates on surfaces (OC20, RPBE)", "odac": "metal-organic frameworks with guests (ODAC23, PBE-D3)", "omc": "molecular crystals (OMC25, PBE-D3)"},
+      "task_default": {"3": "omat", "2": "omat", "1": "omat", "0": "omol"},
+      "charge_spin": ["omol"],
+      "training_data": ["OMat24 (CC BY 4.0)", "OMol25 (CC BY 4.0)", "OC20 (CC BY 4.0)", "ODAC23 (CC BY 4.0)", "OMC25 (CC BY 4.0)"],
+      "citation": [
+        {"text": "B. M. Wood et al., UMA: A Family of Universal Models for Atoms, arXiv:2506.23971", "doi": "10.48550/arXiv.2506.23971"}
+      ],
+      "data_citation": [
+        {"text": "D. S. Levine et al., The Open Molecules 2025 (OMol25) Dataset, Evaluations, and Models, arXiv:2505.08762", "doi": "10.48550/arXiv.2505.08762"},
+        {"text": "L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771", "doi": "10.48550/arXiv.2410.12771"}
+      ],
+      "defaults": {"dtype": "float32", "fmax": 0.02, "steps": 500, "time_limit": 1800},
+      "limits": "Pick the task head for the system (omat solids, omol molecules with charge and spin, oc20 catalysis, odac MOFs, omc molecular crystals); a 1-2 GB model: slow on a CPU",
+      "id": "meta-uma-s-1p1",
+      "label": "UMA small 1.1 (Meta fairchem)",
+      "variant": "uma-s-1p1",
+      "weights": {"license": "FAIR-Chemistry-License-1.0", "license_text_url": "https://huggingface.co/facebook/UMA/blob/c5107e43d5e811dd7cb56f57533dc0eb550dee6b/LICENSE", "hf_repo": "facebook/UMA", "hf_file": "checkpoints/uma-s-1p1.pt", "hf_revision": "c5107e43d5e811dd7cb56f57533dc0eb550dee6b", "sha256": "07068e9c76702ca173d13155095f2117c1b327ec228557e64cd2709c777b824a", "size_bytes": 1173759575}
+    },
+    {
+      "unrelated_note": "ML potential from Meta's fairchem; not part of this MACE tool",
+      "backend": "fairchem",
+      "family": "UMA (Meta fairchem)",
+      "env": "fairchem",
+      "scopes": ["calc"],
+      "requires_python": ">=3.11",
+      "gated": {"provider": "huggingface", "repo": "facebook/UMA", "page": "https://huggingface.co/facebook/UMA", "terms": "FAIR Chemistry License v1 (last updated May 14, 2025), with the FAIR Chemistry Acceptable Use Policy incorporated: a royalty-free license that includes commercial use, with trade-control, acknowledgment and patent-retaliation terms", "aup_url": "https://huggingface.co/facebook/UMA/blob/c5107e43d5e811dd7cb56f57533dc0eb550dee6b/USE_POLICY.md"},
+      "code": {"package": "fairchem-core", "pin": "fairchem-core==2.24.0", "license": "MIT", "torch": "torch==2.13.0", "license_text_url": "https://raw.githubusercontent.com/facebookresearch/fairchem/2c90046cc6ae8feb3e9321e3b2af4718c96082ac/LICENSE.md"},
+      "tasks": {"omat": "inorganic materials (OMat24, PBE/PBE+U)", "omol": "molecules (OMol25, ωB97M-V; needs charge and spin)", "oc20": "catalysis: adsorbates on surfaces (OC20, RPBE)", "odac": "metal-organic frameworks with guests (ODAC23, PBE-D3)", "omc": "molecular crystals (OMC25, PBE-D3)"},
+      "task_default": {"3": "omat", "2": "omat", "1": "omat", "0": "omol"},
+      "charge_spin": ["omol"],
+      "training_data": ["OMat24 (CC BY 4.0)", "OMol25 (CC BY 4.0)", "OC20 (CC BY 4.0)", "ODAC23 (CC BY 4.0)", "OMC25 (CC BY 4.0)"],
+      "citation": [
+        {"text": "B. M. Wood et al., UMA: A Family of Universal Models for Atoms, arXiv:2506.23971", "doi": "10.48550/arXiv.2506.23971"}
+      ],
+      "data_citation": [
+        {"text": "D. S. Levine et al., The Open Molecules 2025 (OMol25) Dataset, Evaluations, and Models, arXiv:2505.08762", "doi": "10.48550/arXiv.2505.08762"},
+        {"text": "L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771", "doi": "10.48550/arXiv.2410.12771"}
+      ],
+      "defaults": {"dtype": "float32", "fmax": 0.02, "steps": 500, "time_limit": 1800},
+      "limits": "Pick the task head for the system (omat solids, omol molecules with charge and spin, oc20 catalysis, odac MOFs, omc molecular crystals); a 1-2 GB model: slow on a CPU",
+      "id": "meta-uma-s-1p2",
+      "label": "UMA small 1.2 (Meta fairchem)",
+      "variant": "uma-s-1p2",
+      "weights": {"license": "FAIR-Chemistry-License-1.0", "license_text_url": "https://huggingface.co/facebook/UMA/blob/c5107e43d5e811dd7cb56f57533dc0eb550dee6b/LICENSE", "hf_repo": "facebook/UMA", "hf_file": "checkpoints/uma-s-1p2.pt", "hf_revision": "c5107e43d5e811dd7cb56f57533dc0eb550dee6b", "sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b", "size_bytes": 2333393167}
+    },
+    {
+      "unrelated_note": "ML potential from ACEsuit's mace-torch; not part of, and unrelated to, this MACE tool",
+      "backend": "mace_mp",
+      "family": "MACE-OFF (ACEsuit mace-torch)",
+      "academic": true,
+      "scopes": ["preopt", "calc"],
+      "role": "organic molecules and molecular crystals (H, C, N, O, F, P, S, Cl, Br, I)",
+      "code": {"package": "mace-torch", "pin": "mace-torch==0.3.16", "license": "MIT", "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace/849f7e505ae386ff433c9c37eae4a666494feb5f/LICENSE.md"},
+      "training_data": ["SPICE-derived organic molecules and clusters at the ωB97M-D3(BJ)/def2-TZVPPD level (doi:10.17863/CAM.107498)"],
+      "citation": [
+        {"text": "D. P. Kovács et al., MACE-OFF: Short-Range Transferable Machine Learning Force Fields for Organic Molecules, arXiv:2312.15211", "doi": "10.48550/arXiv.2312.15211"},
+        {"text": "I. Batatia et al., MACE: Higher order equivariant message passing neural networks for fast and accurate force fields, NeurIPS 2022", "doi": "10.48550/arXiv.2206.07697"}
+      ],
+      "defaults": {"dtype": "float64", "fmax": 0.02, "steps": 500, "time_limit": 600},
+      "elements": [1, 6, 7, 8, 9, 15, 16, 17, 35, 53],
+      "limits": "ACADEMIC, NON-COMMERCIAL USE ONLY (Academic Software License). Organic chemistry only (10 elements); takes no charge or spin input",
+      "id": "acesuit-mace-off24-medium",
+      "label": "MACE-OFF24 medium (ACEsuit mace-torch)",
+      "weights": {"license": "ASL", "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace-off/91a78c5a9c300d1104700d9352c8bfe449227737/LICENSE.md", "url": "https://raw.githubusercontent.com/ACEsuit/mace-off/91a78c5a9c300d1104700d9352c8bfe449227737/mace_off24/MACE-OFF24_medium.model", "sha256": "e5ccf5837f685899811a68754e7c994393bfd1a81720393b03c643b46c70bc69", "size_bytes": 18375569, "filename": "MACE-OFF24_medium.model"}
+    },
+    {
+      "unrelated_note": "ML potential from ACEsuit's mace-torch; not part of, and unrelated to, this MACE tool",
+      "backend": "mace_mp",
+      "family": "MACE-OFF (ACEsuit mace-torch)",
+      "academic": true,
+      "scopes": ["preopt", "calc"],
+      "role": "organic molecules and molecular crystals (H, C, N, O, F, P, S, Cl, Br, I)",
+      "code": {"package": "mace-torch", "pin": "mace-torch==0.3.16", "license": "MIT", "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace/849f7e505ae386ff433c9c37eae4a666494feb5f/LICENSE.md"},
+      "training_data": ["SPICE-derived organic molecules and clusters at the ωB97M-D3(BJ)/def2-TZVPPD level (doi:10.17863/CAM.107498)"],
+      "citation": [
+        {"text": "D. P. Kovács et al., MACE-OFF: Short-Range Transferable Machine Learning Force Fields for Organic Molecules, arXiv:2312.15211", "doi": "10.48550/arXiv.2312.15211"},
+        {"text": "I. Batatia et al., MACE: Higher order equivariant message passing neural networks for fast and accurate force fields, NeurIPS 2022", "doi": "10.48550/arXiv.2206.07697"}
+      ],
+      "defaults": {"dtype": "float64", "fmax": 0.02, "steps": 500, "time_limit": 600},
+      "elements": [1, 6, 7, 8, 9, 15, 16, 17, 35, 53],
+      "limits": "ACADEMIC, NON-COMMERCIAL USE ONLY (Academic Software License). Organic chemistry only (10 elements); takes no charge or spin input",
+      "id": "acesuit-mace-off23-medium",
+      "label": "MACE-OFF23 medium (ACEsuit mace-torch)",
+      "weights": {"license": "ASL", "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace-off/91a78c5a9c300d1104700d9352c8bfe449227737/LICENSE.md", "url": "https://raw.githubusercontent.com/ACEsuit/mace-off/91a78c5a9c300d1104700d9352c8bfe449227737/mace_off23/MACE-OFF23_medium.model", "sha256": "4842c52ad210d6e1f84d6cf1ffa70fae25a7e0d755ed55cf223f43913f587db7", "size_bytes": 18350596, "filename": "MACE-OFF23_medium.model"}
     }
   ]
 }
