@@ -34,6 +34,8 @@ _NELEC = re.compile(r"N\. OF ELECTRONS PER CELL\s+(\d+)")
 _NCORE = re.compile(r"CORE ELECTRONS PER CELL\s+(\d+)")
 _NAO = re.compile(r"NUMBER OF AO\s+(\d+)")
 _CALC = re.compile(r"TYPE OF CALCULATION :\s+(.+?)\s*$", re.M)
+# a spin-polarized run's net spin (CRYSTAL23: "SPIN POLARIZED SYSTEM: SUMMED SPIN DENSITY   -0.00000000")
+_SPINDENS = re.compile(r"SUMMED SPIN DENSITY\s+(-?\d+\.\d+)")
 
 
 _PRINTING = re.compile(r"PRINTING OF (?:CRYSTALLINE|MOLECULAR) ORBITALS")
@@ -81,6 +83,7 @@ class OrbitalsOut:
     core_electrons: Optional[int] = None
     nao: Optional[int] = None
     calc_type: Optional[str] = None
+    spin_density: Optional[float] = None         # a spin-polarized run's summed spin density (n_alpha - n_beta)
     vbm: Optional[Tuple[int, int, float]] = None   # band, k, eig (Ha)
     cbm: Optional[Tuple[int, int, float]] = None
     efermi: Optional[float] = None
@@ -159,6 +162,8 @@ def parse_out_text(text: str, path: str = "") -> OrbitalsOut:
     res.nao = int(m.group(1)) if m else None
     m = _CALC.search(text)
     res.calc_type = m.group(1).strip() if m else None
+    m = _SPINDENS.search(text)
+    res.spin_density = float(m.group(1)) if m else None
     # band edges / Fermi level printed after the NEWK k list
     tail = text[heads[-1].end():] if heads else text
     tops = [(int(a), int(b), float(c)) for a, b, c in _TOP.findall(tail)]

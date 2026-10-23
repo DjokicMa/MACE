@@ -164,16 +164,29 @@ def spellings(path: Path) -> List[str]:
     return sorted(forms)
 
 
-def calc_for_output(conn, output_file: Path) -> Optional[str]:
+def _relative_spellings(path: Path, base: Optional[Path]) -> List[str]:
+    """``path`` relative to ``base`` (the database's folder), as a database may record it."""
+    if base is None:
+        return []
+    try:
+        rel = os.path.relpath(str(Path(path).resolve()), str(Path(base).resolve()))
+    except (OSError, ValueError):
+        return []
+    return sorted({rel, Path(rel).as_posix(), os.path.join(".", rel)})
+
+
+def calc_for_output(conn, output_file: Path, base: Optional[Path] = None) -> Optional[str]:
     """The calc_id recorded for this output: by its path (every spelling),
     else in its directory by the input deck's name, else the directory's only
-    calculation. ``conn`` is any sqlite3 connection to the database."""
+    calculation. ``conn`` is any sqlite3 connection to the database; ``base``:
+    its folder, for paths recorded relative to it (examples/gui/materials.db)."""
     output_file = Path(output_file)
-    outs, dirs = spellings(output_file), spellings(output_file.parent)
+    outs = spellings(output_file) + _relative_spellings(output_file, base)
+    dirs = spellings(output_file.parent) + _relative_spellings(output_file.parent, base)
     # X.out of a run an earlier scan recorded by its X_temp.out copy
     temp = output_file.with_name(output_file.stem + "_temp" + output_file.suffix)
     if temp.is_file():
-        outs += spellings(temp)
+        outs += spellings(temp) + _relative_spellings(temp, base)
     marks = ",".join("?" * len(outs))
     row = conn.execute(
         f"SELECT calc_id FROM calculations WHERE output_file IN ({marks}) "

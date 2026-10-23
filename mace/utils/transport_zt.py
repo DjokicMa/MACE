@@ -24,6 +24,19 @@ line of its .out, or at a tau the user gives, with sigma and kappa0 scaled
 by tau / tau_run (S does not depend on tau). With no .out tau the total is
 refused rather than guessed.
 
+The precision of kappa_e. The .dat files print 8 significant digits, so each
+value carries a relative rounding error of at most 5e-8: kappa0 5e-8, S^2 1e-7,
+sigma 5e-8, and kappa_e = kappa0 - T sigma S^2 is uncertain by up to about
+2e-7 * kappa0 where T sigma S^2 ~ kappa0. In the runs checked (diamond,
+graphene, polyacetylene) every negative kappa_e, which is noise by definition,
+is within 1.35e-7 * kappa0. A kappa_e below KAPPA_E_EPS = 2e-6 * kappa0 (10 times
+that bound, so a kept kappa_e is good to 10%) is cancellation noise: ZT_e and
+kappa_e are not computed there (diamond's ZT_e reached 1.6e9 at such a point).
+The total ZT does not need kappa_e to be known well where kappa_L dominates: at a
+masked point it is S^2 sigma T / kappa_L (kappa_e taken as its value, at least 0)
+when the uncertainty of kappa_e, KAPPA_E_EPS * kappa0, is at most 1% of kappa_L,
+and left out otherwise.
+
 The CLI (``mace analyze --extract-properties --kappa-lattice``) and the GUI's
 transport plot both compute through :func:`zt_points`, so they give the
 same numbers.
@@ -31,6 +44,7 @@ same numbers.
 from __future__ import annotations
 
 import csv
+import json
 import hashlib
 import io
 import math
@@ -43,6 +57,11 @@ UNIT = "W/(m·K)"
 # temperatures in the .dat files carry 3 decimals; a table end within this of
 # a run temperature covers it
 _T_TOL = 1e-6
+
+# kappa_e below this fraction of kappa0 is the files' rounding noise (see the module docstring)
+KAPPA_E_EPS = 2e-6
+# at such a point the total ZT is kept while the kappa_e uncertainty is at most this fraction of kappa_L
+KAPPA_L_SHARE = 0.01
 
 _RELAX_RE = re.compile(r"RELAXATION TIME \(fs\)\s*:?\s*([-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?)")
 
@@ -111,10 +130,11 @@ class KappaLattice:
                 f"{self.range_text()}, linear, no extrapolation; {UNIT})")
 
     def label(self) -> str:
-        """A short legend text."""
+        """A short legend text, in plot markup (mace.utils.plot_labels; its plain() for the terminal)."""
+        from mace.utils import plot_labels as L
         if self.kind == "constant":
-            return f"κ_L = {_g(self.value)} {UNIT}"
-        return f"κ_L(T) from {Path(self.path).name}"
+            return f"{L.SYMBOLS['kappa_L']} = {_g(self.value)} {L.unit('W/(m K)')}"
+        return f"{L.SYMBOLS['kappa_L']}(T) from {Path(self.path).name}"
 
 
 def _g(x: float) -> str:
@@ -188,10 +208,34 @@ def _parse_table(text: str, path: str, sha: str) -> KappaLattice:
     return KappaLattice("table", temps=[r[0] for r in rows], values=[r[1] for r in rows], path=path, sha256=sha)
 
 
+# where a tau read from a ``mace tau --save`` file came from: {tau_fs: text}
+_TAU_PROVENANCE: Dict[float, str] = {}
+
+
+def tau_from_file(path: str) -> Tuple[float, str]:
+    """(tau_fs, provenance) of a JSON file written by ``mace tau ... --save``
+    (mace.transport: deformation-potential theory, or tau from a mobility)."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError) as exc:
+        raise KappaLatticeError(f"{path}: not a mace tau result ({exc})")
+    if not isinstance(data, dict) or "tau_fs" not in data:
+        raise KappaLatticeError(f"{path}: no tau_fs in it (write it with mace tau ... --save)")
+    tau = _positive(float(data["tau_fs"]), "the relaxation time (fs)")
+    what = data.get("method", "mace tau")
+    extra = " ".join(x for x in (data.get("carrier"), data.get("axis")) if x)
+    return tau, f"{Path(path).name}: {what}{' (' + extra + ')' if extra else ''}"
+
+
 def check_tau_fs(tau) -> Optional[float]:
-    """A relaxation time in fs (None stays None)."""
+    """A relaxation time in fs (None stays None), or the tau of a ``mace tau
+    --save`` JSON file (its provenance kept for resolve_tau)."""
     if tau is None or (isinstance(tau, str) and not tau.strip()):
         return None
+    if isinstance(tau, str) and tau.strip().lower().endswith(".json"):
+        t, prov = tau_from_file(tau.strip())
+        _TAU_PROVENANCE[t] = prov
+        return t
     try:
         t = float(tau)
     except (TypeError, ValueError):
@@ -220,8 +264,18 @@ def resolve_tau(tau_run_fs: Optional[float], tau_fs: Optional[float], out_name: 
             f"does not compute it")
     if tau_fs is None:
         return tau_run_fs, 1.0, "the run's RELAXTIM"
-    return tau_fs, tau_fs / tau_run_fs, (f"given; the run used {_g(tau_run_fs)} fs, so σ and κ₀ are "
+    how = _TAU_PROVENANCE.get(tau_fs, "given")
+    return tau_fs, tau_fs / tau_run_fs, (f"{how}; the run used {_g(tau_run_fs)} fs, so σ and κ₀ are "
                                          f"scaled by {_g(tau_fs / tau_run_fs)}")
+
+
+def kappa_e_state(kappa0: float, kappa_e: float) -> str:
+    """"ok" (kappa_e is known to 10% or better), "masked" (|kappa_e| below the files' precision,
+    KAPPA_E_EPS * |kappa0|) or "negative" (kappa_e <= 0 beyond it: outside the model)."""
+    tol = KAPPA_E_EPS * abs(kappa0)
+    if kappa_e >= tol:
+        return "ok"
+    return "masked" if kappa_e > -tol else "negative"
 
 
 def _lut(rows) -> Dict[Tuple[float, float], float]:
@@ -244,11 +298,15 @@ def zt_points(s_rows: Sequence, sig_rows: Sequence, kap_rows: Sequence,
 
     A point counts where |sigma| is at least 1e-3 of the run's peak |sigma|
     (BoltzTraP's determinant spikes are excluded), KAPPA.dat has a nonzero
-    kappa0 and kappa_e = kappa0 - T sigma S^2 is positive. ``scale`` multiplies
-    sigma and kappa0 (tau / tau_run) for ZT_total; ZT_e does not depend on it.
+    kappa0 and kappa_e = kappa0 - T sigma S^2 is above the files' precision
+    (kappa_e_state "ok"). At a point whose kappa_e is below it ("masked") ZT_e
+    is None and the total is S^2 sigma T / (max(kappa_e, 0) + kappa_L) while
+    KAPPA_E_EPS * kappa0 is at most KAPPA_L_SHARE of kappa_L (None otherwise).
+    ``scale`` multiplies sigma and kappa0 (tau / tau_run) for ZT_total; ZT_e
+    does not depend on it.
 
     Returns ``{"temperatures": [...], "blocks": {T: {"mu", "zt_e", "zt_total",
-    "kappa_l", "refused"}}, "zt_e_max", "zt_total_max"}``: a list entry is None
+    "kappa_l", "refused", "n_masked"}}, "zt_e_max", "zt_total_max", "n_masked"}``: a list entry is None
     where the point does not count; a block whose temperature the kappa_L
     table does not cover has ``zt_total`` None and the reason in ``refused``.
     A peak is ``{"value", "temperature_k", "mu_ev", "kappa0", "kappa_e",
@@ -264,7 +322,7 @@ def zt_points(s_rows: Sequence, sig_rows: Sequence, kap_rows: Sequence,
         b = blocks.get(T)
         if b is None:
             b = blocks[T] = {"mu": [], "zt_e": [], "zt_total": [] if kappa_l is not None else None,
-                             "kappa_l": None, "refused": None}
+                             "kappa_l": None, "refused": None, "n_masked": 0}
             if kappa_l is not None:
                 try:
                     b["kappa_l"] = kappa_l.at(T)
@@ -279,7 +337,18 @@ def zt_points(s_rows: Sequence, sig_rows: Sequence, kap_rows: Sequence,
         if (g is not None and sig_floor > 0.0 and abs(g) >= sig_floor and k and abs(k) > 0.0):
             pf_t = s_val * s_val * abs(g) * T
             kappa_e = abs(k) - pf_t
-            if kappa_e > 0.0:
+            state = kappa_e_state(k, kappa_e)
+            if state == "masked":
+                # kappa_e is rounding noise: no ZT_e; the total where kappa_L dominates that noise
+                b["n_masked"] += 1
+                kl = b["kappa_l"]
+                if kl is not None and scale * KAPPA_E_EPS * abs(k) <= KAPPA_L_SHARE * kl:
+                    ke = scale * max(kappa_e, 0.0)
+                    zt_t = scale * pf_t / (ke + kl)
+                    if peak_t is None or zt_t > peak_t["value"]:
+                        peak_t = {"value": zt_t, "temperature_k": T, "mu_ev": mu, "kappa0": scale * abs(k),
+                                  "kappa_e": ke, "kappa_l": kl}
+            if state == "ok":
                 zt_e = pf_t / kappa_e
                 if peak_e is None or zt_e > peak_e["value"]:
                     peak_e = {"value": zt_e, "temperature_k": T, "mu_ev": mu, "kappa0": abs(k),
@@ -296,7 +365,8 @@ def zt_points(s_rows: Sequence, sig_rows: Sequence, kap_rows: Sequence,
     for b in blocks.values():
         if b["refused"]:
             b["zt_total"] = None
-    return {"temperatures": sorted(blocks), "blocks": blocks, "zt_e_max": peak_e, "zt_total_max": peak_t}
+    return {"temperatures": sorted(blocks), "blocks": blocks, "zt_e_max": peak_e, "zt_total_max": peak_t,
+            "n_masked": sum(b["n_masked"] for b in blocks.values())}
 
 
 def uncovered(kappa_l: KappaLattice, temperatures) -> List[float]:

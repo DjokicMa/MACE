@@ -1,0 +1,2081 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS            6  OF           16  WORKING
+ PROCESS            3  OF           16  WORKING
+ PROCESS            4  OF           16  WORKING
+ PROCESS            5  OF           16  WORKING
+ PROCESS            1  OF           16  WORKING
+ PROCESS            2  OF           16  WORKING
+ PROCESS           15  OF           16  WORKING
+ PROCESS            0  OF           16  WORKING
+ PROCESS            7  OF           16  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 21 10 2026 TIME 14:41:46.3
+ 1_dia_opt_rev1_qha_B3LYP-D3_optimized                                           
+ PROCESS           10  OF           16  WORKING
+ PROCESS            8  OF           16  WORKING
+ PROCESS           11  OF           16  WORKING
+ PROCESS           12  OF           16  WORKING
+ PROCESS           13  OF           16  WORKING
+ PROCESS           14  OF           16  WORKING
+
+ CRYSTAL CALCULATION
+ (INPUT ACCORDING TO THE INTERNATIONAL TABLES FOR X-RAY CRYSTALLOGRAPHY)
+ CRYSTAL FAMILY                       :  CUBIC       
+ CRYSTAL CLASS  (GROTH - 1921)        :  CUBIC HEXAKISOCTAHEDRAL              
+
+ SPACE GROUP (CENTROSYMMETRIC)        :  F D 3 M         
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+        A           B           C        ALPHA        BETA       GAMMA
+     3.54481     3.54481     3.54481    90.00000    90.00000    90.00000
+
+
+ NUMBER OF IRREDUCIBLE ATOMS IN THE CONVENTIONAL CELL:    1
+
+ INPUT COORDINATES
+
+ ATOM AT. N.              COORDINATES
+   1   6     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+
+ *******************************************************************************
+
+ << INFORMATION >>: FROM NOW ON, ALL COORDINATES REFER TO THE PRIMITIVE CELL
+
+ *******************************************************************************
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - PRIMITIVE CELL
+       A          B          C        ALPHA      BETA     GAMMA        VOLUME
+    2.50656    2.50656    2.50656    60.00000  60.00000  60.00000     11.135747
+
+ COORDINATES OF THE EQUIVALENT ATOMS (FRACTIONAL UNITS)
+
+ N. ATOM EQUIV AT. N.          X                  Y                  Z
+
+   1   1   1    6 C     1.25000000000E-01  1.25000000000E-01  1.25000000000E-01
+   2   1   2    6 C    -1.25000000000E-01 -1.25000000000E-01 -1.25000000000E-01
+
+ NUMBER OF SYMMETRY OPERATORS         :   48
+ *******************************************************************************
+ * GEOMETRY EDITING - INPUT COORDINATES ARE GIVEN IN ANGSTROM         
+ *******************************************************************************
+
+ GEOMETRY NOW FULLY CONSISTENT WITH THE GROUP
+ INFORMATION **** NEW DEFAULT **** FINALRUN 4 FOR GEOMETRY OPTIMIZATIONS
+ INFORMATION **** NEW DEFAULT **** OPTGEOM OPTIMIZES BOTH ATOMIC COORDINATES AND CELL PARAMETERS
+ INFORMATION **** NEW DEFAULT **** TOL. ON ATOMIC DISP TO REDEFINE REF. GEOMETRY: 0.8 Angs
+ INFORMATION **** NEW DEFAULT **** N POINTS TO REDEFINE REF. GEOMETRY: N OF OPT DEGS OF FREEDOM
+ INFORMATION **** NEW DEFAULT **** TOL. ON ENERGY TO REDEFINE REF. GEOMETRY: 10**-3*(5*N. ATOMS)
+
+ IMPORTANT INFORMATION:
+ THE COORDINATE SYSTEM ADOPTED IN THE OPTIMIZATION IS NOT IN
+ GENERAL HOMOGENEOUS UNITS. FOR THIS REASON THE GRADIENT AND 
+ HESSIAN MATRIX IN TERMS OF THIS SYSTEM ARE GIVEN WITHOUT
+ UNITS. FOR MORE DETAILS SEE THE MANUAL.
+
+ INITIAL TRUST RADIUS         0.50000 MAXIMUM TRUST RADIUS               4.00000
+ MAXIMUM GRADIENT COMPONENT   0.00045 MAXIMUM DISPLACEMENT COMPONENT     0.00180
+ R.M.S. OF GRADIENT COMPONENT 0.00030 R.M.S. OF DISPLACEMENT COMPONENTS  0.00120
+ THRESHOLD ON ENERGY CHANGE 0.100E-06 EXTRAPOLATING POLYNOMIAL ORDER           2
+ MAXIMUM ALLOWED NUMBER OF STEPS   -1 SORTING OF ENERGY POINTS:               NO
+ ANALYTICAL  GRADIENT                 HESSIAN UPDATING                      BFGS
+ STEP SIZE NUMERICAL GRADIENT 0.00100
+ INITIAL HESSIAN MATRIX: SCHLEGEL MODEL 2
+ *******************************************************************************
+
+
+ EOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOS
+
+                       EQUATION OF STATE CALCULATION
+
+ INFORMATION **** TOLDEX **** CONVERGENCE CRITERION FOR RMS DISPLACEMENT MODIFIED  6.200000E-04
+ INFORMATION **** TOLDEG **** MODIFY CONVERGENCE CRITERION FOR RMS GRADIENT  3.000000E-04
+ INFORMATION **** TOLDEE **** CONVERGENCE CRITERION FOR ENERGY MODIFIED: 10**-           9
+ TEMPERATURE FOR THERMO ANALYSIS   10.00 KELVIN -  600.00 KELVIN (POINTS 60)
+
+ GCALCO - MAX INDICES DIRECT LATTICE VECTOR    14    14    14
+ NO.OF VECTORS CREATED 6999 STARS  105 RMAX    50.12865 BOHR
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    3
+ (NON PERIODIC DIRECTION: LATTICE PARAMETER FORMALLY SET TO 500)
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL - CENTRING CODE 5/0 VOLUME=    11.135747 - DENSITY  3.579 g/cm^3
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.50656004     2.50656004     2.50656004    60.000000  60.000000  60.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    1 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL
+ -1.0000  1.0000  1.0000  1.0000 -1.0000  1.0000  1.0000  1.0000 -1.0000
+
+ *******************************************************************************
+ CRYSTALLOGRAPHIC CELL (VOLUME=         44.54298604)
+         A              B              C           ALPHA      BETA       GAMMA 
+     3.54481120     3.54481120     3.54481120    90.000000  90.000000  90.000000
+
+ COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ T = ATOM BELONGING TO THE ASYMMETRIC UNIT
+
+ ****   48 SYMMOPS - TRANSLATORS IN FRACTIONAL UNITS
+ **** MATRICES AND TRANSLATORS IN THE CRYSTALLOGRAPHIC REFERENCE FRAME
+   V INV                    ROTATION MATRICES                   TRANSLATORS
+   1   1  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00
+   2   2  0.00  1.00 -0.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   3   3 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  0.00  1.00 -0.00  0.50  0.00 -0.00
+   4   4 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+   5   6  0.00 -0.00  1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+   6   5  0.00  1.00 -0.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.00  0.00  0.00
+   7   8  1.00  0.00  0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   8   7  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+   9  10 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  10   9 -0.00 -0.00  1.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  11  12 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+  12  11 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.50  0.00 -0.00
+  13  13 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  14  14 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  15  16  0.00  0.00 -1.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  16  15  1.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  17  17 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  18  18 -0.00  0.00 -1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  19  21 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  20  22  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.50  0.00 -0.00
+  21  19  0.00 -1.00  0.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  22  20  0.00 -1.00  0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  23  23  1.00  1.00  1.00  0.00 -1.00  0.00 -0.00  0.00 -1.00  0.50  0.00 -0.00
+  24  24 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  25  25 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  26  26 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  27  27  1.00  1.00  1.00  0.00  0.00 -1.00 -0.00 -1.00  0.00  0.50  0.00 -0.00
+  28  28  0.00  0.00 -1.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  29  30 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  30  29 -0.00 -1.00  0.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  31  32 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  32  31 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  33  34  1.00  1.00  1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  34  33  0.00  0.00 -1.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  35  36  0.00 -1.00  0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  36  35  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.50  0.00 -0.00
+  37  37  0.00  1.00 -0.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.00  0.00  0.00
+  38  38  1.00  0.00  0.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  39  40 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+  40  39 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  41  41  1.00  0.00  0.00  0.00 -0.00  1.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+  42  42  0.00 -0.00  1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.00  0.00  0.00
+  43  45  0.00 -0.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  44  46 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.50  0.00 -0.00
+  45  43 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+  46  44 -0.00  1.00 -0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  47  47 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  0.00 -0.00  1.00  0.50  0.00 -0.00
+  48  48  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+
+ DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)
+          X                    Y                    Z
+   0.000000000000E+00   0.177240560000E+01   0.177240560000E+01
+   0.177240560000E+01   0.000000000000E+00   0.177240560000E+01
+   0.177240560000E+01   0.177240560000E+01   0.000000000000E+00
+
+
+ CARTESIAN COORDINATES - PRIMITIVE CELL
+ *******************************************************************************
+ *      ATOM          X(ANGSTROM)         Y(ANGSTROM)         Z(ANGSTROM)
+ *******************************************************************************
+    1     6 C     4.431014000000E-01  4.431014000000E-01  4.431014000000E-01
+    2     6 C    -4.431014000000E-01 -4.431014000000E-01 -4.431014000000E-01
+
+ *******************************************************************************
+ LOCAL ATOMIC FUNCTIONS BASIS SET
+ *******************************************************************************
+   ATOM   X(AU)   Y(AU)   Z(AU)  N. TYPE  EXPONENT  S COEF   P COEF   D/F/G COEF
+ *******************************************************************************
+   1 C    0.837   0.837   0.837
+                                  1 S  
+                                         1.358E+04 2.225E-04 0.000E+00 0.000E+00
+                                         2.035E+03 1.723E-03 0.000E+00 0.000E+00
+                                         4.632E+02 8.926E-03 0.000E+00 0.000E+00
+                                         1.312E+02 3.573E-02 0.000E+00 0.000E+00
+                                         4.285E+01 1.108E-01 0.000E+00 0.000E+00
+                                         1.558E+01 2.430E-01 0.000E+00 0.000E+00
+                                  2 S  
+                                         6.207E+00 4.144E-01 0.000E+00 0.000E+00
+                                         2.576E+00 2.374E-01 0.000E+00 0.000E+00
+                                  3 S  
+                                         4.941E-01 1.000E+00 0.000E+00 0.000E+00
+                                  4 S  
+                                         1.644E-01 1.000E+00 0.000E+00 0.000E+00
+                           5-     7 P  
+                                         3.470E+01 0.000E+00 5.333E-03 0.000E+00
+                                         7.958E+00 0.000E+00 3.586E-02 0.000E+00
+                                         2.378E+00 0.000E+00 1.422E-01 0.000E+00
+                                         8.143E-01 0.000E+00 3.427E-01 0.000E+00
+                           8-    10 P  
+                                         5.662E-01 0.000E+00 1.000E+00 0.000E+00
+                          11-    13 P  
+                                         2.674E-01 0.000E+00 1.000E+00 0.000E+00
+                          14-    18 D  
+                                         8.792E-01 0.000E+00 0.000E+00 1.000E+00
+   2 C   -0.837  -0.837  -0.837
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+ INFORMATION **** READM2 **** NEW DEFAULT: FOCK/KS MATRIX MIXING SET TO 30 %
+ INFORMATION **** READM2 **** NEW DEFAULT: FULL DIRECT SCF MODE
+ INFORMATION **** READM2 **** NEW DEFAULT: COULOMB BIPOLAR BUFFER SET TO 32 Mb
+ INFORMATION **** READM2 **** NEW DEFAULT: EXCHANGE BIPOLAR BUFFER SET TO 32 Mb
+
+ *******************************************************************************
+ NEW DEFAULT: DFT INTEGRATION GRID INCREASED TO XLGRID
+ NEW DEFAULT: DIIS ACCELERATOR ACTIVE
+ USE KEYWORD NODIIS TO TURN IT OFF
+ *******************************************************************************
+
+ INFORMATION **** DFTD3_INPUT **** PERFORM LATEST DISPERSION CORRECTION DFT-D3(BJ) WITH AUTOMATIC PARAMETER SETUP
+ PLEASE CITE:
+ (1) DFT-D3 Reference
+  S. Grimme, J. Antony, S. Ehrlich, and H. Krieg, J. Chem. Phys. 132 (2010), 154104
+ (2) BJ-Damping Reference
+  S. Grimme, S. Ehrlich, and L. Goerigk, J. Comput. Chem. 32 (2011), 1456-1465
+ (3) General DFT-D Review
+  S. Grimme, A. Hansen, J. G. Brandenburg, and C. Bannwarth,
+  Chem. Rev. 116 (2016), 5105-5154
+
+ INFORMATION **** SPINLOCK **** LOCK IN A GIVEN SPIN STATE
+ ALPHA-BETA ELECTRONS LOCKED TO   0 FOR  50 SCF CYCLES
+ INFORMATION **** TOLINTEG **** COULOMB AND EXCHANGE SERIES TOLERANCES MODIFIED
+ INFORMATION **** TOLDEE **** SCF TOL ON TOTAL ENERGY SET TO          10
+ INFORMATION **** READM2 **** FULL DIRECT SCF (MONO AND BIEL INT) SELECTED
+ INFORMATION **** MAXCYCLE **** MAX NUMBER OF SCF CYCLES SET TO        1600
+ INFORMATION **** DIIS **** DIIS FOR SCF ACTIVE
+ INFORMATION **** DIIS **** LEVEL SHIFTER DISABLED
+ INFORMATION **** READM2 ****  FREQCALC - MULLIKEN POPULATION ANALYSIS NOT PERFORMED
+ *******************************************************************************
+ N. OF ATOMS PER CELL         2  COULOMB OVERLAP TOL         (T1) 10**   -7
+
+ PRIMITIVE CELL - CENTRING CODE 5/0 VOLUME=    10.801674 - DENSITY  3.690 g/cm^3
+
+ HARMONIC VIBRATIONAL CONTRIBUTIONS TO THERMODYNAMIC FUNCTIONS AT GIVEN
+ TEMPERATURE AND PRESSURE:
+
+ (EL = ELECTRONIC ENERGY
+  E0 = ZERO-POINT ENERGY
+  ET = THERMAL CONTRIBUTION TO THE VIBRATIONAL ENERGY
+  PV = PRESSURE * VOLUME
+  TS = TEMPERATURE * ENTROPY)
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ EL            :     -76.216732931104   -2073.962741283668     -200107.00411042
+ E0            :       0.009707293480       0.264148884653          25.48649544
+
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   10.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000251042       0.000006831205           0.00065911
+ EL+E0+ET+PV-TS:     -76.207025386582   -2073.698585567810     -200081.51695587
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   50.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000251042       0.000006831205           0.00065911
+ EL+E0+ET+PV-TS:     -76.207025386582   -2073.698585567810     -200081.51695587
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  100.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000026       0.000000000704           0.00000007
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000000000027       0.000000000739           0.00000007
+ ET+PV-TS      :       0.000000251041       0.000006831171           0.00065911
+ EL+E0+ET+PV-TS:     -76.207025386583   -2073.698585567844     -200081.51695587
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000272       0.000000007390           0.00000071
+ HEAT CAPACITY :       0.000000005291       0.000000143966           0.00001389
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  150.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000023521       0.000000640046           0.00006176
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000000025248       0.000000687026           0.00006629
+ ET+PV-TS      :       0.000000249316       0.000006784225           0.00065458
+ EL+E0+ET+PV-TS:     -76.207025388308   -2073.698585614790     -200081.51696040
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000168318       0.000004580175           0.00044192
+ HEAT CAPACITY :       0.000002136302       0.000058131719           0.00560886
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  200.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000708994       0.000019292717           0.00186146
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000000778382       0.000021180845           0.00204364
+ ET+PV-TS      :       0.000000181655       0.000004943078           0.00047693
+ EL+E0+ET+PV-TS:     -76.207025455969   -2073.698587455937     -200081.51713805
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000003891909       0.000105904224           0.01021821
+ HEAT CAPACITY :       0.000036222867       0.000985674316           0.09510312
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  250.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000005473304       0.000148936178           0.01437016
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000006142794       0.000167153932           0.01612790
+ ET+PV-TS      :      -0.000000418448      -0.000011386549          -0.00109864
+ EL+E0+ET+PV-TS:     -76.207026056072   -2073.698603785564     -200081.51871362
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000024571177       0.000668615730           0.06451162
+ HEAT CAPACITY :       0.000179009532       0.004871097002           0.46998946
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  300.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000021393029       0.000582133923           0.05616739
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000024531877       0.000667546303           0.06440843
+ ET+PV-TS      :      -0.000002887805      -0.000078581175          -0.00758193
+ EL+E0+ET+PV-TS:     -76.207028525429   -2073.698670980190     -200081.52519691
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000081772922       0.002225154344           0.21469478
+ HEAT CAPACITY :       0.000486286526       0.013232529093           1.27674509
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  350.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000056712651       0.001543229687           0.14889904
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000066411725       0.001807154910           0.17436396
+ ET+PV-TS      :      -0.000009448032      -0.000257094017          -0.02480580
+ EL+E0+ET+PV-TS:     -76.207035085656   -2073.698849493032     -200081.54242079
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000189747786       0.005163299742           0.49818274
+ HEAT CAPACITY :       0.000948843998       0.025819357805           2.49118956
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  400.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000118034760       0.003211889113           0.30990022
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000141068735       0.003838675429           0.37037591
+ ET+PV-TS      :      -0.000022782932      -0.000619955111          -0.05981658
+ EL+E0+ET+PV-TS:     -76.207048420556   -2073.699212354126     -200081.57743156
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000352671837       0.009596688571           0.92593978
+ HEAT CAPACITY :       0.001516723775       0.041272152152           3.98215771
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  450.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000209199206       0.005692599800           0.54925244
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000255019616       0.006939436547           0.66955391
+ ET+PV-TS      :      -0.000045569368      -0.001240005541          -0.11964236
+ EL+E0+ET+PV-TS:     -76.207071206992   -2073.699832404557     -200081.63725734
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000566710258       0.015420970104           1.48789757
+ HEAT CAPACITY :       0.002133898819       0.058066338900           5.60255056
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  500.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000331497685       0.009020510615           0.87034705
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000411921511       0.011208954164           1.08149977
+ ET+PV-TS      :      -0.000080172783      -0.002181612343          -0.21049361
+ EL+E0+ET+PV-TS:     -76.207105810407   -2073.700774011359     -200081.72810860
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000823843022       0.022417908328           2.16299955
+ HEAT CAPACITY :       0.002755989141       0.074994277175           7.23584847
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  550.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000484388591       0.013180883676           1.27176207
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000613157244       0.016684856864           1.60984412
+ ET+PV-TS      :      -0.000128517611      -0.003497141983          -0.33742294
+ EL+E0+ET+PV-TS:     -76.207154155235   -2073.702089540998     -200081.85503792
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001114831354       0.030336103390           2.92698931
+ HEAT CAPACITY :       0.003353939785       0.091265341395           8.80576767
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  600.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000666214315       0.018128613151           1.74914544
+ PV            :       0.000000251042       0.000006831205           0.00065911
+ TS            :       0.000858538543       0.023362021466           2.25409263
+ ET+PV-TS      :      -0.000192073186      -0.005226577110          -0.50428808
+ EL+E0+ET+PV-TS:     -76.207217710810   -2073.703818976126     -200082.02190306
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001430897572       0.038936702443           3.75682105
+ HEAT CAPACITY :       0.003911546645       0.106438595452          10.26976427
+
+ *******************************************************************************
+
+ PRIMITIVE CELL - CENTRING CODE 5/1 VOLUME=    11.476637 - DENSITY  3.473 g/cm^3
+
+ HARMONIC VIBRATIONAL CONTRIBUTIONS TO THERMODYNAMIC FUNCTIONS AT GIVEN
+ TEMPERATURE AND PRESSURE:
+
+ (EL = ELECTRONIC ENERGY
+  E0 = ZERO-POINT ENERGY
+  ET = THERMAL CONTRIBUTION TO THE VIBRATIONAL ENERGY
+  PV = PRESSURE * VOLUME
+  TS = TEMPERATURE * ENTROPY)
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ EL            :     -76.216803121174   -2073.964651252576     -200107.18839442
+ E0            :       0.009166493947       0.249432981218          24.06662647
+
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   10.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000266729       0.000007258066           0.00070030
+ EL+E0+ET+PV-TS:     -76.207636360498   -2073.715211013292     -200083.12106766
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   50.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000266729       0.000007258066           0.00070030
+ EL+E0+ET+PV-TS:     -76.207636360498   -2073.715211013292     -200083.12106766
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  100.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000076       0.000000002077           0.00000020
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000000000080       0.000000002185           0.00000021
+ ET+PV-TS      :       0.000000266725       0.000007257958           0.00070029
+ EL+E0+ET+PV-TS:     -76.207636360502   -2073.715211013400     -200083.12106767
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000803       0.000000021845           0.00000211
+ HEAT CAPACITY :       0.000000014728       0.000000400777           0.00003867
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  150.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000047445       0.000001291035           0.00012457
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000000051133       0.000001391390           0.00013425
+ ET+PV-TS      :       0.000000263041       0.000007157711           0.00069061
+ EL+E0+ET+PV-TS:     -76.207636364186   -2073.715211113647     -200083.12107734
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000340884       0.000009275935           0.00089499
+ HEAT CAPACITY :       0.000004069071       0.000110725063           0.01068335
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  200.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000001182976       0.000032190424           0.00310590
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000001305580       0.000035526634           0.00342780
+ ET+PV-TS      :       0.000000144126       0.000003921856           0.00037840
+ EL+E0+ET+PV-TS:     -76.207636483102   -2073.715214349503     -200083.12138956
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000006527899       0.000177633170           0.01713900
+ HEAT CAPACITY :       0.000057073351       0.001553044835           0.14984606
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  250.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000008150761       0.000221793469           0.02139982
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000009206489       0.000250521309           0.02417163
+ ET+PV-TS      :      -0.000000789000      -0.000021469774          -0.00207152
+ EL+E0+ET+PV-TS:     -76.207637416227   -2073.715239741132     -200083.12383948
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000036825957       0.001002085237           0.09668654
+ HEAT CAPACITY :       0.000251767939       0.006850953928           0.66101663
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  300.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000029539898       0.000803821503           0.07755699
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000034128616       0.000928686857           0.08960467
+ ET+PV-TS      :      -0.000004321989      -0.000117607288          -0.01134738
+ EL+E0+ET+PV-TS:     -76.207640949216   -2073.715335878646     -200083.13311534
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000113762054       0.003095622858           0.29868223
+ HEAT CAPACITY :       0.000634388017       0.017262575565           1.66558550
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  350.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000074223137       0.002019714235           0.19487282
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000087658222       0.002385301482           0.23014663
+ ET+PV-TS      :      -0.000013168356      -0.000358329181          -0.03457351
+ EL+E0+ET+PV-TS:     -76.207649795583   -2073.715576600540     -200083.15634147
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000250452062       0.006815147093           0.65756180
+ HEAT CAPACITY :       0.001173943576       0.031944628734           3.08218842
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  400.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000148454464       0.004039651341           0.38976714
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000179103125       0.004873643801           0.47023519
+ ET+PV-TS      :      -0.000030381932      -0.000826734395          -0.07976775
+ EL+E0+ET+PV-TS:     -76.207667009159   -2073.716045005753     -200083.20153571
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000447757812       0.012184109503           1.17558797
+ HEAT CAPACITY :       0.001804949922       0.049115184352           4.73889535
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  450.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000255204412       0.006944465109           0.67003909
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000314306934       0.008552726497           0.82521274
+ ET+PV-TS      :      -0.000058835793      -0.001601003322          -0.15447335
+ EL+E0+ET+PV-TS:     -76.207695463020   -2073.716819274681     -200083.27624131
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000698459854       0.019006058882           1.83380609
+ HEAT CAPACITY :       0.002465791346       0.067097593701           6.47393427
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  500.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000394795596       0.010742934333           1.03653569
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000496004392       0.013496965681           1.30225935
+ ET+PV-TS      :      -0.000100942067      -0.002746773281          -0.26502336
+ EL+E0+ET+PV-TS:     -76.207737569294   -2073.717965044640     -200083.38679132
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000992008784       0.026993931361           2.60451870
+ HEAT CAPACITY :       0.003112968218       0.084708171705           8.17309691
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  550.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000565841547       0.015397331290           1.48561677
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000724678193       0.019719496151           1.90264233
+ ET+PV-TS      :      -0.000158569917      -0.004314906795          -0.41632526
+ EL+E0+ET+PV-TS:     -76.207795197144   -2073.719533178154     -200083.53809322
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001317596715       0.035853629366           3.45934969
+ HEAT CAPACITY :       0.003721006043       0.101253722062           9.76949999
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  600.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000766036476       0.020844912234           2.01122848
+ PV            :       0.000000266729       0.000007258066           0.00070030
+ TS            :       0.000999378061       0.027194459579           2.62386673
+ ET+PV-TS      :      -0.000233074856      -0.006342289279          -0.61193795
+ EL+E0+ET+PV-TS:     -76.207869702083   -2073.721560560638     -200083.73370591
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001665630102       0.045324099298           4.37311122
+ HEAT CAPACITY :       0.004277737663       0.116403159637          11.23119865
+
+ *******************************************************************************
+
+ PRIMITIVE CELL - CENTRING CODE 5/1 VOLUME=    11.824414 - DENSITY  3.370 g/cm^3
+
+ HARMONIC VIBRATIONAL CONTRIBUTIONS TO THERMODYNAMIC FUNCTIONS AT GIVEN
+ TEMPERATURE AND PRESSURE:
+
+ (EL = ELECTRONIC ENERGY
+  E0 = ZERO-POINT ENERGY
+  ET = THERMAL CONTRIBUTION TO THE VIBRATIONAL ENERGY
+  PV = PRESSURE * VOLUME
+  TS = TEMPERATURE * ENTROPY)
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ EL            :     -76.215282246079   -2073.923266137282     -200103.19533743
+ E0            :       0.008911113823       0.242483734772          23.39612605
+
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   10.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000274812       0.000007478008           0.00072152
+ EL+E0+ET+PV-TS:     -76.206370857444   -2073.680774924503     -200079.79848986
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   50.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000274812       0.000007478008           0.00072152
+ EL+E0+ET+PV-TS:     -76.206370857444   -2073.680774924503     -200079.79848986
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  100.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000127       0.000000003456           0.00000033
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000000000134       0.000000003641           0.00000035
+ ET+PV-TS      :       0.000000274805       0.000007477823           0.00072150
+ EL+E0+ET+PV-TS:     -76.206370857451   -2073.680774924687     -200079.79848988
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000001338       0.000000036407           0.00000351
+ HEAT CAPACITY :       0.000000023828       0.000000648402           0.00006256
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  150.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000066004       0.000001796071           0.00017329
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000000071282       0.000001939684           0.00018715
+ ET+PV-TS      :       0.000000269534       0.000007334394           0.00070766
+ EL+E0+ET+PV-TS:     -76.206370862722   -2073.680775068116     -200079.79850372
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000475214       0.000012931228           0.00124767
+ HEAT CAPACITY :       0.000005503131       0.000149747809           0.01444847
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  200.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000001504719       0.000040945497           0.00395064
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000001665136       0.000045310654           0.00437181
+ ET+PV-TS      :       0.000000114395       0.000003112851           0.00030034
+ EL+E0+ET+PV-TS:     -76.206371017861   -2073.680779289659     -200079.79891104
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000008325680       0.000226553269           0.02185907
+ HEAT CAPACITY :       0.000070574889       0.001920440372           0.18529435
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  250.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000009825776       0.000267372957           0.02579757
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000011134865       0.000302995080           0.02923458
+ ET+PV-TS      :      -0.000001034277      -0.000028144115          -0.00271549
+ EL+E0+ET+PV-TS:     -76.206372166533   -2073.680810546625     -200079.80192688
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000044539460       0.001211980319           0.11693834
+ HEAT CAPACITY :       0.000295083016       0.008029617071           0.77474035
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  300.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000034363956       0.000935090774           0.09022255
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000039854154       0.001084486670           0.10463707
+ ET+PV-TS      :      -0.000005215387      -0.000141917888          -0.01369300
+ EL+E0+ET+PV-TS:     -76.206376347643   -2073.680924320399     -200079.81290438
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000132847181       0.003614955565           0.34879022
+ HEAT CAPACITY :       0.000717654187       0.019528363233           1.88420080
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  350.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000084191806       0.002290975514           0.22104556
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000099862783       0.002717404486           0.26218970
+ ET+PV-TS      :      -0.000015396166      -0.000418950965          -0.04042263
+ EL+E0+ET+PV-TS:     -76.206386528422   -2073.681201353475     -200079.83963401
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000285322238       0.007764012818           0.74911343
+ HEAT CAPACITY :       0.001295383935       0.035249188910           3.40103004
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  400.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000165271982       0.004497279280           0.43392153
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000200350019       0.005451801185           0.52601890
+ ET+PV-TS      :      -0.000034803225      -0.000947043897          -0.09137585
+ EL+E0+ET+PV-TS:     -76.206405935481   -2073.681729446407     -200079.89058723
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000500875048       0.013629502962           1.31504725
+ HEAT CAPACITY :       0.001955717257       0.053217772093           5.13473493
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  450.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000280072293       0.007621154533           0.73532970
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000346733684       0.009435103207           0.91034916
+ ET+PV-TS      :      -0.000066386579      -0.001806470667          -0.17429794
+ EL+E0+ET+PV-TS:     -76.206437518835   -2073.682588873177     -200079.97350932
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000770519297       0.020966896016           2.02299813
+ HEAT CAPACITY :       0.002635329304       0.071710956087           6.91905611
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  500.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000428411206       0.011657661581           1.12479346
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000541246398       0.014728063246           1.42104222
+ ET+PV-TS      :      -0.000112560380      -0.003062923658          -0.29552724
+ EL+E0+ET+PV-TS:     -76.206483692636   -2073.683845326168     -200080.09473862
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001082492796       0.029456126493           2.84208443
+ HEAT CAPACITY :       0.003291962663       0.089578858158           8.64304675
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  550.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000608490569       0.016557870156           1.59759176
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.000783914163       0.021331388851           2.05816635
+ ET+PV-TS      :      -0.000175148783      -0.004766040687          -0.45985307
+ EL+E0+ET+PV-TS:     -76.206546281039   -2073.685548443198     -200080.25906445
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001425298479       0.038784343366           3.74212063
+ HEAT CAPACITY :       0.003902354753       0.106188471347          10.24563096
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  600.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000817704957       0.022250883085           2.14688406
+ PV            :       0.000000274812       0.000007478008           0.00072152
+ TS            :       0.001073417651       0.029209179241           2.81825764
+ ET+PV-TS      :      -0.000255437882      -0.006950818148          -0.67065207
+ EL+E0+ET+PV-TS:     -76.206626570138   -2073.687733220658     -200080.46986345
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001789029418       0.048681965401           4.69709607
+ HEAT CAPACITY :       0.004456505874       0.121267689954          11.70055452
+
+ *******************************************************************************
+
+ PRIMITIVE CELL - CENTRING CODE 5/1 VOLUME=    11.135747 - DENSITY  3.579 g/cm^3
+
+ HARMONIC VIBRATIONAL CONTRIBUTIONS TO THERMODYNAMIC FUNCTIONS AT GIVEN
+ TEMPERATURE AND PRESSURE:
+
+ (EL = ELECTRONIC ENERGY
+  E0 = ZERO-POINT ENERGY
+  ET = THERMAL CONTRIBUTION TO THE VIBRATIONAL ENERGY
+  PV = PRESSURE * VOLUME
+  TS = TEMPERATURE * ENTROPY)
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ EL            :     -76.217314636879   -2073.978570302535     -200108.53137872
+ E0            :       0.009431884822       0.256654634087          24.76341011
+
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   10.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000258806       0.000007042480           0.00067950
+ EL+E0+ET+PV-TS:     -76.207882493250   -2073.721908625968     -200083.76728911
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =   50.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000000       0.000000000000           0.00000000
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000000000000       0.000000000000           0.00000000
+ ET+PV-TS      :       0.000000258806       0.000007042480           0.00067950
+ EL+E0+ET+PV-TS:     -76.207882493250   -2073.721908625968     -200083.76728911
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000000       0.000000000000           0.00000000
+ HEAT CAPACITY :       0.000000000000       0.000000000000           0.00000000
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  100.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000000045       0.000000001222           0.00000012
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000000000047       0.000000001284           0.00000012
+ ET+PV-TS      :       0.000000258804       0.000007042418           0.00067949
+ EL+E0+ET+PV-TS:     -76.207882493252   -2073.721908626030     -200083.76728912
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000000472       0.000000012838           0.00000124
+ HEAT CAPACITY :       0.000000008919       0.000000242693           0.00002342
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  150.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000033638       0.000000915325           0.00008832
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000000036179       0.000000984473           0.00009499
+ ET+PV-TS      :       0.000000256265       0.000006973331           0.00067282
+ EL+E0+ET+PV-TS:     -76.207882495791   -2073.721908695117     -200083.76729578
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000000241191       0.000006563154           0.00063325
+ HEAT CAPACITY :       0.000002968434       0.000080775186           0.00779362
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  200.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000000920547       0.000025049369           0.00241690
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000001013269       0.000027572453           0.00266034
+ ET+PV-TS      :       0.000000166085       0.000004519396           0.00043606
+ EL+E0+ET+PV-TS:     -76.207882585971   -2073.721911149053     -200083.76753255
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000005066345       0.000137862267           0.01330169
+ HEAT CAPACITY :       0.000045697441       0.001243490579           0.11997861
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  250.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000006706564       0.000182494878           0.01760808
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000007550828       0.000205468475           0.01982470
+ ET+PV-TS      :      -0.000000585458      -0.000015931117          -0.00153712
+ EL+E0+ET+PV-TS:     -76.207883337514   -2073.721931599565     -200083.76950573
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000030203312       0.000821873901           0.07929878
+ HEAT CAPACITY :       0.000213137034       0.005799753547           0.55959120
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  300.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000025223565       0.000686368111           0.06622446
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000029032057       0.000790002444           0.07622366
+ ET+PV-TS      :      -0.000003549686      -0.000096591853          -0.00931970
+ EL+E0+ET+PV-TS:     -76.207886301742   -2073.722012260302     -200083.77728830
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000096773525       0.002633341481           0.25407885
+ HEAT CAPACITY :       0.000557222691       0.015162800294           1.46298797
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  350.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000065065453       0.001770520992           0.17082932
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000076514942       0.002082077414           0.20088995
+ ET+PV-TS      :      -0.000011190682      -0.000304513943          -0.02938113
+ EL+E0+ET+PV-TS:     -76.207893942738   -2073.722220182391     -200083.79734974
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000218614119       0.005948792612           0.57397129
+ HEAT CAPACITY :       0.001058264612       0.028796844108           2.77847335
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  400.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000132700069       0.003610952460           0.34840398
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000159339414       0.004335845892           0.41834557
+ ET+PV-TS      :      -0.000026380539      -0.000717850953          -0.06926209
+ EL+E0+ET+PV-TS:     -76.207909132595   -2073.722633519400     -200083.83723070
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000398348536       0.010839614730           1.04586393
+ HEAT CAPACITY :       0.001658364843       0.045126401556           4.35403628
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  450.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000231557516       0.006301000334           0.60795417
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000283717192       0.007720337296           0.74489938
+ ET+PV-TS      :      -0.000051900870      -0.001412294483          -0.13626572
+ EL+E0+ET+PV-TS:     -76.207934652927   -2073.723327962931     -200083.90423432
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000630482649       0.017156305102           1.65533196
+ HEAT CAPACITY :       0.002298354276       0.062541399394           6.03432830
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  500.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000362453739       0.009862867649           0.95162216
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000452860057       0.012322948639           1.18898391
+ ET+PV-TS      :      -0.000090147512      -0.002453038510          -0.23668226
+ EL+E0+ET+PV-TS:     -76.207972899568   -2073.724368706958     -200084.00465087
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.000905720114       0.024645897277           2.37796782
+ HEAT CAPACITY :       0.002934016657       0.079838652156           7.70325965
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  550.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000524422724       0.014270267803           1.37687167
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000667704734       0.018169169526           1.75305853
+ ET+PV-TS      :      -0.000143023204      -0.003891859243          -0.37550737
+ EL+E0+ET+PV-TS:     -76.208025775260   -2073.725807527691     -200084.14347598
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001214008608       0.033034853683           3.18737915
+ HEAT CAPACITY :       0.003537931818       0.096272019136           9.28883868
+
+ *******************************************************************************
+
+ THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS
+
+ AT (T =  600.00 K, P =   0.10132500E+00 MPA):
+
+                          AU/CELL             EV/CELL                 KJ/MOL
+ ET            :       0.000715475518       0.019469078638           1.87848071
+ PV            :       0.000000258806       0.000007042480           0.00067950
+ TS            :       0.000927679105       0.025243431799           2.43562115
+ ET+PV-TS      :      -0.000211944780      -0.005767310680          -0.55646094
+ EL+E0+ET+PV-TS:     -76.208094696837   -2073.727682979129     -200084.32442955
+
+ OTHER THERMODYNAMIC FUNCTIONS:
+
+                      mHARTREE/(CELL*K)     mEV/(CELL*K)              J/(MOL*K)
+ ENTROPY       :       0.001546131842       0.042072386331           4.05936858
+ HEAT CAPACITY :       0.004095851831       0.111453794530          10.75365747
+
+ *******************************************************************************
+
+ *******************************************************************************
+ *******************************************************************************
+ *******************************************************************************
+
+                           QUASI-HARMONIC APPROXIMATION
+                                  A. Erba (2014)
+
+       Please do cite the following references when using this module:
+
+ A. Erba, J. Chem. Phys., 141, 124115 (2014)
+ A. Erba, M. Shahrokhi, R. Moradian, R. Dovesi, J. Chem. Phys., 142, 044114 (2015)
+ A. Erba, J. Maul, M. De la Pierre, R. Dovesi, J. Chem. Phys., 142, 204502 (2015)
+ A. Erba, J. Maul, M. Itou, R. Dovesi, Y. Sakurai, Phys. Rev. Lett., 115, 117402 (2015)
+
+ *******************************************************************************
+ *******************************************************************************
+ *******************************************************************************
+
+
+ ESTABLISHING CONTINUITY OF NORMAL MODES ON VOLUME
+
+ ANALYSIS OF NORMAL MODE SCALAR PRODUCTS:
+ WHEN TWO OR MORE SCALAR PRODUCTS ARE CLOSER THAN 0.4 THEY ARE REPORTED
+ AS THEY MAY CAUSE A MISMATCH.
+ OTHERWISE, THE CONTINUITY IS CONSIDERED AS SAFE
+
+
+ FOUND CONTINUITY OF FREQUENCIES WITH VOLUME:
+
+
+ FREQUENCY #     1
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017      0.0000       2
+      11.1357      0.0000       2
+      11.4766      0.0000       2
+      11.8244      0.0000       2
+
+ FREQUENCY #     2
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017      0.0000       2
+      11.1357      0.0000       2
+      11.4766      0.0000       2
+      11.8244      0.0000       2
+
+ FREQUENCY #     3
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017      0.0000       2
+      11.1357      0.0000       2
+      11.4766      0.0000       2
+      11.8244      0.0000       2
+
+ FREQUENCY #     4
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017   1420.3364       1
+      11.1357   1380.0396       1
+      11.4766   1341.2086       1
+      11.8244   1303.8423       1
+
+ FREQUENCY #     5
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017   1420.3364       1
+      11.1357   1380.0396       1
+      11.4766   1341.2086       1
+      11.8244   1303.8423       1
+
+ FREQUENCY #     6
+    VOL (A^3)   FREQ (cm^-1)   IRREP
+
+      10.8017   1420.3364       1
+      11.1357   1380.0396       1
+      11.4766   1341.2086       1
+      11.8244   1303.8423       1
+
+ FITTING FREQUENCIES VERSUS VOLUME FOR MAX. NUMBER OF POINTS
+ THE COEFFICIENT OF DETERMINATION R^2 IS REPORTED
+ FOR DIFFERENT POLYNOMIAL FITTING ORDERS.
+ ONLY ONE FREQ PER MODE IS REPORTED.
+
+ FREQ #    R^2 LINEAR   R^2 QUADRATIC   R^2 CUBIC
+
+      4     0.999331       1.000000     1.000000
+
+ AVERAGE    0.999331       1.000000     1.000000
+
+ *******************************************************************************
+ THERMAL PROPERTIES FROM GRUNEISEN PARAMETERS
+ *******************************************************************************
+
+
+ NUMBER OF POINTS: 4
+
+    ORDER OF POLYNOMIALS: 2
+
+    T (K)    ALPHA (1/K)       V (Ang^3)    GRUNEISEN   Cp-Cv (J/mol*K)
+
+    10.00     0.16983E-86        11.1357        0.919        0.0000
+    20.00     0.55462E-44        11.1357        0.919        0.0000
+    30.00     0.58053E-30        11.1357        0.919        0.0000
+    40.00     0.50113E-23        11.1357        0.919        0.0000
+    50.00     0.65726E-19        11.1357        0.919        0.0000
+    60.00     0.34180E-16        11.1357        0.919        0.0000
+    70.00     0.28381E-14        11.1357        0.919        0.0000
+    80.00     0.75319E-13        11.1357        0.919        0.0000
+    90.00     0.93813E-12        11.1357        0.919        0.0000
+   100.00     0.69005E-11        11.1357        0.919        0.0000
+   110.00     0.34676E-10        11.1357        0.919        0.0000
+   120.00     0.13114E-09        11.1357        0.919        0.0000
+   130.00     0.39900E-09        11.1357        0.919        0.0000
+   140.00     0.10242E-08        11.1357        0.919        0.0000
+   150.00     0.22967E-08        11.1357        0.919        0.0000
+   160.00     0.46169E-08        11.1357        0.919        0.0000
+   170.00     0.84864E-08        11.1357        0.919        0.0000
+   180.00     0.14484E-07        11.1358        0.919        0.0000
+   190.00     0.23232E-07        11.1358        0.919        0.0000
+   200.00     0.35357E-07        11.1358        0.919        0.0000
+   210.00     0.51455E-07        11.1358        0.919        0.0000
+   220.00     0.72063E-07        11.1358        0.919        0.0000
+   230.00     0.97627E-07        11.1358        0.919        0.0000
+   240.00     0.12850E-06        11.1358        0.919        0.0000
+   250.00     0.16491E-06        11.1358        0.919        0.0000
+   260.00     0.20699E-06        11.1358        0.919        0.0000
+   270.00     0.25476E-06        11.1359        0.919        0.0001
+   280.00     0.30816E-06        11.1359        0.919        0.0001
+   290.00     0.36703E-06        11.1359        0.919        0.0001
+   300.00     0.43113E-06        11.1360        0.919        0.0002
+   310.00     0.50018E-06        11.1360        0.919        0.0002
+   320.00     0.57384E-06        11.1361        0.919        0.0003
+   330.00     0.65176E-06        11.1362        0.919        0.0004
+   340.00     0.73354E-06        11.1363        0.919        0.0006
+   350.00     0.81879E-06        11.1364        0.919        0.0007
+   360.00     0.90709E-06        11.1365        0.919        0.0009
+   370.00     0.99806E-06        11.1366        0.919        0.0011
+   380.00     0.10913E-05        11.1367        0.919        0.0014
+   390.00     0.11864E-05        11.1368        0.919        0.0017
+   400.00     0.12831E-05        11.1370        0.919        0.0021
+   410.00     0.13809E-05        11.1371        0.919        0.0024
+   420.00     0.14797E-05        11.1373        0.919        0.0029
+   430.00     0.15790E-05        11.1375        0.919        0.0033
+   440.00     0.16786E-05        11.1376        0.919        0.0039
+   450.00     0.17783E-05        11.1378        0.919        0.0044
+   460.00     0.18777E-05        11.1381        0.919        0.0051
+   470.00     0.19768E-05        11.1383        0.919        0.0057
+   480.00     0.20754E-05        11.1385        0.919        0.0064
+   490.00     0.21732E-05        11.1387        0.919        0.0072
+   500.00     0.22701E-05        11.1390        0.919        0.0080
+   510.00     0.23660E-05        11.1393        0.919        0.0089
+   520.00     0.24607E-05        11.1395        0.919        0.0098
+   530.00     0.25543E-05        11.1398        0.919        0.0108
+   540.00     0.26465E-05        11.1401        0.919        0.0118
+   550.00     0.27373E-05        11.1404        0.919        0.0129
+   560.00     0.28267E-05        11.1407        0.919        0.0140
+   570.00     0.29146E-05        11.1411        0.919        0.0151
+   580.00     0.30010E-05        11.1414        0.919        0.0163
+   590.00     0.30858E-05        11.1417        0.919        0.0175
+   600.00     0.31690E-05        11.1421        0.919        0.0188
+
+ *******************************************************************************
+ THERMAL PROPERTIES FROM HELMHOLTZ FREE ENERGY
+ *******************************************************************************
+
+
+ ZERO-POINT ENERGY INCLUDED
+
+
+ NUMBER OF POINTS: 4
+
+    ORDER OF POLYNOMIALS: 2
+
+    T (K)    V (Ang^3)    Bt (GPa)     ALPHA (1/K) Cp-Cv (J/mol*K) Bs (GPa) Sp-Sv (J/mol*K)
+
+    10.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    20.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    30.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    40.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    50.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    60.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    70.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    80.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+    90.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   100.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   110.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   120.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   130.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   140.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   150.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   160.00      11.2261      458.974     0.00000E+00       0.000      458.974       0.000
+   170.00      11.2261      458.973     0.00000E+00       0.000      458.973       0.000
+   180.00      11.2261      458.973     0.00000E+00       0.000      458.973       0.000
+   190.00      11.2261      458.972     0.00000E+00       0.000      458.972       0.001
+   200.00      11.2261      458.971     0.00000E+00       0.000      458.971       0.001
+   210.00      11.2261      458.970     0.00000E+00       0.000      458.970       0.001
+   220.00      11.2261      458.968     0.11614E-06       0.000      458.985       0.002
+   230.00      11.2261      458.966     0.17715E-06       0.000      458.997       0.003
+   240.00      11.2261      458.953     0.18007E-06       0.000      458.979       0.003
+   250.00      11.2261      458.950     0.23807E-06       0.000      458.986       0.004
+   260.00      11.2261      458.946     0.17714E-06       0.000      458.962       0.005
+   270.00      11.2262      458.931     0.29618E-06       0.000      458.970       0.007
+   280.00      11.2262      458.925     0.29911E-06       0.000      458.960       0.008
+   290.00      11.2263      458.909     0.29618E-06       0.000      458.938       0.010
+   300.00      11.2263      458.902     0.41522E-06       0.000      458.953       0.011
+   310.00      11.2263      458.885     0.47334E-06       0.000      458.943       0.013
+   320.00      11.2264      458.867     0.71142E-06       0.001      458.985       0.015
+   330.00      11.2265      458.848     0.77244E-06       0.001      458.975       0.017
+   340.00      11.2266      458.819     0.89147E-06       0.001      458.974       0.019
+   350.00      11.2267      458.800     0.89433E-06       0.001      458.943       0.022
+   360.00      11.2268      458.769     0.89147E-06       0.001      458.902       0.024
+   370.00      11.2269      458.749     0.10105E-05       0.001      458.908       0.026
+   380.00      11.2270      458.718     0.10687E-05       0.001      458.885       0.029
+   390.00      11.2271      458.687     0.13067E-05       0.002      458.922       0.031
+   400.00      11.2273      458.656     0.13677E-05       0.002      458.900       0.034
+   410.00      11.2275      458.614     0.14867E-05       0.003      458.889       0.037
+   420.00      11.2276      458.583     0.16057E-05       0.003      458.889       0.039
+   430.00      11.2278      458.541     0.16639E-05       0.004      458.857       0.042
+   440.00      11.2280      458.499     0.17856E-05       0.004      458.849       0.045
+   450.00      11.2282      458.457     0.19019E-05       0.005      458.841       0.048
+   460.00      11.2284      458.416     0.19627E-05       0.005      458.811       0.050
+   470.00      11.2287      458.364     0.20817E-05       0.006      458.796       0.053
+   480.00      11.2289      458.323     0.22007E-05       0.007      458.792       0.056
+   490.00      11.2292      458.272     0.22589E-05       0.008      458.754       0.059
+   500.00      11.2294      458.221     0.23805E-05       0.009      458.744       0.062
+   510.00      11.2297      458.171     0.24968E-05       0.010      458.733       0.064
+   520.00      11.2300      458.120     0.25576E-05       0.011      458.699       0.067
+   530.00      11.2303      458.061     0.26765E-05       0.012      458.682       0.070
+   540.00      11.2306      458.011     0.27954E-05       0.013      458.678       0.073
+   550.00      11.2309      457.952     0.28536E-05       0.014      458.636       0.075
+   560.00      11.2312      457.893     0.29751E-05       0.015      458.626       0.078
+   570.00      11.2316      457.835     0.30915E-05       0.017      458.616       0.081
+   580.00      11.2319      457.777     0.31521E-05       0.018      458.579       0.083
+   590.00      11.2323      457.710     0.32122E-05       0.019      458.534       0.086
+   600.00      11.2326      457.653     0.32715E-05       0.020      458.499       0.089
+
+ *******************************************************************************
+ LINEAR THERMAL EXPANSION OF CONVENTIONAL LATTICE PARAMETERS
+ *******************************************************************************
+
+
+    T (K)    a (Ang)    ALPHA_a (1/K)   b (Ang)    ALPHA_b (1/K)   c (Ang)    ALPHA_c (1/K)
+
+    10.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    20.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    30.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    40.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    50.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    60.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    70.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    80.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+    90.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   100.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   110.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   120.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   130.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   140.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   150.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   160.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   170.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   180.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   190.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   200.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   210.00   3.55437062   0.00000E+00   3.55437062   0.00000E+00   3.55437062   0.00000E+00
+   220.00   3.55437062   0.38712E-07   3.55437062   0.38712E-07   3.55437062   0.38712E-07
+   230.00   3.55437062   0.59050E-07   3.55437062   0.59050E-07   3.55437062   0.59050E-07
+   240.00   3.55437767   0.60023E-07   3.55437767   0.60023E-07   3.55437767   0.60023E-07
+   250.00   3.55437767   0.79357E-07   3.55437767   0.79357E-07   3.55437767   0.79357E-07
+   260.00   3.55437767   0.59047E-07   3.55437767   0.59047E-07   3.55437767   0.59047E-07
+   270.00   3.55438472   0.98726E-07   3.55438472   0.98726E-07   3.55438472   0.98726E-07
+   280.00   3.55438472   0.99702E-07   3.55438472   0.99702E-07   3.55438472   0.99702E-07
+   290.00   3.55439177   0.98727E-07   3.55439177   0.98727E-07   3.55439177   0.98727E-07
+   300.00   3.55439177   0.13841E-06   3.55439177   0.13841E-06   3.55439177   0.13841E-06
+   310.00   3.55439883   0.15778E-06   3.55439883   0.15778E-06   3.55439883   0.15778E-06
+   320.00   3.55440588   0.23714E-06   3.55440588   0.23714E-06   3.55440588   0.23714E-06
+   330.00   3.55441293   0.25748E-06   3.55441293   0.25748E-06   3.55441293   0.25748E-06
+   340.00   3.55442703   0.29716E-06   3.55442703   0.29716E-06   3.55442703   0.29716E-06
+   350.00   3.55443408   0.29811E-06   3.55443408   0.29811E-06   3.55443408   0.29811E-06
+   360.00   3.55444818   0.29716E-06   3.55444818   0.29716E-06   3.55444818   0.29716E-06
+   370.00   3.55445524   0.33683E-06   3.55445524   0.33683E-06   3.55445524   0.33683E-06
+   380.00   3.55446934   0.35622E-06   3.55446934   0.35622E-06   3.55446934   0.35622E-06
+   390.00   3.55448344   0.43557E-06   3.55448344   0.43557E-06   3.55448344   0.43557E-06
+   400.00   3.55449754   0.45589E-06   3.55449754   0.45589E-06   3.55449754   0.45589E-06
+   410.00   3.55451870   0.49556E-06   3.55451870   0.49556E-06   3.55451870   0.49556E-06
+   420.00   3.55453280   0.53523E-06   3.55453280   0.53523E-06   3.55453280   0.53523E-06
+   430.00   3.55455395   0.55462E-06   3.55455395   0.55462E-06   3.55455395   0.55462E-06
+   440.00   3.55457510   0.59520E-06   3.55457510   0.59520E-06   3.55457510   0.59520E-06
+   450.00   3.55459625   0.63396E-06   3.55459625   0.63396E-06   3.55459625   0.63396E-06
+   460.00   3.55461741   0.65425E-06   3.55461741   0.65425E-06   3.55461741   0.65425E-06
+   470.00   3.55464561   0.69391E-06   3.55464561   0.69391E-06   3.55464561   0.69391E-06
+   480.00   3.55466676   0.73357E-06   3.55466676   0.73357E-06   3.55466676   0.73357E-06
+   490.00   3.55469496   0.75296E-06   3.55469496   0.75296E-06   3.55469496   0.75296E-06
+   500.00   3.55472316   0.79349E-06   3.55472316   0.79349E-06   3.55472316   0.79349E-06
+   510.00   3.55475136   0.83227E-06   3.55475136   0.83227E-06   3.55475136   0.83227E-06
+   520.00   3.55477956   0.85253E-06   3.55477956   0.85253E-06   3.55477956   0.85253E-06
+   530.00   3.55481481   0.89218E-06   3.55481481   0.89218E-06   3.55481481   0.89218E-06
+   540.00   3.55484301   0.93182E-06   3.55484301   0.93182E-06   3.55484301   0.93182E-06
+   550.00   3.55487826   0.95122E-06   3.55487826   0.95122E-06   3.55487826   0.95122E-06
+   560.00   3.55491351   0.99169E-06   3.55491351   0.99169E-06   3.55491351   0.99169E-06
+   570.00   3.55494875   0.10305E-05   3.55494875   0.10305E-05   3.55494875   0.10305E-05
+   580.00   3.55498400   0.10507E-05   3.55498400   0.10507E-05   3.55498400   0.10507E-05
+   590.00   3.55502629   0.10707E-05   3.55502629   0.10707E-05   3.55502629   0.10707E-05
+   600.00   3.55506154   0.10905E-05   3.55506154   0.10905E-05   3.55506154   0.10905E-05
+
+ *******************************************************************************
+ PRESSURE-VOLUME-TEMPERATURE RELATION
+ *******************************************************************************
+
+
+    T (K)    V (Ang^3)    P (GPa)        F (Ha/cell)           G (Ha/cell)
+
+    10.00      10.802      18.952    -0.7620702568252E+02   -0.7616007029731E+02
+    10.00      10.837      17.248    -0.7620717208101E+02   -0.7616429878647E+02
+    10.00      10.872      15.569    -0.7620730479596E+02   -0.7616847977895E+02
+    10.00      10.907      13.914    -0.7620742402493E+02   -0.7617261382629E+02
+    10.00      10.943      12.283    -0.7620752996242E+02   -0.7617670147279E+02
+    10.00      10.978      10.675    -0.7620762279996E+02   -0.7618074325477E+02
+    10.00      11.013       9.090    -0.7620770272612E+02   -0.7618473970154E+02
+    10.00      11.049       7.528    -0.7620776992657E+02   -0.7618869133498E+02
+    10.00      11.084       5.989    -0.7620782458417E+02   -0.7619259867024E+02
+    10.00      11.119       4.472    -0.7620786687896E+02   -0.7619646221488E+02
+    10.00      11.154       2.976    -0.7620789698825E+02   -0.7620028247033E+02
+    10.00      11.190       1.502    -0.7620791508666E+02   -0.7620405993085E+02
+    10.00      11.225       0.049    -0.7620792134614E+02   -0.7620779508429E+02
+    10.00      11.260      -1.383    -0.7620791593607E+02   -0.7621148841139E+02
+    10.00      11.295      -2.795    -0.7620789902325E+02   -0.7621514038716E+02
+    10.00      11.331      -4.187    -0.7620787077198E+02   -0.7621875147976E+02
+    10.00      11.366      -5.558    -0.7620783134406E+02   -0.7622232215170E+02
+    10.00      11.401      -6.911    -0.7620778089889E+02   -0.7622585285873E+02
+    10.00      11.436      -8.244    -0.7620771959348E+02   -0.7622934405074E+02
+    10.00      11.472      -9.558    -0.7620764758249E+02   -0.7623279617179E+02
+    10.00      11.507     -10.853    -0.7620756501827E+02   -0.7623620966003E+02
+    10.00      11.542     -12.130    -0.7620747205090E+02   -0.7623958494775E+02
+    10.00      11.578     -13.388    -0.7620736882823E+02   -0.7624292246178E+02
+    10.00      11.613     -14.629    -0.7620725549593E+02   -0.7624622262329E+02
+    10.00      11.648     -15.853    -0.7620713219750E+02   -0.7624948584773E+02
+    10.00      11.683     -17.058    -0.7620699907433E+02   -0.7625271254531E+02
+    10.00      11.719     -18.247    -0.7620685626572E+02   -0.7625590312093E+02
+    10.00      11.754     -19.419    -0.7620670390893E+02   -0.7625905797410E+02
+    10.00      11.789     -20.575    -0.7620654213921E+02   -0.7626217749943E+02
+    10.00      11.824     -21.714    -0.7620637108980E+02   -0.7626526208592E+02
+    50.00      10.802      18.952    -0.7620702568252E+02   -0.7616007029731E+02
+    50.00      10.837      17.248    -0.7620717208101E+02   -0.7616429878647E+02
+    50.00      10.872      15.569    -0.7620730479596E+02   -0.7616847977895E+02
+    50.00      10.907      13.914    -0.7620742402493E+02   -0.7617261382629E+02
+    50.00      10.943      12.283    -0.7620752996242E+02   -0.7617670147279E+02
+    50.00      10.978      10.675    -0.7620762279996E+02   -0.7618074325477E+02
+    50.00      11.013       9.090    -0.7620770272612E+02   -0.7618473970154E+02
+    50.00      11.049       7.528    -0.7620776992657E+02   -0.7618869133498E+02
+    50.00      11.084       5.989    -0.7620782458417E+02   -0.7619259867024E+02
+    50.00      11.119       4.472    -0.7620786687896E+02   -0.7619646221488E+02
+    50.00      11.154       2.976    -0.7620789698825E+02   -0.7620028247033E+02
+    50.00      11.190       1.502    -0.7620791508666E+02   -0.7620405993085E+02
+    50.00      11.225       0.049    -0.7620792134614E+02   -0.7620779508429E+02
+    50.00      11.260      -1.383    -0.7620791593607E+02   -0.7621148841139E+02
+    50.00      11.295      -2.795    -0.7620789902325E+02   -0.7621514038716E+02
+    50.00      11.331      -4.187    -0.7620787077198E+02   -0.7621875147976E+02
+    50.00      11.366      -5.558    -0.7620783134406E+02   -0.7622232215170E+02
+    50.00      11.401      -6.911    -0.7620778089889E+02   -0.7622585285873E+02
+    50.00      11.436      -8.244    -0.7620771959348E+02   -0.7622934405074E+02
+    50.00      11.472      -9.558    -0.7620764758249E+02   -0.7623279617179E+02
+    50.00      11.507     -10.853    -0.7620756501827E+02   -0.7623620966003E+02
+    50.00      11.542     -12.130    -0.7620747205090E+02   -0.7623958494775E+02
+    50.00      11.578     -13.388    -0.7620736882823E+02   -0.7624292246178E+02
+    50.00      11.613     -14.629    -0.7620725549593E+02   -0.7624622262329E+02
+    50.00      11.648     -15.853    -0.7620713219750E+02   -0.7624948584773E+02
+    50.00      11.683     -17.058    -0.7620699907433E+02   -0.7625271254531E+02
+    50.00      11.719     -18.247    -0.7620685626572E+02   -0.7625590312093E+02
+    50.00      11.754     -19.419    -0.7620670390893E+02   -0.7625905797410E+02
+    50.00      11.789     -20.575    -0.7620654213921E+02   -0.7626217749943E+02
+    50.00      11.824     -21.714    -0.7620637108980E+02   -0.7626526208592E+02
+   100.00      10.802      18.952    -0.7620702568253E+02   -0.7616007029733E+02
+   100.00      10.837      17.248    -0.7620717208101E+02   -0.7616429878639E+02
+   100.00      10.872      15.569    -0.7620730479596E+02   -0.7616847977897E+02
+   100.00      10.907      13.914    -0.7620742402493E+02   -0.7617261382630E+02
+   100.00      10.943      12.283    -0.7620752996242E+02   -0.7617670147281E+02
+   100.00      10.978      10.675    -0.7620762279996E+02   -0.7618074325469E+02
+   100.00      11.013       9.090    -0.7620770272612E+02   -0.7618473970146E+02
+   100.00      11.049       7.528    -0.7620776992657E+02   -0.7618869133501E+02
+   100.00      11.084       5.989    -0.7620782458417E+02   -0.7619259867024E+02
+   100.00      11.119       4.472    -0.7620786687896E+02   -0.7619646221480E+02
+   100.00      11.154       2.976    -0.7620789698825E+02   -0.7620028247025E+02
+   100.00      11.190       1.502    -0.7620791508666E+02   -0.7620405993078E+02
+   100.00      11.225       0.049    -0.7620792134615E+02   -0.7620779508422E+02
+   100.00      11.260      -1.383    -0.7620791593608E+02   -0.7621148841132E+02
+   100.00      11.295      -2.795    -0.7620789902326E+02   -0.7621514038708E+02
+   100.00      11.331      -4.187    -0.7620787077198E+02   -0.7621875147979E+02
+   100.00      11.366      -5.558    -0.7620783134406E+02   -0.7622232215172E+02
+   100.00      11.401      -6.911    -0.7620778089890E+02   -0.7622585285865E+02
+   100.00      11.436      -8.244    -0.7620771959349E+02   -0.7622934405066E+02
+   100.00      11.472      -9.558    -0.7620764758250E+02   -0.7623279617172E+02
+   100.00      11.507     -10.853    -0.7620756501827E+02   -0.7623620965987E+02
+   100.00      11.542     -12.130    -0.7620747205090E+02   -0.7623958494778E+02
+   100.00      11.578     -13.388    -0.7620736882823E+02   -0.7624292246173E+02
+   100.00      11.613     -14.629    -0.7620725549593E+02   -0.7624622262313E+02
+   100.00      11.648     -15.853    -0.7620713219750E+02   -0.7624948584758E+02
+   100.00      11.683     -17.058    -0.7620699907433E+02   -0.7625271254525E+02
+   100.00      11.719     -18.247    -0.7620685626573E+02   -0.7625590312086E+02
+   100.00      11.754     -19.419    -0.7620670390894E+02   -0.7625905797395E+02
+   100.00      11.789     -20.575    -0.7620654213921E+02   -0.7626217749930E+02
+   100.00      11.824     -21.714    -0.7620637108980E+02   -0.7626526208587E+02
+   150.00      10.802      18.952    -0.7620702568425E+02   -0.7616007027696E+02
+   150.00      10.837      17.248    -0.7620717208281E+02   -0.7616429876525E+02
+   150.00      10.872      15.569    -0.7620730479784E+02   -0.7616847975679E+02
+   150.00      10.907      13.914    -0.7620742402688E+02   -0.7617261380340E+02
+   150.00      10.943      12.283    -0.7620752996446E+02   -0.7617670144898E+02
+   150.00      10.978      10.675    -0.7620762280208E+02   -0.7618074322995E+02
+   150.00      11.013       9.090    -0.7620770272833E+02   -0.7618473967575E+02
+   150.00      11.049       7.528    -0.7620776992887E+02   -0.7618869130831E+02
+   150.00      11.084       5.989    -0.7620782458657E+02   -0.7619259864250E+02
+   150.00      11.119       4.472    -0.7620786688145E+02   -0.7619646218611E+02
+   150.00      11.154       2.976    -0.7620789699084E+02   -0.7620028244046E+02
+   150.00      11.190       1.502    -0.7620791508936E+02   -0.7620405989987E+02
+   150.00      11.225       0.049    -0.7620792134895E+02   -0.7620779505223E+02
+   150.00      11.260      -1.383    -0.7620791593899E+02   -0.7621148837807E+02
+   150.00      11.295      -2.795    -0.7620789902629E+02   -0.7621514035269E+02
+   150.00      11.331      -4.187    -0.7620787077513E+02   -0.7621875144407E+02
+   150.00      11.366      -5.558    -0.7620783134733E+02   -0.7622232211470E+02
+   150.00      11.401      -6.911    -0.7620778090229E+02   -0.7622585282034E+02
+   150.00      11.436      -8.244    -0.7620771959702E+02   -0.7622934401108E+02
+   150.00      11.472      -9.558    -0.7620764758616E+02   -0.7623279613068E+02
+   150.00      11.507     -10.853    -0.7620756502208E+02   -0.7623620961751E+02
+   150.00      11.542     -12.130    -0.7620747205485E+02   -0.7623958490382E+02
+   150.00      11.578     -13.388    -0.7620736883233E+02   -0.7624292241628E+02
+   150.00      11.613     -14.629    -0.7620725550018E+02   -0.7624622257623E+02
+   150.00      11.648     -15.852    -0.7620713220191E+02   -0.7624948579912E+02
+   150.00      11.683     -17.058    -0.7620699907890E+02   -0.7625271249509E+02
+   150.00      11.719     -18.247    -0.7620685627046E+02   -0.7625590306911E+02
+   150.00      11.754     -19.419    -0.7620670391385E+02   -0.7625905792050E+02
+   150.00      11.789     -20.575    -0.7620654214430E+02   -0.7626217744420E+02
+   150.00      11.824     -21.714    -0.7620637109508E+02   -0.7626526202886E+02
+   200.00      10.802      18.952    -0.7620702575192E+02   -0.7616006969938E+02
+   200.00      10.837      17.248    -0.7620717215261E+02   -0.7616429817087E+02
+   200.00      10.872      15.569    -0.7620730486982E+02   -0.7616847914561E+02
+   200.00      10.907      13.914    -0.7620742410111E+02   -0.7617261317483E+02
+   200.00      10.943      12.283    -0.7620753004099E+02   -0.7617670080266E+02
+   200.00      10.978      10.675    -0.7620762288097E+02   -0.7618074256561E+02
+   200.00      11.013       9.091    -0.7620770280963E+02   -0.7618473899308E+02
+   200.00      11.049       7.529    -0.7620777001266E+02   -0.7618869060677E+02
+   200.00      11.084       5.989    -0.7620782467289E+02   -0.7619259792192E+02
+   200.00      11.119       4.472    -0.7620786697037E+02   -0.7619646144611E+02
+   200.00      11.154       2.977    -0.7620789708242E+02   -0.7620028168066E+02
+   200.00      11.190       1.502    -0.7620791518366E+02   -0.7620405911992E+02
+   200.00      11.225       0.049    -0.7620792144604E+02   -0.7620779425167E+02
+   200.00      11.260      -1.383    -0.7620791603894E+02   -0.7621148755673E+02
+   200.00      11.295      -2.795    -0.7620789912915E+02   -0.7621513951009E+02
+   200.00      11.331      -4.186    -0.7620787088097E+02   -0.7621875057996E+02
+   200.00      11.366      -5.558    -0.7620783145623E+02   -0.7622232122861E+02
+   200.00      11.401      -6.910    -0.7620778101432E+02   -0.7622585191203E+02
+   200.00      11.436      -8.243    -0.7620771971223E+02   -0.7622934308009E+02
+   200.00      11.472      -9.557    -0.7620764770464E+02   -0.7623279517674E+02
+   200.00      11.507     -10.852    -0.7620756514388E+02   -0.7623620864015E+02
+   200.00      11.542     -12.129    -0.7620747218006E+02   -0.7623958390288E+02
+   200.00      11.578     -13.388    -0.7620736896102E+02   -0.7624292139141E+02
+   200.00      11.613     -14.629    -0.7620725563242E+02   -0.7624622152705E+02
+   200.00      11.648     -15.852    -0.7620713233777E+02   -0.7624948472520E+02
+   200.00      11.683     -17.058    -0.7620699921847E+02   -0.7625271139633E+02
+   200.00      11.719     -18.247    -0.7620685641381E+02   -0.7625590194499E+02
+   200.00      11.754     -19.419    -0.7620670406105E+02   -0.7625905677084E+02
+   200.00      11.789     -20.574    -0.7620654229543E+02   -0.7626217626853E+02
+   200.00      11.824     -21.713    -0.7620637125021E+02   -0.7626526082701E+02
+   250.00      10.802      18.954    -0.7620702635204E+02   -0.7616006581469E+02
+   250.00      10.837      17.250    -0.7620717276752E+02   -0.7616429420194E+02
+   250.00      10.872      15.571    -0.7620730549978E+02   -0.7616847509116E+02
+   250.00      10.907      13.916    -0.7620742474641E+02   -0.7617260903391E+02
+   250.00      10.943      12.285    -0.7620753070190E+02   -0.7617669657416E+02
+   250.00      10.978      10.677    -0.7620762355778E+02   -0.7618073824866E+02
+   250.00      11.013       9.093    -0.7620770350263E+02   -0.7618473458651E+02
+   250.00      11.049       7.531    -0.7620777072213E+02   -0.7618868610968E+02
+   250.00      11.084       5.991    -0.7620782539912E+02   -0.7619259333331E+02
+   250.00      11.119       4.474    -0.7620786771367E+02   -0.7619645676492E+02
+   250.00      11.154       2.979    -0.7620789784307E+02   -0.7620027690606E+02
+   250.00      11.190       1.505    -0.7620791596196E+02   -0.7620405425084E+02
+   250.00      11.225       0.052    -0.7620792224229E+02   -0.7620778928719E+02
+   250.00      11.260      -1.381    -0.7620791685343E+02   -0.7621148249602E+02
+   250.00      11.295      -2.792    -0.7620789996220E+02   -0.7621513435226E+02
+   250.00      11.331      -4.184    -0.7620787173288E+02   -0.7621874532417E+02
+   250.00      11.366      -5.556    -0.7620783232730E+02   -0.7622231587422E+02
+   250.00      11.401      -6.908    -0.7620778190486E+02   -0.7622584645790E+02
+   250.00      11.436      -8.241    -0.7620772062255E+02   -0.7622933752565E+02
+   250.00      11.472      -9.555    -0.7620764863505E+02   -0.7623278952136E+02
+   250.00      11.507     -10.850    -0.7620756609470E+02   -0.7623620288297E+02
+   250.00      11.542     -12.127    -0.7620747315159E+02   -0.7623957804318E+02
+   250.00      11.578     -13.385    -0.7620736995358E+02   -0.7624291542861E+02
+   250.00      11.613     -14.626    -0.7620725664633E+02   -0.7624621546046E+02
+   250.00      11.648     -15.849    -0.7620713337334E+02   -0.7624947855431E+02
+   250.00      11.683     -17.055    -0.7620700027601E+02   -0.7625270512050E+02
+   250.00      11.719     -18.244    -0.7620685749365E+02   -0.7625589556375E+02
+   250.00      11.754     -19.416    -0.7620670516350E+02   -0.7625905028385E+02
+   250.00      11.789     -20.571    -0.7620654342081E+02   -0.7626216967521E+02
+   250.00      11.824     -21.710    -0.7620637239884E+02   -0.7626525412709E+02
+   300.00      10.802      18.960    -0.7620702882147E+02   -0.7616005329865E+02
+   300.00      10.837      17.256    -0.7620717528622E+02   -0.7616428147501E+02
+   300.00      10.872      15.577    -0.7620730806844E+02   -0.7616846215209E+02
+   300.00      10.907      13.922    -0.7620742736572E+02   -0.7617259588121E+02
+   300.00      10.943      12.291    -0.7620753337255E+02   -0.7617668320684E+02
+   300.00      10.978      10.684    -0.7620762628047E+02   -0.7618072466520E+02
+   300.00      11.013       9.099    -0.7620770627805E+02   -0.7618472078576E+02
+   300.00      11.049       7.537    -0.7620777355098E+02   -0.7618867209049E+02
+   300.00      11.084       5.998    -0.7620782828210E+02   -0.7619257909461E+02
+   300.00      11.119       4.481    -0.7620787065147E+02   -0.7619644230578E+02
+   300.00      11.154       2.986    -0.7620790083641E+02   -0.7620026222548E+02
+   300.00      11.190       1.512    -0.7620791901152E+02   -0.7620403934803E+02
+   300.00      11.225       0.059    -0.7620792534879E+02   -0.7620777416146E+02
+   300.00      11.260      -1.373    -0.7620792001756E+02   -0.7621146714648E+02
+   300.00      11.295      -2.785    -0.7620790318467E+02   -0.7621511877824E+02
+   300.00      11.331      -4.177    -0.7620787501439E+02   -0.7621872952512E+02
+   300.00      11.366      -5.548    -0.7620783566855E+02   -0.7622229984954E+02
+   300.00      11.401      -6.900    -0.7620778530654E+02   -0.7622583020742E+02
+   300.00      11.436      -8.233    -0.7620772408538E+02   -0.7622932104882E+02
+   300.00      11.472      -9.547    -0.7620765215971E+02   -0.7623277281775E+02
+   300.00      11.507     -10.842    -0.7620756968190E+02   -0.7623618595283E+02
+   300.00      11.542     -12.119    -0.7620747680202E+02   -0.7623956088615E+02
+   300.00      11.578     -13.377    -0.7620737366793E+02   -0.7624289804475E+02
+   300.00      11.613     -14.618    -0.7620726042529E+02   -0.7624619784982E+02
+   300.00      11.648     -15.841    -0.7620713721760E+02   -0.7624946071716E+02
+   300.00      11.683     -17.047    -0.7620700418626E+02   -0.7625268705692E+02
+   300.00      11.719     -18.236    -0.7620686147057E+02   -0.7625587727435E+02
+   300.00      11.754     -19.407    -0.7620670920777E+02   -0.7625903176881E+02
+   300.00      11.789     -20.563    -0.7620654753310E+02   -0.7626215093525E+02
+   300.00      11.824     -21.702    -0.7620637657983E+02   -0.7626523516276E+02
+   350.00      10.802      18.974    -0.7620703538186E+02   -0.7616002661217E+02
+   350.00      10.837      17.270    -0.7620718195574E+02   -0.7616425443264E+02
+   350.00      10.872      15.591    -0.7620731484825E+02   -0.7616843475302E+02
+   350.00      10.907      13.936    -0.7620743425697E+02   -0.7617256812509E+02
+   350.00      10.943      12.305    -0.7620754037641E+02   -0.7617665509288E+02
+   350.00      10.978      10.698    -0.7620763339809E+02   -0.7618069619343E+02
+   350.00      11.013       9.113    -0.7620771351057E+02   -0.7618469195589E+02
+   350.00      11.049       7.552    -0.7620778089955E+02   -0.7618864290256E+02
+   350.00      11.084       6.013    -0.7620783574787E+02   -0.7619254954850E+02
+   350.00      11.119       4.496    -0.7620787823558E+02   -0.7619641240172E+02
+   350.00      11.154       3.000    -0.7620790853998E+02   -0.7620023196377E+02
+   350.00      11.190       1.527    -0.7620792683569E+02   -0.7620400872907E+02
+   350.00      11.225       0.074    -0.7620793329468E+02   -0.7620774318573E+02
+   350.00      11.260      -1.358    -0.7620792808631E+02   -0.7621143581476E+02
+   350.00      11.295      -2.770    -0.7620791137737E+02   -0.7621508709138E+02
+   350.00      11.331      -4.161    -0.7620788333215E+02   -0.7621869748406E+02
+   350.00      11.366      -5.533    -0.7620784411248E+02   -0.7622226745539E+02
+   350.00      11.401      -6.884    -0.7620779387774E+02   -0.7622579746124E+02
+   350.00      11.436      -8.217    -0.7620773278492E+02   -0.7622928795217E+02
+   350.00      11.472      -9.531    -0.7620766098868E+02   -0.7623273937223E+02
+   350.00      11.507     -10.826    -0.7620757864136E+02   -0.7623615215975E+02
+   350.00      11.542     -12.102    -0.7620748589304E+02   -0.7623952674768E+02
+   350.00      11.578     -13.361    -0.7620738289156E+02   -0.7624286356269E+02
+   350.00      11.613     -14.602    -0.7620726978257E+02   -0.7624616302634E+02
+   350.00      11.648     -15.825    -0.7620714670958E+02   -0.7624942555442E+02
+   350.00      11.683     -17.030    -0.7620701381395E+02   -0.7625265155754E+02
+   350.00      11.719     -18.219    -0.7620687123497E+02   -0.7625584144074E+02
+   350.00      11.754     -19.390    -0.7620671910990E+02   -0.7625899560384E+02
+   350.00      11.789     -20.546    -0.7620655757395E+02   -0.7626211444173E+02
+   350.00      11.824     -21.684    -0.7620638676037E+02   -0.7626519834382E+02
+   400.00      10.802      18.997    -0.7620704871705E+02   -0.7615998222430E+02
+   400.00      10.837      17.293    -0.7620719548016E+02   -0.7616420956863E+02
+   400.00      10.872      15.615    -0.7620732856347E+02   -0.7616838941418E+02
+   400.00      10.907      13.960    -0.7620744816451E+02   -0.7617252231263E+02
+   400.00      10.943      12.329    -0.7620755447780E+02   -0.7617660880851E+02
+   400.00      10.978      10.722    -0.7620764769485E+02   -0.7618064943863E+02
+   400.00      11.013       9.138    -0.7620772800422E+02   -0.7618464473273E+02
+   400.00      11.049       7.576    -0.7620779559157E+02   -0.7618859521275E+02
+   400.00      11.084       6.038    -0.7620785063975E+02   -0.7619250139443E+02
+   400.00      11.119       4.521    -0.7620789332880E+02   -0.7619636378561E+02
+   400.00      11.154       3.026    -0.7620792383600E+02   -0.7620018288830E+02
+   400.00      11.190       1.552    -0.7620794233596E+02   -0.7620395919692E+02
+   400.00      11.225       0.099    -0.7620794900063E+02   -0.7620769319970E+02
+   400.00      11.260      -1.332    -0.7620794399936E+02   -0.7621138537811E+02
+   400.00      11.295      -2.744    -0.7620792749893E+02   -0.7621503620725E+02
+   400.00      11.331      -4.135    -0.7620789966362E+02   -0.7621864615593E+02
+   400.00      11.366      -5.506    -0.7620786065522E+02   -0.7622221568688E+02
+   400.00      11.401      -6.858    -0.7620781063311E+02   -0.7622574525640E+02
+   400.00      11.436      -8.191    -0.7620774975427E+02   -0.7622923531476E+02
+   400.00      11.472      -9.504    -0.7620767817334E+02   -0.7623268630659E+02
+   400.00      11.507     -10.799    -0.7620759604264E+02   -0.7623609867042E+02
+   400.00      11.542     -12.075    -0.7620750351223E+02   -0.7623947283910E+02
+   400.00      11.578     -13.334    -0.7620740072993E+02   -0.7624280923967E+02
+   400.00      11.613     -14.574    -0.7620728784139E+02   -0.7624610829404E+02
+   400.00      11.648     -15.797    -0.7620716499006E+02   -0.7624937041800E+02
+   400.00      11.683     -17.003    -0.7620703231732E+02   -0.7625259602236E+02
+   400.00      11.719     -18.191    -0.7620688996243E+02   -0.7625578551252E+02
+   400.00      11.754     -19.362    -0.7620673806262E+02   -0.7625893928838E+02
+   400.00      11.789     -20.517    -0.7620657675308E+02   -0.7626205774521E+02
+   400.00      11.824     -21.656    -0.7620640616704E+02   -0.7626514127237E+02
+   450.00      10.802      19.032    -0.7620707150391E+02   -0.7615991919726E+02
+   450.00      10.837      17.328    -0.7620721854810E+02   -0.7616414599315E+02
+   450.00      10.872      15.650    -0.7620735191425E+02   -0.7616832529361E+02
+   450.00      10.907      13.995    -0.7620747179991E+02   -0.7617245765081E+02
+   450.00      10.943      12.365    -0.7620757839956E+02   -0.7617654360940E+02
+   450.00      10.978      10.758    -0.7620767190469E+02   -0.7618058370651E+02
+   450.00      11.013       9.174    -0.7620775250385E+02   -0.7618457847173E+02
+   450.00      11.049       7.613    -0.7620782038268E+02   -0.7618852842784E+02
+   450.00      11.084       6.074    -0.7620787572400E+02   -0.7619243409029E+02
+   450.00      11.119       4.557    -0.7620791870783E+02   -0.7619629596738E+02
+   450.00      11.154       3.062    -0.7620794951144E+02   -0.7620011456108E+02
+   450.00      11.190       1.589    -0.7620796830940E+02   -0.7620389036618E+02
+   450.00      11.225       0.136    -0.7620797527366E+02   -0.7620762387136E+02
+   450.00      11.260      -1.295    -0.7620797057352E+02   -0.7621131555785E+02
+   450.00      11.295      -2.706    -0.7620795437576E+02   -0.7621496590133E+02
+   450.00      11.331      -4.097    -0.7620792684463E+02   -0.7621857537066E+02
+   450.00      11.366      -5.468    -0.7620788814189E+02   -0.7622214442879E+02
+   450.00      11.401      -6.820    -0.7620783842690E+02   -0.7622567353226E+02
+   450.00      11.436      -8.152    -0.7620777785661E+02   -0.7622916313181E+02
+   450.00      11.472      -9.466    -0.7620770658562E+02   -0.7623261367186E+02
+   450.00      11.507     -10.760    -0.7620762476625E+02   -0.7623602559150E+02
+   450.00      11.542     -12.037    -0.7620753254851E+02   -0.7623939932365E+02
+   450.00      11.578     -13.295    -0.7620743008022E+02   -0.7624273529571E+02
+   450.00      11.613     -14.535    -0.7620731750696E+02   -0.7624603392975E+02
+   450.00      11.648     -15.758    -0.7620719497219E+02   -0.7624929564186E+02
+   450.00      11.683     -16.963    -0.7620706261724E+02   -0.7625252084285E+02
+   450.00      11.719     -18.151    -0.7620692058134E+02   -0.7625570993857E+02
+   450.00      11.754     -19.323    -0.7620676900169E+02   -0.7625886332902E+02
+   450.00      11.789     -20.478    -0.7620660801347E+02   -0.7626198140980E+02
+   450.00      11.824     -21.616    -0.7620643774985E+02   -0.7626506457052E+02
+   500.00      10.802      19.078    -0.7620710610790E+02   -0.7615983868104E+02
+   500.00      10.837      17.375    -0.7620725352888E+02   -0.7616406490511E+02
+   500.00      10.872      15.697    -0.7620738727368E+02   -0.7616824364014E+02
+   500.00      10.907      14.042    -0.7620750753981E+02   -0.7617237543810E+02
+   500.00      10.943      12.412    -0.7620761452173E+02   -0.7617646084419E+02
+   500.00      10.978      10.805    -0.7620770841090E+02   -0.7618050039552E+02
+   500.00      11.013       9.222    -0.7620778939583E+02   -0.7618449462212E+02
+   500.00      11.049       7.661    -0.7620785766215E+02   -0.7618844404678E+02
+   500.00      11.084       6.122    -0.7620791339265E+02   -0.7619234918526E+02
+   500.00      11.119       4.606    -0.7620795676731E+02   -0.7619621054610E+02
+   500.00      11.154       3.111    -0.7620798796338E+02   -0.7620002863173E+02
+   500.00      11.190       1.638    -0.7620800715540E+02   -0.7620380393688E+02
+   500.00      11.225       0.185    -0.7620801451526E+02   -0.7620753695064E+02
+   500.00      11.260      -1.246    -0.7620801021227E+02   -0.7621122815433E+02
+   500.00      11.295      -2.657    -0.7620799441315E+02   -0.7621487802388E+02
+   500.00      11.331      -4.048    -0.7620796728212E+02   -0.7621848702860E+02
+   500.00      11.366      -5.419    -0.7620792898092E+02   -0.7622205563159E+02
+   500.00      11.401      -6.770    -0.7620787966887E+02   -0.7622558428945E+02
+   500.00      11.436      -8.102    -0.7620781950287E+02   -0.7622907345337E+02
+   500.00      11.472      -9.416    -0.7620774863752E+02   -0.7623252356793E+02
+   500.00      11.507     -10.710    -0.7620766722506E+02   -0.7623593507246E+02
+   500.00      11.542     -11.986    -0.7620757541550E+02   -0.7623930840015E+02
+   500.00      11.578     -13.244    -0.7620747335660E+02   -0.7624264397870E+02
+   500.00      11.613     -14.484    -0.7620736119392E+02   -0.7624594223017E+02
+   500.00      11.648     -15.707    -0.7620723907087E+02   -0.7624920357110E+02
+   500.00      11.683     -16.912    -0.7620710712875E+02   -0.7625242841274E+02
+   500.00      11.719     -18.100    -0.7620696550674E+02   -0.7625561716084E+02
+   500.00      11.754     -19.271    -0.7620681434202E+02   -0.7625877021581E+02
+   500.00      11.789     -20.426    -0.7620665376970E+02   -0.7626188797349E+02
+   500.00      11.824     -21.565    -0.7620648392294E+02   -0.7626497082360E+02
+   550.00      10.802      19.136    -0.7620715445344E+02   -0.7615974310976E+02
+   550.00      10.837      17.433    -0.7620730234521E+02   -0.7616396878039E+02
+   550.00      10.872      15.755    -0.7620743656258E+02   -0.7616814697041E+02
+   550.00      10.907      14.101    -0.7620755730304E+02   -0.7617227823227E+02
+   550.00      10.943      12.471    -0.7620766476100E+02   -0.7617636311109E+02
+   550.00      10.978      10.864    -0.7620775912790E+02   -0.7618040214438E+02
+   550.00      11.013       9.281    -0.7620784059221E+02   -0.7618439586250E+02
+   550.00      11.049       7.720    -0.7620790933953E+02   -0.7618834478843E+02
+   550.00      11.084       6.182    -0.7620796555259E+02   -0.7619224943812E+02
+   550.00      11.119       4.666    -0.7620800941136E+02   -0.7619611032060E+02
+   550.00      11.154       3.171    -0.7620804109303E+02   -0.7619992793806E+02
+   550.00      11.190       1.698    -0.7620806077212E+02   -0.7620370278582E+02
+   550.00      11.225       0.246    -0.7620806862049E+02   -0.7620743535306E+02
+   550.00      11.260      -1.185    -0.7620806480738E+02   -0.7621112612152E+02
+   550.00      11.295      -2.596    -0.7620804949949E+02   -0.7621477556733E+02
+   550.00      11.331      -3.987    -0.7620802286099E+02   -0.7621838415991E+02
+   550.00      11.366      -5.358    -0.7620798505358E+02   -0.7622195236276E+02
+   550.00      11.401      -6.709    -0.7620793623654E+02   -0.7622548063266E+02
+   550.00      11.436      -8.041    -0.7620787656675E+02   -0.7622896942099E+02
+   550.00      11.472      -9.354    -0.7620780619873E+02   -0.7623241917280E+02
+   550.00      11.507     -10.648    -0.7620772528471E+02   -0.7623583032728E+02
+   550.00      11.542     -11.924    -0.7620763397464E+02   -0.7623920331839E+02
+   550.00      11.578     -13.182    -0.7620753241623E+02   -0.7624253857345E+02
+   550.00      11.613     -14.422    -0.7620742075501E+02   -0.7624583651539E+02
+   550.00      11.648     -15.645    -0.7620729913434E+02   -0.7624909756054E+02
+   550.00      11.683     -16.850    -0.7620716769546E+02   -0.7625232212063E+02
+   550.00      11.719     -18.038    -0.7620702657754E+02   -0.7625551060161E+02
+   550.00      11.754     -19.209    -0.7620687591768E+02   -0.7625866340406E+02
+   550.00      11.789     -20.364    -0.7620671585095E+02   -0.7626178092408E+02
+   550.00      11.824     -21.502    -0.7620654651048E+02   -0.7626486355194E+02
+   600.00      10.802      19.205    -0.7620721800986E+02   -0.7615963551315E+02
+   600.00      10.837      17.503    -0.7620736646126E+02   -0.7616386067827E+02
+   600.00      10.872      15.825    -0.7620750123990E+02   -0.7616803837349E+02
+   600.00      10.907      14.171    -0.7620762254320E+02   -0.7617216915134E+02
+   600.00      10.943      12.541    -0.7620773056556E+02   -0.7617625355724E+02
+   600.00      10.978      10.934    -0.7620782549836E+02   -0.7618029212907E+02
+   600.00      11.013       9.351    -0.7620790753004E+02   -0.7618428539728E+02
+   600.00      11.049       7.791    -0.7620797684614E+02   -0.7618823388503E+02
+   600.00      11.084       6.252    -0.7620803362937E+02   -0.7619213810872E+02
+   600.00      11.119       4.736    -0.7620807805964E+02   -0.7619599857728E+02
+   600.00      11.154       3.242    -0.7620811031411E+02   -0.7619981579351E+02
+   600.00      11.190       1.769    -0.7620813056725E+02   -0.7620359025298E+02
+   600.00      11.225       0.317    -0.7620813899086E+02   -0.7620732244490E+02
+   600.00      11.260      -1.114    -0.7620813575415E+02   -0.7621101285135E+02
+   600.00      11.295      -2.525    -0.7620812102378E+02   -0.7621466194881E+02
+   600.00      11.331      -3.915    -0.7620809496387E+02   -0.7621827020661E+02
+   600.00      11.366      -5.286    -0.7620805773607E+02   -0.7622183808881E+02
+   600.00      11.401      -6.637    -0.7620800949961E+02   -0.7622536605228E+02
+   600.00      11.436      -7.969    -0.7620795041132E+02   -0.7622885454881E+02
+   600.00      11.472      -9.282    -0.7620788062568E+02   -0.7623230402361E+02
+   600.00      11.507     -10.576    -0.7620780029487E+02   -0.7623571491619E+02
+   600.00      11.542     -11.852    -0.7620770956878E+02   -0.7623908766042E+02
+   600.00      11.578     -13.110    -0.7620760859509E+02   -0.7624242268429E+02
+   600.00      11.613     -14.350    -0.7620749751927E+02   -0.7624572041069E+02
+   600.00      11.648     -15.572    -0.7620737648463E+02   -0.7624898125646E+02
+   600.00      11.683     -16.777    -0.7620724563236E+02   -0.7625220563336E+02
+   600.00      11.719     -17.965    -0.7620710510158E+02   -0.7625539394749E+02
+   600.00      11.754     -19.136    -0.7620695502932E+02   -0.7625854660004E+02
+   600.00      11.789     -20.291    -0.7620679555064E+02   -0.7626166398706E+02
+   600.00      11.824     -21.429    -0.7620662679858E+02   -0.7626474649883E+02
+
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE      678.70 TCPU      674.77
+ EEEEEEEEEE TERMINATION  DATE 21 10 2026 TIME 14:53:04.0

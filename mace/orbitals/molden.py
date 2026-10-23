@@ -24,7 +24,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-BOHR_ANG = 0.529177210903  # Angstrom per bohr
+from mace.constants import BOHR_TO_ANGSTROM as BOHR_ANG  # noqa: E402  # Angstrom per bohr
 
 _LMAP = {"s": 0, "p": 1, "d": 2, "f": 3, "g": 4}
 _SECTION = re.compile(r"^\s*\[([^\]]+)\](.*)$")

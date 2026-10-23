@@ -27,7 +27,40 @@ try:
     from mace.constants import HARTREE_TO_EV, BOHR_TO_ANGSTROM
 except ImportError:
     HARTREE_TO_EV = 27.211386245988
-    BOHR_TO_ANGSTROM = 0.52917721067
+    BOHR_TO_ANGSTROM = 0.529177210903
+
+
+def fermi_dos_per_atom_of(E: np.ndarray, g: np.ndarray, n_atoms: Optional[int]) -> Optional[float]:
+    """N(E_F) in states/eV/atom: the total DOS (states/Ha/cell, both spins;
+    ``read_dos_data``) averaged over E_F +- property_keys.FERMI_DOS_WINDOW_EV
+    (interpolated, so a coarse grid gives a value too) and divided by the
+    atoms of the cell. None without a DOS that reaches E_F or an atom count.
+    The one value that decides metal or semimetal (property_keys.classify_gapless)."""
+    from mace.utils.property_keys import FERMI_DOS_WINDOW_EV
+    if not n_atoms or len(E) < 2 or len(E) != len(g):
+        return None
+    E_ev = np.asarray(E, float) * HARTREE_TO_EV
+    if not E_ev[0] <= 0.0 <= E_ev[-1]:
+        return None
+    xs = np.linspace(-FERMI_DOS_WINDOW_EV, FERMI_DOS_WINDOW_EV, 41)
+    g_ev = np.clip(np.asarray(g, float), 0.0, None) / HARTREE_TO_EV
+    return float(np.interp(xs, E_ev, g_ev).mean()) / int(n_atoms)
+
+
+def fermi_dos_per_atom(doss_file: Path, n_atoms: Optional[int]) -> Optional[float]:
+    """N(E_F) in states/eV/atom of a DOSS.DAT (fermi_dos_per_atom_of)."""
+    E, g = AdvancedElectronicAnalyzer().read_dos_data(Path(doss_file))
+    return fermi_dos_per_atom_of(E, g, n_atoms)
+
+
+def atoms_per_cell(properties: Optional[Dict[str, Any]], content: Optional[str]) -> Optional[int]:
+    """Atoms of the (primitive) cell the DOS is per: atoms_in_unit_cell, else
+    the "N. OF ATOMS PER CELL" a BAND or DOSS output prints."""
+    n = (properties or {}).get('atoms_in_unit_cell')
+    if n:
+        return int(n)
+    m = re.search(r'N\. OF ATOMS PER CELL\s+(\d+)', content or '')
+    return int(m.group(1)) if m else None
 
 
 class AdvancedElectronicAnalyzer:
@@ -175,6 +208,14 @@ class AdvancedElectronicAnalyzer:
         widths = {len(row) for row in all_energies}
         if all_energies and len(widths) == 1:
             arr = np.asarray(all_energies, float)
+            # E - E_F with the Fermi level fermi_level trusts (CRYSTAL's placeholder -1.0 replaced)
+            from mace.utils import fermi_level
+            fl = fermi_level.band_fermi(band_file)
+            if not fl.known and fermi_level.is_placeholder(fl.file_au):
+                print(f"Warning: {Path(band_file).name}: {fl.note}")
+                return -np.inf, np.inf, np.array([]), np.array([])
+            arr = arr + fl.shift_au
+            all_energies = arr
             blocks = (np.split(arr, nspin) if nspin > 1 and nkpt and len(arr) == nkpt * nspin
                       else [arr])
             for block in blocks:
@@ -191,12 +232,19 @@ class AdvancedElectronicAnalyzer:
         return Ev_max, Ec_min, np.array(k_points), np.array(all_energies)
     
     def classify_electronic_behavior(self, E: np.ndarray, g: np.ndarray, 
-                                   Ev_max: float, Ec_min: float, 
-                                   gcrit_factor: float = 0.05) -> Dict[str, Any]:
+                                   Ev_max: float, Ec_min: float,
+                                   n_atoms: Optional[int] = None) -> Dict[str, Any]:
         """
-        Classify electronic behavior using DOS analysis.
-        
-        Based on the sophisticated algorithm from your provided code.
+        Classify electronic behavior: the gap of the band structure
+        (property_keys.classify_gap) and, for a gapless one with a DOS and the
+        cell's atom count, metal or semimetal by N(E_F) per atom
+        (property_keys.classify_gapless, the rule of band_path_gap_type).
+
+        Earlier, a gapless system was a semimetal when the DOS at the grid
+        point nearest E_F was below 5% of the mean nonzero DOS of the whole
+        DOSS window: a scale set by the window and the basis set's virtual
+        states, not by the material (two FSI-doped four-layer graphenes with
+        N(E_F) 0.012 and 0.016 states/eV/atom came out semimetal and metal).
         """
         have_dos = len(E) > 0 and len(g) > 0
         have_band = Ev_max != -np.inf and Ec_min != np.inf
@@ -210,16 +258,18 @@ class AdvancedElectronicAnalyzer:
                 'classification_method': 'no_dos_data'
             }
         
-        g_Ef = g_mean = g_crit = None
+        from mace.utils.property_keys import SEMIMETAL_DOS_PER_ATOM, classify_gapless
+        g_Ef = g_mean = g_crit = n_ef = None
         if have_dos:
             # Find DOS at Fermi level (E = 0)
             Ef_index = np.argmin(np.abs(E))
             g_Ef = g[Ef_index]
-
-            # Calculate mean DOS and threshold
             g_positive = g[g > 0]
             g_mean = g_positive.mean() if len(g_positive) > 0 else 0.0
-            g_crit = gcrit_factor * g_mean
+            # N(E_F) per atom and the threshold per cell (states/Ha/cell)
+            n_ef = fermi_dos_per_atom_of(E, g, n_atoms)
+            if n_atoms:
+                g_crit = SEMIMETAL_DOS_PER_ATOM * int(n_atoms) * self.ha_to_ev
         
         # The gap comes from the band structure only. One read off the DOS
         # is not the material's: CRYSTAL puts E_F on a molecule's broadened
@@ -229,26 +279,30 @@ class AdvancedElectronicAnalyzer:
         gap = None
         gap_source = None
         classification = None
+        dos_decided = False
         if have_band:
             gap = max(Ec_min - Ev_max, 0.0)  # bands overlapping E_F: none
             gap_source = "band_structure"
             # the database's one scheme (property_keys.classify_gap)
             from mace.utils.property_keys import classify_gap
             classification = classify_gap(gap * self.ha_to_ev)
-            if classification == "metal" and have_dos:
-                # metal vs semimetal needs the DOS at E_F
-                classification = "metal" if g_Ef > g_crit else "semimetal"
+            if classification == "metal" and n_ef is not None:
+                # metal vs semimetal needs the DOS at E_F (per atom)
+                classification = classify_gapless(n_ef)
+                dos_decided = True
         
         return {
             'electronic_classification': classification,
             'gap_hartree': gap,
             'gap_ev': gap * self.ha_to_ev if gap is not None else None,
             'dos_at_fermi': g_Ef,
+            'fermi_dos_per_atom': n_ef,
             'dos_threshold': g_crit,
             'dos_mean': g_mean,
             'gap_source': gap_source,
             'classification_method': 'dos_band_analysis',
-            'gcrit_factor': gcrit_factor
+            'semimetal_dos_per_atom': SEMIMETAL_DOS_PER_ATOM,
+            'classified_by_dos': dos_decided,
         }
     
     def calculate_effective_mass(self, k_points: np.ndarray, energies: np.ndarray,
@@ -256,7 +310,11 @@ class AdvancedElectronicAnalyzer:
         """
         Calculate effective masses from band structure curvature.
         
-        Uses second derivative d²E/dk² near band edges.
+        Uses second derivative d²E/dk² near band edges. A quick estimate
+        (real_*_effective_mass): one band, along the path's direction at the
+        edge. The accurate masses are mace/transport/mass.py's m_c and m_d
+        (effective_mass_*_mc / _md: every degenerate band and equivalent
+        valley, several directions, an energy window and an R² check).
         """
         effective_mass_results = {}
         
@@ -469,9 +527,11 @@ class AdvancedElectronicAnalyzer:
         return transport_props
     
     def analyze_material(self, band_file: Optional[Path] = None, 
-                        doss_file: Optional[Path] = None) -> Dict[str, Any]:
+                        doss_file: Optional[Path] = None,
+                        n_atoms: Optional[int] = None) -> Dict[str, Any]:
         """
         Complete electronic structure analysis using BAND and DOSS data.
+        ``n_atoms``: atoms of the cell (metal or semimetal needs N(E_F) per atom).
         
         Returns comprehensive dictionary with all electronic properties.
         """
@@ -505,7 +565,7 @@ class AdvancedElectronicAnalyzer:
                 results['band_structure_range'] = [float(k_points.min()), float(k_points.max())]
         
         # Electronic classification
-        classification_results = self.classify_electronic_behavior(E, g, Ev_max, Ec_min)
+        classification_results = self.classify_electronic_behavior(E, g, Ev_max, Ec_min, n_atoms)
         results.update(classification_results)
         
         # Effective mass calculation: only across a band gap. For a metal or
@@ -584,10 +644,11 @@ def main():
     
     if results.get('dos_data_available'):
         print(f"DOS at Fermi Level: {results.get('dos_at_fermi', 0):.3e}")
-        print(f"DOS Threshold: {results.get('dos_threshold', 0):.3e}")
+        if results.get('dos_threshold') is not None:
+            print(f"DOS Threshold: {results['dos_threshold']:.3e}")
     
     if results.get('has_real_effective_mass'):
-        print(f"\nEffective Masses (m_e units):")
+        print(f"\nEffective masses, quick estimate (one band along the path; m_e units):")
         if results.get('electron_effective_mass'):
             print(f"  Electron: {results['electron_effective_mass']:.3f}")
         if results.get('hole_effective_mass'):

@@ -1,0 +1,554 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS           11  OF           16  WORKING
+ PROCESS           10  OF           16  WORKING
+ PROCESS            1  OF           16  WORKING
+ PROCESS            6  OF           16  WORKING
+ PROCESS            5  OF           16  WORKING
+ PROCESS            8  OF           16  WORKING
+ PROCESS           13  OF           16  WORKING
+ PROCESS           12  OF           16  WORKING
+ PROCESS           14  OF           16  WORKING
+ PROCESS            3  OF           16  WORKING
+ PROCESS            4  OF           16  WORKING
+ PROCESS            2  OF           16  WORKING
+ PROCESS            7  OF           16  WORKING
+ PROCESS            0  OF           16  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 21 10 2026 TIME 16:47:48.8
+ BN_opt2_elapiezo_PBE0_optimized                                                 
+ PROCESS           15  OF           16  WORKING
+
+ CRYSTAL CALCULATION
+ (INPUT ACCORDING TO THE INTERNATIONAL TABLES FOR X-RAY CRYSTALLOGRAPHY)
+ CRYSTAL FAMILY                       :  CUBIC       
+ CRYSTAL CLASS  (GROTH - 1921)        :  CUBIC HEXAKISTETRAHEDRAL             
+
+ SPACE GROUP (NONCENTROSYMMETRIC)     :  F -4 3 M        
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+        A           B           C        ALPHA        BETA       GAMMA
+     3.60084     3.60084     3.60084    90.00000    90.00000    90.00000
+
+
+ NUMBER OF IRREDUCIBLE ATOMS IN THE CONVENTIONAL CELL:    2
+
+ INPUT COORDINATES
+
+ ATOM AT. N.              COORDINATES
+   1   5     0.000000000000E+00  0.000000000000E+00  0.000000000000E+00
+   2   7     2.500000000000E-01 -2.500000000000E-01 -2.500000000000E-01
+
+ *******************************************************************************
+
+ << INFORMATION >>: FROM NOW ON, ALL COORDINATES REFER TO THE PRIMITIVE CELL
+
+ *******************************************************************************
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - PRIMITIVE CELL
+       A          B          C        ALPHA      BETA     GAMMA        VOLUME
+    2.54618    2.54618    2.54618    60.00000  60.00000  60.00000     11.672141
+
+ COORDINATES OF THE EQUIVALENT ATOMS (FRACTIONAL UNITS)
+
+ N. ATOM EQUIV AT. N.          X                  Y                  Z
+
+   1   1   1    5 B     0.00000000000E+00  0.00000000000E+00  0.00000000000E+00
+
+   2   2   1    7 N     2.50000000000E-01  2.50000000000E-01  2.50000000000E-01
+
+ NUMBER OF SYMMETRY OPERATORS         :   24
+ *******************************************************************************
+ * GEOMETRY EDITING - INPUT COORDINATES ARE GIVEN IN ANGSTROM         
+ *******************************************************************************
+
+ GEOMETRY NOW FULLY CONSISTENT WITH THE GROUP
+ INFORMATION **** NEW DEFAULT **** FINALRUN 4 FOR GEOMETRY OPTIMIZATIONS
+ INFORMATION **** NEW DEFAULT **** OPTGEOM OPTIMIZES BOTH ATOMIC COORDINATES AND CELL PARAMETERS
+ INFORMATION **** NEW DEFAULT **** TOL. ON ATOMIC DISP TO REDEFINE REF. GEOMETRY: 0.8 Angs
+ INFORMATION **** NEW DEFAULT **** N POINTS TO REDEFINE REF. GEOMETRY: N OF OPT DEGS OF FREEDOM
+ INFORMATION **** NEW DEFAULT **** TOL. ON ENERGY TO REDEFINE REF. GEOMETRY: 10**-3*(5*N. ATOMS)
+
+ IMPORTANT INFORMATION:
+ THE COORDINATE SYSTEM ADOPTED IN THE OPTIMIZATION IS NOT IN
+ GENERAL HOMOGENEOUS UNITS. FOR THIS REASON THE GRADIENT AND 
+ HESSIAN MATRIX IN TERMS OF THIS SYSTEM ARE GIVEN WITHOUT
+ UNITS. FOR MORE DETAILS SEE THE MANUAL.
+
+ INITIAL TRUST RADIUS         0.50000 MAXIMUM TRUST RADIUS               4.00000
+ MAXIMUM GRADIENT COMPONENT   0.00045 MAXIMUM DISPLACEMENT COMPONENT     0.00180
+ R.M.S. OF GRADIENT COMPONENT 0.00030 R.M.S. OF DISPLACEMENT COMPONENTS  0.00120
+ THRESHOLD ON ENERGY CHANGE 0.100E-06 EXTRAPOLATING POLYNOMIAL ORDER           2
+ MAXIMUM ALLOWED NUMBER OF STEPS   -1 SORTING OF ENERGY POINTS:               NO
+ ANALYTICAL  GRADIENT                 HESSIAN UPDATING                      BFGS
+ STEP SIZE NUMERICAL GRADIENT 0.00100
+ INITIAL HESSIAN MATRIX: SCHLEGEL MODEL 2
+ *******************************************************************************
+
+
+ ELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELA
+
+                       ELASTIC CALCULATION
+
+ INFORMATION **** TOLDEX ****  CONVERGENCE CRITERION FOR RMS DISPLACEMENT MODIFIED  6.200000E-04
+ INFORMATION **** TOLDEG **** MODIFY CONVERGENCE CRITERION FOR RMS GRADIENT  3.000000E-04
+ INFORMATION **** TOLDEE **** CONVERGENCE CRITERION FOR ENERGY MODIFIED: 10**-           8
+
+ GCALCO - MAX INDICES DIRECT LATTICE VECTOR    14    14    14
+ NO.OF VECTORS CREATED 6999 STARS  105 RMAX    50.92094 BOHR
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    3
+ (NON PERIODIC DIRECTION: LATTICE PARAMETER FORMALLY SET TO 500)
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL - CENTRING CODE 5/0 VOLUME=    11.672141 - DENSITY  3.558 g/cm^3
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.54617650     2.54617650     2.54617650    60.000000  60.000000  60.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    2 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   5 B     0.000000000000E+00  0.000000000000E+00  0.000000000000E+00
+      2 T   7 N     2.500000000000E-01  2.500000000000E-01  2.500000000000E-01
+
+ TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL
+ -1.0000  1.0000  1.0000  1.0000 -1.0000  1.0000  1.0000  1.0000 -1.0000
+
+ *******************************************************************************
+ CRYSTALLOGRAPHIC CELL (VOLUME=         46.68856335)
+         A              B              C           ALPHA      BETA       GAMMA 
+     3.60083734     3.60083734     3.60083734    90.000000  90.000000  90.000000
+
+ COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   5 B     0.000000000000E+00  0.000000000000E+00  0.000000000000E+00
+      2 T   7 N     2.500000000000E-01 -2.500000000000E-01 -2.500000000000E-01
+
+ T = ATOM BELONGING TO THE ASYMMETRIC UNIT
+
+ ****   24 SYMMOPS - TRANSLATORS IN FRACTIONAL UNITS
+ **** MATRICES AND TRANSLATORS IN THE CRYSTALLOGRAPHIC REFERENCE FRAME
+   V INV                    ROTATION MATRICES                   TRANSLATORS
+   1   1  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00
+   2   2  0.00  1.00 -0.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+   3   3 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  0.00  1.00 -0.00  0.00  0.00  0.00
+   4   4 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.00  0.00
+   5   6  0.00  0.00  1.00  1.00 -0.00  0.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+   6   5  0.00  1.00  0.00 -0.00  0.00  1.00  1.00 -0.00 -0.00  0.00  0.00  0.00
+   7   8  1.00 -0.00  0.00  0.00  0.00  1.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+   8   7  1.00 -0.00 -0.00 -1.00 -1.00 -1.00  0.00  1.00  0.00  0.00  0.00  0.00
+   9  10 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  1.00 -0.00  0.00  0.00  0.00  0.00
+  10   9 -0.00  0.00  1.00  0.00  1.00  0.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+  11  12 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00  0.00  1.00  0.00  0.00  0.00
+  12  11 -1.00 -1.00 -1.00  1.00 -0.00 -0.00 -0.00  0.00  1.00  0.00  0.00  0.00
+  13  13  0.00  1.00  0.00  1.00  0.00 -0.00 -0.00 -0.00  1.00  0.00  0.00  0.00
+  14  14  1.00  0.00 -0.00  0.00  1.00  0.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+  15  16 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00  1.00  0.00  0.00  0.00  0.00
+  16  15 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  0.00 -0.00  0.00  0.00  0.00
+  17  17  1.00  0.00  0.00  0.00 -0.00  1.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+  18  18  0.00  0.00  1.00 -0.00  1.00  0.00  1.00 -0.00 -0.00  0.00  0.00  0.00
+  19  21  0.00 -0.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+  20  22 -1.00 -1.00 -1.00  1.00 -0.00 -0.00 -0.00  1.00  0.00  0.00  0.00  0.00
+  21  19 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.00  0.00
+  22  20 -0.00  1.00  0.00  0.00  0.00  1.00 -1.00 -1.00 -1.00  0.00  0.00  0.00
+  23  23 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  0.00 -0.00  1.00  0.00  0.00  0.00
+  24  24  1.00 -0.00 -0.00 -1.00 -1.00 -1.00  0.00  0.00  1.00  0.00  0.00  0.00
+
+ DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)
+          X                    Y                    Z
+   0.000000000000E+00   0.180041867000E+01   0.180041867000E+01
+   0.180041867000E+01   0.000000000000E+00   0.180041867000E+01
+   0.180041867000E+01   0.180041867000E+01   0.000000000000E+00
+
+
+ CARTESIAN COORDINATES - PRIMITIVE CELL
+ *******************************************************************************
+ *      ATOM          X(ANGSTROM)         Y(ANGSTROM)         Z(ANGSTROM)
+ *******************************************************************************
+    1     5 B     0.000000000000E+00  0.000000000000E+00  0.000000000000E+00
+    2     7 N     9.002093350000E-01 -9.002093350000E-01 -9.002093350000E-01
+
+ *******************************************************************************
+ STARTING BASIS SET HANDLING 
+ *******************************************************************************
+
+ Loading internal basis set: POB-TZVP-REV2       
+
+ Please cite in your publication:
+ D. Vilela Oliveira, M. F. Peintinger, J. Laun, and T. Bredow, J. Comput. Chem.,
+  40 (2019)                                                                     
+                                                                                
+                    
+ J. Laun, and T. Bredow, J. Comput. Chem., 42 (2021)                            
+                                                                                
+                                                                                
+                    
+ J. Laun, and T. Bredow, J. Comput. Chem., 43 (2022)                            
+                                                                                
+                                                                                
+                    
+
+ *******************************************************************************
+ LOCAL ATOMIC FUNCTIONS BASIS SET
+ *******************************************************************************
+   ATOM   X(AU)   Y(AU)   Z(AU)  N. TYPE  EXPONENT  S COEF   P COEF   D/F/G COEF
+ *******************************************************************************
+   1 B    0.000   0.000   0.000
+                                  1 S  
+                                         8.565E+03 2.284E-04 0.000E+00 0.000E+00
+                                         1.284E+03 1.768E-03 0.000E+00 0.000E+00
+                                         2.923E+02 9.141E-03 0.000E+00 0.000E+00
+                                         8.278E+01 3.634E-02 0.000E+00 0.000E+00
+                                         2.702E+01 1.106E-01 0.000E+00 0.000E+00
+                                         9.815E+00 2.337E-01 0.000E+00 0.000E+00
+                                  2 S  
+                                         3.932E+00 4.182E-01 0.000E+00 0.000E+00
+                                         1.660E+00 2.233E-01 0.000E+00 0.000E+00
+                                  3 S  
+                                         5.332E-01 1.000E+00 0.000E+00 0.000E+00
+                                  4 S  
+                                         2.066E-01 1.000E+00 0.000E+00 0.000E+00
+                           5-     7 P  
+                                         2.245E+01 0.000E+00 5.027E-03 0.000E+00
+                                         5.105E+00 0.000E+00 3.280E-02 0.000E+00
+                                         1.499E+00 0.000E+00 1.315E-01 0.000E+00
+                                         5.093E-01 0.000E+00 3.320E-01 0.000E+00
+                           8-    10 P  
+                                         5.386E-01 0.000E+00 1.000E+00 0.000E+00
+                          11-    13 P  
+                                         2.093E-01 0.000E+00 1.000E+00 0.000E+00
+                          14-    18 D  
+                                         7.501E-01 0.000E+00 0.000E+00 1.000E+00
+   2 N    1.701  -1.701  -1.701
+                                 19 S  
+                                         1.973E+04 2.189E-04 0.000E+00 0.000E+00
+                                         2.958E+03 1.696E-03 0.000E+00 0.000E+00
+                                         6.732E+02 8.795E-03 0.000E+00 0.000E+00
+                                         1.907E+02 3.536E-02 0.000E+00 0.000E+00
+                                         6.230E+01 1.110E-01 0.000E+00 0.000E+00
+                                         2.265E+01 2.498E-01 0.000E+00 0.000E+00
+                                 20 S  
+                                         8.979E+00 4.062E-01 0.000E+00 0.000E+00
+                                         3.686E+00 2.434E-01 0.000E+00 0.000E+00
+                                 21 S  
+                                         7.865E-01 1.000E+00 0.000E+00 0.000E+00
+                                 22 S  
+                                         2.678E-01 1.000E+00 0.000E+00 0.000E+00
+                          23-    25 P  
+                                         4.920E+01 0.000E+00 5.555E-03 0.000E+00
+                                         1.135E+01 0.000E+00 3.805E-02 0.000E+00
+                                         3.427E+00 0.000E+00 1.495E-01 0.000E+00
+                                         1.179E+00 0.000E+00 3.495E-01 0.000E+00
+                          26-    28 P  
+                                         3.780E-01 0.000E+00 1.000E+00 0.000E+00
+                          29-    31 P  
+                                         1.474E-01 0.000E+00 1.000E+00 0.000E+00
+                          32-    36 D  
+                                         3.612E-01 0.000E+00 0.000E+00 1.000E+00
+
+ *******************************************************************************
+ FINISHED BASIS SET HANDLING 
+ *******************************************************************************
+
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+ INFORMATION **** READM2 **** NEW DEFAULT: FOCK/KS MATRIX MIXING SET TO 30 %
+ INFORMATION **** READM2 **** NEW DEFAULT: FULL DIRECT SCF MODE
+ INFORMATION **** READM2 **** NEW DEFAULT: COULOMB BIPOLAR BUFFER SET TO 32 Mb
+ INFORMATION **** READM2 **** NEW DEFAULT: EXCHANGE BIPOLAR BUFFER SET TO 32 Mb
+
+ *******************************************************************************
+ NEW DEFAULT: DFT INTEGRATION GRID INCREASED TO XLGRID
+ NEW DEFAULT: DIIS ACCELERATOR ACTIVE
+ USE KEYWORD NODIIS TO TURN IT OFF
+ *******************************************************************************
+
+ INFORMATION **** TOLINTEG **** COULOMB AND EXCHANGE SERIES TOLERANCES MODIFIED
+ INFORMATION **** TOLDEE **** SCF TOL ON TOTAL ENERGY SET TO           8
+ INFORMATION **** READM2 **** FULL DIRECT SCF (MONO AND BIEL INT) SELECTED
+ INFORMATION **** MAXCYCLE **** MAX NUMBER OF SCF CYCLES SET TO         800
+ INFORMATION **** DIIS **** DIIS FOR SCF ACTIVE
+ INFORMATION **** DIIS **** LEVEL SHIFTER DISABLED
+ INFORMATION **** READM2 ****  FREQCALC - MULLIKEN POPULATION ANALYSIS NOT PERFORMED
+ *******************************************************************************
+ N. OF ATOMS PER CELL         2  COULOMB OVERLAP TOL         (T1) 10**   -8
+ NUMBER OF SHELLS            16  COULOMB PENETRATION TOL     (T2) 10**   -8
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     3224016
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      565200
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     3224016
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      565200
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     3224016
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      565200
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     3224016
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      565200
+ INFORMATION **** opta001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     3224016
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      565200
+ cp34 =              -0.00000045 C/m^2
+
+ ************************************************************************
+ ************************************************************************
+                           FINAL RESULTS START
+ ************************************************************************
+ ************************************************************************
+
+ THE CALCULATION HAS BEEN PERFORMED WITH   3 POINTS AND
+ A STEP OF     0.01500
+ THIS PERMITS TO PERFORM A FITTING UP TO SECOND   ORDER
+
+ DATA FOR MAXIMUM NUMBER OF POINTS AND ORDER OF FIT
+
+ SYMMETRIZED ELASTIC CONSTANTS FOR CUBIC        CASE, IN GPa
+
+ |   839.530  183.336  183.336    0.000    0.000    0.000 |
+ |            839.530  183.336    0.000    0.000    0.000 |
+ |                     839.530    0.000    0.000    0.000 |
+ |                              486.325    0.000    0.000 |
+ |                                       486.325    0.000 |
+ |                                                486.325 |
+
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    1.2923  -0.2316  -0.2316   0.0000   0.0000   0.0000 |
+ |             1.2923  -0.2316   0.0000   0.0000   0.0000 |
+ |                      1.2923   0.0000   0.0000   0.0000 |
+ |                               2.0562   0.0000   0.0000 |
+ |                                        2.0562   0.0000 |
+ |                                                 2.0562 |
+
+
+ BULK MODULUS K, SHEAR MODULUS G, YOUNG MODULUS E AND
+ POISSON RATIO v (ALL IN GPa) ACCORDING TO VOIGT-REUSS-HILL
+
+    K_V     G_V     K_R     G_R     K_H     G_H    E_H      v_H
+
+  402.07  423.03  402.07  407.68  402.07  415.36  926.90   0.116
+
+ SEISMIC VELOCITIES BY CHRISTOFFEL EQUATION (km/s)
+
+       WAVE VECTOR                Vp        Vs1       Vs2
+
+ [ 0.000  0.000  1.000]         15.360    11.691    11.691
+ [ 0.000  1.000  0.000]         15.360    11.691    11.691
+ [ 1.000  0.000  0.000]         15.360    11.691    11.691
+ [ 1.000  1.000  0.000]         16.745    11.691     9.602
+ [ 1.000  0.000  1.000]         16.745    11.691     9.602
+ [ 0.000  1.000  1.000]         16.745    11.691     9.602
+ [ 1.000  1.000  1.000]         17.182    10.345    10.345
+
+ PIEZOELECTRIC CONSTANTS FOR CUBIC        CASE, IN C/m^2
+
+ |     0.000    0.000    0.000   -0.760    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -0.760    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -0.760 |
+
+ PIEZOELECTRIC STRAIN (CONVERSE) CONSTANTS (pC/N = pm/V)
+
+ |     0.000    0.000    0.000   -1.563    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -1.563    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -1.563 |
+
+ ************************************************************************
+ ************************************************************************
+                           FINAL RESULTS END
+ ************************************************************************
+ ************************************************************************
+
+ 
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            2           1
+  C-MATRIX BEFORE INVERSION
+ |   824.714  171.030  171.030    0.000    0.000    0.000 |
+ |            824.714  171.030    0.000    0.000    0.000 |
+ |                     824.714    0.000    0.000    0.000 |
+ |                              486.233    0.000    0.000 |
+ |                                       486.233    0.000 |
+ |                                                486.233 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    1.3055  -0.2242  -0.2242   0.0000   0.0000   0.0000 |
+ |             1.3055  -0.2242   0.0000   0.0000   0.0000 |
+ |                      1.3055   0.0000   0.0000   0.0000 |
+ |                               2.0566   0.0000   0.0000 |
+ |                                        2.0566   0.0000 |
+ |                                                 2.0566 |
+
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           1
+  C-MATRIX BEFORE INVERSION
+ |   854.346  195.642  195.642    0.000    0.000    0.000 |
+ |            854.346  195.642    0.000    0.000    0.000 |
+ |                     854.346    0.000    0.000    0.000 |
+ |                              486.417    0.000    0.000 |
+ |                                       486.417    0.000 |
+ |                                                486.417 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    1.2797  -0.2384  -0.2384   0.0000   0.0000   0.0000 |
+ |             1.2797  -0.2384   0.0000   0.0000   0.0000 |
+ |                      1.2797   0.0000   0.0000   0.0000 |
+ |                               2.0558   0.0000   0.0000 |
+ |                                        2.0558   0.0000 |
+ |                                                 2.0558 |
+
+ 
+ PIEZOELECTRIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           1
+ |     0.000    0.000    0.000   -0.763    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -0.763    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -0.763 |
+ 
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           2
+  C-MATRIX BEFORE INVERSION
+ |   839.530  183.336  183.336    0.000    0.000    0.000 |
+ |            839.530  183.336    0.000    0.000    0.000 |
+ |                     839.530    0.000    0.000    0.000 |
+ |                              486.325    0.000    0.000 |
+ |                                       486.325    0.000 |
+ |                                                486.325 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    1.2923  -0.2316  -0.2316   0.0000   0.0000   0.0000 |
+ |             1.2923  -0.2316   0.0000   0.0000   0.0000 |
+ |                      1.2923   0.0000   0.0000   0.0000 |
+ |                               2.0562   0.0000   0.0000 |
+ |                                        2.0562   0.0000 |
+ |                                                 2.0562 |
+
+ 
+ PIEZOELECTRIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           2
+ |     0.000    0.000    0.000   -0.760    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -0.760    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -0.760 |
+ 
+ BULK MODULUS (GPa) FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ NUMBER OF POINTS, ORDER=            2           1
+       
+ K =     388.92
+       
+ NUMBER OF POINTS, ORDER=            3           1
+       
+ K =     415.21
+       
+ NUMBER OF POINTS, ORDER=            3           2
+       
+ K =     402.07
+       
+ PIEZOELETRIC STRAIN COEFFICIENTS(pC/N = pm/V) FOR DIFFERENT 
+ NUMBER OF POINTS AND ORDER OF FIT
+  NUMBER OF POINTS =            2
+  ORDER =            1
+ |     0.000    0.000    0.000    0.000    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000    0.000 |
+  NUMBER OF POINTS =            3
+  ORDER =            1
+ |     0.000    0.000    0.000   -1.569    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -1.569    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -1.569 |
+  ORDER =            2
+ |     0.000    0.000    0.000   -1.563    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -1.563    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -1.563 |
+  PIEZOELECTRIC STRAIN COEFFICIENTS (pC/N) 
+ |     0.000    0.000    0.000   -1.563    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -1.563    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -1.563 |
+       
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE     3583.85 TCPU     3552.49
+ EEEEEEEEEE TERMINATION  DATE 21 10 2026 TIME 17:47:31.7
+NODE    0 CPU TIME =      3552.487
+NODE    1 CPU TIME =      3554.803
+NODE    2 CPU TIME =      3554.604
+NODE    3 CPU TIME =      3554.459
+NODE    4 CPU TIME =      3554.427
+NODE    5 CPU TIME =      3553.377
+NODE    6 CPU TIME =      3554.174
+NODE    7 CPU TIME =      3554.903
+NODE    8 CPU TIME =      3554.984
+NODE    9 CPU TIME =      3554.478
+NODE   10 CPU TIME =      3555.091
+NODE   11 CPU TIME =      3554.916
+NODE   12 CPU TIME =      3554.826
+NODE   13 CPU TIME =      3554.587
+NODE   14 CPU TIME =      3554.173
+NODE   15 CPU TIME =      3554.747
+    TOTAL CPU TIME =     56871.036

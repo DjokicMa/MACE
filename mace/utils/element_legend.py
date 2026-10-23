@@ -16,6 +16,10 @@ saved default, VESTA when none is saved, or the one named) and writes:
 - a table (TSV, CSV or JSON): symbol, name, Z, hex color and RGB, for
   building a legend in another program.
 
+With ``patterns`` ({element: pattern}, the GUI's grayscale print patterns of
+the drawn structure, js/viewport/print_patterns.js) each of those swatches
+carries its atoms' pattern too: SVG ``<pattern>`` tiles, drawn alike in PNG.
+
 Layouts: vertical, horizontal or a grid of N columns; elements sorted by
 atomic number (default), by first appearance or alphabetically.
 """
@@ -45,6 +49,8 @@ TEXT = {"dark": "#000000", "light": "#ffffff"}
 MAX_PNG_PIXELS = 50_000_000
 STRUCTURE_SUFFIXES = (".cif", ".d12", ".out", ".log", ".xyz", ".extxyz", ".vasp", ".poscar", ".gen", ".pdb", ".mol")
 _POSCAR = re.compile(r"^(POSCAR|CONTCAR)([._-]|$)")
+# the print patterns: js/viewport/print_patterns.js PATTERNS (mace/gui/animexport.py the same)
+PATTERNS = ("slash", "cross", "stipple", "backslash", "horizontal", "grid", "vertical", "dots")
 
 
 @dataclass
@@ -243,8 +249,79 @@ def text_color(o: LegendOptions) -> str:
     return TEXT.get(o.text) or EP.normalize_color(o.text) or TEXT["dark"]
 
 
+# ---------------------------------------------------------------- print patterns
+def clean_patterns(patterns: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """{element: pattern} checked: element symbols and PATTERNS names (ValueError otherwise)."""
+    if not patterns:
+        return {}
+    if not isinstance(patterns, dict) or len(patterns) > 200:
+        raise ValueError("patterns must be an object of element: pattern")
+    for sym, pid in patterns.items():
+        if sym not in EP.SYMBOLS or pid not in PATTERNS:
+            raise ValueError(f"patterns: {sym!r} must be an element and {pid!r} one of {', '.join(PATTERNS)}")
+    return dict(patterns)
+
+
+def _ink_gray(hexc: str) -> float:
+    """The pattern's ink on a swatch of this color, as print_patterns.js inkOn: black (opacity 0.62) on
+    a light surface, white (0.78) on a dark one; 0.0 for black, 1.0 for white."""
+    def f(x):
+        x /= 255.0
+        return x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hexc[i:i + 2], 16) for i in (1, 3, 5))
+    return 0.0 if 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) > 0.35 else 1.0
+
+
+def _pattern_marks(pid: str, px: float):
+    """One tile of pattern `pid`, `px` a side, as print_patterns.js tile() draws it: (lines, dots)."""
+    lines, dots = [], []
+    if pid in ("slash", "cross"):
+        lines += [(0, px, px, 0), (-px / 2, px / 2, px / 2, -px / 2), (px / 2, px * 1.5, px * 1.5, px / 2)]
+    if pid in ("backslash", "cross"):
+        lines += [(0, 0, px, px), (-px / 2, px / 2, px / 2, px * 1.5), (px / 2, -px / 2, px * 1.5, px / 2)]
+    if pid in ("horizontal", "grid"):
+        lines.append((0, px / 2, px, px / 2))
+    if pid in ("vertical", "grid"):
+        lines.append((px / 2, 0, px / 2, px))
+    if pid == "stipple":
+        dots += [(px * 0.25, px * 0.25, px * 0.09), (px * 0.75, px * 0.7, px * 0.09)]
+    if pid == "dots":
+        dots.append((px / 2, px / 2, px * 0.2))
+    return lines, dots
+
+
+def _pattern_px(o: LegendOptions) -> float:
+    # 7 units at the default 18 px swatch: the tile the SVG structure export draws
+    return round(max(3.0, o.swatch * 7 / 18), 2)
+
+
+def _svg_pattern_defs(table: List[Dict[str, Any]], patterns: Dict[str, str], px: float) -> Tuple[str, Dict[str, str]]:
+    """<pattern> definitions for the patterned rows and {element: id} (print_patterns.js svgPatterns)."""
+    defs: Dict[str, str] = {}
+    id_of: Dict[str, str] = {}
+    for r in table:
+        pid = patterns.get(r["symbol"])
+        if not pid:
+            continue
+        dark_ink = _ink_gray(r["hex"]) == 0.0
+        key = f"lg-pp-{pid}-{'d' if dark_ink else 'l'}"
+        id_of[r["symbol"]] = key
+        if key in defs:
+            continue
+        rgb, op = ("rgb(0,0,0)", "0.62") if dark_ink else ("rgb(255,255,255)", "0.78")
+        lines, dots = _pattern_marks(pid, px)
+        w = max(0.5, px / 8)
+        parts = [f'<line x1="{_n(a)}" y1="{_n(b)}" x2="{_n(c)}" y2="{_n(d)}" stroke="{rgb}" stroke-opacity="{op}" '
+                 f'stroke-width="{_n(w)}" stroke-linecap="square"/>' for a, b, c, d in lines]
+        parts += [f'<circle cx="{_n(x)}" cy="{_n(y)}" r="{_n(rr)}" fill="{rgb}" fill-opacity="{op}"/>' for x, y, rr in dots]
+        defs[key] = (f'<pattern id="{key}" patternUnits="userSpaceOnUse" width="{_n(px)}" height="{_n(px)}">'
+                     + "".join(parts) + "</pattern>")
+    return "".join(defs.values()), id_of
+
+
 # ---------------------------------------------------------------- outputs
-def svg(table: List[Dict[str, Any]], o: LegendOptions, title: str = "Element legend") -> str:
+def svg(table: List[Dict[str, Any]], o: LegendOptions, title: str = "Element legend",
+        patterns: Optional[Dict[str, str]] = None) -> str:
     lay = layout(table, o)
     W, H, s, txt = lay["width"], lay["height"], o.swatch, text_color(o)
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(W)}" height="{_n(H)}" viewBox="0 0 {_n(W)} {_n(H)}">',
@@ -252,15 +329,21 @@ def svg(table: List[Dict[str, Any]], o: LegendOptions, title: str = "Element leg
     if o.background:
         out.append(f'<rect id="legend-background" width="{_n(W)}" height="{_n(H)}" fill="{o.background}"/>')
     out.append(f'<g id="element-legend" font-family="{FONT}" font-size="{_n(o.font_size)}" fill="{txt}">')
+    # inside the legend's group: the GUI moves that group into an exported structure SVG
+    defs, id_of = _svg_pattern_defs(table, patterns or {}, _pattern_px(o))
+    if defs:
+        out.append(f"<defs>{defs}</defs>")
     ring = ' stroke="#000000" stroke-opacity="0.35" stroke-width="1"' if o.outline else ""
     for it in lay["items"]:
         r = it["row"]
         out.append(f'<g id="legend-{r["symbol"]}" data-element="{r["symbol"]}" data-z="{r["z"]}">')
-        if o.shape == "circle":
-            out.append(f'<circle cx="{_n(it["cx"])}" cy="{_n(it["cy"])}" r="{_n(s / 2)}" fill="{r["hex"]}"{ring}/>')
-        else:
-            out.append(f'<rect x="{_n(it["cx"] - s / 2)}" y="{_n(it["cy"] - s / 2)}" width="{_n(s)}" height="{_n(s)}" '
-                       f'rx="{_n(s * 0.12)}" fill="{r["hex"]}"{ring}/>')
+        fills = [(r["hex"], ring)] + ([(f'url(#{id_of[r["symbol"]]})', "")] if r["symbol"] in id_of else [])
+        for fill, edge in fills:
+            if o.shape == "circle":
+                out.append(f'<circle cx="{_n(it["cx"])}" cy="{_n(it["cy"])}" r="{_n(s / 2)}" fill="{fill}"{edge}/>')
+            else:
+                out.append(f'<rect x="{_n(it["cx"] - s / 2)}" y="{_n(it["cy"] - s / 2)}" width="{_n(s)}" height="{_n(s)}" '
+                           f'rx="{_n(s * 0.12)}" fill="{fill}"{edge}/>')
         bold, plain = it["label"]
         spans = (f'<tspan font-weight="bold">{escape(bold)}</tspan>' if bold else "") + (escape(plain) if plain else "")
         # the baseline a third of the font size below the swatch's center: centered for Helvetica-like fonts
@@ -270,13 +353,14 @@ def svg(table: List[Dict[str, Any]], o: LegendOptions, title: str = "Element leg
     return "\n".join(out) + "\n"
 
 
-def png(table: List[Dict[str, Any]], o: LegendOptions) -> bytes:
+def png(table: List[Dict[str, Any]], o: LegendOptions, patterns: Optional[Dict[str, str]] = None) -> bytes:
     """The SVG's layout drawn by matplotlib at o.dpi (transparent unless o.background)."""
     import matplotlib
     matplotlib.use("Agg", force=False)
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.patches import Circle, FancyBboxPatch
+    from matplotlib.collections import LineCollection
     lay = layout(table, o)
     o.checked(size=(lay["width"], lay["height"]))
     W, H, s = lay["width"], lay["height"], o.swatch
@@ -290,13 +374,30 @@ def png(table: List[Dict[str, Any]], o: LegendOptions) -> bytes:
         fig.patch.set_facecolor(o.background)
     ec = (0, 0, 0, 0.35) if o.outline else "none"
     pt = 72 / 96          # px -> pt
+    px = _pattern_px(o)
     for it in lay["items"]:
         r = it["row"]
         if o.shape == "circle":
-            ax.add_patch(Circle((it["cx"], it["cy"]), s / 2, facecolor=r["hex"], edgecolor=ec, linewidth=1 * pt))
+            sw = ax.add_patch(Circle((it["cx"], it["cy"]), s / 2, facecolor=r["hex"], edgecolor=ec, linewidth=1 * pt))
         else:
-            ax.add_patch(FancyBboxPatch((it["cx"] - s / 2, it["cy"] - s / 2), s, s, boxstyle=f"round,pad=0,rounding_size={s * 0.12}",
-                                        facecolor=r["hex"], edgecolor=ec, linewidth=1 * pt))
+            sw = ax.add_patch(FancyBboxPatch((it["cx"] - s / 2, it["cy"] - s / 2), s, s, boxstyle=f"round,pad=0,rounding_size={s * 0.12}",
+                                             facecolor=r["hex"], edgecolor=ec, linewidth=1 * pt))
+        pid = (patterns or {}).get(r["symbol"])
+        if pid:
+            # the SVG's tiles: laid from the picture's origin, clipped to the swatch
+            gray = _ink_gray(r["hex"])
+            ink = (gray, gray, gray, 0.62 if gray == 0.0 else 0.78)
+            marks, dots = _pattern_marks(pid, px)
+            segs, discs = [], []
+            for i in range(int((it["cx"] - s / 2) // px) - 1, int((it["cx"] + s / 2) // px) + 1):
+                for j in range(int((it["cy"] - s / 2) // px) - 1, int((it["cy"] + s / 2) // px) + 1):
+                    segs += [((i * px + a, j * px + b), (i * px + c, j * px + d)) for a, b, c, d in marks]
+                    discs += [(i * px + x, j * px + y, rr) for x, y, rr in dots]
+            if segs:
+                lc = ax.add_collection(LineCollection(segs, colors=[ink], linewidths=max(0.5, px / 8) * pt, capstyle="projecting"))
+                lc.set_clip_path(sw)
+            for x, y, rr in discs:
+                ax.add_patch(Circle((x, y), rr, facecolor=ink, edgecolor="none")).set_clip_path(sw)
         bold, plain = it["label"]
         x = it["tx"]
         kw = dict(va="baseline", ha="left", color=text_color(o), fontsize=o.font_size * pt,
@@ -342,11 +443,13 @@ class Legend:
 def legend(paths: Optional[Iterable[Any]] = None, *, symbols: Optional[Sequence[str]] = None, fmt: str = "svg",
            palette: Optional[str] = None, colors: Optional[Dict[str, str]] = None,
            options: Optional[Any] = None, recursive: bool = False, title: str = "Element legend",
-           inside: Optional[Callable[[Path], bool]] = None) -> Legend:
+           inside: Optional[Callable[[Path], bool]] = None, patterns: Optional[Dict[str, str]] = None) -> Legend:
     """The one entry point (CLI and GUI): the legend of the union of the elements
-    in `paths` (files and folders) and `symbols` (an unsaved structure), in `fmt`."""
+    in `paths` (files and folders) and `symbols` (an unsaved structure), in `fmt`;
+    `patterns` ({element: pattern}) puts the drawn atoms' print patterns on their swatches."""
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {', '.join(FORMATS)}")
+    patterns = clean_patterns(patterns)
     o = options if isinstance(options, LegendOptions) else LegendOptions.from_dict(options)
     o = o.checked()
     per: Dict[str, List[str]] = {}
@@ -368,9 +471,9 @@ def legend(paths: Optional[Iterable[Any]] = None, *, symbols: Optional[Sequence[
     if fmt == "png":
         o.checked(size=(lay["width"], lay["height"]))     # before anything is drawn
     if fmt == "svg":
-        content = svg(table, o, title).encode()
+        content = svg(table, o, title, patterns).encode()
     elif fmt == "png":
-        content = png(table, o)
+        content = png(table, o, patterns)
     else:
         content = table_text(table, fmt).encode()
     return Legend(fmt, content, syms, pid, table, lay["width"], lay["height"], per, skipped)

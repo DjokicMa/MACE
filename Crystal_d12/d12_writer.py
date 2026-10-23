@@ -451,7 +451,8 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      biposize: Optional[int] = None,
                      exchsize: Optional[int] = None,
                      write_zero_spinlock: bool = False,
-                     histdiis: Optional[int] = 100) -> None:
+                     histdiis: Optional[int] = 100,
+                     gradcal: bool = False) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -482,7 +483,8 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
             ``0 ISP / ka kb kc`` form instead of making it uniform. Set by the
             caller only when the mesh was read from the parent deck.
         shrink_isp: Gilat net (ISP) for the one-line ``IS ISP`` form, when it
-            is not 2*IS. None keeps the usual 2*IS.
+            is not 2*IS. None keeps the usual 2*IS. A uniform mesh written in
+            the directional form (P1, a slab, a polymer) keeps it as its ISP.
         levshift: ``(ISHIFT, ILOCK)`` for a LEVSHIFT record, written just before
             PPAN. None writes no LEVSHIFT. Any 2-item sequence is accepted
             (a JSON round-trip turns the tuple into a list).
@@ -495,6 +497,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
         histdiis: HISTDIIS history length written after DIIS. None writes no
             HISTDIIS record (CRYSTAL's default), as for a parent deck without
             one. The default, 100, is the long-standing value for new decks.
+        gradcal: Write GRADCAL just before the final END: the analytical
+            gradient after the SCF (manual p. 111), the forces of a phonopy
+            displaced supercell.
     """
     # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
     # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
@@ -536,8 +541,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
             # Non-P1: Use one-line format if k-points are uniform
             
             if spacegroup == 1:
-                # P1: Always use directional format
-                n_shrink = max(ka, kb, kc) * 2
+                # P1: Always use directional format (a one-line mesh's own
+                # ISP is ISP1 there, manual p. 125 note 1)
+                n_shrink = shrink_isp if shrink_isp else max(ka, kb, kc) * 2
                 print("SHRINK", file=f)
                 print(f"0 {n_shrink}", file=f)
                 
@@ -572,7 +578,7 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                         print(f"{ka} {n_shrink}", file=f)
                     else:
                         # Lower dimensionality - use directional format
-                        n_shrink = max(ka, kb, kc) * 2
+                        n_shrink = shrink_isp if shrink_isp else max(ka, kb, kc) * 2
                         print("SHRINK", file=f)
                         print(f"0 {n_shrink}", file=f)
                         
@@ -644,6 +650,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
 
     # Print options
     print("PPAN", file=f)  # Print Mulliken population analysis
+
+    if gradcal:
+        print("GRADCAL", file=f)
 
     # End of input
     print("END", file=f)

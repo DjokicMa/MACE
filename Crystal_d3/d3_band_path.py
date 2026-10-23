@@ -461,6 +461,16 @@ def parse_band_deck(text: str) -> Optional[Dict[str, Any]]:
     path_part = parts[-1].strip() if len(parts) >= 3 else ""
     tokens = [t for t in path_part.split("-") if t.strip()] if path_part else []
     tokens = [t.strip() for t in tokens]
+    # a jump written the way the plot writes it ("H|P" between two labels) is the same jump as "-|-"
+    expanded: List[str] = []
+    for t in tokens:
+        pieces = [x.strip() for x in t.split("|")] if "|" in t and t != "|" else [t]
+        for n, piece in enumerate(pieces):
+            if n:
+                expanded.append("|")
+            if piece:
+                expanded.append(piece)
+    tokens = expanded
     named = from_tokens(tokens) if tokens and all(t == "|" or _LABEL.match(t) for t in tokens) else []
     labels_mode = iss == 0
     segs: List[Segment] = []

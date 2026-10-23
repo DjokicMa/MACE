@@ -99,6 +99,13 @@ def _check_method(freq_out: Path, man: Dict) -> None:
                        "cannot be compared with the phonopy parent's")
     want = man.get("method_lines")
     got = P.method_lines(P.split_parent_deck(d12.read_text(errors="replace")))
+
+    def records(lines):
+        # as CRYSTAL reads them: blanks between the values do not count, and the
+        # DFT block closes with END or ENDDFT alike (opt2d12 writes ENDDFT)
+        return {k: [("END" if " ".join(ln.split()).upper() == "ENDDFT" else " ".join(ln.split()))
+                    for ln in v] for k, v in (lines or {}).items()}
+    got, want = records(got), (records(want) if want is not None else None)
     if want is not None and got != want:
         raise NacError(f"{d12.name}: functional/basis records differ from the phonopy parent's "
                        f"({sorted(k for k in set(got) | set(want) if got.get(k) != want.get(k))})")

@@ -1,42 +1,25 @@
-"""Read a MACE/CRYSTAL23 parent into a phonopy supercell template.
+"""Whether a MACE/CRYSTAL23 parent can seed phonopy's displaced supercells.
 
 Standard library only: nothing here imports phonopy.
 
-The displaced-supercell deck is the one phonopy's CRYSTAL interface writes
-around a TEMPLATE file::
+opt2d12 writes the displaced-supercell decks (calculation type PHONOPY,
+choice 8 / --calc-type PHONOPY: Crystal_d12/d12_calc_phonopy.py) with its
+own deck writer, from the parent's settings and the answers to its
+questions::
 
     <title>
     EXTERNAL                      geometry from fort.34 (manual p.21, format pp.450-451)
     BASISSET / <name>             internal library: replaces the END of block 1 (p.28)
       - or -
     END / <basis records> / 99 0 / ... / END     explicit basis and block 2
-    <block 3 of the parent, edited only as listed below>      } the TEMPLATE
-    TOLDEE / N                    phonopy's writer appends TOLDEE / 10 here
+    <block 3 as opt2d12 writes it>
     GRADCAL                       analytical gradient after the SCF (p.111)
     END
 
-The TEMPLATE (basis part + block 3) has no final END, no TOLDEE and no GRADCAL.
-Measured on CRYSTAL23 with phonopy 4.7.2: a TEMPLATE ending with END gives
-``... END / TOLDEE 10 / GRADCAL / END``; CRYSTAL stops at the first END, the
-SCF finishes with return code 0 and no forces are written.
-
-Block 1 of the parent (its geometry, OPTGEOM, FREQCALC, ...) is dropped: the
-geometry comes from the parent's output via phonopy. Everything from the basis
-on is copied byte for byte, except for these edits, each reported:
-
-    (a) the final END is removed (the deck's END follows GRADCAL);
-    (b) TOLDEE is removed from block 3 and written once after it, as
-        max(10, parent, requested) - phonopy's own writer always writes 10;
-    (c) GUESSP is dropped (no density matrix exists for a displaced supercell);
-    (d) SHRINK is divided by the supercell size in each direction (diagonal
-        supercells; rounded up where the size does not divide the parent's
-        value, so the k-point density never drops below the parent's);
-    (e) BIPOSIZE/EXCHSIZE 110000000 are added when the parent has neither and
-        the supercell has more than 5 atoms (d12_writer's own rule);
-    (f) GRADCAL is removed from block 3 if the parent had it, and written once
-        after TOLDEE, followed by END.
-
-The method, the basis label and every other tolerance are never changed.
+This module reads the parent deck and output: the refusals (a parent that
+is not a finished 3D OPT or SP run, or carries atom-indexed records that do
+not carry over to a P1 supercell), the SHRINK of a supercell, and the
+method records NAC compares.
 """
 
 from __future__ import annotations
@@ -67,13 +50,6 @@ WARN_SP_PARENT = "SP_PARENT"
 #: |Mulliken spin| above which an atom counts as magnetic (electrons).
 MAGNETIC_SPIN_THRESHOLD = 0.1
 
-#: d12_writer's buffer rule (BIPOSIZE/EXCHSIZE for more than 5 atoms).
-BUFFER_SIZE = "110000000"
-BUFFER_ATOM_THRESHOLD = 5
-
-#: Default TOLDEE for the displaced supercells (phonopy's own template uses 10).
-DEFAULT_TOLDEE = 10
-
 _DIMENSION_KEYWORDS = {"CRYSTAL": 3, "SLAB": 2, "POLYMER": 1, "HELIX": 1, "MOLECULE": 0}
 
 # Block-3 sub-blocks whose contents are the method itself: copied verbatim and
@@ -103,6 +79,8 @@ BLOCK3_WHITELIST = frozenset({
 _KEYWORD_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*$")
 _TERMINATION_RE = re.compile(r"^\s*EEEEEEEEEE TERMINATION", re.M)
 _MULLIKEN_ROW_RE = re.compile(r"^\s*(\d+)\s+([A-Za-z]{1,2})\s+(\d+)\s+(-?\d+\.\d+)")
+# the header of a Mulliken alpha-beta block (not SPINLOCK's "... LOCKED TO" echo)
+_MULLIKEN_BLOCK_HEAD_RE = re.compile(r"ALPHA-BETA ELECTRONS[ \t]*\r?\n[ \t]*MULLIKEN POPULATION ANALYSIS")
 
 
 class DeckSplitError(ValueError):
@@ -307,10 +285,21 @@ def output_dimensionality(out_text: str) -> Optional[int]:
 
 def final_mulliken_spins(out_text: str) -> Optional[List[Tuple[int, str, float]]]:
     """(atom, symbol, spin) from the last ALPHA-BETA Mulliken block, or None
-    for a closed-shell (or NOMULLIK) run."""
-    idx = out_text.rfind("ALPHA-BETA ELECTRONS")
-    if idx < 0:
-        return None
+    for a closed-shell (or NOMULLIK) run.
+
+    The block's own header is "ALPHA-BETA ELECTRONS" followed by "MULLIKEN
+    POPULATION ANALYSIS" on the next line. SPINLOCK echoes "ALPHA-BETA
+    ELECTRONS LOCKED TO n FOR m SCF CYCLES" near the top of the output; that
+    line is not a Mulliken block, so a SPINLOCK run that printed no block
+    (killed, or NOMULLIK) has no spins rather than rows read from its input
+    echo."""
+    idx = len(out_text)
+    while True:
+        idx = out_text.rfind("ALPHA-BETA ELECTRONS", 0, idx)
+        if idx < 0:
+            return None
+        if _MULLIKEN_BLOCK_HEAD_RE.match(out_text, idx):
+            break
     rows = []
     started = False
     for ln in out_text[idx:].splitlines()[1:]:
@@ -334,6 +323,31 @@ def is_freq_parent(deck: ParentDeck, out_text: str) -> bool:
             or "FREQUENCY CALCULATION" in out_text)
 
 
+def run_refusals(out_text: str, is_opt: bool, is_freq: bool,
+                 why: str = "would give spurious imaginary modes",
+                 freq_hint: str = " (a FREQ output can still be used for NAC with collect --nac-from)"
+                 ) -> List[Tuple[str, str]]:
+    """Why this output is not the finished OPT or SP run a follow-up needs, as (code, message):
+    phonopy's displaced supercells and the mechanical-property decks (mace opt2d12 choices 4-8)
+    alike (mace.workflow.common.constants.FINISHED_RUN_TYPES)."""
+    reasons: List[Tuple[str, str]] = []
+    if not normal_termination(out_text):
+        reasons.append((REFUSE_ABNORMAL_TERMINATION,
+                        "parent output did not terminate normally (no EEEEEEEEEE TERMINATION, "
+                        "or an ERROR record)"))
+    if not scf_converged(out_text):
+        reasons.append((REFUSE_SCF_NOT_CONVERGED, "parent's last SCF did not converge"))
+    if is_opt and "OPT END - CONVERGED" not in out_text:
+        reasons.append((REFUSE_OPT_NOT_CONVERGED,
+                        "parent is an optimization without 'OPT END - CONVERGED': its last "
+                        f"geometry is not a minimum and {why}"))
+    if is_freq:
+        reasons.append((REFUSE_FREQ_GEOMETRY,
+                        "parent is a FREQCALC run; use the OPT (or SP) output it was "
+                        f"derived from as the geometry source{freq_hint}"))
+    return reasons
+
+
 def refusal_reasons(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
     """Every reason this parent cannot seed a phonopy run, as (code, message)."""
     reasons: List[Tuple[str, str]] = []
@@ -346,21 +360,7 @@ def refusal_reasons(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
                         "parent is not a 3D crystal; phonopy's CRYSTAL interface writes 3D "
                         "EXTERNAL cells only. For slabs/polymers use CRYSTAL's own "
                         "FREQCALC + SCELPHONO + DISPERSI (manual pp.73, 232)"))
-    if not normal_termination(out_text):
-        reasons.append((REFUSE_ABNORMAL_TERMINATION,
-                        "parent output did not terminate normally (no EEEEEEEEEE TERMINATION, "
-                        "or an ERROR record)"))
-    if not scf_converged(out_text):
-        reasons.append((REFUSE_SCF_NOT_CONVERGED, "parent's last SCF did not converge"))
-    if is_opt_parent(deck, out_text) and "OPT END - CONVERGED" not in out_text:
-        reasons.append((REFUSE_OPT_NOT_CONVERGED,
-                        "parent is an optimization without 'OPT END - CONVERGED': its last "
-                        "geometry is not a minimum and would give spurious imaginary modes"))
-    if is_freq_parent(deck, out_text):
-        reasons.append((REFUSE_FREQ_GEOMETRY,
-                        "parent is a FREQCALC run; use the OPT (or SP) output it was "
-                        "derived from as the geometry source (a FREQ output can still be "
-                        "used for NAC with collect --nac-from)"))
+    reasons += run_refusals(out_text, is_opt_parent(deck, out_text), is_freq_parent(deck, out_text))
 
     try:
         import sys as _sys
@@ -422,156 +422,27 @@ def warnings_for(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Template
+# Supercell k-point mesh
 # ---------------------------------------------------------------------------
-
-@dataclass
-class Template:
-    lines: List[str]                     # the TEMPLATE: basis part + edited block 3,
-                                         # without TOLDEE, GRADCAL and the final END
-    edits: List[str]
-    toldee: int
-
-
-def _value_index(block3: Sequence[str], key: str) -> Optional[int]:
-    for i, k in _top_level(block3):
-        if k == key:
-            return i
-    return None
-
-
-def _parse_int(line: str) -> Optional[int]:
-    try:
-        return int(line.split()[0])
-    except (ValueError, IndexError):
-        return None
-
-
-def parent_toldee(block3: Sequence[str]) -> Optional[int]:
-    i = _value_index(block3, "TOLDEE")
-    if i is None or i + 1 >= len(block3):
-        return None
-    return _parse_int(block3[i + 1])
-
 
 def is_diagonal(dim: Sequence[Sequence[int]]) -> bool:
     return all(dim[i][j] == 0 for i in range(3) for j in range(3) if i != j)
 
 
-def scale_shrink(block3: List[str], diag: Sequence[int]) -> Tuple[List[str], Optional[str]]:
-    """Scale SHRINK by the supercell multiplicities (ceil per direction)."""
-    i = _value_index(block3, "SHRINK")
-    if i is None or i + 1 >= len(block3):
-        return block3, None
-    first = block3[i + 1].split()
-    try:
-        is_, isp = int(first[0]), int(first[1])
-    except (ValueError, IndexError):
-        return block3, None
-    consumed = 2
-    if is_ == 0:
-        try:
-            old = [int(x) for x in block3[i + 2].split()[:3]]
-        except (ValueError, IndexError):
-            return block3, None
-        consumed = 3
-    else:
-        old = [is_] * 3
+def scaled_mesh(old: Sequence[int], isp: int, diag: Sequence[int]) -> Tuple[List[int], int, str]:
+    """SHRINK of a diagonal supercell: the parent's mesh divided by the supercell
+    size in each direction, rounded up where it does not divide (so the k-point
+    density never drops below the parent's), and its Gilat net scaled with it.
+    Returns (mesh, ISP, the note opt2d12 prints and the manifest keeps)."""
+    old = [int(k) for k in old]
     new = [max(1, math.ceil(k / d)) for k, d in zip(old, diag)]
-    new_isp = max(max(new), math.ceil(isp * max(new) / max(old)))
-    if len(set(new)) == 1:
-        repl = [f"{new[0]} {new_isp}"]
-    else:
-        repl = [f"0 {new_isp}", f"{new[0]} {new[1]} {new[2]}"]
+    new_isp = max(max(new), math.ceil(int(isp) * max(new) / max(old)))
     note = f"SHRINK {' '.join(map(str, old))} (ISP {isp}) -> {' '.join(map(str, new))} (ISP {new_isp})"
     inexact = [f"{k}/{d}" for k, d in zip(old, diag) if k % d]
     if inexact:
         note += ("; supercell size does not divide the parent mesh "
                  f"({', '.join(inexact)}), so the sampling is equivalent but not identical")
-    out = list(block3[:i + 1]) + repl + list(block3[i + consumed:])
-    return out, note
-
-
-def template_lines(deck: ParentDeck, n_super_atoms: int, toldee: Optional[int] = None,
-                   scale_shrink_dims: Optional[Sequence[int]] = None) -> Template:
-    """The TEMPLATE: basis part + block 3 of the parent with edits (a)-(f)."""
-    edits = ["(a) final END of the parent removed (the deck's END follows GRADCAL)"]
-    block3 = list(deck.block3)
-
-    # (b) TOLDEE: out of block 3 (every top-level record of it), into the deck tail
-    found: List[int] = []
-    while True:
-        ti = _value_index(block3, "TOLDEE")
-        if ti is None:
-            break
-        value = parent_toldee(block3)
-        if value is not None:
-            found.append(value)
-        del block3[ti:ti + 2 if value is not None else ti + 1]
-    old = max(found) if found else None
-    target = max(DEFAULT_TOLDEE if toldee is None else toldee, old or 0)
-    if old is None:
-        edits.append(f"(b) TOLDEE {target} written before GRADCAL (parent had none)")
-    elif target != old:
-        edits.append(f"(b) TOLDEE {old} -> {target}, moved before GRADCAL")
-    else:
-        edits.append(f"(b) TOLDEE {old} kept, moved before GRADCAL")
-
-    # (c) GUESSP
-    gi = [i for i, k in _top_level(block3) if k == "GUESSP"]
-    for i in reversed(gi):
-        del block3[i]
-    if gi:
-        edits.append("(c) GUESSP dropped (no density matrix for a displaced supercell)")
-
-    # (d) SHRINK
-    if scale_shrink_dims is not None:
-        block3, note = scale_shrink(block3, scale_shrink_dims)
-        if note:
-            edits.append(f"(d) {note}")
-
-    # (f) GRADCAL: out of block 3, into the deck tail
-    gr = [i for i, k in _top_level(block3) if k == "GRADCAL"]
-    for i in reversed(gr):
-        del block3[i]
-    gradcal_note = ("(f) the parent's GRADCAL moved to the end, after TOLDEE" if gr
-                    else "(f) GRADCAL and END appended")
-
-    # (e) buffers
-    keys = {k for _, k in _top_level(block3)}
-    if not ({"BIPOSIZE", "EXCHSIZE"} & keys) and n_super_atoms > BUFFER_ATOM_THRESHOLD:
-        block3 += ["BIPOSIZE", BUFFER_SIZE, "EXCHSIZE", BUFFER_SIZE]
-        edits.append(f"(e) BIPOSIZE/EXCHSIZE {BUFFER_SIZE} added ({n_super_atoms} atoms in "
-                     "the supercell, parent had neither)")
-    edits.append(gradcal_note)
-
-    return Template(lines=list(deck.basis_lines) + block3, edits=edits, toldee=target)
-
-
-def _check_template(deck: ParentDeck, template: Template) -> None:
-    """A top-level END, TOLDEE or GRADCAL in the block-3 part would stop or
-    duplicate what the deck tail adds."""
-    body = template.lines[len(deck.basis_lines):]
-    bad = [k for _, k in _top_level(body) if k in ("END", "TOLDEE", "GRADCAL")]
-    if bad:
-        raise ValueError(f"template block 3 must not contain {', '.join(dict.fromkeys(bad))}")
-
-
-def template_text(template: Template) -> str:
-    """The TEMPLATE file phonopy's CRYSTAL writer (phonopy-init --crystal -d)
-    inserts after ``EXTERNAL / ENDGEOM``: explicit basis sets only."""
-    return "\n".join(template.lines) + "\n"
-
-
-def deck_text(title: str, deck: ParentDeck, template: Template) -> str:
-    """The full displaced-supercell deck: header, TEMPLATE, then the tail
-    phonopy's own writer appends (TOLDEE, GRADCAL, END)."""
-    _check_template(deck, template)
-    head = [title, "EXTERNAL"]
-    if deck.basis_kind == "explicit":
-        head.append("END")
-    tail = ["TOLDEE", str(template.toldee), "GRADCAL", "END"]
-    return "\n".join(head + template.lines + tail) + "\n"
+    return new, new_isp, note
 
 
 def method_lines(deck: ParentDeck) -> Dict[str, List[str]]:

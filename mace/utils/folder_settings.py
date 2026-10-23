@@ -210,6 +210,7 @@ TEMPLATE = """\
 # backend = "plotly"                # mace plotting's band/DOS renderer: plotly or matplotlib
 # log_delta_e = false               # run energy charts open on the log |dE| view
 # relative_to = "final"             # first, final, minimum, absolute
+# potential_colors = "chemistry"   # chemistry, physics
 
 [setup]
 # functional = "HSE06"              # Calculation Setup's defaults (GUI)

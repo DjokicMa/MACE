@@ -13,12 +13,27 @@ The format (CRYSTAL23 manual, EXTERNAL, pp. 450-451), all lengths in Å, Cartesi
     t1 t2 t3                             and the translation (Cartesian, Å)
     nirr                                 the atoms of the asymmetric unit
     Z x y z                              (Z: CRYSTAL's numbering, 2xx an ECP)
+    sg nops                              (optional) the space group number and its operator count
 
-CRYSTAL writes only the asymmetric unit, so the cell is the orbit of those atoms
-under the operators, de-duplicated (ase's reader refuses any file with more than
-the identity). An operator acts on a row vector, ``x' = x R + t``; a file written
-the other way round (``x' = R x + t``) is read too: of the two, the one that maps
-the generated cell onto itself is used.
+The cell is the orbit of the listed atoms under the operators, de-duplicated
+(ase's reader refuses any file with more than the identity). CRYSTAL23 writes
+the operators for a column vector, ``x' = R x + t`` (checked on a real EXTPRT
+run, P3_1 Se: tests/data/fort34/Se_P31_crystal23.f34); a file written the other
+way round (``x' = x R + t``) is read too: of the two, the one that maps the
+generated cell onto itself is used, the column reading when both do.
+
+Screw axes (the 1.1.6 check): the two readings differ only for an operator whose
+rotation is not its own transpose, paired with a translation. R^T = R^-1, so
+reading a 3_1 operator the other way round gives 3_2 (likewise 4_1/4_3, 6_1/6_5,
+6_2/6_4). From the whole cell (CRYSTAL23 lists every atom) the wrong reading
+still closes, but only by adding the mirror image's atoms, so the reading that
+generates fewer atoms is used. From an asymmetric unit alone both readings give
+the same number of atoms, the two enantiomorphic structures: the file's trailing
+record (space group number) decides through spglib for a 3D cell; without it
+(or for a layer or rod group) the column reading is kept and the result says
+``convention_ambiguous`` with both groups, so the reader can warn.
+CRYSTALpytools writes pymatgen's ``rotation_matrix`` (which acts as ``R x``)
+row by row, i.e. the column reading too.
 """
 from __future__ import annotations
 
@@ -101,6 +116,14 @@ def parse(text: str) -> Dict[str, Any]:
         except (ValueError, IndexError):
             raise Fort34Error(f"line {i + k + 1} (atom {k + 1}) has no atomic number: {lines[i + k].strip()!r}") from None
         pos.append(_floats(" ".join(parts[1:]), 3, f"position of atom {k + 1}", i + k + 1))
+    declared = None
+    k = i + nirr
+    if k < len(lines):
+        parts = lines[k].split()
+        try:
+            declared = int(float(parts[0])) if parts else None
+        except ValueError:
+            declared = None
     rots = np.array(rots, float)
     dev = np.abs(np.einsum("nij,nkj->nik", rots, rots) - np.eye(3)).max(axis=(1, 2))
     bad = np.nonzero(dev > 1e-3)[0]
@@ -114,7 +137,7 @@ def parse(text: str) -> Dict[str, Any]:
         raise Fort34Error(f"the {dim} periodic lattice vectors are linearly dependent")
     return {"dim": dim, "header": head, "lattice": lattice, "rotations": rots,
             "translations": np.array(trans, float), "numbers": numbers,
-            "positions": np.array(pos, float)}
+            "positions": np.array(pos, float), "declared_group": declared}
 
 
 def _wrap(cart: np.ndarray, lattice: np.ndarray, dim: int) -> np.ndarray:
@@ -169,18 +192,61 @@ def _expand(rec: Dict[str, Any], row: bool) -> Tuple[np.ndarray, List[int], floa
     return cart, out_z, worst
 
 
+def _same_cell(a, b, lat, dim) -> bool:
+    """Do two expansions hold the same atoms (any order, minimum image)?"""
+    (ca, za), (cb, zb) = a, b
+    if len(za) != len(zb) or sorted(za) != sorted(zb):
+        return False
+    zb = np.asarray(zb)
+    for x, z in zip(ca, za):
+        m = zb == z
+        if _dist(x[None], cb[m], lat, dim).min() >= DEDUP_TOL * 10:
+            return False
+    return True
+
+
+def _spacegroup_number(cart, numbers, lat) -> int:
+    try:
+        import spglib
+        frac = np.linalg.solve(lat.T, np.asarray(cart).T).T
+        ds = spglib.get_symmetry_dataset((lat, frac % 1.0, [int(z) % 100 or int(z) for z in numbers]), symprec=1e-3)
+        n = ds["number"] if isinstance(ds, dict) else getattr(ds, "number", None)
+        return int(n) if n else 0
+    except Exception:
+        return 0
+
+
 def expand(rec: Dict[str, Any]) -> Dict[str, Any]:
     """The full cell of a parse() result: {cart (n,3), numbers, nsym, nirr,
-    convention}. Raises Fort34Error when the operators do not map the atoms
-    onto themselves either way round (a damaged file)."""
+    convention[, convention_ambiguous, groups]}. Raises Fort34Error when the
+    operators do not map the atoms onto themselves either way round (a damaged file)."""
     best = None
+    tries = {}
     for row in (True, False):
         cart, nums, worst = _expand(rec, row)
         if worst < CLOSURE_TOL:
-            return {"cart": cart, "numbers": nums, "nsym": len(rec["rotations"]),
-                    "nirr": len(rec["numbers"]), "convention": "row" if row else "column"}
+            tries[row] = (cart, nums)
         if best is None or worst < best:
             best = worst
+    if tries:
+        lat, dim = rec["lattice"], rec["dim"]
+        row = False if False in tries else True
+        out = {"nsym": len(rec["rotations"]), "nirr": len(rec["numbers"])}
+        if len(tries) == 2 and not _same_cell(tries[True], tries[False], lat, dim):
+            # an enantiomorphic screw axis read both ways (see the module doc)
+            n_row, n_col = len(tries[True][1]), len(tries[False][1])
+            groups = {r: (_spacegroup_number(*tries[r], lat) if dim == 3 else 0) for r in (True, False)}
+            want = rec.get("declared_group")
+            match = [r for r in (True, False) if want and groups[r] == want]
+            if n_row != n_col:
+                row = n_row < n_col            # the wrong reading of a whole cell adds the mirror image's atoms
+            elif len(match) == 1:
+                row = match[0]
+            else:
+                out.update(convention_ambiguous=True, groups={"row": groups[True], "column": groups[False]})
+        cart, nums = tries[row]
+        out.update(cart=cart, numbers=nums, convention="row" if row else "column")
+        return out
     raise Fort34Error(f"its {len(rec['rotations'])} symmetry operators do not map the "
                       f"{len(rec['numbers'])} atoms of its asymmetric unit onto one cell "
                       f"(an atom lands {best:.3f} Å from any other): the operators or the atoms are damaged")

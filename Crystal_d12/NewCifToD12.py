@@ -124,6 +124,7 @@ from d12_calc_freq import (
     get_advanced_frequency_settings,
     write_frequency_section,
     phonon_dispersion_refusal,
+    gamma_only_phonon_dos,
     crystal_system_with_lattice,
 )
 from d12_calc_basic import write_optimization_section, configure_single_point
@@ -1700,6 +1701,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         freq_settings = nested_settings
 
     if calculation_type == "FREQ":
+        freq_settings = gamma_only_phonon_dos(dimensionality, freq_settings)
         refusal = phonon_dispersion_refusal(dimensionality, freq_settings)
         if refusal:
             ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")

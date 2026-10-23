@@ -110,6 +110,8 @@ def copy_dependencies(target_dir: str = "."):
                 "CRYSTALOptToD12.py",
                 "d12_calc_basic.py",
                 "d12_calc_freq.py",
+                "d12_calc_elastic.py",  # ELASTIC/EOS/QHA/CPHF blocks (1.1.6)
+                "d12_calc_phonopy.py",  # PHONOPY choice 8 (1.1.6)
                 "d12_config.py",
                 "d12_constants.py",
                 "d12_interactive.py",
@@ -133,6 +135,7 @@ def copy_dependencies(target_dir: str = "."):
                 "CRYSTALOptToD3.py",
                 "d3_interactive.py",
                 "d3_config.py",
+                "d3_bz.py",  # reciprocal cell for the TRANSPORT k mesh (1.1.6)
                 "d3_kpoints.py",
                 "seekpath_interface.py",
                 "hpkot_static.py",

@@ -141,8 +141,21 @@ def structure_of(out_file: str) -> Optional[Dict[str, Any]]:
         dim = d3_kpoints.output_dimensionality(str(out_file))
     if st is None or "cell" not in st:
         cell = printed_cell(out_file)
-        return None if cell is None else {"cell": cell, "dim": int(dim or 3), "structure": None}
-    return {"cell": np.asarray(st["cell"], dtype=float), "dim": int(dim or 3), "structure": st}
+        return None if cell is None else {"cell": cell, "dim": _dim_of(cell, dim), "structure": None}
+    return {"cell": np.asarray(st["cell"], dtype=float), "dim": _dim_of(st["cell"], dim), "structure": st}
+
+
+def _dim_of(cell, dim) -> int:
+    """The output's dimensionality; a properties run (BAND, DOSS) does not print SLAB or POLYMER
+    CALCULATION, but its lattice vectors carry CRYSTAL's formal 500 Å along each non-periodic axis
+    (a slab's zone is 2D, a polymer's 1D)."""
+    d = int(dim if dim is not None else 3)
+    if d == 3:
+        lengths = np.linalg.norm(np.asarray(cell, dtype=float), axis=1)
+        n = int(np.sum(lengths < 499.0))
+        if n < 3 and all(x >= 499.0 for x in lengths[n:]):
+            return n
+    return d
 
 
 _VECTORS = ("DIRECT LATTICE VECTOR COMPONENTS (ANGSTROM)", "DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)")

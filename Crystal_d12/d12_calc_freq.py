@@ -1689,13 +1689,22 @@ class PhononDispersionRefused(ValueError):
 
 # FREQCALC DISPERSION options not written for a slab: WANG is for 3D systems
 # only (manual p.234); the others take dimension-dependent input and were not
-# run on CRYSTAL23 for a slab (the measured slab deck is SCELPHONO 2x2 +
-# DISPERSION + BANDS).
+# run on CRYSTAL23 for a slab (the measured slab decks are SCELPHONO 2x2 +
+# DISPERSION + BANDS, and SCELPHONO 2x2 + DISPERSION + PDOS: h-BN, HSEsol-3c,
+# for the 1.1.6 example suite, "INTEGRAL OF THE TOTAL PDOS: 6.00000").
 _SLAB_DISPERSION_UNSUPPORTED = {
     "wang": "WANG is for 3D systems only (manual p.234)",
     "interphess": "INTERPHESS has not been run on CRYSTAL23 for a slab",
-    "pdos": "PDOS has not been run on CRYSTAL23 for a slab",
     "ins": "INS has not been run on CRYSTAL23 for a slab",
+}
+# The same for a polymer. Measured on CRYSTAL23 (trans-polyacetylene, rod group
+# 1, HSEsol-3c): SCELPHONO "2" (1 real, manual p.73) + DISPERSION + BANDS +
+# PDOS ran; BANDS reads I1 J1 from each record ("2 100 / 1 / 0 1" went from
+# Gamma to (1,0,0)/2), and a 6-integer 3D record "0 0 0 1 0 0" stayed at Gamma.
+_POLYMER_DISPERSION_UNSUPPORTED = {
+    "wang": "WANG is for 3D systems only (manual p.234)",
+    "interphess": "INTERPHESS has not been run on CRYSTAL23 for a polymer",
+    "ins": "INS has not been run on CRYSTAL23 for a polymer",
 }
 
 
@@ -1739,9 +1748,10 @@ def phonon_dispersion_refusal(dimensionality, freq_settings, parent_output="") -
     A 3D CRYSTAL takes the 3x3 SCELPHONO matrix and the space group's path.
     A SLAB takes a 2x2 matrix and the in-plane part of its corresponding
     space group's path, read from the parent's output (``parent_output``;
-    None when it is not known yet, which skips that check). For a MOLECULE
+    None when it is not known yet, which skips that check). A POLYMER takes
+    one integer and the Gamma-X path along the chain. For a MOLECULE
     CRYSTAL23 stops at SCELPHONO with "SUPERCELL OPTION NOT ALLOWED FOR
-    MOLECULES". A POLYMER dispersion deck has not been run on CRYSTAL23.
+    MOLECULES".
     """
     if not isinstance(freq_settings, dict) or not freq_settings.get("dispersion"):
         return None
@@ -1771,10 +1781,66 @@ def phonon_dispersion_refusal(dimensionality, freq_settings, parent_output="") -
                     "slab's output; there is none here. Make the FREQ deck with "
                     "opt2d12 from the slab's OPT or SP output.")
         return None
+    if dim == "POLYMER":
+        problems = [why for key, why in _POLYMER_DISPERSION_UNSUPPORTED.items()
+                    if key in freq_settings]
+        scel = freq_settings.get("scelphono")
+        if (isinstance(scel, (list, tuple)) and len(scel) == 9
+                and any(scel[i] for i in range(1, 9) if i not in (4, 8))):
+            problems.append("the SCELPHONO matrix leaves the chain axis (a polymer "
+                            "takes one integer, manual p.73)")
+        if problems:
+            return ("this polymer phonon dispersion cannot be written: " + "; ".join(problems)
+                    + ". Leave those options out (template 6 writes SCELPHONO 2 and "
+                    "the Gamma-X path along the chain).")
+        return None
     return (f"phonon dispersion is not written for a {dim}: a {dim} dispersion "
             f"deck (SCELPHONO and BANDS take dimension-dependent input, manual "
             f"p.73 and p.233) has not been run on CRYSTAL23. Use a FREQ setup "
             f"without dispersion (e.g. example_configs/freq_analysis.json).")
+
+
+def gamma_only_phonon_dos(dimensionality, freq_settings):
+    """A molecule's phonon DOS: the Gamma-only FREQCALC + PDOS (or INS) the
+    manual allows ("The phonon density-of-state can be computed also from a
+    Gamma-only calculation", p.236), for the dispersion settings of template 7
+    (SCELPHONO + DISPERSION), which CRYSTAL23 stops for a MOLECULE. Measured on
+    CRYSTAL23 (ethylene carbonate, HSEsol-3c): FREQCALC + PDOS ran and printed
+    the total and atomic PDOS. Anything else is returned unchanged."""
+    if (str(dimensionality or "").upper() != "MOLECULE" or not isinstance(freq_settings, dict)
+            or not freq_settings.get("dispersion") or "bands" in freq_settings
+            or not ("pdos" in freq_settings or "ins" in freq_settings)):
+        return freq_settings
+    out = {k: v for k, v in freq_settings.items() if k not in ("dispersion", "scelphono")}
+    out["mode"] = "GAMMA"
+    return out
+
+
+def _write_phonon_dos(f, freq_settings):
+    """FREQCALC's PDOS and INS records (manual pp.236-237)."""
+    # Phonon DOS
+    if "pdos" in freq_settings:
+        pdos_settings = freq_settings["pdos"]
+        print("PDOS", file=f)
+        # PDOS format: NUMA NBIN (max frequency and number of bins)
+        print(f"{pdos_settings.get('max_freq', 2000)} {pdos_settings.get('nbins', 200)}", file=f)
+        # LPRO (0 or 1 for projected DOS)
+        print(1 if pdos_settings.get("projected", True) else 0, file=f)
+
+    # INS spectrum
+    if "ins" in freq_settings:
+        ins_settings = freq_settings["ins"]
+        print("INS", file=f)
+        # INS format: NUMA NBIN (max frequency and number of bins)
+        print(f"{ins_settings.get('max_freq', 3000)} {ins_settings.get('nbins', 300)}", file=f)
+        # NWTYPE (0, 1, or 2 for neutron cross-section type)
+        print(ins_settings.get("neutron_type", 2), file=f)  # 0=coherent, 1=incoherent, 2=both
+
+
+def polymer_phonon_band_path(band_settings):
+    """(records I1 J1, ISS, labels) of a polymer's BANDS path: Gamma-X along the
+    chain, as opt2d3 writes a polymer's BAND path (ISS 2, Gamma to 1/2)."""
+    return [[0, 1]], 2, ["GAMMA", "X"]
 
 
 def _slab_band_path(band_settings, space_group, lattice_type, shrink,
@@ -1900,6 +1966,11 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     if freq_settings.get("dispersion", False) and "scelphono" in freq_settings:
         supercell = freq_settings["scelphono"]
         print("SCELPHONO", file=f)
+        if str(dimensionality).upper() == "POLYMER" and isinstance(supercell, list):
+            # A polymer takes one integer, 1 real (manual p.73): the chain-axis factor
+            if supercell:
+                print(f"{supercell[0]}", file=f)
+            supercell = None
         if str(dimensionality).upper() == "SLAB" and isinstance(supercell, list):
             # A slab takes a 2x2 matrix, 4 reals (manual p.73); the 3x3
             # matrix stops CRYSTAL23 after the geometry. Its in-plane part.
@@ -2229,7 +2300,9 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
             npoints = band_settings.get("npoints", 100)
 
             slab_path = (slab_phonon_band_path(band_settings, optimization_section)
-                         if str(dimensionality).upper() == "SLAB" else None)
+                         if str(dimensionality).upper() == "SLAB" else
+                         polymer_phonon_band_path(band_settings)
+                         if str(dimensionality).upper() == "POLYMER" else None)
             if slab_path is not None:
                 records, iss, labels = slab_path
                 band_settings["path_labels"] = labels
@@ -2328,12 +2401,24 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                                 ]
                                 path.append(int_seg)
                     else:
-                        # Label-based path - validate for CRYSTAL23 compatibility
+                        # Label-based path. FREQCALC BANDS takes integer records: CRYSTAL23 stopped the label
+                        # records ("X GAMMA" ...) of diamond's default path with "INPFREQ **** FORMAT ERROR IN
+                        # FREQCALC INPUT DECK" (measured on HPCC for the 1.1.6 example suite), as it does a
+                        # slab's. The labels name the path in the title; the records are their coordinates.
                         band_settings["kpath_source"] = "default"
                         path_labels = get_band_path_from_symmetry(space_group, lattice_type)
+                        frac_segments = (get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                                         if get_kpoint_coordinates_from_labels else None)
+                        if frac_segments and scale_kpoint_segments:
+                            path, shrink = scale_kpoint_segments(frac_segments, shrink)
+                            band_settings["path_labels"] = path_labels
+                        else:
+                            frac_segments = None
 
                         # Validate k-point labels for CRYSTAL23 compatibility
-                        if validate_kpoint_labels_for_crystal23:
+                        if frac_segments:
+                            pass
+                        elif validate_kpoint_labels_for_crystal23:
                             labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path_labels, space_group, lattice_type)
 
                             if not labels_valid:
@@ -2435,23 +2520,10 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                             # Default path segment
                             print("0 0 0 1 0 0", file=f)
         
-        # Phonon DOS
-        if "pdos" in freq_settings:
-            pdos_settings = freq_settings["pdos"]
-            print("PDOS", file=f)
-            # PDOS format: NUMA NBIN (max frequency and number of bins)
-            print(f"{pdos_settings.get('max_freq', 2000)} {pdos_settings.get('nbins', 200)}", file=f)
-            # LPRO (0 or 1 for projected DOS)
-            print(1 if pdos_settings.get("projected", True) else 0, file=f)
-        
-        # INS spectrum
-        if "ins" in freq_settings:
-            ins_settings = freq_settings["ins"]
-            print("INS", file=f)
-            # INS format: NUMA NBIN (max frequency and number of bins)
-            print(f"{ins_settings.get('max_freq', 3000)} {ins_settings.get('nbins', 300)}", file=f)
-            # NWTYPE (0, 1, or 2 for neutron cross-section type)
-            print(ins_settings.get("neutron_type", 2), file=f)  # 0=coherent, 1=incoherent, 2=both
+        _write_phonon_dos(f, freq_settings)
+    elif "pdos" in freq_settings or "ins" in freq_settings:
+        # a Gamma-only phonon DOS (manual p.236), as gamma_only_phonon_dos makes it for a molecule
+        _write_phonon_dos(f, freq_settings)
     
     # Anisotropic displacement parameters
     if "adp" in freq_settings:

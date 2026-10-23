@@ -44,13 +44,13 @@ python CRYSTALOptToD3.py --input material.out --calc-type BAND --save-config
 
 ### 4. `doss_orbital_projections.json`
 - DOS with element and orbital projections (hardcoded example)
-- Energy window: -10 to 20 eV around Fermi
-- 2000 energy points
+- Energy window: -20 to +15 eV around Fermi (opt2d3's default window)
+- The Standard energy step (0.02 eV: 1750 points)
 
 ### 5. `doss_element_orbital_auto.json`
 - **Automatic** element and orbital projections
 - Projections calculated based on basis set
-- Energy window: -10 to 20 eV
+- Energy window: -20 to +15 eV around Fermi (opt2d3's default window), the Standard energy step
 - Works with any material
 
 ### 6. `charge_density_3d.json`
@@ -62,7 +62,7 @@ python CRYSTALOptToD3.py --input material.out --calc-type BAND --save-config
 - **Automatic** chemical potential range relative to Fermi
 - Chemical potential: -2 to +2 eV around Fermi energy
 - Temperature range: 100-800 K
-- Fermi energy extracted automatically for each material
+- Fermi energy extracted automatically for each material (refused without a trustworthy one)
 
 ## Configuration Structure
 
@@ -88,8 +88,10 @@ Many settings can be set to "auto" for dynamic calculation based on each materia
 
 ### TRANSPORT Calculations:
 - **`mu_reference: "fermi"`**: Automatically sets chemical potential range relative to the Fermi energy
-- Fermi energy is extracted from each material's output file
-- Chemical potential range is recalculated for each material
+- Fermi energy is extracted from each material's output file (the SCF's, else a BAND or DOSS run
+  of the same SCF beside it); without a trustworthy one the deck is refused with the reason
+- Chemical potential range (and the `tdf_range`) is recalculated for each material
+- The NEWK k mesh is the Standard k spacing (`k_resolution`, see [Crystal_d3/README.md](../README.md))
 
 ## Creating Custom Configurations
 

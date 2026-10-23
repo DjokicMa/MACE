@@ -53,7 +53,8 @@ from basis_file_check import basis_block_problem, shell_problem  # noqa: E402
 try:
     from mace.utils.calc_detection import (is_spin_orbit_deck, is_two_component_deck,
                                            is_two_component_output, staged_2c_guess,
-                                           two_component_guess)
+                                           two_component_guess, mechanics_output_type,
+                                           mechanics_reference_problem)
 except ImportError:
     try:
         import importlib.util as _ilu
@@ -67,6 +68,8 @@ except ImportError:
         is_two_component_output = _calc_detection.is_two_component_output
         staged_2c_guess = _calc_detection.staged_2c_guess
         two_component_guess = _calc_detection.two_component_guess
+        mechanics_output_type = _calc_detection.mechanics_output_type
+        mechanics_reference_problem = _calc_detection.mechanics_reference_problem
     except Exception:  # pragma: no cover - flat copy without the mace package
         def _twocompon_records(content):
             records = None
@@ -102,6 +105,12 @@ except ImportError:
             except OSError:
                 return None
             return None if record is None else (record, os.path.splitext(str(deck_path))[0] + ".f20")
+
+        def mechanics_output_type(content):
+            return None
+
+        def mechanics_reference_problem(content):
+            return None
 
 SOPSEUD_DIR = os.path.join(_HERE, "..", "Crystal_d3", "Archived", "basis", "sopseud")
 

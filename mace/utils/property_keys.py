@@ -36,7 +36,7 @@ CATEGORIES = (
     'lattice', 'structural', 'crystallographic', 'energy', 'electronic',
     'band_structure', 'density_of_states', 'population_analysis', 'optimization',
     'frequency', 'thermodynamics', 'transport', 'charge_potential', 'orbitals',
-    'scf_settings', 'computational',
+    'scf_settings', 'computational', 'mechanical',
 )
 
 _AXES = ('xx', 'yy', 'zz')
@@ -127,11 +127,17 @@ def _build() -> Dict[str, Key]:
     k['spin_polarized'] = Key('electronic', 'boolean', 'bool',
                               'an unrestricted (spin-polarized) run, whatever its net spin')
     k['fermi_energy_au'] = Key('electronic', 'Hartree', 'float',
-                               'Fermi energy: the last SCF\'s, else the one a BAND or DOSS output prints')
+                               'Fermi energy: the last SCF\'s, else the one a BAND or DOSS output prints; '
+                               'never CRYSTAL\'s -1.0 placeholder of a spin-locked SCF (fermi_energy_note)')
+    k['fermi_energy_note'] = Key('electronic', 'category', 'text',
+                                 'where fermi_energy_au is from when the .out prints CRYSTAL\'s -1.0 placeholder '
+                                 '(an SCF that ended with its spins locked, SPINLOCK): derived from the bands '
+                                 '(the top of the occupied ones), the DOSS.DAT\'s, or why there is none')
     k['electronic_classification'] = Key('electronic', 'category', 'text',
                                          'metal (gap < 0.01 eV), semiconductor (up to 4 eV) or insulator '
-                                         '(above 4 eV), from band_gap, else from the band structure; '
-                                         'semimetal needs a band structure and a DOS')
+                                         '(above 4 eV), from band_gap, else from the band structure; a '
+                                         'gapless band structure with a DOS beside it is a semimetal when '
+                                         'N(E_F) < 0.05 states/eV/atom (band_path_gap_type\'s rule)')
     k['classification_gap_source'] = Key('electronic', 'category', 'text',
                                          'the gap electronic_classification is from: scf (band_gap) or '
                                          'band_structure (band_fundamental_gap_ev)')
@@ -172,8 +178,11 @@ def _build() -> Dict[str, Key]:
     for carrier in ('electron', 'hole', 'average'):
         k[f'real_{carrier}_effective_mass'] = Key(
             'band_structure', 'm_e', 'float',
-            f'{carrier} effective mass from a quadratic fit at the band edge'
-            + (' (geometric mean of electron and hole)' if carrier == 'average' else ''))
+            f'quick estimate of the {carrier} effective mass: the curvature of one band along the k-path '
+            'direction at the band edge'
+            + (' (geometric mean of electron and hole)' if carrier == 'average' else '')
+            + '. Use effective_mass_*_mc / _md (accurate: every degenerate band and valley, several '
+              'directions, R² checked)')
     k['effective_mass_calculation_method'] = Key('band_structure', 'category', 'text',
                                                  'how the effective masses were found')
 
@@ -197,9 +206,14 @@ def _build() -> Dict[str, Key]:
                                               'states per cell integrated up to E_F')
     k['dos_num_projections'] = Key('density_of_states', 'dimensionless', 'int', 'projected DOS columns')
     k['dos_threshold'] = Key('density_of_states', 'states/(Hartree·cell)', 'float',
-                             'the DOS at E_F above which the band analysis calls a gapless system a metal')
+                             'the DOS at E_F above which the band analysis calls a gapless system a metal '
+                             '(0.05 states/eV/atom, per cell)')
     k['dos_mean'] = Key('density_of_states', 'states/(Hartree·cell)', 'float', 'mean of the nonzero DOS')
     k['doss_file_analyzed'] = Key('density_of_states', 'category', 'text', 'the DOSS.DAT the band analysis read')
+    k['doss_reach_note'] = Key('density_of_states', 'category', 'text',
+                               'why a DOS with its bands by index (a 1D material\'s default) stops too low: its '
+                               'DOSS.DAT ends below E_F + 15 eV, and --doss-conduction-bands adds conduction bands, '
+                               'mace.utils.doss_reach; absent when it does not')
 
     # ---------------------------------------------------- population analysis
     for spin, what in (('alpha_plus_beta', 'alpha+beta (charge)'), ('alpha_minus_beta', 'alpha-beta (spin)')):
@@ -268,6 +282,11 @@ def _build() -> Dict[str, Key]:
     k['transport_seebeck_max_uv_per_k'] = Key('transport', 'μV/K', 'float',
                                               'peak |S| of the averaged tensor diagonal')
     k['transport_carrier_type'] = Key('transport', 'category', 'text', 'p-type or n-type at the |S| peak')
+    k['transport_mesh_note'] = Key('transport', 'category', 'text',
+                                   'why the run\'s k mesh looks too coarse for transport (a mesh well below the '
+                                   'Standard one for its cell, a band Lorenz number far from Sommerfeld\'s), '
+                                   'mace.utils.transport_mesh; '
+                                   'absent when it does not')
     k['transport_tensor_average'] = Key('transport', 'category', 'text',
                                         'how the *_avg values average the tensors: (xx+yy+zz)/3 of each of '
                                         'S, sigma and kappa0, or (xx+yy)/2 in plane for a slab')
@@ -377,20 +396,123 @@ def _build() -> Dict[str, Key]:
                                 'DOSS, TRANSPORT, CHARGE+POTENTIAL or ORBITALS')
     k['cpu_time_total_s'] = Key('computational', 'seconds', 'float',
                                 'TOTAL CPU TIME: the CPU time of all processes')
+    # ------------------------------------------------- mechanical (1.1.6)
+    # ELASTCON / ELAPIEZO / PIEZOCON / PIEZOCP / PHOTOELA / EOS (mace.elastic.analysis)
+    for name, unit, typ, what in (
+            ('elastic_tensor', 'JSON', 'json', 'stiffness tensor C (Voigt 6x6) as printed: matrix, unit, system'),
+            ('elastic_compliance_tensor', 'JSON', 'json', 'compliance tensor S = C⁻¹ (TPa⁻¹)'),
+            ('elastic_seismic_velocities', 'JSON', 'json', 'Christoffel wave velocities Vp, Vs1, Vs2 (km/s) per direction'),
+            ('bulk_modulus_voigt_gpa', 'GPa', 'float', 'bulk modulus, Voigt bound'),
+            ('bulk_modulus_reuss_gpa', 'GPa', 'float', 'bulk modulus, Reuss bound'),
+            ('bulk_modulus_hill_gpa', 'GPa', 'float', 'bulk modulus, Hill average'),
+            ('shear_modulus_voigt_gpa', 'GPa', 'float', 'shear modulus, Voigt bound'),
+            ('shear_modulus_reuss_gpa', 'GPa', 'float', 'shear modulus, Reuss bound'),
+            ('shear_modulus_hill_gpa', 'GPa', 'float', 'shear modulus, Hill average'),
+            ('youngs_modulus_gpa', 'GPa', 'float', "Young's modulus from the Hill moduli"),
+            ('poisson_ratio', 'dimensionless', 'float', "Poisson's ratio from the Hill moduli"),
+            ('elastic_anisotropy_universal', 'dimensionless', 'float', 'universal anisotropy index A^U (0 = isotropic)'),
+            ('elastic_min_eigenvalue_gpa', 'GPa', 'float', 'smallest eigenvalue of C (Born stability)'),
+            ('elastic_born_stable', 'boolean', 'bool', 'C is positive definite (mechanically stable)'),
+            ('debye_temperature_elastic_k', 'K', 'float', 'Debye temperature from the mean sound velocity'),
+            ('sound_velocity_mean_km_s', 'km/s', 'float', 'mean sound velocity from the Hill moduli'),
+            ('elastic_2d_moduli', 'JSON', 'json', 'in-plane moduli of a slab (E_x, E_y, ν_xy, G_xy)'),
+            ('piezoelectric_e_tensor', 'JSON', 'json', 'direct piezoelectric tensor e (3x6, C/m²)'),
+            ('piezoelectric_d_tensor', 'JSON', 'json', 'converse piezoelectric tensor d (3x6, pC/N)'),
+            ('photoelastic_tensor', 'JSON', 'json', 'elasto-optic (Pockels) tensor p (6x6)'),
+            ('piezo_optic_tensor', 'JSON', 'json', 'piezo-optic tensor π (6x6, Brewster)'),
+            ('eos_fits', 'JSON', 'json', 'V0, E0, B0, B0′ of each equation of state'),
+            ('eos_points', 'JSON', 'json', 'the E(V) points the EOS fits use'),
+            ('eos_bulk_modulus_gpa', 'GPa', 'float', 'B0 of the Birch-Murnaghan EOS fit'),
+            ('eos_bulk_modulus_prime', 'dimensionless', 'float', "B0′ of the Birch-Murnaghan EOS fit"),
+            ('eos_equilibrium_volume_ang3', 'Å³', 'float', 'V0 of the Birch-Murnaghan EOS fit'),
+            ('qha_thermal_properties', 'JSON', 'json', 'QHA V(T), K_T(T), α_V(T), Cp−Cv, K_S and lattice expansion'),
+            ('qha_volume_300k_ang3', 'Å³', 'float', 'QHA cell volume at the temperature nearest 300 K'),
+            ('qha_bulk_modulus_300k_gpa', 'GPa', 'float', 'QHA isothermal bulk modulus near 300 K'),
+            ('qha_thermal_expansion_300k_per_k', '1/K', 'float', 'QHA volumetric thermal expansion near 300 K'),
+    ):
+        k[name] = Key('mechanical', unit, typ, what)
+    # CPHF/KS response (a CPHF, PHOTOELA or FREQ INTCPHF run; mace.elastic.analysis)
+    k['dielectric_cphf'] = Key('electronic', 'JSON', 'json',
+                               'CPHF/KS polarizability α, dielectric ε∞ and χ(1) components, principal ε, refractive indices')
+    k['dielectric_constant_electronic'] = Key('electronic', 'dimensionless', 'float',
+                                              'ε∞: mean of the principal CPHF/KS dielectric constants')
+    k['refractive_index_electronic'] = Key('electronic', 'dimensionless', 'float', 'mean principal refractive index')
+    k['hyperpolarizability_beta'] = Key('electronic', 'JSON', 'json', 'first hyperpolarizability β and χ(2) components')
+    k['hyperpolarizability_gamma'] = Key('electronic', 'JSON', 'json', 'second hyperpolarizability γ and χ(3) components')
+    # two-component SCF (TWOCOMPON)
+    k['two_component_magnetization'] = Key('electronic', 'μB', 'json', 'final total magnetization vector (Mx, My, Mz)')
+    k['two_component_magnetization_norm'] = Key('electronic', 'μB', 'float', '|M| of the final total magnetization')
+    k['two_component_atomic_magnetization'] = Key('electronic', 'μB', 'json', 'final (Mx, My, Mz) of each atom')
     k['wall_time_s'] = Key('computational', 'seconds', 'float', 'wall time: the last TELAPSE of the output')
     k['scf_cycles'] = Key('computational', 'cycles', 'int', 'cycles of the last SCF')
     k['advanced_analysis_note'] = Key('computational', 'category', 'text',
                                       'why a BAND.DAT/DOSS.DAT was not analyzed')
     k['advanced_analysis_error'] = Key('computational', 'category', 'text', 'the band analysis failed')
+    # the derived-property registry's own row (mace/properties/registry.py)
+    k['extraction_provenance'] = Key('computational', 'JSON', 'json',
+                                     'MACE version, registry version and, per derived property, its version, '
+                                     'status (stored or skipped, and why) and the files it read')
     return k
 
 
 KEYS: Dict[str, Key] = _build()
 
+# How the Properties tab shows a key's value in other units
+# (mace/properties/units.py); a derived property's outputs say the same with
+# Output(extensive=..., same_as=...).
+_SCF_ENERGIES = ('total_energy', 'total_energy_plus_d3', 'total_energy_corrected', 'd3_dispersion_energy',
+                 'gcp_energy', 'kinetic_energy', 'electron_electron_energy', 'electron_nuclear_energy',
+                 'nuclear_nuclear_energy', 'exchange_energy', 'correlation_energy')
+_THERMO_ENERGIES = ('electronic_energy', 'zero_point_energy', 'thermal_energy', 'pv_term', 'entropy_term',
+                    'free_energy_correction', 'gibbs_free_energy', 'enthalpy')
+
+#: the same quantity stored under several keys that differ only by unit: key
+#: -> the key the Properties tab shows (one row, with a unit picker). That key
+#: is the most precise one: the Hartree value CRYSTAL prints (the eV and kJ/mol
+#: values are converted from it, or printed with fewer digits). Every key stays
+#: in the database.
+SAME_QUANTITY: Dict[str, str] = {}
+for _p in _SCF_ENERGIES + _THERMO_ENERGIES:
+    for _u in ('ev', 'kj_mol'):
+        if f'{_p}_{_u}' in KEYS:
+            SAME_QUANTITY[f'{_p}_{_u}'] = f'{_p}_au'
+for _p in ('entropy', 'heat_capacity'):
+    SAME_QUANTITY[f'{_p}_mev_cell_k'] = f'{_p}_mhartree_cell_k'
+    SAME_QUANTITY[f'{_p}_j_mol_k'] = f'{_p}_mhartree_cell_k'
+
+#: keys whose value is per cell (extensive): the Properties tab offers them per
+#: atom (atoms_in_unit_cell) and per formula unit too. An energy relative to
+#: E_F, a gap, an energy per atom and a reaction energy are intensive (absent).
+EXTENSIVE = frozenset(
+    [f'{p}_{u}' for p in _SCF_ENERGIES for u in ('au', 'ev')]
+    + [f'{p}_{u}' for p in _THERMO_ENERGIES for u in ('au', 'ev', 'kj_mol')]
+    + [f'{p}_{u}' for p in ('entropy', 'heat_capacity') for u in ('mhartree_cell_k', 'mev_cell_k', 'j_mol_k')]
+    + ['chargepot_scf_total_energy_au', 'primitive_cell_volume', 'dos_at_fermi_total', 'dos_at_fermi_alpha',
+       'dos_at_fermi_beta', 'two_component_magnetization_norm'])
+
 #: large JSON values kept in the property_blobs side table (MaterialDatabase),
 #: not in the properties table
 BLOB_KEYS = frozenset(n for n in KEYS if n.startswith(('neighbor_analysis', 'final_neighbor_analysis',
                                                        'overlap_population', 'processed_')))
+
+# Keys of derived properties (mace/properties): registered at import of
+# mace.properties, not written by the extractor's own parsing. key(),
+# category(), unit(), known() and is_blob() read them too; KEYS stays the
+# extractor's own list (tests/test_property_keys.py checks it against the
+# source).
+EXTRA: Dict[str, Key] = {}
+EXTRA_BLOBS: set = set()
+
+
+def register_extra(name: str, k: Key, blob: bool = False) -> None:
+    """A derived property's output key (mace.properties.registry.register)."""
+    if k.category not in CATEGORIES:
+        raise ValueError(f"{name}: category {k.category!r} is not one of CATEGORIES")
+    EXTRA[name] = k
+    if blob:
+        EXTRA_BLOBS.add(name)
+    else:
+        EXTRA_BLOBS.discard(name)
 
 # Old name -> the name it became (MACE 1.1.6). Several old names of one new
 # one are listed in the order an old database's rows are taken in.
@@ -434,17 +556,28 @@ _warned: set = set()
 
 
 def key(name: str) -> Optional[Key]:
-    """The registry entry of ``name`` (an old name: of the one it became)."""
-    return KEYS.get(name) or KEYS.get(ALIASES.get(name, ''))
+    """The registry entry of ``name`` (an old name: of the one it became; a
+    derived property's key: its EXTRA entry)."""
+    return KEYS.get(name) or EXTRA.get(name) or KEYS.get(ALIASES.get(name, ''))
+
+
+def known(name: str) -> bool:
+    """A name the extractor or a registered derived property writes."""
+    return name in KEYS or name in EXTRA
+
+
+def is_blob(name: str) -> bool:
+    """Kept in the property_blobs table."""
+    return name in BLOB_KEYS or name in EXTRA_BLOBS
 
 
 def category(name: str) -> str:
-    k = KEYS.get(name)
+    k = KEYS.get(name) or EXTRA.get(name)
     return k.category if k else 'other'
 
 
 def unit(name: str) -> str:
-    k = KEYS.get(name)
+    k = KEYS.get(name) or EXTRA.get(name)
     return k.unit if k else 'dimensionless'
 
 
@@ -511,6 +644,29 @@ def classify_gap(gap_ev: float) -> str:
     if gap_ev < METAL_GAP_EV:
         return 'metal'
     return 'semiconductor' if gap_ev <= INSULATOR_GAP_EV else 'insulator'
+
+
+# Metal or semimetal of a gapless band structure (gap below METAL_GAP_EV, or
+# bands overlapping): the total DOS at E_F per atom, both spins, averaged over
+# E_F +- FERMI_DOS_WINDOW_EV (advanced_electronic_analyzer.fermi_dos_per_atom).
+# Below SEMIMETAL_DOS_PER_ATOM (states/eV/atom) a semimetal. Experiment
+# (Sommerfeld gamma / 2.357): Bi 0.003, graphite 0.006, Sb 0.05; Cu 0.29,
+# Al 0.57, Na 0.59. The corpus: pristine graphene and four-layer graphene
+# 0.0002-0.002, FSI-doped four-layer graphene 0.01-0.03, a carbon net
+# (3,4^2T10-CA) 0.023, another (3,4^2T1-CA) 0.085, bcc Fe 0.89: 0.05 lies in
+# the widest gap of these.
+SEMIMETAL_DOS_PER_ATOM = 0.05
+FERMI_DOS_WINDOW_EV = 0.05
+#: the class of a gapless band structure with no DOS to decide it
+GAPLESS_NO_DOS = 'metal or semimetal (no DOS to tell)'
+
+
+def classify_gapless(dos_per_atom: Optional[float]) -> Optional[str]:
+    """metal or semimetal of a gapless band structure from N(E_F) in
+    states/eV/atom (None without one: the DOS cannot tell)."""
+    if dos_per_atom is None:
+        return None
+    return 'semimetal' if dos_per_atom < SEMIMETAL_DOS_PER_ATOM else 'metal'
 
 
 # units.py's names for the registry's units (for UnitConverter)

@@ -445,17 +445,20 @@ def _info_from_output(output_file: Path) -> Optional[Dict]:
 
 def _info_from_d12(d12_file: Path) -> Optional[Dict]:
     """A 3D deck's asymmetric unit expanded by its space group (the GUI's
-    d12_atoms): the reduced formula and the formula of the conventional cell.
-    None for a deck that is not a 3D CRYSTAL deck or cannot be expanded."""
+    d12_atoms): the reduced formula and the formula of the conventional cell;
+    a group-1 SLAB, POLYMER or MOLECULE deck's atoms as listed, its
+    dimensionality from their periodic axes (a molecule's whole formula).
+    None for a deck that cannot be expanded."""
     try:
         from mace.gui.structures import d12_atoms
         atoms, _sg = d12_atoms(Path(d12_file))
     except Exception:
         return None
-    f = _formulas(atoms.numbers, molecule=False)
+    pbc = [bool(x) for x in atoms.pbc]
+    f = _formulas(atoms.numbers, molecule=not any(pbc))
     if not f:
         return None
-    return {"formula": f[0], "cell_formula": f[1], "dimensionality": "CRYSTAL", "source": "d12"}
+    return {"formula": f[0], "cell_formula": f[1], "dimensionality": _DIM_NAMES[sum(pbc)], "source": "d12"}
 
 
 def material_info(output_file: Path = None, d12_file: Path = None) -> Dict:

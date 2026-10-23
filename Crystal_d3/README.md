@@ -82,14 +82,30 @@ python CRYSTALOptToD3.py --list-configs
     "calculation_type": "DOSS",
     "projection_type": 3,
     "energy_range": "window",
-    "energy_window": [-0.3677, 0.7354],
-    "n_points": 2000,
+    "energy_window": [-0.735, 0.5512],
+    "energy_resolution": "standard",
+    "n_points": "auto",
     "print_integrated": true,
     "output_format": 2,
     "projections": []
   }
 }
 ```
+
+DOSS energy grid (`d3_config.doss_npts`, the one rule for opt2d3, the GUI and workflows):
+`energy_resolution` is `screening` (0.2 eV step), `standard` (0.02 eV, `DOSS_DEFAULT_STEP_EV`),
+`fine` (0.005 eV), `step` (with `energy_step_ev`) or `points`; with a step the deck gets
+ceil(span / step) points within 1000-99997 (CRYSTAL's DOSS.DAT limit; the span estimated from
+the atoms for a band range); a number in `n_points` is written as given (2-99997). Above 5000
+points over all bands the deck covers a window around E_F instead, on every route (`energy_window`,
+Hartree around E_F, default -20..+15 eV, `DOSS_DEFAULT_WINDOW_EV`, for a 3D or 2D material, its bounds
+moved outward into band gaps by a BAND run of the SCF, `doss_snap_window`; a 1D material's bands by index,
+`doss_band_index_range`, to `conduction_bands` above the highest occupied band; `"all_bands": true`, opt2d3's
+No or `--doss-window all`, keeps every band);
+E_F-relative ranges (the DOSS window, TRANSPORT's MURANGE and TDFRANGE) take E_F from
+`d3_interactive.trusted_fermi_au` (`mace.utils.fermi_level.scf_fermi`). TRANSPORT's NEWK mesh comes from
+`d3_config.transport_mesh` (`k_resolution`: `screening`, `standard`, `fine`, `spacing` with
+`k_spacing` in 1/Å, or `is` with `newk_is`).
 
 ### `d3_interactive.py` - Interactive Configuration Module
 
@@ -117,6 +133,8 @@ python CRYSTALOptToD3.py --list-configs
 **SeeKPath Library Integration**:
 
 The `seekpath` library is a required dependency (`requirements.txt`): it computes the HPKOT path of a 3D cell from its structure, and MACE writes it in CRYSTAL's reciprocal basis. Install it with `pip install seekpath` (on MSU HPCC, into the module Python the jobs use: INSTALLATION.md, "HPC / SLURM clusters").
+
+SeeK-path full paths (format 4) are the default BAND path since 1.1.6: Enter at "Select format (1-4) [4]" picks them, and workflow BAND steps (`opt2d3_default_band_config()`), quick-start and `mace submit --progress` write the same deck. The high-symmetry label path (format 1, the 1.1.5 default) is answer `1`.
 
 When you select "SeeK-path full paths" (option 4) during BAND configuration for a 3D cell:
 - K-point coordinates are calculated from actual lattice parameters (not static tables)
@@ -273,10 +291,10 @@ CRYSTAL's BAND input has no discontinuity marker: in both label mode (SHRINK = 0
 ### Inversion Symmetry
 Inversion is used only by the SeeK-path format (automatic path, format 4); the label, vector and literature formats ignore it.
 - With the `seekpath` library: seekpath's own symmetry analysis, with time-reversal symmetry, so no primed k-points (see SeeKPath Library Integration).
-- Without it (static `seekpath_data` fallback in `d3_kpoints.get_seekpath_full_kpath`): `d3_kpoints.detect_inversion_from_crystal_output` reads the output (the `SPACE GROUP (CENTROSYMMETRIC)` line, an inversion operator, or the space-group number), falling back to `d3_kpoints.has_inversion_symmetry`. A non-centrosymmetric structure gets the `<variant>_noinv` path with primed k-points; if no `_noinv` entry exists, the centrosymmetric path is used with a warning.
+- Without it (static `seekpath_data` fallback in `d3_kpoints.get_seekpath_full_kpath`): `d3_kpoints.detect_inversion_from_crystal_output` reads the output (the `SPACE GROUP (CENTROSYMMETRIC)` line, an inversion operator, or the space-group number), falling back to `d3_kpoints.has_inversion_symmetry`. A non-centrosymmetric structure gets the `<variant>_noinv` path with primed k-points; if no `_noinv` entry exists, the centrosymmetric path is used with a warning. A slab (always the static path) drops the primed time-reversal copies when time reversal holds, that is unless its parent is a two-component SCF (`d3_kpoints.time_reversal_half`, `time_reversal_holds`).
 
 ### Current Technical Limitations
-1. **2D Materials**: A SLAB output's BAND path is the path of its corresponding space group cut to the slab plane (segments with I3 = J3 = 0, manual p.310 note 3); the seekpath library is not used for slabs, so lattice-dependent points of centered-rectangular slabs take the static representative values. POLYMER (1D) outputs still get 3D paths.
+1. **2D Materials**: A SLAB output's BAND path is the path of its corresponding space group cut to the slab plane (segments with I3 = J3 = 0, manual p.310 note 3); the seekpath library is not used for slabs, so lattice-dependent points of centered-rectangular slabs take the static representative values. A POLYMER (1D) output's path runs along its chain only (Gamma to X, I2 = I3 = J2 = J3 = 0); a SeeK-path path that leaves the chain's zone (k1 beyond 1/2, as when SeeK-path's primitive cell of the 3D box is shorter than the chain's) becomes Gamma to X (`d3_kpoints.chain_path_in_zone`).
 2. **Extended Bravais Variants**: Some variants (oS2, oI2-3) need full implementation
 3. **Layer Groups**: No support for 2D layer group k-paths (groups 1-80)
 4. **Inversion Symmetry**: Used only by the SeeK-path format (see Inversion Symmetry above)

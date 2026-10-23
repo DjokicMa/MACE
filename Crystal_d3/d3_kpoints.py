@@ -52,9 +52,56 @@ class SeekpathRequired(RuntimeError):
     """A 3D SeeK-path band path was asked for and seekpath is not installed."""
 
 
+# The default automatic BAND path - Enter at opt2d3's "Select format", and the
+# workflow's default configuration (``kpath_default``) - is SeeK-path (format
+# 4) for a 3D crystal only. A slab or a polymer gets the high-symmetry label
+# path (format 1), its default before 1.1.6: SeeK-path's path of the
+# corresponding 3D group adds the primed time-reversal copies of a slab's
+# segments in a non-centrosymmetric layer group (GAMMA-X-|-...-|-GAMMA-X'-...,
+# six segments for three) and ran a polymer's chain from Gamma to the next
+# Gamma ("0 0 0  4 0 0" at ISS 4). The label path is what 1.1.5 wrote for them.
+_LOW_DIM_OUTPUT_LINE = re.compile(r'^[ \t]*(?:SLAB|POLYMER) CALCULATION[ \t]*$', re.MULTILINE)
+
+
+def default_band_format(out_file: Optional[str]) -> str:
+    """opt2d3's default path format: "1" (labels) for a slab or polymer
+    output, "4" (SeeK-path) otherwise."""
+    if not out_file:
+        return "4"
+    try:
+        with open(out_file, errors="replace") as fh:
+            head = fh.read(400_000)
+    except OSError:
+        return "4"
+    return "1" if _LOW_DIM_OUTPUT_LINE.search(head) else "4"
+
+
+def default_label_band_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """A default SeeK-path BAND configuration as the label path (format 1):
+    what a slab or polymer gets for the default."""
+    out = {k: v for k, v in config.items()
+           if k not in ("seekpath_full", "literature_path", "segments", "path_labels", "kpath_source",
+                        "in_plane_labels")}
+    out.update(path_method="labels", path="auto", labels="auto", shrink=0)
+    return out
+
+
 def static_kpath_requested() -> bool:
     """True when the static HPKOT path was asked for explicitly."""
     return os.environ.get(STATIC_KPATH_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+# A workflow preview's stand-in parent output (mace/workflow/projection.py, the
+# GUI's step forms) holds the deck's unique atoms in its conventional cell, not
+# a structure: SeeK-path run on it gives another lattice's path (a cF2 MgO read
+# as tP). With this variable set the path is the static table path of the
+# output's space group; the real step computes SeeK-path's from its output.
+STAND_IN_KPATH_ENV = "MACE_STAND_IN_KPATH"
+
+
+def stand_in_kpath() -> bool:
+    """True when the output is a workflow preview's stand-in (MACE_STAND_IN_KPATH)."""
+    return os.environ.get(STAND_IN_KPATH_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def request_static_kpath() -> None:
@@ -2763,6 +2810,13 @@ def in_plane_path(segments: List[List[float]],
     not name the segments one to one.
     """
     keep = [abs(seg[2]) < 1e-9 and abs(seg[5]) < 1e-9 for seg in segments]
+    return _cut_path(segments, labels, keep)
+
+
+def _cut_path(segments: List[List[float]], labels: Optional[List[str]],
+              keep: List[bool]) -> Tuple[List[List[float]], Optional[List[str]]]:
+    """The segments with ``keep`` true, and ``labels`` cut the same way (None
+    when they do not name the segments one to one)."""
     kept = [seg for seg, k in zip(segments, keep) if k]
     edges = _edges_of(labels)
     if edges is None or len(edges) != len(segments):
@@ -2780,6 +2834,67 @@ def in_plane_path(segments: List[List[float]],
             out += [a, b]
         prev = (b, seg[3:])
     return kept, out
+
+
+def time_reversal_holds(out_file: Optional[str]) -> bool:
+    """True unless the parent is a two-component SCF (its .out, or the
+    TWOCOMPON block of the .d12 beside it): spin-orbit coupling or
+    noncollinear spins can break time reversal, so -k is then not k."""
+    if not out_file:
+        return True
+    try:
+        from mace.utils.calc_detection import is_two_component_deck, is_two_component_output
+    except ImportError:
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "_mace_calc_detection", Path(__file__).resolve().parent.parent / "mace" / "utils" / "calc_detection.py")
+            module = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            is_two_component_deck, is_two_component_output = (module.is_two_component_deck,
+                                                              module.is_two_component_output)
+        except Exception:  # noqa: BLE001 - a flat copy without the mace package
+            return True
+    try:
+        if is_two_component_output(Path(out_file).read_text(errors="ignore")):
+            return False
+        deck = Path(out_file).with_suffix(".d12")
+        return not (deck.is_file() and is_two_component_deck(deck.read_text(errors="ignore")))
+    except (OSError, ValueError):
+        return True
+
+
+def time_reversal_half(segments: List[List[float]],
+                       labels: Optional[List[str]] = None) -> Tuple[List[List[float]], Optional[List[str]]]:
+    """A path without the time-reversal copies of its segments.
+
+    The static paths of a group without inversion carry, after the path, the
+    copy of every segment at -k (its points primed: GAMMA-X-|-...-|-GAMMA-X'-
+    ...), which SeeK-path adds only without time reversal. With time
+    reversal E(k) = E(-k), so a segment whose -k copy (either direction)
+    is already in the path is dropped; ``labels`` are cut the same way.
+    """
+    kept: List[List[float]] = []
+    keep = []
+    for seg in segments:
+        neg = [-x for x in seg]
+        copies = (neg, neg[3:] + neg[:3])
+        dup = any(all(abs(a - b) < 1e-9 for a, b in zip(c, k)) for c in copies for k in kept)
+        keep.append(not dup)
+        if not dup:
+            kept.append(seg)
+    return _cut_path(segments, labels, keep)
+
+
+def chain_path_in_zone(segments: List[List[float]], shrink: int) -> List[List[float]]:
+    """A polymer's along-chain segments (in 1/``shrink`` units), or [] when one
+    leaves the chain's zone: its k1 runs from 0 to 1/2 (X), and a k1 beyond
+    1/2 is a point of the next zone (SeeK-path's path of a 3D box can end at
+    k1 = 1, the next Gamma, when its primitive cell is shorter than the
+    chain's: "0 0 0  4 0 0" at ISS 4)."""
+    if not shrink or any(abs(seg[i]) > shrink / 2 + 1e-9 for seg in segments for i in (0, 3)):
+        return []
+    return segments
 
 
 def on_chain_path(segments: List[List[float]]) -> List[List[float]]:
@@ -3104,7 +3219,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     three_d = output_dimensionality(out_file) == 3
 
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
+    if (SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab
+            and not stand_in_kpath()):
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
 
@@ -3249,7 +3365,11 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
                 lattice_params['b'] if lattice_params else None,
                 lattice_params['c'] if lattice_params else None)
         if slab:
-            return in_plane_path(segments)[0], kpath_info
+            segments = in_plane_path(segments)[0]
+            if not has_inversion and time_reversal_holds(out_file):
+                segments = time_reversal_half(segments)[0]
+                kpath_info["time_reversal"] = True
+            return segments, kpath_info
         return in_cell(segments), kpath_info
     else:
         # Fallback to literature path first
@@ -3342,7 +3462,8 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     require_seekpath_for(out_file)
 
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
+    if (SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab
+            and not stand_in_kpath()):
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
             n_labels = len([l for l in labels if l != '|'])
@@ -3388,7 +3509,10 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     if lookup_key in seekpath_data and "labels" in seekpath_data[lookup_key]:
         labels = seekpath_data[lookup_key]["labels"]
         if slab:
-            labels = in_plane_path(seekpath_data[lookup_key]["segments"], labels)[1] or []
+            segments, labels = in_plane_path(seekpath_data[lookup_key]["segments"], labels)
+            if not has_inversion and time_reversal_holds(out_file):
+                labels = time_reversal_half(segments, labels)[1]
+            labels = labels or []
         n_labels = len([l for l in labels if l != '|'])
         n_discontinuities = labels.count('|')
         print(f"  Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")

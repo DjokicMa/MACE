@@ -333,6 +333,39 @@ def bundled_family_for(path):
     return match[0] if match else None
 
 
+# What a menu or a form calls a bundled family: the name first, so a long
+# directory path never hides it.
+FAMILY_LABELS = {
+    "full.basis.triplezeta": "TZVP-REV2",
+    "full.basis.doublezeta": "DZVP-REV2",
+    "full.basis.triplezeta.rev2022": "TZVP-REV2 (2022 update)",
+    "stuttgart": "Stuttgart",
+}
+
+
+def family_label(path):
+    """The menu name of the bundled family a basis path names (a bare family
+    name, or any checkout's or $MACE_HOME's path to it), or None."""
+    family = bundled_family_for(path) if path else None
+    return FAMILY_LABELS.get(family, family) if family else None
+
+
+def short_path(path, keep=2):
+    """A directory path cut to its last ``keep`` folders ("…/basis_sets/mine/"):
+    the part that names it, for a place that cannot hold the whole path."""
+    text = str(path).strip()
+    parts = [x for x in text.replace("\\", "/").split("/") if x]
+    if len(parts) <= keep:
+        return text
+    return ".../" + "/".join(parts[-keep:]) + ("/" if text.endswith("/") else "")
+
+
+def display_name(path):
+    """The name to show for a basis directory: its family's label, else the
+    path cut to its last folders (the full path is the tooltip)."""
+    return family_label(path) or short_path(path)
+
+
 def path_exists(path):
     """Whether a basis directory is usable: a bundled family or a directory."""
     if bundled_family_for(path):

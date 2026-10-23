@@ -23,7 +23,7 @@ from .grid import GridSpec, build_box, evaluate
 from .molden import BOHR_ANG, MoldenData, MoldenError, read_molden
 from .outfile import KPoint, OrbitalsOut, find_out_for, parse_out, split_name
 
-HARTREE_EV = 27.211386245988
+from mace.constants import HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 DEGENERACY_TOL = 1e-4      # Hartree; Ene is printed with 6 decimals
 CHECK_OK = 1e-3            # max |C^H S C - 1| for a usable file
 CHECK_FAIL = 1e-2          # above this the file is broken (CRYSTAL complex 2D/3D k, ILOC 1)
@@ -70,11 +70,26 @@ class KData:
     C: np.ndarray                         # (nbf, nmo) real or complex, gauge-fixed
     spins: List[str]
     check: Dict[str, float] = field(default_factory=dict)   # spin -> max |C^H S C - 1| over occupied
-    status: str = "unchecked"             # ok / warn / fail / unchecked
+    status: str = "unchecked"             # ok / warn / fail / unchecked (of the spins that can be drawn)
+    failed_spins: List[str] = field(default_factory=list)   # spins whose coefficients fail the check
     max_occ: float = 2.0
     efermi: Optional[float] = None        # Hartree, from the .out (metals)
     S: Optional[np.ndarray] = None        # S(k) of the self-check, reused to check each drawn orbital
     basis_norm_error: float = 0.0         # max |S_mu,mu(R=0) - 1| over the basis functions
+    file_check: Dict[str, float] = field(default_factory=dict)   # spin -> the file's own coefficients' check
+    beta_from_alpha: bool = False         # BETA drawn from the ALPHA coefficients (alpha = beta, _self_check)
+
+    def spin_note(self) -> str:
+        """What the self-check found about the spin channels, in words ("" when nothing to say): the GUI's
+        Orbitals panel and `mace plotting --orbitals` show the same sentence."""
+        if self.beta_from_alpha:
+            return (f"β = α: CRYSTAL wrote no valid β coefficients (max |C^H S C − 1| = "
+                    f"{self.file_check.get('BETA', float('nan')):.2g}); this run has α = β (the same levels, no net "
+                    f"spin), so β shows the α orbitals")
+        if self.failed_spins:
+            names = ", ".join({"ALPHA": "α", "BETA": "β"}.get(s, s) for s in self.failed_spins)
+            return f"{names}: the coefficients fail the orthonormality self-check, not drawn"
+        return ""
 
     def drawn_check(self, cols: Sequence[int]) -> float:
         """max |C^H S C - 1| over exactly the columns about to be drawn (inf without S)."""
@@ -143,7 +158,9 @@ class KData:
 
     def summary(self) -> dict:
         out = {"k": self.entry.to_dict(), "nbf": self.basis.nbf, "status": self.status,
-               "check": {k: float(v) for k, v in self.check.items()}, "spins": []}
+               "check": {k: float(v) for k, v in self.check.items()}, "failed_spins": list(self.failed_spins),
+               "file_check": {k: float(v) for k, v in self.file_check.items()},
+               "beta_from_alpha": self.beta_from_alpha, "spin_note": self.spin_note(), "spins": []}
         for sp in self.spins:
             lv = self.levels(sp)
             h = self.homo(sp)
@@ -356,7 +373,8 @@ class OrbitalRun:
         i0 = [i for i, n in enumerate(ns) if not np.any(n)]
         kd.basis_norm_error = float(np.abs(np.diag(SR[i0[0]]) - 1.0).max()) if i0 else 0.0
         worst = kd.basis_norm_error
-        for sp in kd.spins:
+
+        def spin_check(sp):
             cols = kd.channel(sp)
             h = kd.homo(sp)
             occ = cols[:h] if h else []
@@ -365,11 +383,40 @@ class OrbitalRun:
             # occupied plus the first two virtuals (the LUMO is a default view)
             extra = [j for j in cols if j not in occ][:2]
             err = orthonormality_error(kd.C[:, occ + extra], S)
-            kd.check[sp] = err
-            worst = max(worst, err)
+            return err if np.isfinite(err) else float("inf")
+        per_spin = {sp: spin_check(sp) for sp in kd.spins}
+        kd.file_check = dict(per_spin)
+        # One spin channel can be broken on its own: CRYSTAL23's ORBITALS writes the BETA block of a
+        # spin-polarized run with basis-function numbers nbf+1..2nbf and coefficients that are not orbitals
+        # (zeros for EC; rank 3, or 1e42 garbage, for diamond, h-BN and polyacetylene: the example suite),
+        # while its ALPHA orbitals pass to 1e-5. Where the run has alpha = beta (every BETA energy and
+        # occupation equals its ALPHA partner and the .out's summed spin density is zero: a closed shell run
+        # spin-polarized, SPINLOCK) the BETA orbitals are the ALPHA ones, so BETA draws those, checked
+        # again here; otherwise the broken channel is refused and the other one is still drawn.
+        if per_spin.get("BETA", 0.0) >= CHECK_FAIL and per_spin.get("ALPHA", float("inf")) < CHECK_FAIL \
+                and self._alpha_is_beta(kd):
+            kd.C[:, kd.channel("BETA")] = kd.C[:, kd.channel("ALPHA")]
+            kd.beta_from_alpha = True
+            per_spin["BETA"] = spin_check("BETA")
+        kd.check.update(per_spin)
+        kd.failed_spins = [sp for sp, e in per_spin.items() if e >= CHECK_FAIL]
+        good = [e for sp, e in per_spin.items() if sp not in kd.failed_spins]
+        worst = max([worst] + (good if good else list(per_spin.values())))
         if not np.isfinite(worst):
             worst = float("inf")
         kd.status = "ok" if worst < CHECK_OK else ("warn" if worst < CHECK_FAIL else "fail")
+
+    def _alpha_is_beta(self, kd: KData) -> bool:
+        """The run's BETA orbitals are its ALPHA ones: the same levels (energy to the file's 1e-6 Ha,
+        occupation) in both channels, and no net spin in the .out (when there is one)."""
+        a, b = kd.channel("ALPHA"), kd.channel("BETA")
+        if not a or len(a) != len(b):
+            return False
+        E, O = np.asarray(kd.md.energies, float), np.asarray(kd.md.occupations, float)
+        if np.abs(E[a] - E[b]).max() > 2e-6 or np.abs(O[a] - O[b]).max() > 1e-4:
+            return False
+        sd = getattr(self.out, "spin_density", None) if self.out is not None else None
+        return sd is None or abs(sd) < 1e-3
 
     # ---------------- grids ----------------
     def grid(self, index: int, spin: str, mos: Sequence, part: str = "re", cells=(1, 1, 1),
@@ -397,6 +444,11 @@ class OrbitalRun:
                 spin = kd.spins[0]
             else:
                 raise OrbitalsError(f"spin {spin!r} not in {kd.spins}")
+        if spin in kd.failed_spins and not allow_failed:
+            ok = [s for s in kd.spins if s not in kd.failed_spins]
+            raise OrbitalsError(f"k point {kd.entry.label}: the {spin} orbitals of this file fail the orthonormality "
+                                f"self-check (max |C^H S C - 1| = {kd.check[spin]:.2g}); refusing to draw them"
+                                + (f" (the {', '.join(ok)} orbitals pass: draw those)" if ok else ""))
         ns = sorted({kd.resolve(spin, m) for m in mos})
         if degenerate_sum:
             ns = sorted({x for n in ns for x in kd.degenerate_set(spin, n)})

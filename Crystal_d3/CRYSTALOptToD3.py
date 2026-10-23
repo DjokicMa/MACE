@@ -31,9 +31,10 @@ from typing import Dict, List, Optional, Tuple, Any
 
 # Single-sourced full-precision constant (fallback keeps this standalone-runnable).
 try:
-    from mace.constants import HARTREE_TO_EV
+    from mace.constants import HARTREE_TO_EV, ANGSTROM_TO_BOHR
 except ImportError:
     HARTREE_TO_EV = 27.211386245988
+    ANGSTROM_TO_BOHR = 1.0 / 0.529177210903
 
 # Import configuration modules
 try:
@@ -49,7 +50,7 @@ try:
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
-                           on_chain_path, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
+                           on_chain_path, chain_path_in_zone, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
                            get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 except ImportError:
     # Fall back to relative import (for script usage)
@@ -64,11 +65,19 @@ except ImportError:
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
-                           on_chain_path, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
+                           on_chain_path, chain_path_in_zone, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
                            get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
-                      list_available_d3_configs, select_d3_config_file)
+                      list_available_d3_configs, select_d3_config_file, apply_doss_override, set_doss_override,
+                      DOSS_STEP_PRESETS, DOSS_MAX_NPTS,
+                      doss_atomic_numbers, doss_span, doss_step_ev, doss_explicit_points,
+                      doss_npts, doss_grid_note, doss_window_offer, set_non_interactive,
+                      DOSS_DEFAULT_WINDOW_EV, doss_window_ha, doss_keeps_all_bands, doss_span_estimate_ev,
+                      doss_band_counts, doss_band_index_range, doss_conduction_bands, doss_snap_window,
+                      DOSS_BAND_INDEX_SPAN_EV, DOSS_SNAP_MAX_EV, DOSS_REACH_EV,
+                      apply_transport_override, set_transport_override, transport_mesh, reciprocal_lengths,
+                      TRANSPORT_K_PRESETS)
 import sys
 from pathlib import Path
 # Add Crystal_d12 to path for imports
@@ -117,6 +126,17 @@ except Exception:
 # a plane was given in the wrong unit.
 _MAP_FRACTION_WORDS = {"F", "FRAC", "FRACTION", "FRACTIONAL"}
 _MAP_ANGSTROM_WORDS = {"C", "CART", "CARTESIAN", "ANGSTROM"}
+
+# ECH3/POT3 grids of a slab, polymer or molecule (manual p.322 and p.351): SCALE
+# multiplies the extent of the atoms along each non-periodic direction, so a flat
+# structure (a monolayer along z, a planar chain along z) has none to scale.
+# CRYSTAL23 then stops ("GRID3D **** USE RANGE NOT SCALE - SYSTEM HAS ZERO EXTENT
+# IN Z", monolayer graphene) or writes a cube one point thick with an infinite
+# step (planar polyacetylene). An axis the atoms span less than FLAT_EXTENT_A
+# makes the deck use RANGE instead: the atoms' extent plus FLAT_PAD_A on each
+# side of every non-periodic direction (Cartesian, written in bohr).
+FLAT_EXTENT_A = 0.5
+FLAT_PAD_A = 5.0
 
 
 # Two-component (SOC) parents. The .out markers and the deck's TWOCOMPON block
@@ -599,7 +619,7 @@ class D3Generator:
         """
         segments = []
         if config.get("path_method") != "labels" and config.get("segments"):
-            segments = on_chain_path(config["segments"])
+            segments = chain_path_in_zone(on_chain_path(config["segments"]), config.get("shrink") or 0)
         config = {k: v for k, v in config.items()
                   if k not in ("seekpath_full", "literature_path", "path", "path_labels")}
         config["path_method"] = "coordinates"
@@ -1177,34 +1197,133 @@ class D3Generator:
             npro = 0
             projections = []
         
-        # Other parameters - use old alldos.py defaults
-        n_points = config.get("n_points", 10000)  # Default from alldos.py
-        
+        # NPT: a number of points as given, else the energy step's (d3_config.doss_npts)
+        config = apply_doss_override(config)
+        try:
+            from Crystal_d3.d3_interactive import trusted_fermi_au, band_extents
+        except ImportError:
+            from d3_interactive import trusted_fermi_au, band_extents
+        try:
+            out_text = Path(self.input_file).read_text(errors="replace")
+        except OSError:
+            out_text = ""
+
+        # Every band at a step that needs more than DOSS_WINDOW_OFFER_NPTS points: the default depends on
+        # the periodic dimensionality, on every route (opt2d3's Enter, --non-interactive, a settings file,
+        # a workflow step, Setup); all_bands (opt2d3's No, --doss-window all) keeps every band. 3D and 2D:
+        # the window around E_F, its bounds moved into band gaps when a BAND run of the SCF gives the bands;
+        # 1D: bands by index, since CRYSTAL needs a window's bounds in gaps (d3_config, DOSS_SNAP_MARGIN_EV)
+        dim = self.structure_info.get('dimensionality', 3)
+        conduction = doss_conduction_bands(config)
+        extents = None
+        band_index_default = snap_default = False
+        if (not config.get("energy_window") and not config.get("band_range") and not doss_keeps_all_bands(config)
+                and doss_explicit_points(config) is None):
+            span_all = doss_span_estimate_ev(doss_atomic_numbers(out_text))
+            step = doss_step_ev(config)
+            offer = doss_window_offer(span_all, doss_npts(span_all, None, step), step)
+            counts = doss_band_counts(out_text) if dim == 1 else None
+            if dim == 1 and (offer or conduction is not None) and counts is None:
+                ui.warn(f"  Warning: {(offer + '. ') if offer else ''}{self.input_file.name} prints no band counts "
+                        f"(NUMBER OF AO, N. OF ELECTRONS and CORE ELECTRONS PER CELL): the deck covers all bands.")
+            elif dim == 1 and (offer or conduction is not None):
+                first, last = doss_band_index_range(counts, conduction)
+                config = {**config, "band_range": (first, last)}
+                band_index_default = True
+                core, occ = counts["core"], counts["occupied"]
+                ecp = f", {counts['semicore']} of them ECP semicore" if counts["semicore"] else ""
+                ui.warn(f"  Warning: {(offer + ': ') if offer else ''}the deck covers bands {first} to {last} "
+                        f"instead (a 1D material: by band index, never by energy, since CRYSTAL needs an energy "
+                        f"window's bounds in band gaps): above the {core} core bands{ecp}, to {last - occ} bands "
+                        f"above the highest occupied one (band {occ}). --doss-conduction-bands N for more "
+                        f"conduction bands, --doss-window all for every band")
+            elif offer:
+                lo, hi = DOSS_DEFAULT_WINDOW_EV
+                ef, why = trusted_fermi_au(str(self.input_file))
+                if ef is None:
+                    ui.warn(f"  Warning: {offer}. No window around E_F can be written: {why}. The deck "
+                            f"covers all bands.")
+                else:
+                    ui.warn(f"  Warning: {offer}: the deck covers E_F {lo:g} to +{hi:g} eV instead, without the "
+                            f"core levels and the high virtual bands (--doss-window all for every band, "
+                            f"--doss-window LO HI for other bounds)")
+                    config = {**config, "energy_window": doss_window_ha(lo, hi)}
+                    snap_default = True
+        if conduction is not None and not band_index_default:
+            ui.info(f"  --doss-conduction-bands / conduction_bands applies to a 1D material's bands by index; "
+                    f"this {dim}D deck does not use it")
+
+        # A window relative to E_F needs a trustworthy E_F: the SCF's, else a BAND or DOSS run of it
+        # (never CRYSTAL's -1.0 placeholder of a spin-locked SCF, nor E = 0); without one, all bands
+        fermi = None
+        if config.get("energy_window") and not config.get("energy_window_absolute"):
+            fermi, why = trusted_fermi_au(str(self.input_file))
+            if fermi is None:
+                ui.warn(f"  Warning: no energy window around E_F: {why}. The deck covers all bands.")
+                config = {k: v for k, v in config.items() if k != "energy_window"}
+                snap_default = False
+
+        # The window's bounds in band gaps: the default window's moved outward (never narrowed) by a BAND run
+        # of this SCF; a given window is written as given, with a warning on a 1D material
+        if config.get("energy_window") and fermi is not None and (snap_default or dim == 1):
+            extents = band_extents(str(self.input_file))
+            lo_ha, hi_ha = config["energy_window"]
+            if extents is None and snap_default:
+                ui.info("  No BAND run of this SCF beside it: the window's bounds are not checked against "
+                        "the bands")
+            elif extents is not None:
+                new_lo, new_hi, moved = doss_snap_window(fermi + lo_ha, fermi + hi_ha, extents[2], fermi)
+                if moved and snap_default:
+                    config = {**config, "energy_window": (new_lo - fermi, new_hi - fermi)}
+                    what = ("moved outward into band gaps" if (new_lo, new_hi) != (fermi + lo_ha, fermi + hi_ha)
+                            else "are inside bands, with no gap near")
+                    ui.warn(f"  The window's bounds {what} (a window bound inside a band stopped CRYSTAL23 on a 1D "
+                            f"material): {'; '.join(moved)} (the bands from {extents[0].name})")
+                elif moved:
+                    inside = "; ".join(m.split(": moved")[0].replace(" was inside", " is inside") for m in moved)
+                    ui.warn(f"  Warning: {inside} (the bands from {extents[0].name}): a 1D DOSS with a window "
+                            f"bound inside a band stopped CRYSTAL23 (double free or corruption); the default (no "
+                            f"--doss-window) takes the bands by index")
+                elif snap_default:
+                    ui.info(f"  The window's bounds are in band gaps (the bands from {extents[0].name})")
+            elif dim == 1:
+                ui.warn("  Warning: a 1D DOSS with a window bound inside a band stopped CRYSTAL23 (double free or "
+                        "corruption); no BAND run of this SCF is beside it to check the bounds. The default "
+                        "(no --doss-window) takes the bands by index")
+
+        # the band-index default's span, for its NPT: the BAND run's bands when it is beside the SCF, else
+        # a bound (DOSS_BAND_INDEX_SPAN_EV); the DOS reaches as high as its last band goes
+        band_span = None
+        if band_index_default:
+            band_span = DOSS_BAND_INDEX_SPAN_EV
+            extents = band_extents(str(self.input_file))
+            first, last = config["band_range"]
+            if extents is not None and extents[1] <= first and last - extents[1] < len(extents[2]):
+                sel = extents[2][first - extents[1]:last - extents[1] + 1]
+                band_span = (max(h for _, h in sel) - min(l for l, _ in sel)) * HARTREE_TO_EV + DOSS_SNAP_MAX_EV
+                ef, _ = trusted_fermi_au(str(self.input_file))
+                if ef is not None:
+                    top = (max(h for _, h in sel) - ef) * HARTREE_TO_EV
+                    ui.info(f"  Bands {first} to {last} span {band_span - DOSS_SNAP_MAX_EV:.1f} eV and reach "
+                            f"E_F{top:+.1f} eV (the bands from {extents[0].name})")
+                    if top < DOSS_REACH_EV:
+                        ui.warn(f"  Warning: the DOS will stop at E_F{top:+.1f} eV, below E_F+{DOSS_REACH_EV:g} eV: "
+                                f"--doss-conduction-bands N for more conduction bands")
+
         # Handle band/energy range
         if config.get("energy_window"):
             # Energy window specified - negative band indices trigger BMI/BMA input
             first_band = -1
             last_band = -1
             bmi, bma = config["energy_window"]
-            # The configured window is relative to the Fermi level (the
-            # interactive prompt collects "eV below/above Fermi"), but the
-            # CRYSTAL BMI/BMA record holds ABSOLUTE energies in Hartree —
-            # without adding E_F the window was centered on E=0
-            if not config.get("energy_window_absolute"):
-                try:
-                    try:
-                        from Crystal_d3.d3_interactive import get_band_info_from_output
-                    except ImportError:
-                        from d3_interactive import get_band_info_from_output
-                    fermi = get_band_info_from_output(str(self.input_file)).get('fermi_energy')
-                    if fermi is not None:
-                        bmi += fermi
-                        bma += fermi
-                        ui.info(f"  Energy window centered on Fermi level ({fermi:.6f} Ha)")
-                    else:
-                        ui.warn("  Warning: Fermi energy not found; BMI/BMA window left centered on E=0")
-                except Exception as e:
-                    ui.warn(f"  Warning: could not center energy window on Fermi level: {e}")
+            # The configured window is relative to the Fermi level (the prompt collects eV
+            # below/above E_F), but CRYSTAL's BMI/BMA record holds ABSOLUTE energies in Hartree
+            # (manual, DOSS, p.320: INZB and IFNB negative)
+            if fermi is not None:
+                bmi += fermi
+                bma += fermi
+                ui.info(f"  Energy window centered on the Fermi level ({fermi:.6f} Ha"
+                        + (f"; {why}" if why else "") + ")")
         elif config.get("band_range"):
             # Specific band range. CRYSTAL stops with "BAND RANGE NOT ALLOWED"
             # for band 0 or a band past the last one (measured on HPCC with
@@ -1224,7 +1343,20 @@ class D3Generator:
             else:
                 last_band = 200  # Safe default
             bmi, bma = None, None
-            
+
+        # the span: an energy window's width, else an estimate from the atoms (the run prints the real one)
+        try:
+            out_text = Path(self.input_file).read_text(errors="replace")
+        except OSError:
+            out_text = ""
+        span_ev, estimated = ((band_span, True) if band_span else doss_span(config, doss_atomic_numbers(out_text)))
+        explicit = doss_explicit_points(config)
+        n_points = doss_npts(span_ev, explicit, doss_step_ev(config))
+        line, coarse = doss_grid_note(span_ev, n_points, explicit is not None, estimated)
+        ui.info(f"  Energy grid: {line}")
+        if coarse:
+            ui.warn(f"  Warning: {coarse}")
+
         # IPLO values: 0=no output, 1=fort.25, 2=DOSS.DAT
         # Default to 2 (DOSS.DAT) as it's more commonly used
         output_format = config.get("output_format", 2)
@@ -1269,7 +1401,20 @@ class D3Generator:
             d12_files = list(self.input_dir.glob(f"{self.base_name}*.d12"))
             if d12_files:
                 d12_file = d12_files[0]
-        lines.extend(self._newk_mesh(d12_file))
+        # the k mesh: by a spacing along the periodic reciprocal vectors (d3_config.transport_mesh), never
+        # coarser than the parent SCF's, whose mesh converges energies, not the transport distribution
+        config = apply_transport_override(config)
+        parent = self._newk_mesh(d12_file)
+        try:
+            parent_is = int(parent[0].split()[0])
+        except (IndexError, ValueError):
+            parent_is = 0
+        if parent_is <= 0:
+            lines.extend(parent)
+        else:
+            n, isp, why = transport_mesh(config, parent_is, reciprocal_lengths(str(self.input_file)))
+            lines.append(f"{n} {isp}")
+            ui.info(f"  TRANSPORT k mesh: NEWK IS {n} ISP {isp} ({why})")
         lines.append("1 0")  # IFE=1 (Fermi recomputed), IPLO=0
 
         lines.append("BOLTZTRA")
@@ -1311,6 +1456,63 @@ class D3Generator:
         lines.append("END")
         lines.append("END")
         return '\n'.join(lines)
+
+    def _cartesian_atoms(self) -> List[Tuple[float, float, float]]:
+        """The atoms of the run's last geometry (the one fort.9 holds) as (x, y, z):
+        its last "CARTESIAN COORDINATES - PRIMITIVE CELL" table (Angstrom), else its
+        last "ATOMS IN THE ASYMMETRIC UNIT" table, whose non-periodic columns are
+        Cartesian Angstrom too (the periodic ones are fractional: not used here)."""
+        try:
+            text = self.input_file.read_text(errors="replace")
+        except OSError:
+            return []
+        num = r"[-+]?\d+\.\d+(?:[EeDd][-+]?\d+)?"
+        tables = (("CARTESIAN COORDINATES - PRIMITIVE CELL", rf"^\s*\d+\s+\d+\s+\S+\s+({num})\s+({num})\s+({num})\s*$"),
+                  ("ATOMS IN THE ASYMMETRIC UNIT", rf"^\s*\d+\s+[TF]\s+\d+\s+\S+\s+({num})\s+({num})\s+({num})\s*$"))
+        for head, pattern in tables:
+            start = text.rfind(head)
+            if start < 0:
+                continue
+            row, atoms = re.compile(pattern), []
+            for line in text[start:].splitlines()[1:]:
+                m = row.match(line)
+                if m:
+                    atoms.append(tuple(float(x.replace("D", "E").replace("d", "e")) for x in m.groups()))
+                elif atoms:
+                    break
+            if atoms:
+                return atoms
+        return []
+
+    def _flat_range_records(self, config: Dict[str, Any]) -> Optional[List[str]]:
+        """RANGE records (bohr) for ECH3/POT3 when the atoms are flat along a
+        non-periodic direction, where SCALE has no extent to scale (see
+        FLAT_EXTENT_A); None when SCALE works (or the geometry cannot be read)."""
+        dimensionality = self.structure_info['dimensionality']
+        axes = {2: [2], 1: [1, 2], 0: [0, 1, 2]}[dimensionality]
+        atoms = self._cartesian_atoms()
+        if not atoms:
+            return None
+        lo = [min(a[k] for a in atoms) for k in axes]
+        hi = [max(a[k] for a in atoms) for k in axes]
+        flat = [k for k, a, b in zip(axes, lo, hi) if b - a < FLAT_EXTENT_A]
+        if not flat:
+            return None
+        pad = float(config.get("range_pad", FLAT_PAD_A))
+        ui.info(f"The atoms are flat along {', '.join('XYZ'[k] for k in flat)}: SCALE has no extent to scale "
+                f"there, so the grid uses RANGE (the atoms + {pad:g} A on each side).")
+        return [" ".join(f"{(a - pad) * ANGSTROM_TO_BOHR:.4f}" for a in lo),
+                " ".join(f"{(b + pad) * ANGSTROM_TO_BOHR:.4f}" for b in hi)]
+
+    def _scale_or_flat_range(self, config: Dict[str, Any]) -> List[str]:
+        """The non-periodic grid of an ECH3/POT3 deck without use_range: SCALE
+        (ZSCALE / YSCALE,ZSCALE / XSCALE,YSCALE,ZSCALE), or RANGE for flat atoms."""
+        flat = self._flat_range_records(config)
+        if flat is not None:
+            return ["RANGE"] + flat
+        scale = int(config.get("scale", 3))
+        n = {2: 1, 1: 2, 0: 3}[self.structure_info['dimensionality']]
+        return ["SCALE", " ".join([str(scale)] * n)]
 
     def _range_records(self, config: Dict[str, Any]) -> Optional[List[str]]:
         """The two RANGE records for the non-periodic directions (ECH3/POT3).
@@ -1377,17 +1579,7 @@ class D3Generator:
                         return None
                     lines.extend(records)
                 else:
-                    lines.append("SCALE")
-                    scale = config.get("scale", 3)
-                    if self.structure_info['dimensionality'] == 2:
-                        # 2D: only ZSCALE
-                        lines.append(str(int(scale)))
-                    elif self.structure_info['dimensionality'] == 1:
-                        # 1D: YSCALE,ZSCALE
-                        lines.append(f"{int(scale)} {int(scale)}")
-                    else:  # 0D
-                        # 0D: XSCALE,YSCALE,ZSCALE
-                        lines.append(f"{int(scale)} {int(scale)} {int(scale)}")
+                    lines.extend(self._scale_or_flat_range(config))
         
         else:  # ECHG
             lines.append("ECHG")
@@ -1513,17 +1705,7 @@ class D3Generator:
                         return None
                     lines.extend(records)
                 else:
-                    lines.append("SCALE")
-                    scale = config.get("scale", 3)
-                    if self.structure_info['dimensionality'] == 2:
-                        # 2D: only ZSCALE
-                        lines.append(str(int(scale)))
-                    elif self.structure_info['dimensionality'] == 1:
-                        # 1D: YSCALE,ZSCALE
-                        lines.append(f"{int(scale)} {int(scale)}")
-                    else:  # 0D
-                        # 0D: XSCALE,YSCALE,ZSCALE
-                        lines.append(f"{int(scale)} {int(scale)} {int(scale)}")
+                    lines.extend(self._scale_or_flat_range(config))
         
         else:  # POTC
             lines.append("POTC")
@@ -1753,6 +1935,14 @@ class D3Generator:
                 # Re-extract space group for this specific material
                 space_group = self.structure_info.get('space_group', 1)
                 lattice_type = self.structure_info.get('lattice_type', 'P')
+                # The default path (Enter, the workflow's default) is SeeK-path for a
+                # 3D crystal only; a slab or polymer takes the label path
+                # (d3_kpoints.default_band_format). A chosen format 4 is kept.
+                if (config.get("kpath_default") and config.get("seekpath_full")
+                        and self.structure_info.get('dimensionality', 3) in (1, 2)):
+                    from d3_kpoints import default_label_band_config
+                    config = default_label_band_config(config)
+                    ui.info("  A slab or polymer: the default band path is the high-symmetry label path")
                 
                 if config.get("path_method") == "labels":
                     # Get appropriate band path for THIS material's symmetry
@@ -1901,36 +2091,42 @@ class D3Generator:
                     config["first_band"] = 1
                     config["last_band"] = None
 
-            # For TRANSPORT calculations with auto Fermi reference, recalculate for each material
-            if self.calc_type == "TRANSPORT" and config.get("mu_reference") == "fermi":
-                # Extract Fermi energy for this material
+            # TRANSPORT with μ relative to E_F (the default; "vbm": the top of the occupied bands, which
+            # is the E_F an insulator's sources give): MURANGE holds absolute eV, so it needs a
+            # trustworthy E_F for this material, never CRYSTAL's -1.0 placeholder or E = 0
+            if self.calc_type == "TRANSPORT" and config.get("mu_reference") in ("fermi", "vbm"):
                 try:
-                    from Crystal_d3.d3_interactive import get_band_info_from_output
+                    from Crystal_d3.d3_interactive import trusted_fermi_au
                 except ImportError:
-                    from d3_interactive import get_band_info_from_output
-                band_info = get_band_info_from_output(str(self.input_file))
-                
-                if band_info.get('fermi_energy') is not None:
-                    # Convert from Hartree to eV
-                    fermi_energy_ev = band_info['fermi_energy'] * HARTREE_TO_EV
-                    
-                    # Get relative range from config
-                    if config.get("mu_range_type") == "auto_fermi":
-                        # Config was cleaned, mu_range contains relative values
-                        mu_min_rel, mu_max_rel, mu_step = config["mu_range"]
-                    else:
-                        # Use default relative range
-                        mu_min_rel, mu_max_rel = -2.0, 2.0
-                        mu_step = config.get("mu_range", (0, 0, 0.01))[2]
-                    
-                    # Calculate absolute values for this material
-                    mu_min_abs = fermi_energy_ev + mu_min_rel
-                    mu_max_abs = fermi_energy_ev + mu_max_rel
-                    config["mu_range"] = (mu_min_abs, mu_max_abs, mu_step)
-                    ui.info(f"  Using Fermi energy {fermi_energy_ev:.3f} eV")
-                    ui.info(f"  Chemical potential range: {mu_min_abs:.3f} to {mu_max_abs:.3f} eV")
+                    from d3_interactive import trusted_fermi_au
+                fermi_au, why = trusted_fermi_au(str(self.input_file))
+                if fermi_au is None:
+                    ui.err(f"  Error: no TRANSPORT deck for {self.input_file.name}: its chemical potentials are "
+                           f"relative to E_F, and there is {why[0].lower() + why[1:] if why else 'none'}. "
+                           f"Give an absolute range (mu_reference \"absolute\", mu_range in eV) or run BAND or "
+                           f"DOSS from this SCF first.")
+                    return None
+                fermi_energy_ev = fermi_au * HARTREE_TO_EV
+                if config.get("mu_range_type") == "auto_fermi" or "mu_relative_range" not in config:
+                    # a saved (cleaned) configuration holds the range relative to E_F
+                    mu_min_rel, mu_max_rel, mu_step = config.get("mu_range", (-2.0, 2.0, 0.01))
                 else:
-                    ui.warn("  Warning: Could not extract Fermi energy, using manual values")
+                    mu_min_rel, mu_max_rel = config["mu_relative_range"]
+                    mu_step = config.get("mu_range", (0, 0, 0.01))[2]
+                mu_min_abs = fermi_energy_ev + mu_min_rel
+                mu_max_abs = fermi_energy_ev + mu_max_rel
+                config["mu_range"] = (mu_min_abs, mu_max_abs, mu_step)
+                # TDFRANGE is absolute eV too (the TDF.DAT's energies): the transport distribution must
+                # cover the chemical potentials, so its range is relative to E_F as theirs is
+                if "tdf_relative_range" in config:
+                    tdf_lo, tdf_hi = config["tdf_relative_range"]
+                    tdf_step = config.get("tdf_range", (0, 0, 0.01))[2]
+                else:
+                    tdf_lo, tdf_hi, tdf_step = config.get("tdf_range", (-5.0, 5.0, 0.01))
+                config["tdf_range"] = (fermi_energy_ev + tdf_lo, fermi_energy_ev + tdf_hi, tdf_step)
+                ui.info(f"  Using Fermi energy {fermi_energy_ev:.3f} eV" + (f" ({why})" if why else ""))
+                ui.info(f"  Chemical potential range: {mu_min_abs:.3f} to {mu_max_abs:.3f} eV; transport "
+                        f"distribution {config['tdf_range'][0]:.3f} to {config['tdf_range'][1]:.3f} eV")
         else:
             config = configure_d3_calculation(self.calc_type, str(self.input_file))
         
@@ -2147,8 +2343,94 @@ Examples:
         help="BAND: ask \"Edit the band k-path?\" when the answers are piped in too "
              "(it is asked only at a terminal otherwise)"
     )
-    
+    parser.add_argument(
+        "--doss-step",
+        metavar="EV|PRESET",
+        help="DOSS: the energy step of the DOS grid in eV, or screening (0.2), standard (0.02, the "
+             "default) or fine (0.005); the deck gets ceil(span / step) points, 1000-20000"
+    )
+    parser.add_argument(
+        "--doss-points",
+        type=int,
+        metavar="N",
+        help="DOSS: this many energy points, as given (e.g. 1000 to screen many structures)"
+    )
+    parser.add_argument(
+        "--doss-window",
+        nargs="+",
+        metavar="LO HI|all",
+        help="DOSS: the energies from LO to HI eV around E_F (e.g. -20 15, the default of a 3D or 2D material "
+             "when every band would need more than 5000 points, its bounds moved outward into band gaps when a "
+             "BAND run of the SCF is beside it; needs a trustworthy E_F: the SCF's, else a BAND or DOSS run of "
+             "it), or all: every band. A 1D material's default takes the bands by index instead"
+    )
+    parser.add_argument(
+        "--doss-conduction-bands",
+        type=int,
+        metavar="N",
+        help="DOSS: a 1D material's bands by index (its default) run to N bands above the highest occupied "
+             "one (default: as many as the valence bands, at least the minimal valence shells' bands and 4)"
+    )
+    parser.add_argument(
+        "--transport-k",
+        metavar="SPACING|PRESET",
+        help="TRANSPORT: the k-point spacing of BOLTZTRA's NEWK mesh in 1/Å (2*pi included), or screening (the "
+             "parent SCF's mesh), standard (the default) or fine; never coarser than the parent's mesh"
+    )
+    parser.add_argument(
+        "--transport-is",
+        type=int,
+        metavar="IS",
+        help="TRANSPORT: this NEWK shrinking factor, as given (ISP = 2 IS)"
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Answer every question with its default (Enter)"
+    )
+
     args = parser.parse_args()
+    if args.doss_step is not None and args.doss_points is not None:
+        parser.error("give --doss-step or --doss-points, not both")
+    if args.doss_points is not None and not 2 <= args.doss_points <= DOSS_MAX_NPTS:
+        parser.error(f"--doss-points takes 2 to {DOSS_MAX_NPTS} points (DOSS.DAT's header prints NPT + 2 "
+                     "in five digits)")
+    if args.doss_step is not None:
+        try:
+            if str(args.doss_step).strip().lower() not in DOSS_STEP_PRESETS and float(args.doss_step) <= 0:
+                raise ValueError
+        except ValueError:
+            parser.error(f"--doss-step takes a step in eV larger than 0 or one of {', '.join(DOSS_STEP_PRESETS)}")
+    if args.doss_window is not None:
+        if [w.lower() for w in args.doss_window] == ["all"]:
+            args.doss_window = ["all"]
+        else:
+            try:
+                args.doss_window = [float(w) for w in args.doss_window]
+            except ValueError:
+                args.doss_window = None
+            if not args.doss_window or len(args.doss_window) != 2 or not args.doss_window[0] < 0 < args.doss_window[1]:
+                parser.error("--doss-window takes LO < 0 < HI, in eV around E_F (e.g. -20 15), or all")
+    if args.doss_conduction_bands is not None and args.doss_conduction_bands < 1:
+        parser.error("--doss-conduction-bands takes a number of bands, at least 1")
+    set_doss_override(args.doss_step, args.doss_points, args.doss_window, args.doss_conduction_bands)
+    if args.transport_k is not None and args.transport_is is not None:
+        parser.error("give --transport-k or --transport-is, not both")
+    if args.transport_is is not None and args.transport_is < 1:
+        parser.error("--transport-is takes a shrinking factor of at least 1")
+    if args.transport_k is not None:
+        try:
+            if str(args.transport_k).strip().lower() not in TRANSPORT_K_PRESETS and float(args.transport_k) <= 0:
+                raise ValueError
+        except ValueError:
+            parser.error(f"--transport-k takes a spacing in 1/Å larger than 0 or one of "
+                         f"{', '.join(TRANSPORT_K_PRESETS)}")
+    set_transport_override(args.transport_k, args.transport_is)
+    if args.non_interactive:
+        set_non_interactive(True)
+        # every question gets the empty answer (its default); a question without one stops the run
+        import io
+        sys.stdin = io.StringIO("\n" * 500)
     if args.static_kpath:
         request_static_kpath()
     if args.edit_kpath:

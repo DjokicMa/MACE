@@ -28,7 +28,8 @@ from d12_constants import (
     mace_functional_name,
     CUSTOM_FUNCTIONAL,
 )
-from soc_ecp import is_spin_orbit_deck, is_two_component_deck, is_two_component_output
+from soc_ecp import (is_spin_orbit_deck, is_two_component_deck, is_two_component_output,
+                     mechanics_output_type, mechanics_reference_problem)
 
 # The group record a SLAB / POLYMER deck carries, and its range (CRYSTAL23
 # manual Appendix A.2: 80 layer groups; A.3: 99 rod groups). The record is
@@ -309,6 +310,19 @@ class CrystalOutputParser:
     def _extract_geometry(self, content: str) -> None:
         """Extract optimized geometry from output"""
         lines = content.split("\n")
+
+        # An ELASTIC, EOS or QHA run: every FINAL OPTIMIZED GEOMETRY is a
+        # strained cell or volume. Its structure is the reference cell, the
+        # input geometry block (mace/utils/calc_detection.py), or none.
+        if mechanics_output_type(content):
+            why = mechanics_reference_problem(content)
+            if why:
+                raise ValueError(why)
+            ref_idx = next(i for i, line in enumerate(lines) if "GEOMETRY FOR WAVE FUNCTION" in line)
+            self._extract_spacegroup(lines)
+            self._extract_cell_parameters(lines, ref_idx)
+            self._extract_coordinates(lines, ref_idx)
+            return
 
         # Find FINAL OPTIMIZED GEOMETRY section
         final_geom_idx = None
@@ -1147,6 +1161,9 @@ class CrystalInputParser:
         # Extract optimization settings
         self._extract_optimization_settings(lines)
 
+        # The module block of an ELASTIC/EOS/QHA/CPHF deck
+        self._extract_elastic_settings(lines)
+
         # Extract DFT settings
         self._extract_dft_settings(lines)
 
@@ -1431,6 +1448,25 @@ class CrystalInputParser:
         # None tells the deck writer not to add one.
         scf.setdefault("histdiis", None)
         return scf
+
+    # The keywords d12_calc_elastic writes as the last block of the geometry input
+    _MODULE_KEYWORDS = ("ELASTCON", "ELAPIEZO", "PIEZOCON", "PIEZOCP", "PHOTOELA", "EOS", "QHA", "CPHF")
+
+    def _extract_elastic_settings(self, lines: List[str]) -> None:
+        """``elastic_settings``: the deck's ELASTCON/.../CPHF block
+        (d12_calc_elastic.parse_block), which a follow-up of the same module
+        keeps. Set only for such a deck. RESTART/RESTART2 is left out: it
+        continues that deck's own run, and a follow-up restarts only when asked."""
+        for i, line in enumerate(lines):
+            if i > 0 and line.strip().upper() in self._MODULE_KEYWORDS:
+                try:
+                    from d12_calc_elastic import parse_block
+                    block, _ = parse_block([l.rstrip("\r\n") for l in lines], i)
+                    block.pop("restart", None)
+                    self.data["elastic_settings"] = block
+                except Exception:
+                    pass
+                return
 
     def _extract_basis_set(self, lines: List[str]) -> None:
         """Extract basis set information"""

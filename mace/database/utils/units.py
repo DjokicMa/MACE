@@ -7,13 +7,18 @@ Convert property values between different units commonly used in materials scien
 from typing import Dict, List, Tuple, Optional, Union
 import re
 
-from mace.constants import HARTREE_TO_EV, BOHR_TO_ANGSTROM
+from mace.constants import (BOHR_TO_ANGSTROM, ELEMENTARY_CHARGE_C, HARTREE_TO_CM1, HARTREE_TO_EV, HARTREE_TO_J,
+                            HARTREE_TO_KCAL_MOL, HARTREE_TO_KJ_MOL, HARTREE_TO_THZ, PLANCK_J_S, THZ_TO_CM1)
+
+# 1 Hartree/Bohr^3 in GPa (CODATA 2018: 29421.015697...)
+_HARTREE_BOHR3_GPA = HARTREE_TO_J / (BOHR_TO_ANGSTROM * 1e-10) ** 3 / 1e9
 
 
 class UnitConverter:
     """Handles unit conversions for material properties."""
     
-    # Define conversion factors to base units
+    # Define conversion factors to base units: every one from mace/constants.py
+    # (CODATA 2018), the single definition the rest of MACE converts with
     # Energy conversions (base: Hartree)
     ENERGY_CONVERSIONS = {
         'hartree': 1.0,
@@ -22,12 +27,12 @@ class UnitConverter:
         'ev': HARTREE_TO_EV,
         'rydberg': 2.0,
         'ry': 2.0,
-        'kcal/mol': 627.509474,
-        'kj/mol': 2625.499638,
-        'cm^-1': 219474.631363,
-        'cm-1': 219474.631363,
-        'mev': 27211.386245988,
-        'thz': 6579.683920711,
+        'kcal/mol': HARTREE_TO_KCAL_MOL,
+        'kj/mol': HARTREE_TO_KJ_MOL,
+        'cm^-1': HARTREE_TO_CM1,
+        'cm-1': HARTREE_TO_CM1,
+        'mev': HARTREE_TO_EV * 1000.0,
+        'thz': HARTREE_TO_THZ,
     }
     
     # Length conversions (base: Bohr)
@@ -36,27 +41,27 @@ class UnitConverter:
         'au': 1.0,
         'angstrom': BOHR_TO_ANGSTROM,
         'a': BOHR_TO_ANGSTROM,
-        'nm': 0.052917721067,
-        'pm': 52.917721067,
-        'm': 5.2917721067e-11,
-        'cm': 5.2917721067e-9,
-        'mm': 5.2917721067e-8,
+        'nm': BOHR_TO_ANGSTROM / 10.0,
+        'pm': BOHR_TO_ANGSTROM * 100.0,
+        'm': BOHR_TO_ANGSTROM * 1e-10,
+        'cm': BOHR_TO_ANGSTROM * 1e-8,
+        'mm': BOHR_TO_ANGSTROM * 1e-7,
     }
     
     # Pressure conversions (base: Hartree/Bohr^3); factor = units per 1 base unit.
-    # 1 Hartree/Bohr^3 = 29421.0107637093 GPa; the rest follow from standard
-    # ratios (1 GPa = 10 kbar = 0.01 Mbar = 1e9 Pa = 1000 MPa). The old table had
-    # kbar and Mbar swapped and atm off by ~1000x.
+    # 1 Hartree/Bohr^3 = 29421.0157 GPa (CODATA 2018); the rest follow from
+    # standard ratios (1 GPa = 10 kbar = 0.01 Mbar = 1e9 Pa = 1000 MPa). The old
+    # table had kbar and Mbar swapped and atm off by ~1000x.
     PRESSURE_CONVERSIONS = {
         'hartree/bohr^3': 1.0,
         'ha/bohr^3': 1.0,
-        'gpa': 29421.0107637093,
-        'kbar': 294210.107637093,      # 1 GPa = 10 kbar
-        'mbar': 294.210107637093,      # 1 GPa = 0.01 Mbar
-        'pa': 29421010763709.297,      # 1 GPa = 1e9 Pa
-        'mpa': 29421010.7637093,       # 1 GPa = 1000 MPa
-        'atm': 290362800.53006953,     # 1 atm = 101325 Pa
-        'psi': 4267156842.904755,      # 1 psi = 6894.757293168 Pa
+        'gpa': _HARTREE_BOHR3_GPA,
+        'kbar': _HARTREE_BOHR3_GPA * 10.0,         # 1 GPa = 10 kbar
+        'mbar': _HARTREE_BOHR3_GPA / 100.0,        # 1 GPa = 0.01 Mbar
+        'pa': _HARTREE_BOHR3_GPA * 1e9,            # 1 GPa = 1e9 Pa
+        'mpa': _HARTREE_BOHR3_GPA * 1000.0,        # 1 GPa = 1000 MPa
+        'atm': _HARTREE_BOHR3_GPA * 1e9 / 101325.0,       # 1 atm = 101325 Pa
+        'psi': _HARTREE_BOHR3_GPA * 1e9 / 6894.757293168,  # 1 psi = 6894.757293168 Pa
     }
     
     # Temperature conversions (base: Kelvin)
@@ -82,9 +87,9 @@ class UnitConverter:
     # Frequency conversions (base: THz)
     FREQUENCY_CONVERSIONS = {
         'thz': 1.0,
-        'cm^-1': 33.35641,
-        'cm-1': 33.35641,
-        'mev': 4.13567,
+        'cm^-1': THZ_TO_CM1,
+        'cm-1': THZ_TO_CM1,
+        'mev': PLANCK_J_S * 1e12 / ELEMENTARY_CHARGE_C * 1000.0,
         'ghz': 1000.0,
         'mhz': 1e6,
         'hz': 1e12,

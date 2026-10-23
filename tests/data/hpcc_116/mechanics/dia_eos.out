@@ -1,0 +1,771 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS            2  OF           16  WORKING
+ PROCESS            3  OF           16  WORKING
+ PROCESS            6  OF           16  WORKING
+ PROCESS           15  OF           16  WORKING
+ PROCESS            4  OF           16  WORKING
+ PROCESS            5  OF           16  WORKING
+ PROCESS            7  OF           16  WORKING
+ PROCESS            1  OF           16  WORKING
+ PROCESS            8  OF           16  WORKING
+ PROCESS           10  OF           16  WORKING
+ PROCESS            0  OF           16  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 21 10 2026 TIME 14:09:45.0
+ 1_dia_opt_rev1_eos_B3LYP-D3_optimized                                           
+ PROCESS           11  OF           16  WORKING
+ PROCESS           13  OF           16  WORKING
+ PROCESS           14  OF           16  WORKING
+ PROCESS           12  OF           16  WORKING
+ PROCESS            9  OF           16  WORKING
+
+ CRYSTAL CALCULATION
+ (INPUT ACCORDING TO THE INTERNATIONAL TABLES FOR X-RAY CRYSTALLOGRAPHY)
+ CRYSTAL FAMILY                       :  CUBIC       
+ CRYSTAL CLASS  (GROTH - 1921)        :  CUBIC HEXAKISOCTAHEDRAL              
+
+ SPACE GROUP (CENTROSYMMETRIC)        :  F D 3 M         
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+        A           B           C        ALPHA        BETA       GAMMA
+     3.54481     3.54481     3.54481    90.00000    90.00000    90.00000
+
+
+ NUMBER OF IRREDUCIBLE ATOMS IN THE CONVENTIONAL CELL:    1
+
+ INPUT COORDINATES
+
+ ATOM AT. N.              COORDINATES
+   1   6     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+
+ *******************************************************************************
+
+ << INFORMATION >>: FROM NOW ON, ALL COORDINATES REFER TO THE PRIMITIVE CELL
+
+ *******************************************************************************
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - PRIMITIVE CELL
+       A          B          C        ALPHA      BETA     GAMMA        VOLUME
+    2.50656    2.50656    2.50656    60.00000  60.00000  60.00000     11.135747
+
+ COORDINATES OF THE EQUIVALENT ATOMS (FRACTIONAL UNITS)
+
+ N. ATOM EQUIV AT. N.          X                  Y                  Z
+
+   1   1   1    6 C     1.25000000000E-01  1.25000000000E-01  1.25000000000E-01
+   2   1   2    6 C    -1.25000000000E-01 -1.25000000000E-01 -1.25000000000E-01
+
+ NUMBER OF SYMMETRY OPERATORS         :   48
+ *******************************************************************************
+ * GEOMETRY EDITING - INPUT COORDINATES ARE GIVEN IN ANGSTROM         
+ *******************************************************************************
+
+ GEOMETRY NOW FULLY CONSISTENT WITH THE GROUP
+ INFORMATION **** NEW DEFAULT **** FINALRUN 4 FOR GEOMETRY OPTIMIZATIONS
+ INFORMATION **** NEW DEFAULT **** OPTGEOM OPTIMIZES BOTH ATOMIC COORDINATES AND CELL PARAMETERS
+ INFORMATION **** NEW DEFAULT **** TOL. ON ATOMIC DISP TO REDEFINE REF. GEOMETRY: 0.8 Angs
+ INFORMATION **** NEW DEFAULT **** N POINTS TO REDEFINE REF. GEOMETRY: N OF OPT DEGS OF FREEDOM
+ INFORMATION **** NEW DEFAULT **** TOL. ON ENERGY TO REDEFINE REF. GEOMETRY: 10**-3*(5*N. ATOMS)
+
+ IMPORTANT INFORMATION:
+ THE COORDINATE SYSTEM ADOPTED IN THE OPTIMIZATION IS NOT IN
+ GENERAL HOMOGENEOUS UNITS. FOR THIS REASON THE GRADIENT AND 
+ HESSIAN MATRIX IN TERMS OF THIS SYSTEM ARE GIVEN WITHOUT
+ UNITS. FOR MORE DETAILS SEE THE MANUAL.
+
+ INITIAL TRUST RADIUS         0.50000 MAXIMUM TRUST RADIUS               4.00000
+ MAXIMUM GRADIENT COMPONENT   0.00045 MAXIMUM DISPLACEMENT COMPONENT     0.00180
+ R.M.S. OF GRADIENT COMPONENT 0.00030 R.M.S. OF DISPLACEMENT COMPONENTS  0.00120
+ THRESHOLD ON ENERGY CHANGE 0.100E-06 EXTRAPOLATING POLYNOMIAL ORDER           2
+ MAXIMUM ALLOWED NUMBER OF STEPS   -1 SORTING OF ENERGY POINTS:               NO
+ ANALYTICAL  GRADIENT                 HESSIAN UPDATING                      BFGS
+ STEP SIZE NUMERICAL GRADIENT 0.00100
+ INITIAL HESSIAN MATRIX: SCHLEGEL MODEL 2
+ *******************************************************************************
+
+
+ EOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOS
+
+                       EQUATION OF STATE CALCULATION
+
+ INFORMATION **** TOLDEX **** CONVERGENCE CRITERION FOR RMS DISPLACEMENT MODIFIED  6.200000E-04
+ INFORMATION **** TOLDEG **** MODIFY CONVERGENCE CRITERION FOR RMS GRADIENT  3.000000E-04
+ INFORMATION **** TOLDEE **** CONVERGENCE CRITERION FOR ENERGY MODIFIED: 10**-           8
+
+ GCALCO - MAX INDICES DIRECT LATTICE VECTOR    14    14    14
+ NO.OF VECTORS CREATED 6999 STARS  105 RMAX    50.12865 BOHR
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    3
+ (NON PERIODIC DIRECTION: LATTICE PARAMETER FORMALLY SET TO 500)
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL - CENTRING CODE 5/0 VOLUME=    11.135747 - DENSITY  3.579 g/cm^3
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.50656004     2.50656004     2.50656004    60.000000  60.000000  60.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    1 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL
+ -1.0000  1.0000  1.0000  1.0000 -1.0000  1.0000  1.0000  1.0000 -1.0000
+
+ *******************************************************************************
+ CRYSTALLOGRAPHIC CELL (VOLUME=         44.54298604)
+         A              B              C           ALPHA      BETA       GAMMA 
+     3.54481120     3.54481120     3.54481120    90.000000  90.000000  90.000000
+
+ COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ T = ATOM BELONGING TO THE ASYMMETRIC UNIT
+
+ ****   48 SYMMOPS - TRANSLATORS IN FRACTIONAL UNITS
+ **** MATRICES AND TRANSLATORS IN THE CRYSTALLOGRAPHIC REFERENCE FRAME
+   V INV                    ROTATION MATRICES                   TRANSLATORS
+   1   1  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00
+   2   2  0.00  1.00 -0.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   3   3 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  0.00  1.00 -0.00  0.50  0.00 -0.00
+   4   4 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+   5   6  0.00 -0.00  1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+   6   5  0.00  1.00 -0.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.00  0.00  0.00
+   7   8  1.00  0.00  0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   8   7  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+   9  10 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  10   9 -0.00 -0.00  1.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  11  12 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+  12  11 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.50  0.00 -0.00
+  13  13 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  14  14 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  15  16  0.00  0.00 -1.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  16  15  1.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  17  17 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  18  18 -0.00  0.00 -1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  19  21 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  20  22  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.50  0.00 -0.00
+  21  19  0.00 -1.00  0.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  22  20  0.00 -1.00  0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  23  23  1.00  1.00  1.00  0.00 -1.00  0.00 -0.00  0.00 -1.00  0.50  0.00 -0.00
+  24  24 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  25  25 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  26  26 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  27  27  1.00  1.00  1.00  0.00  0.00 -1.00 -0.00 -1.00  0.00  0.50  0.00 -0.00
+  28  28  0.00  0.00 -1.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  29  30 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  30  29 -0.00 -1.00  0.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  31  32 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  32  31 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  33  34  1.00  1.00  1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  34  33  0.00  0.00 -1.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  35  36  0.00 -1.00  0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  36  35  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.50  0.00 -0.00
+  37  37  0.00  1.00 -0.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.00  0.00  0.00
+  38  38  1.00  0.00  0.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  39  40 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+  40  39 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  41  41  1.00  0.00  0.00  0.00 -0.00  1.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+  42  42  0.00 -0.00  1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.00  0.00  0.00
+  43  45  0.00 -0.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  44  46 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.50  0.00 -0.00
+  45  43 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+  46  44 -0.00  1.00 -0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  47  47 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  0.00 -0.00  1.00  0.50  0.00 -0.00
+  48  48  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+
+ DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)
+          X                    Y                    Z
+   0.000000000000E+00   0.177240560000E+01   0.177240560000E+01
+   0.177240560000E+01   0.000000000000E+00   0.177240560000E+01
+   0.177240560000E+01   0.177240560000E+01   0.000000000000E+00
+
+
+ CARTESIAN COORDINATES - PRIMITIVE CELL
+ *******************************************************************************
+ *      ATOM          X(ANGSTROM)         Y(ANGSTROM)         Z(ANGSTROM)
+ *******************************************************************************
+    1     6 C     4.431014000000E-01  4.431014000000E-01  4.431014000000E-01
+    2     6 C    -4.431014000000E-01 -4.431014000000E-01 -4.431014000000E-01
+
+ *******************************************************************************
+ LOCAL ATOMIC FUNCTIONS BASIS SET
+ *******************************************************************************
+   ATOM   X(AU)   Y(AU)   Z(AU)  N. TYPE  EXPONENT  S COEF   P COEF   D/F/G COEF
+ *******************************************************************************
+   1 C    0.837   0.837   0.837
+                                  1 S  
+                                         1.358E+04 2.225E-04 0.000E+00 0.000E+00
+                                         2.035E+03 1.723E-03 0.000E+00 0.000E+00
+                                         4.632E+02 8.926E-03 0.000E+00 0.000E+00
+                                         1.312E+02 3.573E-02 0.000E+00 0.000E+00
+                                         4.285E+01 1.108E-01 0.000E+00 0.000E+00
+                                         1.558E+01 2.430E-01 0.000E+00 0.000E+00
+                                  2 S  
+                                         6.207E+00 4.144E-01 0.000E+00 0.000E+00
+                                         2.576E+00 2.374E-01 0.000E+00 0.000E+00
+                                  3 S  
+                                         4.941E-01 1.000E+00 0.000E+00 0.000E+00
+                                  4 S  
+                                         1.644E-01 1.000E+00 0.000E+00 0.000E+00
+                           5-     7 P  
+                                         3.470E+01 0.000E+00 5.333E-03 0.000E+00
+                                         7.958E+00 0.000E+00 3.586E-02 0.000E+00
+                                         2.378E+00 0.000E+00 1.422E-01 0.000E+00
+                                         8.143E-01 0.000E+00 3.427E-01 0.000E+00
+                           8-    10 P  
+                                         5.662E-01 0.000E+00 1.000E+00 0.000E+00
+                          11-    13 P  
+                                         2.674E-01 0.000E+00 1.000E+00 0.000E+00
+                          14-    18 D  
+                                         8.792E-01 0.000E+00 0.000E+00 1.000E+00
+   2 C   -0.837  -0.837  -0.837
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+ INFORMATION **** READM2 **** NEW DEFAULT: FOCK/KS MATRIX MIXING SET TO 30 %
+ INFORMATION **** READM2 **** NEW DEFAULT: FULL DIRECT SCF MODE
+ INFORMATION **** READM2 **** NEW DEFAULT: COULOMB BIPOLAR BUFFER SET TO 32 Mb
+ INFORMATION **** READM2 **** NEW DEFAULT: EXCHANGE BIPOLAR BUFFER SET TO 32 Mb
+
+ *******************************************************************************
+ NEW DEFAULT: DFT INTEGRATION GRID INCREASED TO XLGRID
+ NEW DEFAULT: DIIS ACCELERATOR ACTIVE
+ USE KEYWORD NODIIS TO TURN IT OFF
+ *******************************************************************************
+
+ INFORMATION **** DFTD3_INPUT **** PERFORM LATEST DISPERSION CORRECTION DFT-D3(BJ) WITH AUTOMATIC PARAMETER SETUP
+ PLEASE CITE:
+ (1) DFT-D3 Reference
+  S. Grimme, J. Antony, S. Ehrlich, and H. Krieg, J. Chem. Phys. 132 (2010), 154104
+ (2) BJ-Damping Reference
+  S. Grimme, S. Ehrlich, and L. Goerigk, J. Comput. Chem. 32 (2011), 1456-1465
+ (3) General DFT-D Review
+  S. Grimme, A. Hansen, J. G. Brandenburg, and C. Bannwarth,
+  Chem. Rev. 116 (2016), 5105-5154
+
+ INFORMATION **** SPINLOCK **** LOCK IN A GIVEN SPIN STATE
+ ALPHA-BETA ELECTRONS LOCKED TO   0 FOR  50 SCF CYCLES
+ INFORMATION **** TOLINTEG **** COULOMB AND EXCHANGE SERIES TOLERANCES MODIFIED
+ INFORMATION **** TOLDEE **** SCF TOL ON TOTAL ENERGY SET TO           8
+ INFORMATION **** READM2 **** FULL DIRECT SCF (MONO AND BIEL INT) SELECTED
+ INFORMATION **** MAXCYCLE **** MAX NUMBER OF SCF CYCLES SET TO        1600
+ INFORMATION **** DIIS **** DIIS FOR SCF ACTIVE
+ INFORMATION **** DIIS **** LEVEL SHIFTER DISABLED
+ INFORMATION **** PPAN ****  MULLIKEN POPULATION ANALYSIS AT THE END OF SCF
+ *******************************************************************************
+ N. OF ATOMS PER CELL         2  COULOMB OVERLAP TOL         (T1) 10**   -7
+ NUMBER OF SHELLS            16  COULOMB PENETRATION TOL     (T2) 10**   -7
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** INT_SCREEN **** CELL PARAMETERS OPTIMIZATION
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CVOLOPT **** CONSTANT VOLUME OPTIMIZATION
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1892736
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      462200
+ INFORMATION **** optc001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+  1.20266062E+01 -7.62139025E+01  3.32368904E-03
+
+ SORTING VOLUMES/ENERGIES
+
+     VOLUME (A^3)    ENERGY (a.u.)
+
+      10.244887   -7.621284978505E+01
+      10.586083   -7.621562674051E+01
+      10.934771   -7.621701453881E+01
+      11.135747   -7.621722616330E+01
+      11.291034   -7.621712258135E+01
+      11.654952   -7.621605325472E+01
+      12.026606   -7.621390247426E+01
+
+ +++++++ FITTING USING    4 POINTS +++++++
+
+
+ EQUATION OF STATE             VOL(A^3)        E(AU)       BM(GPa)   BM PRIME
+ -------------------------------------------------------------------------------
+ MURNAGHAN 1944                 11.1422       -76.21722636  464.70     3.55
+ BIRCH-MURNAGHAN 1947           11.1422       -76.21722636  464.66     3.60
+ POIRIER-TARANTOLA 1998         11.1422       -76.21722636  464.65     3.62
+ VINET 1987                     11.1422       -76.21722636  464.65     3.61
+
+ ENTERING POLYNOMIAL FITTING
+
+ ORDER OF FIT= 2
+
+  E0(HARTREE)=          -76.21723360
+  V0(A^3)=               11.1426301
+  B(GPa)=               503.7404088
+
+
+ ORDER OF FIT=    3
+  POWER      COEFFICIENT
+    0       0.4305652E-18
+    1      -0.6067422E-04
+    2       0.4795738E-02
+    3      -0.7053342E-03
+
+  E0(HARTREE)=          -76.21722636
+  V0(A^3)=               11.1420862
+  B(GPa)=               464.6188053
+
+
+ +++++++ FITTING USING    5 POINTS +++++++
+
+
+ EQUATION OF STATE             VOL(A^3)        E(AU)       BM(GPa)   BM PRIME
+ -------------------------------------------------------------------------------
+ MURNAGHAN 1944                 11.1422       -76.21722630  464.28     3.59
+ BIRCH-MURNAGHAN 1947           11.1422       -76.21722636  464.62     3.61
+ POIRIER-TARANTOLA 1998         11.1422       -76.21722638  464.76     3.61
+ VINET 1987                     11.1422       -76.21722637  464.70     3.61
+
+ ENTERING POLYNOMIAL FITTING
+
+ ORDER OF FIT= 2
+
+  E0(HARTREE)=          -76.21723135
+  V0(A^3)=               11.1599506
+  B(GPa)=               471.3124616
+
+
+ ORDER OF FIT=    3
+  POWER      COEFFICIENT
+    0      -0.3839962E-06
+    1      -0.6078390E-04
+    2       0.4816715E-02
+    3      -0.6689763E-03
+
+  E0(HARTREE)=          -76.21722674
+  V0(A^3)=               11.1420620
+  B(GPa)=               466.7277507
+
+
+ ORDER OF FIT=    4
+  POWER      COEFFICIENT
+    0       0.5128375E-18
+    1      -0.6189213E-04
+    2       0.4795305E-02
+    3      -0.6630659E-03
+    4       0.7099711E-04
+
+  E0(HARTREE)=          -76.21722636
+  V0(A^3)=               11.1422072
+  B(GPa)=               464.6382547
+
+
+ +++++++ FITTING USING    6 POINTS +++++++
+
+
+ EQUATION OF STATE             VOL(A^3)        E(AU)       BM(GPa)   BM PRIME
+ -------------------------------------------------------------------------------
+ MURNAGHAN 1944                 11.1425       -76.21722630  464.31     3.53
+ BIRCH-MURNAGHAN 1947           11.1423       -76.21722636  464.62     3.60
+ POIRIER-TARANTOLA 1998         11.1421       -76.21722638  464.76     3.63
+ VINET 1987                     11.1422       -76.21722637  464.70     3.61
+
+ ENTERING POLYNOMIAL FITTING
+
+ ORDER OF FIT= 2
+
+  E0(HARTREE)=          -76.21726754
+  V0(A^3)=               11.1632895
+  B(GPa)=               504.6116677
+
+
+ ORDER OF FIT=    3
+  POWER      COEFFICIENT
+    0      -0.5688718E-06
+    1      -0.4747375E-04
+    2       0.4817904E-02
+    3      -0.7221599E-03
+
+  E0(HARTREE)=          -76.21722685
+  V0(A^3)=               11.1406744
+  B(GPa)=               466.9792334
+
+
+ ORDER OF FIT=    4
+  POWER      COEFFICIENT
+    0       0.3013229E-07
+    1      -0.6195662E-04
+    2       0.4793609E-02
+    3      -0.6626907E-03
+    4       0.7662841E-04
+
+  E0(HARTREE)=          -76.21722633
+  V0(A^3)=               11.1422170
+  B(GPa)=               464.4728368
+
+
+ ORDER OF FIT=    5
+  POWER      COEFFICIENT
+    0       0.2622280E-18
+    1      -0.6195041E-04
+    2       0.4795396E-02
+    3      -0.6610036E-03
+    4       0.7049891E-04
+    5      -0.6542646E-05
+
+  E0(HARTREE)=          -76.21722636
+  V0(A^3)=               11.1422170
+  B(GPa)=               464.6495456
+
+
+ +++++++ FITTING USING    7 POINTS +++++++
+
+
+ EQUATION OF STATE             VOL(A^3)        E(AU)       BM(GPa)   BM PRIME
+ -------------------------------------------------------------------------------
+ MURNAGHAN 1944                 11.1423       -76.21722559  463.59     3.59
+ BIRCH-MURNAGHAN 1947           11.1422       -76.21722625  464.52     3.61
+ POIRIER-TARANTOLA 1998         11.1422       -76.21722654  464.91     3.61
+ VINET 1987                     11.1422       -76.21722642  464.74     3.61
+
+ ENTERING POLYNOMIAL FITTING
+
+ ORDER OF FIT= 2
+
+  E0(HARTREE)=          -76.21724403
+  V0(A^3)=               11.1861177
+  B(GPa)=               473.2936643
+
+
+ ORDER OF FIT=    3
+  POWER      COEFFICIENT
+    0      -0.4105024E-05
+    1      -0.5992042E-04
+    2       0.4853399E-02
+    3      -0.6687616E-03
+
+  E0(HARTREE)=          -76.21723045
+  V0(A^3)=               11.1419377
+  B(GPa)=               470.3110539
+
+
+ ORDER OF FIT=    4
+  POWER      COEFFICIENT
+    0       0.8204655E-08
+    1      -0.6067105E-04
+    2       0.4795331E-02
+    3      -0.6679871E-03
+    4       0.7033440E-04
+
+  E0(HARTREE)=          -76.21722635
+  V0(A^3)=               11.1420385
+  B(GPa)=               464.6571876
+
+
+ ORDER OF FIT=    5
+  POWER      COEFFICIENT
+    0      -0.1763350E-08
+    1      -0.6194866E-04
+    2       0.4795501E-02
+    3      -0.6609120E-03
+    4       0.7013823E-04
+    5      -0.6920376E-05
+
+  E0(HARTREE)=          -76.21722637
+  V0(A^3)=               11.1422400
+  B(GPa)=               464.6564565
+
+
+ ORDER OF FIT=    6
+  POWER      COEFFICIENT
+    0      -0.1381684E-18
+    1      -0.6195379E-04
+    2       0.4795398E-02
+    3      -0.6608779E-03
+    4       0.7060444E-04
+    5      -0.6955171E-05
+    6      -0.4266004E-06
+
+  E0(HARTREE)=          -76.21722636
+  V0(A^3)=               11.1422400
+  B(GPa)=               464.6464719
+
+
+ +++++++ FITTING USING ALL POINTS +++++++
+
+ USERS OF THIS EOS MODULE SHOULD KINDLY CITE THE FOLLOWING REFERENCE:
+
+ A. Erba, A. Mahmoud, D. Belmonte and R. Dovesi, J. Chem. Phys., 140, 124703 (2014)
+
+
+
+ EQUATION OF STATE             VOL(A^3)        E(AU)       BM(GPa)   BM PRIME
+ -------------------------------------------------------------------------------
+ MURNAGHAN 1944                 11.1423       -76.21722559  463.59     3.59
+ BIRCH-MURNAGHAN 1947           11.1422       -76.21722625  464.52     3.61
+ POIRIER-TARANTOLA 1998         11.1422       -76.21722654  464.91     3.61
+ VINET 1987                     11.1422       -76.21722642  464.74     3.61
+
+ POLYNOMIAL FITTING            VOL(A^3)        E(AU)       BM(GPa)
+ -------------------------------------------------------------------------------
+ THIRD ORDER POLYNOMIAL         11.1419       -76.21723045  470.31
+ FOURTH ORDER POLYNOMIAL        11.1420       -76.21722635  464.66
+ FIFTH ORDER POLYNOMIAL         11.1422       -76.21722637  464.66
+
+
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ THERMODYNAMIC FUNCTIONS OBTAINED AT 0 K WITH EOS: MURNAGHAN 1944           
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ V = VOLUME, P = PRESSURE, E = ENERGY, G = GIBBS FREE ENERGY, B = BULK MODULUS
+
+ V (A^3)   P (GPa)        E (a.u.)            G (a.u.)      B (GPa)
+
+   10.24     45.43       -76.21284938       -76.10609214     626.61
+   10.32     40.96       -76.21358475       -76.11662492     610.58
+   10.39     36.64       -76.21424531       -76.12688928     595.08
+   10.47     32.46       -76.21483349       -76.13689389     580.07
+   10.54     28.41       -76.21535160       -76.14664710     565.55
+   10.62     24.49       -76.21580189       -76.15615693     551.48
+   10.69     20.70       -76.21618650       -76.16543110     537.87
+   10.76     17.02       -76.21650750       -76.17447702     524.67
+   10.84     13.46       -76.21676688       -76.18330183     511.89
+   10.91     10.01       -76.21696655       -76.19191238     499.51
+   10.99      6.66       -76.21710835       -76.20031529     487.50
+   11.06      3.42       -76.21719406       -76.20851692     475.86
+   11.14      0.27       -76.21722538       -76.21652339     464.58
+   11.21     -2.78       -76.21720396       -76.22434060     453.63
+   11.28     -5.73       -76.21713137       -76.23197423     443.01
+   11.36     -8.61       -76.21700916       -76.23942976     432.71
+   11.43    -11.39       -76.21683878       -76.24671246     422.71
+   11.51    -14.10       -76.21662165       -76.25382744     413.01
+   11.58    -16.72       -76.21635915       -76.26077959     403.59
+   11.66    -19.27       -76.21605259       -76.26757365     394.44
+   11.73    -21.75       -76.21570325       -76.27421419     385.55
+   11.80    -24.15       -76.21531235       -76.28070561     376.92
+   11.88    -26.49       -76.21488108       -76.28705218     368.54
+   11.95    -28.76       -76.21441058       -76.29325799     360.39
+   12.03    -30.97       -76.21390197       -76.29932702     352.47
+
+
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ THERMODYNAMIC FUNCTIONS OBTAINED AT 0 K WITH EOS: BIRCH-MURNAGHAN 1947     
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ V = VOLUME, P = PRESSURE, E = ENERGY, G = GIBBS FREE ENERGY, B = BULK MODULUS
+
+ V (A^3)   P (GPa)        E (a.u.)            G (a.u.)      B (GPa)
+
+   10.24     45.35       -76.21284973       -76.10627168     621.40
+   10.32     40.92       -76.21358409       -76.11672614     606.56
+   10.39     36.63       -76.21424414       -76.12693110     592.10
+   10.47     32.46       -76.21483217       -76.13689274     577.99
+   10.54     28.43       -76.21535039       -76.14661708     564.22
+   10.62     24.51       -76.21580095       -76.15610996     550.80
+   10.69     20.72       -76.21618591       -76.16537703     537.70
+   10.76     17.04       -76.21650729       -76.17442381     524.92
+   10.84     13.48       -76.21676701       -76.18325563     512.45
+   10.91     10.02       -76.21696696       -76.19187769     500.28
+   10.99      6.67       -76.21710896       -76.20029502     488.40
+   11.06      3.42       -76.21719475       -76.20851253     476.81
+   11.14      0.27       -76.21722605       -76.21653498     465.49
+   11.21     -2.79       -76.21720451       -76.22436698     454.44
+   11.28     -5.75       -76.21713171       -76.23201305     443.65
+   11.36     -8.62       -76.21700921       -76.23947754     433.12
+   11.43    -11.41       -76.21683850       -76.24676472     422.82
+   11.51    -14.12       -76.21662103       -76.25387872     412.77
+   11.58    -16.74       -76.21635821       -76.26082356     402.96
+   11.66    -19.28       -76.21605141       -76.26760315     393.36
+   11.73    -21.75       -76.21570194       -76.27422129     383.99
+   11.80    -24.14       -76.21531108       -76.28068169     374.84
+   11.88    -26.47       -76.21488007       -76.28698795     365.89
+   11.95    -28.72       -76.21441013       -76.29314358     357.14
+   12.03    -30.90       -76.21390240       -76.29915198     348.59
+
+
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ THERMODYNAMIC FUNCTIONS OBTAINED AT 0 K WITH EOS: POIRIER-TARANTOLA 1998   
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ V = VOLUME, P = PRESSURE, E = ENERGY, G = GIBBS FREE ENERGY, B = BULK MODULUS
+
+ V (A^3)   P (GPa)        E (a.u.)            G (a.u.)      B (GPa)
+
+   10.24     45.32       -76.21284988       -76.10634562     619.33
+   10.32     40.90       -76.21358383       -76.11676872     604.94
+   10.39     36.62       -76.21424366       -76.12694955     590.87
+   10.47     32.46       -76.21483162       -76.13689345     577.11
+   10.54     28.43       -76.21534988       -76.14660560     563.65
+   10.62     24.52       -76.21580054       -76.15609107     550.49
+   10.69     20.73       -76.21618565       -76.16535476     537.61
+   10.76     17.05       -76.21650718       -76.17440146     525.00
+   10.84     13.49       -76.21676705       -76.18323582     512.66
+   10.91     10.03       -76.21696712       -76.19186238     500.59
+   10.99      6.68       -76.21710920       -76.20028556     488.78
+   11.06      3.42       -76.21719504       -76.20850966     477.21
+   11.14      0.27       -76.21722634       -76.21653887     465.88
+   11.21     -2.79       -76.21720475       -76.22437727     454.80
+   11.28     -5.76       -76.21713187       -76.23202885     443.94
+   11.36     -8.63       -76.21700925       -76.23949748     433.31
+   11.43    -11.42       -76.21683840       -76.24678693     422.90
+   11.51    -14.12       -76.21662078       -76.25390091     412.70
+   11.58    -16.75       -76.21635783       -76.26084299     402.71
+   11.66    -19.29       -76.21605092       -76.26761669     392.92
+   11.73    -21.75       -76.21570138       -76.27422542     383.33
+   11.80    -24.14       -76.21531053       -76.28067251     373.93
+   11.88    -26.46       -76.21487964       -76.28696123     364.73
+   11.95    -28.70       -76.21440992       -76.29309473     355.70
+   12.03    -30.88       -76.21390258       -76.29907612     346.86
+
+
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ THERMODYNAMIC FUNCTIONS OBTAINED AT 0 K WITH EOS: VINET 1987               
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ V = VOLUME, P = PRESSURE, E = ENERGY, G = GIBBS FREE ENERGY, B = BULK MODULUS
+
+ V (A^3)   P (GPa)        E (a.u.)            G (a.u.)      B (GPa)
+
+   10.24     45.34       -76.21284981       -76.10631421     620.19
+   10.32     40.91       -76.21358394       -76.11675036     605.62
+   10.39     36.62       -76.21424387       -76.12694133     591.39
+   10.47     32.46       -76.21483186       -76.13689277     577.49
+   10.54     28.43       -76.21535010       -76.14661019     563.90
+   10.62     24.52       -76.21580072       -76.15609892     550.63
+   10.69     20.73       -76.21618577       -76.16536419     537.65
+   10.76     17.05       -76.21650723       -76.17441106     524.97
+   10.84     13.48       -76.21676704       -76.18324445     512.58
+   10.91     10.03       -76.21696706       -76.19186918     500.46
+   10.99      6.67       -76.21710910       -76.20028993     488.62
+   11.06      3.42       -76.21719492       -76.20851123     477.04
+   11.14      0.27       -76.21722622       -76.21653752     465.71
+   11.21     -2.79       -76.21720464       -76.22437313     454.64
+   11.28     -5.75       -76.21713179       -76.23202226     443.81
+   11.36     -8.63       -76.21700922       -76.23948901     433.22
+   11.43    -11.42       -76.21683843       -76.24677737     422.86
+   11.51    -14.12       -76.21662089       -76.25389123     412.72
+   11.58    -16.74       -76.21635799       -76.26083438     402.81
+   11.66    -19.29       -76.21605113       -76.26761053     393.11
+   11.73    -21.75       -76.21570162       -76.27422327     383.61
+   11.80    -24.14       -76.21531077       -76.28067613     374.33
+   11.88    -26.46       -76.21487983       -76.28697253     365.24
+   11.95    -28.71       -76.21441001       -76.29311580     356.34
+   12.03    -30.89       -76.21390250       -76.29910922     347.63
+
+ EOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOSEOS
+
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE      297.40 TCPU      293.93
+ EEEEEEEEEE TERMINATION  DATE 21 10 2026 TIME 14:14:41.3
+NODE    0 CPU TIME =       293.935
+NODE    1 CPU TIME =       295.386
+NODE    2 CPU TIME =       295.299
+NODE    3 CPU TIME =       294.984
+NODE    4 CPU TIME =       295.429
+NODE    5 CPU TIME =       294.941
+NODE    6 CPU TIME =       294.789
+NODE    7 CPU TIME =       295.061
+NODE    8 CPU TIME =       295.219
+NODE    9 CPU TIME =       294.759
+NODE   10 CPU TIME =       294.976
+NODE   11 CPU TIME =       295.433
+NODE   12 CPU TIME =       294.970
+NODE   13 CPU TIME =       294.451
+NODE   14 CPU TIME =       295.378
+NODE   15 CPU TIME =       295.375
+    TOTAL CPU TIME =      4720.384

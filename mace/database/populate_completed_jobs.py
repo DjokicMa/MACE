@@ -25,12 +25,13 @@ def _completed_calc_type(category: str) -> str:
     return _BUCKET_TO_CALC_TYPE.get(category, 'OPT')
 
 
-def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
+def scan_for_completed_calculations(base_dir: Path, files: Optional[List[Path]] = None) -> List[Dict]:
     """
     Scan directory for completed CRYSTAL calculations.
     
     Args:
         base_dir: Base directory to scan
+        files: Only these outputs (no walk of base_dir): one run's Extract
         
     Returns:
         List of calculation info dictionaries
@@ -38,7 +39,7 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
     completed_calcs = []
     
     # Look for .out files
-    for out_file in base_dir.rglob("*.out"):
+    for out_file in (base_dir.rglob("*.out") if files is None else [Path(f) for f in files]):
         # Skip if file is empty or doesn't exist
         if not out_file.exists() or out_file.stat().st_size == 0:
             continue
@@ -46,6 +47,10 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
         # registered once, by X.out (the second record was a duplicate)
         from mace.utils.db_build import temp_copy_of
         if temp_copy_of(out_file) is not None:
+            continue
+        # a TAU step's strained single points are recorded by their own rows
+        # (mace/workflow/tau_step.py): never as single points of a structure
+        if re.match(r"step_\d+_TAU\d*$", out_file.parent.parent.name):
             continue
             
         # Check if calculation completed — same validated detector as the

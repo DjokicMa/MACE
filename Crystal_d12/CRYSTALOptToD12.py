@@ -50,7 +50,12 @@ from d12_constants import (
     # Constants
     ELEMENT_SYMBOLS, SPACEGROUP_SYMBOLS, DEFAULT_SETTINGS,
     DEFAULT_OPT_SETTINGS, DEFAULT_TOLERANCES, DEFAULT_FREQ_SETTINGS,
-    freq_default_tolerances,
+    freq_default_tolerances, TIGHT_SCF_CALC_TYPES, tight_scf_maxcycle,
+    SCF_MAXCYCLE_FALLBACK, TIGHT_SCF_MIN_MAXCYCLE, a_calc,
+    check_scf_modifications, apply_scf_modifications, describe_scf_modifications,
+    k_mesh_text, check_kpoint_modifications, describe_k_mesh, symmetric_k_points, AUTO_K_POINTS,
+    spin_state_change, spin_change_title, SPIN_CHANGE_GUESS,
+    is_spin_polarized, set_spin_polarized,
     normalize_config_functionals,
     FUNCTIONAL_CATEGORIES, COMMON_FUNCTIONALS, D3_FUNCTIONALS,
     DFT_GRID_OPTIONS, DISPERSION_OPTIONS, SMEARING_OPTIONS,
@@ -63,7 +68,7 @@ from d12_constants import (
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
-    configure_smearing, CUSTOM_FUNCTIONAL,
+    configure_smearing, CUSTOM_FUNCTIONAL, ParentRefused,
 )
 from d12_parsers import (
     CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, DECK_TEXT_KEYS,
@@ -73,7 +78,7 @@ from d12_config import unwrap_d12_config
 from d12_calc_freq import (
     get_advanced_frequency_settings, write_frequency_section, INTENSITY_SETTINGS,
     freq_mode,
-    phonon_dispersion_refusal, PhononDispersionRefused,
+    phonon_dispersion_refusal, PhononDispersionRefused, gamma_only_phonon_dos,
 )
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
@@ -143,14 +148,33 @@ _DRIFT_RECORDS = ("BASISSET", "TOLINTEG", "TOLDEE", "LEVSHIFT", "HISTDIIS", "MAX
 _GRID_KEYWORDS = ("OLDGRID", "LGRID", "XLGRID", "XXLGRID", "XXXLGRID", "HUGEGRID")
 
 
+# OPTGEOM's own convergence record of the same name as the SCF one: read and
+# named apart ("OPTGEOM TOLDEE"), so an OPTGEOM TOLDEE is never compared with
+# the SCF TOLDEE.
+_OPTGEOM_DRIFT_RECORDS = ("TOLDEE",)
+
+
 def _drift_records(text):
-    """The settings of a deck that piped answers can move, as display strings."""
+    """The settings of a deck that piped answers can move, as display strings.
+
+    Records inside the OPTGEOM block (up to its ENDOPT or END) are its own:
+    TOLDEE there is "OPTGEOM TOLDEE", and the SCF TOLDEE is the one outside it.
+    """
     lines = [" ".join(line.split()) for line in text.splitlines()]
     upper = [line.upper() for line in lines]
     records = {}
+    in_optgeom = False
     for i, key in enumerate(upper):
-        if key in _DRIFT_RECORDS and key not in records:
-            records[key] = lines[i + 1] if i + 1 < len(lines) else ""
+        if key == "OPTGEOM":
+            in_optgeom = True
+            records.setdefault("OPTGEOM", "")
+            continue
+        if in_optgeom and key in ("ENDOPT", "END"):
+            in_optgeom = False
+            continue
+        name = f"OPTGEOM {key}" if in_optgeom and key in _OPTGEOM_DRIFT_RECORDS else key
+        if key in _DRIFT_RECORDS and name not in records:
+            records[name] = lines[i + 1] if i + 1 < len(lines) else ""
         elif key == "DFT" and "functional" not in records and i + 1 < len(lines):
             records["functional"] = lines[i + 1]
     if "DFT" in upper:
@@ -170,10 +194,13 @@ def settings_changed_from_parent(parent_text, child_text):
     parent = _drift_records(parent_text)
     child = _drift_records(child_text)
     changed = []
-    for name in ("functional", "BASISSET", "DFT grid") + _DRIFT_RECORDS[1:]:
+    optgeom = tuple(f"OPTGEOM {key}" for key in _OPTGEOM_DRIFT_RECORDS)
+    for name in ("functional", "BASISSET", "DFT grid") + _DRIFT_RECORDS[1:] + optgeom:
         before, after = parent.get(name), child.get(name)
         if name == "DFT grid" and (before is None or after is None):
             continue                     # HF on one side: no grid to compare
+        if name in optgeom and ("OPTGEOM" not in parent or "OPTGEOM" not in child):
+            continue                     # an OPTGEOM on one side only: a new or dropped optimization
         if not _same_record(before, after):
             changed.append((name, before or "(none)", after or "(none)"))
     return changed
@@ -442,6 +469,20 @@ GUESSPNOSO_HOWTO = (
     "matrix in one cycle the manual offers 2NDVARIAT (p. 174), which MACE does not write.")
 
 
+_ELECTRONS_PER_CELL = re.compile(r"^\s*N\. OF ELECTRONS PER CELL\s+(\d+)", re.MULTILINE)
+
+
+def parent_electron_count(output_file):
+    """The electrons per cell a parent .out reports (CRYSTAL's "N. OF
+    ELECTRONS PER CELL"), or None when it does not say."""
+    try:
+        with open(output_file, errors="replace") as fh:
+            m = _ELECTRONS_PER_CELL.search(fh.read())
+    except (OSError, TypeError):
+        return None
+    return int(m.group(1)) if m else None
+
+
 def guesspnoso_parent_problem(options, parent, output_file):
     """Why a parent cannot start a GUESSPNOSO deck, or None. GUESSP[NOSO]
     needs a previous 1c-SCF that was unrestricted (UHF, p. 131, or SPIN,
@@ -560,7 +601,8 @@ def options_for_template(options) -> dict:
     from basis_library import portable_options
     # a bundled basis library is stored by name, not by this checkout's path
     return portable_options({k: v for k, v in options.items()
-                             if k not in TEMPLATE_STRUCTURE_DATA_KEYS and k != "k_points"})
+                             if k not in TEMPLATE_STRUCTURE_DATA_KEYS
+                             and k not in ("k_points", "k_points_set", "spin_change")})
 
 
 # The config key that sets one k-point mesh for every file. A config's plain
@@ -571,21 +613,27 @@ ALL_FILES_K_POINTS_KEY = "k_points_for_all_files"
 
 def all_files_k_points(value):
     """The mesh of a config's k_points_for_all_files as the deck writes it
-    ("IS ISP" or "ka kb kc", as in a parent deck), or None if it is not 1 to 3
-    whole numbers. One number n means n n n."""
-    if isinstance(value, bool):
+    ("IS ISP" or "ka kb kc", as in a parent deck), "auto" (each file's mesh
+    from its own cell), or None if it is neither 1 to 3 whole numbers nor
+    "auto". One number n means n n n (d12_constants.k_mesh_text)."""
+    return k_mesh_text(value)
+
+
+def set_k_mesh(options, mesh, source):
+    """This deck's k-point mesh, set by a config (k_points_for_all_files, a
+    workflow step's kpoint_modifications): the mesh the writer then keeps as
+    a parent's own (the parent_k_points it compares against), or None for
+    "auto", which the writer generates from the structure's cell."""
+    if mesh == AUTO_K_POINTS:
+        options["k_points"] = None
+        options.pop("k_points_set", None)
+        ui.info(f"  k-points: MACE's automatic mesh from this structure's cell ({source})")
         return None
-    parts = [value] if isinstance(value, int) else (
-        list(value) if isinstance(value, (list, tuple)) else str(value).split())
-    try:
-        numbers = [int(str(p)) for p in parts]
-    except ValueError:
-        return None
-    if not 1 <= len(numbers) <= 3 or any(n <= 0 for n in numbers):
-        return None
-    if len(numbers) == 1:
-        numbers *= 3
-    return " ".join(str(n) for n in numbers)
+    options["k_points"] = mesh
+    # set here, not the parent's: the writer makes symmetry-equivalent directions agree
+    options["k_points_set"] = True
+    ui.info(f"  k-points: {mesh} ({source})")
+    return mesh
 
 
 def merge_optimization_settings(parent, override, replace_type=False):
@@ -710,6 +758,9 @@ def _get_phonon_band_path_title(band_settings, geometry_data, dimensionality="CR
     from d3_kpoints import get_band_path_from_symmetry, unicode_to_ascii_kpoint
 
     seekpath_source = None
+    if str(dimensionality).upper() == "POLYMER":
+        # the Gamma-X path along the chain write_frequency_section writes for a polymer
+        return " - Phonon Band Structure - default - GAMMA-X"
     if str(dimensionality).upper() == "SLAB":
         # The in-plane path write_frequency_section writes for a slab
         from d12_calc_freq import slab_phonon_band_path
@@ -923,6 +974,17 @@ def conventional_atom_number(atom_number, settings) -> int:
     return number
 
 
+def deck_atom_number(atom_number, settings) -> int:
+    """The atomic number the deck writes for an atom of the parent's geometry
+    (conventional_atom_number, plus 200 for an element that needs an ECP in
+    an EXTERNAL basis; an internal basis handles its ECPs itself). A phonopy
+    displaced supercell's .ext numbers its atoms the same way."""
+    number = conventional_atom_number(atom_number, settings)
+    if settings.get("basis_set_type") == "EXTERNAL" and number in ECP_ELEMENTS_EXTERNAL:
+        number += 200
+    return number
+
+
 THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C")
 
 
@@ -1015,6 +1077,10 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
 
     calc_type = settings.get("calculation_type", settings.get("calc_type", "OPT"))
     if calc_type == "FREQ":
+        # a molecule's phonon DOS is the Gamma-only one (manual p.236), not a dispersion
+        if settings.get("freq_settings") is not None:
+            settings["freq_settings"] = gamma_only_phonon_dos(
+                settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"))
         refusal = phonon_dispersion_refusal(
             settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"),
             geometry_data.get("optimization_content") or "")
@@ -1065,14 +1131,21 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
                     band_settings, geometry_data, settings.get("dimensionality", "CRYSTAL"))
                 if path_info:
                     title += path_info
+        # A deck that turns spin polarization on or off says so: it starts
+        # from a fresh SCF guess, not from the parent's density matrix.
+        if settings.get("spin_change"):
+            title += spin_change_title(settings["spin_change"])
         
         f.write(f"{title}\n")
 
-        # Structure section
+        # Structure section. A phonopy displaced supercell (calculation type
+        # PHONOPY) has its geometry in <job>.ext, which the job script stages
+        # as fort.34 (EXTERNAL, manual p. 21); its atoms only number the basis.
+        external = bool(geometry_data.get("external_geometry"))
         dimensionality = settings.get("dimensionality", "CRYSTAL")
-        f.write(f"{dimensionality}\n")
+        f.write("EXTERNAL\n" if external else f"{dimensionality}\n")
 
-        if dimensionality == "CRYSTAL":
+        if dimensionality == "CRYSTAL" and not external:
             # Handle space groups with multiple origins
             spacegroup = settings.get("spacegroup", 1)
             origin_setting = settings.get("origin_setting", "0 0 0")
@@ -1134,20 +1207,13 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
         else:
             coords_to_write = coords
 
-        f.write(f"{len(coords_to_write)}\n")
+        if not external:
+            f.write(f"{len(coords_to_write)}\n")
 
-        for atom in coords_to_write:
-            atom_num = conventional_atom_number(atom["atom_number"], settings)
+        for atom in ([] if external else coords_to_write):
             # Store original atomic number for symbol lookup
-            original_atom_num = atom_num
-            
-            # Add 200 to atomic number ONLY if ECP is required for EXTERNAL basis sets
-            if (
-                settings.get("basis_set_type") == "EXTERNAL"
-                and atom_num in ECP_ELEMENTS_EXTERNAL
-            ):
-                atom_num += 200
-            # For internal basis sets, do NOT add 200 - they handle ECP internally
+            original_atom_num = conventional_atom_number(atom["atom_number"], settings)
+            atom_num = deck_atom_number(atom["atom_number"], settings)
 
             # An EXTERNAL-basis parent keeps conventional numbers (282 = Pb
             # with an ECP); the element is the number modulo 100.
@@ -1249,6 +1315,12 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
                     crystal_system, spacegroup, optimization_section,
                     dimensionality=settings.get("dimensionality", "CRYSTAL")
                 )
+        elif settings["calculation_type"] in ("ELASTIC", "EOS", "QHA", "CPHF"):
+            # ELASTCON / ELAPIEZO / PIEZOCON / PIEZOCP / PHOTOELA / EOS / QHA / CPHF: the
+            # last keyword of the geometry input, with its own END
+            # (CRYSTAL23 manual ch. 9, 10, 12-13; d12_calc_elastic)
+            from d12_calc_elastic import write_elastic_section
+            write_elastic_section(f, settings.get("elastic_settings"), settings["calculation_type"])
         else:
             # For SP: Plain SP calculations don't have OPTGEOM/FREQCALC blocks
             # Just continue to basis set section
@@ -1499,6 +1571,22 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
                 except (ValueError, IndexError):
                     k_points_info = None
                     
+        # A mesh a config set for this deck (k_points_for_all_files, a
+        # workflow step's kpoint_modifications) is written as given, its
+        # non-periodic factors 1 and the factors of symmetry-equivalent
+        # directions made equal (CRYSTAL stops on SHRINK BREAKS SYMMETRY).
+        if k_points_info and k_from_parent and settings.get("k_points_set"):
+            given = tuple(k_points_info)
+            periodic = {"SLAB": 2, "POLYMER": 1}.get(dimensionality, 3)
+            fixed = symmetric_k_points(given[:periodic] + (1,) * (3 - periodic), dimensionality,
+                                       settings.get("spacegroup", 1))
+            if fixed[:periodic] != given[:periodic]:
+                ui.info(f"Note: Using k-points {' '.join(map(str, fixed[:periodic]))} (was "
+                        f"{' '.join(map(str, given[:periodic]))}) so the mesh keeps "
+                        f"{'layer' if dimensionality == 'SLAB' else 'space'} group "
+                        f"{settings.get('spacegroup')}'s symmetry")
+            k_points_info = fixed
+
         # Fallback: Generate k-points based on cell size if not extracted
         if k_points_info is None and geometry_data.get("conventional_cell"):
             a, b, c = [float(x) for x in geometry_data["conventional_cell"][:3]]
@@ -1561,6 +1649,23 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
         # CRYSTAL aborts on it. A UHF deck carries no SPIN keyword.
         spin_active = bool(settings.get("spin_polarized")) or settings.get("functional") == "UHF"
 
+        # The SCF cycle limit. A FREQ (or ELASTIC/EOS/QHA/CPHF) deck runs at a
+        # tighter TOLDEE than its parent, so it gets at least 200 cycles; a
+        # parent's higher value is kept, and a parent with none gets 800.
+        scf_maxcycle = scf.get("maxcycle", SCF_MAXCYCLE_FALLBACK)
+        if calc_type in TIGHT_SCF_CALC_TYPES and settings.get("scf_maxcycle_explicit"):
+            # MAXCYCLE set for this deck (a workflow step's scf_modifications):
+            # written as given; the floor is for the parent's value only.
+            if int(scf_maxcycle) < TIGHT_SCF_MIN_MAXCYCLE:
+                ui.warn(f"  Warning: SCF MAXCYCLE {scf_maxcycle} as set, below the {TIGHT_SCF_MIN_MAXCYCLE} "
+                        f"{a_calc(calc_type)} deck otherwise gets; its tighter TOLDEE may need more cycles")
+        elif calc_type in TIGHT_SCF_CALC_TYPES:
+            scf_maxcycle = tight_scf_maxcycle(scf.get("maxcycle"))
+            if scf_maxcycle != scf.get("maxcycle"):
+                ui.info(f"  SCF MAXCYCLE {scf_maxcycle} (the parent's "
+                        f"{scf.get('maxcycle') or 'CRYSTAL default'} is too few for "
+                        f"{calc_type}'s tighter TOLDEE)")
+
         write_scf_section(
             f,
             settings.get("tolerances", DEFAULT_TOLERANCES),
@@ -1569,7 +1674,7 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
             settings.get("smearing"),
             settings.get("smearing_width", 0.01),
             scf_method,
-            scf.get("maxcycle", 800),
+            scf_maxcycle,
             scf.get("fmixing", 30),
             len(atomic_numbers),
             settings.get("spacegroup", 1),
@@ -1585,6 +1690,7 @@ def _write_d12_file(output_file, geometry_data, settings, external_basis_data=No
             spinlock_cycles=settings.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
             preserve_directional=k_from_parent,
             shrink_isp=shrink_isp if k_from_parent else None,
+            gradcal=calc_type == "PHONOPY",
             **scf_extra,
         )
 
@@ -1621,7 +1727,8 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
     # Default to SP if not specified
     options["calculation_type"] = calc_type
     if calc_type == "FREQ":
-        # FREQ gets its own default SCF tolerances (Very tight)
+        # FREQ gets its own default SCF tolerances (Very tight, or the parent's
+        # values where tighter)
         options["tolerances"] = freq_default_tolerances(
             settings.get("calculation_type"), settings.get("tolerances"))
 
@@ -1758,17 +1865,66 @@ def read_deck_parent(deck_file):
     return deck_geometry_data(in_data), None
 
 
+def ask_shared_elastic_settings(shared_settings, template_settings):
+    """``shared_settings`` with "elastic_settings" for an ELASTIC, EOS, QHA or
+    CPHF batch: the answers to the module's questions (d12_calc_elastic), asked
+    once, with the template parent's own block as the defaults when it is the
+    same module. Nothing is asked when --elastic-settings gave them."""
+    calc_type = (shared_settings or {}).get("calculation_type")
+    if calc_type not in ("ELASTIC", "EOS", "QHA", "CPHF"):
+        return shared_settings
+    import d12_calc_elastic as elastic
+    if elastic.REQUESTED:
+        return shared_settings
+    current = template_settings.get("elastic_settings")
+    mode = str((current or {}).get("mode") or "").upper()
+    if not (mode == calc_type or (calc_type == "ELASTIC" and mode in elastic.ELASTIC_MODES)):
+        current = None
+    print()
+    ui.rule(f"{calc_type} SETTINGS (all files)")
+    shared_settings["elastic_settings"] = elastic.configure_elastic(
+        calc_type, template_settings.get("dimensionality", "CRYSTAL"), current=current)
+    return shared_settings
+
+
 def process_files(*args, **kwargs):
     """Process CRYSTAL output and input files (see _process_files).
 
     A phonon dispersion refused as soon as it is chosen (a POLYMER, say)
-    ends the file there, before the questions that follow it.
+    ends the file there, before the questions that follow it. So does a
+    parent a PHONOPY set or an ELASTIC/EOS/QHA/CPHF deck cannot start from
+    (ParentRefused: its lines go to stderr).
     """
+    import d12_interactive
     try:
         return _process_files(*args, **kwargs)
     except PhononDispersionRefused as exc:
         _fail(str(exc), f"\nNot writing a deck: {exc}")
         return False, None
+    except ParentRefused as exc:
+        for line in exc.lines:
+            print(line, file=sys.stderr)
+        LAST_RESULT["reason"] = " ".join(exc.lines[-1].split())
+        return False, None
+    finally:
+        d12_interactive.FOLLOW_UP_CHECK = None
+
+
+def follow_up_check(kind, output_file, input_file, config_file=None):
+    """Raise ParentRefused when this parent cannot seed a ``kind`` deck: a
+    PHONOPY set always (d12_calc_phonopy.parent_refusal), an ELASTIC, EOS, QHA
+    or CPHF deck asked for here (not a workflow step's config file, nor a
+    RESTART of the parent's own run: d12_calc_elastic.parent_refusal)."""
+    lines = None
+    if kind == "PHONOPY":
+        import d12_calc_phonopy
+        lines = d12_calc_phonopy.parent_refusal(output_file, input_file)
+    elif kind in ("ELASTIC", "EOS", "QHA", "CPHF") and output_file and not config_file:
+        import d12_calc_elastic
+        if not (d12_calc_elastic.REQUESTED or {}).get("restart"):
+            lines = d12_calc_elastic.parent_refusal(output_file)
+    if lines:
+        raise ParentRefused(lines)
 
 
 def _process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
@@ -1810,6 +1966,14 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     answers_piped = False
     if unattended:
         confirm_config = False
+
+    # A follow-up that needs a finished OPT or SP run refuses any other parent
+    # before anything is asked: --calc-type here, menu choices 4-8 once chosen.
+    import d12_interactive
+    d12_interactive.FOLLOW_UP_CHECK = (
+        lambda kind: follow_up_check(kind, output_file, input_file, config_file))
+    if calc_type:
+        follow_up_check(calc_type, output_file, input_file, config_file)
 
     if output_file is None:
         # --d12-file alone: the deck is its own parent (its geometry records
@@ -2067,9 +2231,17 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                         _fail(f"{ALL_FILES_K_POINTS_KEY} in the config must be 1 to 3 "
                               f"whole numbers, not {config_data[ALL_FILES_K_POINTS_KEY]!r}")
                         return False, None
-                    # Written exactly as given, as a parent's own mesh is.
-                    options["k_points"] = parent_k_points = mesh
-                    ui.info(f"  k-points: {mesh} (the config's {ALL_FILES_K_POINTS_KEY})")
+                    # Written as given, as a parent's own mesh is.
+                    parent_k_points = set_k_mesh(options, mesh, f"the config's {ALL_FILES_K_POINTS_KEY}")
+                # A workflow step's own mesh (kpoint_modifications) over the
+                # parent's; GUESSP stays (d12_constants.KPOINT_MODIFICATION_KEYS).
+                if config_data.get("kpoint_modifications") is not None:
+                    try:
+                        k_mods = check_kpoint_modifications(config_data["kpoint_modifications"])
+                    except ValueError as exc:
+                        _fail(str(exc), f"The config's {exc}; nothing written.")
+                        return False, None
+                    parent_k_points = set_k_mesh(options, k_mods["new_k_points"], "this step's kpoint_modifications")
                 # An external basis directory named by the config is used for
                 # this structure too, not the parent deck's own records.
                 if (not keep_parent_basis and config_data.get("basis_set_type") == "EXTERNAL"
@@ -2263,7 +2435,30 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                                 f"\"use_dispersion\": false drops it)")
                     elif new_fn and new_fn == str(explicit_functional) and method_mods.get("use_dispersion"):
                         options["dispersion"] = new_fn.upper() in {f.upper() for f in D3_FUNCTIONALS}
-                
+
+                # A functional switch keeps the parent's spin treatment unless
+                # the config says otherwise (scf_modifications SPIN, applied
+                # below, "keep_spin": false, its own "spin_polarized", or RHF /
+                # UHF named outright). A UHF parent's spin lives in its method
+                # name, not the spin flag, so a B3LYP step off it came out
+                # closed shell, titled "SPIN off", and an odd-electron UHF
+                # parent was refused.
+                named_spin = str(method_mods.get("new_functional") or method_mods.get("functional")
+                                 or config_data.get("hf_method") or config_data.get("functional")
+                                 or "").upper()
+                if (explicit_functional and named_spin not in ("RHF", "UHF")
+                        and method_mods.get("keep_spin") is not False
+                        and not (isinstance(config_data.get("scf_modifications"), dict)
+                                 and "SPIN" in config_data["scf_modifications"])
+                        and "spin_polarized" not in config_data
+                        and "is_spin_polarized" not in config_data):
+                    parent_spin = is_spin_polarized(settings)
+                    if parent_spin != is_spin_polarized(options):
+                        set_spin_polarized(options, parent_spin)
+                        ui.info(f"  Spin polarization: kept from the parent "
+                                f"({'spin-polarized' if parent_spin else 'closed shell'}; "
+                                f"scf_modifications \"SPIN\" changes it)")
+
                 # Handle tolerance_modifications if present. The planner's
                 # FREQ steps nest their tolerances in the frequency settings
                 # instead; honor those when no explicit override is given.
@@ -2287,6 +2482,30 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                 elif is_freq:
                     options["tolerances"] = {**base_tol, **(config_data.get("tolerances") or {})}
                     ui.info(f"  FREQ SCF tolerances: {options['tolerances']}")
+
+                # A workflow step's SCF records over the parent's (MAXCYCLE,
+                # FMIXING, the mixing method, LEVSHIFT, SMEAR, SPINLOCK,
+                # TOLDEE): what the interactive "modify settings" questions set.
+                if config_data.get("scf_modifications") is not None:
+                    try:
+                        scf_mods = check_scf_modifications(config_data["scf_modifications"])
+                    except ValueError as exc:
+                        _fail(str(exc), f"The config's {exc}; nothing written.")
+                        return False, None
+                    if scf_mods:
+                        apply_scf_modifications(options, scf_mods)
+                        # SPINLOCK is written only in a spin-polarized deck
+                        # (CRYSTAL stops on one in a closed-shell run): one set
+                        # on a closed-shell step was dropped while the log said
+                        # it was set.
+                        if scf_mods.get("SPINLOCK") and not is_spin_polarized(options):
+                            _fail(f"SPINLOCK {scf_mods['SPINLOCK']} needs a spin-polarized deck, and this "
+                                  f"step runs closed shell",
+                                  f"The config's scf_modifications.SPINLOCK {scf_mods['SPINLOCK']} needs a "
+                                  f"spin-polarized deck, and this step runs closed shell "
+                                  f"(add \"SPIN\": true to turn spin polarization on); nothing written.")
+                            return False, None
+                        ui.info(f"  SCF settings changed: {describe_scf_modifications(scf_mods)}")
 
                 # The config named no functional and the parent's was not
                 # identified: warn and use HSE06 rather than ask.
@@ -2409,6 +2628,31 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             else:
                 options["write_only_unique"] = False
 
+    # ELASTIC / EOS / QHA / CPHF decks: the module's settings (--elastic-settings, the
+    # config's "elastic_settings", the questions or CRYSTAL's defaults), the
+    # manual's limits, and an SCF TOLDEE no looser than the module's 8
+    if options.get("calculation_type") in ("ELASTIC", "EOS", "QHA", "CPHF"):
+        from d12_calc_elastic import resolve_for_opt2d12
+        problem = resolve_for_opt2d12(
+            options, settings, config_file=config_file,
+            interactive=not (non_interactive or unattended or config_file or shared_settings),
+            log=ui.info)
+        if problem:
+            _fail(problem, f"\nNot writing the {options['calculation_type']} deck: {problem}")
+            return False, None
+    # A PHONOPY set: phonopy's settings (--dim and the flags with it, the
+    # config's "phonopy_settings", the questions or the suggested supercell)
+    # and an SCF TOLDEE no looser than 10
+    if options.get("calculation_type") == "PHONOPY":
+        from d12_calc_phonopy import resolve_for_opt2d12 as resolve_phonopy
+        problem = resolve_phonopy(
+            options, settings, config_file=config_file,
+            interactive=not (non_interactive or unattended or config_file or shared_settings),
+            log=ui.info)
+        if problem:
+            _fail(problem, f"\nNot writing the phonopy set: {problem}")
+            return False, None
+
     # Keep the parent deck's SCF records that no prompt or config sets: the
     # BROYDEN parameters, LEVSHIFT, BIPOSIZE/EXCHSIZE, HISTDIIS and GUESSP. The interactive flow
     # replaces scf_settings with only maxcycle/fmixing/method, which dropped them.
@@ -2419,6 +2663,28 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             if scf_key in parent_scf:
                 merged_scf.setdefault(scf_key, parent_scf[scf_key])
         options["scf_settings"] = merged_scf
+
+    # Spin polarization turned on or off for this deck (a workflow step's
+    # scf_modifications SPIN, or the spin question): the SCF starts from a
+    # fresh guess, never the parent's density matrix. A two-component deck
+    # treats spin itself and restarts by its own rules (GUESSPSO/GUESSPNOSO).
+    # (Worked out for this parent only: never carried in from saved or shared settings.)
+    options.pop("spin_change", None)
+    spin_change = None if options.get("soc") else spin_state_change(settings, options)
+    if spin_change:
+        electrons = parent_electron_count(output_file)
+        if spin_change == "off" and electrons is not None and electrons % 2:
+            _fail(f"a closed-shell deck needs an even electron count, and the parent has {electrons}",
+                  f"\nNot writing a closed-shell deck: the parent has {electrons} electrons per cell, an odd "
+                  f"count only a spin-polarized run can hold (keep SPIN for this step)")
+            return False, None
+        options["spin_change"] = spin_change
+        scf_now = options.get("scf_settings")
+        dropped = isinstance(scf_now, dict) and bool(scf_now.pop("guessp", None))
+        ui.info(f"  Spin polarization {spin_change} (the parent ran "
+                f"{'closed shell' if spin_change == 'on' else 'spin-polarized'}): the SCF starts from a fresh "
+                f"guess{' (the parent deck' + chr(39) + 's GUESSP is dropped)' if dropped else ''}, since "
+                f"{SPIN_CHANGE_GUESS}")
 
     # Ensure symmetry settings are preserved from original input
     if "spacegroup" not in options and "spacegroup" in settings:
@@ -2477,7 +2743,16 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
     # A two-component SOC deck is named apart from the scalar deck of the
     # same parent ("_soc"), so the two never overwrite each other.
     soc_tag = "_soc" if options.get("soc") else ""
-    new_filename = (f"{base_name}_{calc_type.lower()}_{functional}{soc_tag}"
+    # an ELASTIC deck is named by its module (_elastcon, _elapiezo, ...), so
+    # the modules of one parent never overwrite each other
+    type_token = (str((options.get("elastic_settings") or {}).get("mode") or "elastcon").lower()
+                  if calc_type == "ELASTIC" else calc_type.lower())
+    if calc_type == "PHONOPY":
+        # a phonopy set is named by its supercell (_ph222): the folder of its
+        # displaced decks (d12_calc_phonopy)
+        from d12_calc_phonopy import dim_tag
+        type_token = "ph" + dim_tag((options.get("phonopy_settings") or {}).get("dim") or "2 2 2")
+    new_filename = (f"{base_name}_{type_token}_{functional}{soc_tag}"
                     f"{'_optimized' if output_file else ''}.d12")
 
     # SCELPHONO builds the phonon supercell in the geometry input (manual
@@ -2528,6 +2803,29 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             _fail(f"its deck {os.path.basename(new_filename)} was already written from "
                   f"{earlier} in this run; not overwriting it")
             return False, options
+
+    if calc_type == "PHONOPY":
+        # phonopy's displaced supercells: a folder named as this deck would be,
+        # holding one deck per displacement, each written by write_d12_file
+        # with an EXTERNAL geometry (d12_calc_phonopy)
+        import d12_calc_phonopy
+        setdir = d12_calc_phonopy.write_set(
+            new_filename, output_file, input_file, options,
+            write_deck=lambda path, geometry, deck_settings, k: write_d12_file(
+                path, geometry, deck_settings, external_basis_data, parent_k_points=k, ask=False),
+            deck_number=lambda z: deck_atom_number(z, options),
+            parent_k_points=parent_k_points, unattended=unattended,
+            confirm=lambda folder: yes_no_prompt(f"{folder} is not empty. Write the set into it?", "no"),
+            log=ui.info, warn=ui.warn, fail=_fail)
+        if not setdir:
+            if not LAST_RESULT["reason"]:
+                LAST_RESULT["reason"] = "phonopy set not written"
+            return False, options
+        ui.ok(f"\nSuccessfully created the phonopy set {setdir}")
+        LAST_RESULT["deck"] = setdir
+        if reserved_decks is not None:
+            reserved_decks[os.path.realpath(new_filename)] = output_file or input_file
+        return True, options
 
     # Write new D12 file
     if os.path.exists(new_filename):
@@ -2659,6 +2957,17 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             _fail(problem, f"\nNot writing {os.path.basename(new_filename)}: {problem}")
             return False, options
     parent_metal = soc_parent_metal(output_file) if converted_options.get("soc") else None
+    # A RESTART/RESTART2 elastic or EOS deck reads the parent run's
+    # ELASINFO.DAT / EOSINFO.DAT, which the job script stages as
+    # <JOB>.<file> next to the deck; the new deck has a new job name.
+    info_src = info_dst = None
+    if converted_options.get("calculation_type") in ("ELASTIC", "EOS", "QHA"):
+        from d12_calc_elastic import restart_info_plan
+        problem, info_src, info_dst = restart_info_plan(
+            converted_options.get("elastic_settings"), output_file, new_filename)
+        if problem:
+            _fail(problem, f"\nNot writing {os.path.basename(new_filename)}: {problem}")
+            return False, options
     # The new deck replaces an older one of the same name as it is written,
     # and some refusals come only after that (the charge-record checks read
     # the written deck). A copy of the older deck is put back on a refusal.
@@ -2683,6 +2992,16 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
             ui.info(f"  {converted_options['soc_guess'].upper()}: staged "
                     f"{os.path.basename(restart_f9)} as {os.path.basename(restart_f20)} "
                     f"(the job script reads it as fort.20)")
+        if written and info_src:
+            import shutil
+            try:
+                shutil.copyfile(info_src, info_dst)
+            except OSError as exc:
+                _drop_new_deck(new_filename, old_deck)
+                _fail(f"could not stage {info_src} as {os.path.basename(info_dst)} ({exc})")
+                return False, options
+            ui.info(f"  RESTART: staged {info_src} as {os.path.basename(info_dst)} "
+                    f"(the job script puts it in the run's scratch folder)")
     except BasisFileError as exc:
         # A basis record CRYSTAL could not read (atomic_deck has removed the
         # part-written deck).
@@ -2996,9 +3315,14 @@ def print_template_plan(config_file, config_data, file_pairs, output_dir):
                   or config_data.get("functional") or "each parent's own")
     tol_mods = (config_data.get("tolerance_modifications") or {}).get("custom_tolerances")
     tolerances = tol_mods or config_data.get("tolerances")
-    if ALL_FILES_K_POINTS_KEY in config_data:
+    k_mods = config_data.get("kpoint_modifications")
+    k_mesh = k_mesh_text(k_mods.get("new_k_points")) if isinstance(k_mods, dict) else None
+    if k_mods is not None:
+        k_text = (f"{describe_k_mesh(k_mesh)} for every file (the config's kpoint_modifications)" if k_mesh
+                  else f"invalid kpoint_modifications {k_mods!r}")
+    elif ALL_FILES_K_POINTS_KEY in config_data:
         mesh = all_files_k_points(config_data[ALL_FILES_K_POINTS_KEY])
-        k_text = (f"{mesh} for every file (the config's {ALL_FILES_K_POINTS_KEY})" if mesh
+        k_text = (f"{describe_k_mesh(mesh)} for every file (the config's {ALL_FILES_K_POINTS_KEY})" if mesh
                   else f"invalid {ALL_FILES_K_POINTS_KEY} {config_data[ALL_FILES_K_POINTS_KEY]!r}")
     elif config_data.get("k_points"):
         k_text = (f"each parent's own mesh (the config's k_points {config_data['k_points']} "
@@ -3036,7 +3360,24 @@ Convert CRYSTAL17/23 optimization output to new D12 input files.
 
 The output is given with --out-file (or every file in --directory). There is
 no positional argument. The calculation type for --non-interactive comes
-from --calc-type {SP,OPT,FREQ}.""",
+from --calc-type {SP,OPT,FREQ,ELASTIC,EOS,QHA,CPHF,PHONOPY} (the menu's
+choices 1-8; 4-8 start from a finished OPT or SP run).
+
+Mechanical-property and response modules (CRYSTAL23 manual ch. 9-10, 12-13),
+their sub-keywords in --elastic-settings (keys in lower case):
+  ELASTIC  mode ELASTCON (elastic constants, p. 290), ELAPIEZO (elastic +
+           piezoelectric, p. 298), PIEZOCON (Berry phase, p. 296), PIEZOCP
+           (CPHF/KS, p. 298) or PHOTOELA (photoelastic, p. 301)
+  EOS      E(V) fitted to four equations of state (p. 284; 3D only)
+  QHA      quasi-harmonic V(T), K(T), thermal expansion (p. 253; 1D-3D, p. 14)
+  CPHF     polarizability, dielectric tensor, hyperpolarizabilities (p. 270)
+Results: mace analyze elastic RUN.out.
+
+Phonons: FREQ writes CRYSTAL's own FREQCALC deck. PHONOPY (choice 8) writes
+phonopy's displaced supercells, a folder of EXTERNAL decks with the parent's
+settings (--dim, --amplitude, --pm, --cry-sym, --keep-shrink); after the jobs,
+mace analyze phonopy DIR writes the force constants, bands, DOS and thermal
+properties (it runs by itself when the last job finishes).""",
         epilog="""\
 Examples:
   %(prog)s --out-file optimized.out
@@ -3044,6 +3385,11 @@ Examples:
   %(prog)s --directory . --calc-type FREQ --non-interactive
   %(prog)s --directory opts --config-file sp_template.json --yes
   %(prog)s --out-file opts/*.out --config-file sp_template.json --output-dir sp
+  %(prog)s --out-file mat_opt.out --calc-type ELASTIC --non-interactive \\
+      --elastic-settings '{"mode": "ELAPIEZO", "numderiv": 5, "print": true}'
+  %(prog)s --out-file mat_opt.out --calc-type EOS --non-interactive \\
+      --elastic-settings '{"range": "0.92 1.08 8", "prange": "-5 10 16"}'
+  %(prog)s --out-file mat_opt.out --calc-type PHONOPY --non-interactive --dim "2 2 2"
   %(prog)s --d12-file deck.d12 --calc-type OPT    # a deck as the parent""",
     )
     parser.add_argument(
@@ -3106,8 +3452,20 @@ Examples:
     )
     parser.add_argument(
         "--calc-type",
-        choices=["SP", "OPT", "FREQ"],
-        help="Calculation type for non-interactive mode",
+        choices=["SP", "OPT", "FREQ", "ELASTIC", "EOS", "QHA", "CPHF", "PHONOPY"],
+        help="Calculation type for non-interactive mode (ELASTIC: ELASTCON, ELAPIEZO, "
+             "PIEZOCON, PIEZOCP or PHOTOELA; EOS: equation of state; QHA: quasi-harmonic; "
+             "CPHF: dielectric response; PHONOPY: phonopy's displaced supercells)",
+    )
+    parser.add_argument(
+        "--elastic-settings",
+        metavar="JSON",
+        help="ELASTIC/EOS/QHA/CPHF block settings: a JSON object or a JSON file, e.g. "
+             "'{\"mode\": \"ELASTCON\", \"numderiv\": 5, \"nuchess\": true}' "
+             "(keys: the CRYSTAL sub-keywords in lower case: mode, numderiv, stepsize, deform, "
+             "clampion, nuchess, hessnum2, modepart, hessstep, preoptgeom, pressure, presseos, "
+             "seismdir, awesome, tolalpha, dynamic, range, vrange, prange, qstep, points, temperat, "
+             "scelphono, neglefre, third, fourth, cphf_dynamic, damping, restart, print)",
     )
     parser.add_argument(
         "--opt-type",
@@ -3142,7 +3500,42 @@ Examples:
     charged.add_argument("--spinlock", type=int, help="nalpha-nbeta for an odd electron count")
     charged.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
 
+    ph = parser.add_argument_group(
+        "phonopy (--calc-type PHONOPY: displaced supercells; needs phonopy, pip install 'phonopy<5')")
+    ph.add_argument("--dim", nargs="+", metavar="N",
+                    help='supercell: "N N N" or 9 integers, row-major (default: each lattice vector '
+                         'at least 10 A)')
+    ph.add_argument("--amplitude", type=float, help="displacement in Angstrom (default: phonopy's 0.01)")
+    ph.add_argument("--pm", choices=["auto", "yes", "no"], help="plus/minus displacements (default: auto)")
+    ph.add_argument("--cry-sym", action="store_true",
+                    help="write each displaced cell's symmetry into its .ext (phonopy's CRY_SYM): fewer "
+                         "k-points, but phonopy warns some space groups (e.g. R-3m) do not work")
+    ph.add_argument("--keep-shrink", action="store_true",
+                    help="keep the parent's SHRINK (default: divide it by the supercell size, rounding "
+                         "up; diagonal supercells only)")
+    ph.add_argument("--force", action="store_true", help="write the set into a non-empty folder")
+
     args = parser.parse_args()
+    phonopy_flags = {k: v for k, v in (("dim", " ".join(args.dim) if args.dim else None),
+                                       ("amplitude", args.amplitude), ("pm", args.pm),
+                                       ("cry_sym", args.cry_sym or None),
+                                       ("keep_shrink", args.keep_shrink or None),
+                                       ("force", args.force or None)) if v is not None}
+    if phonopy_flags:
+        if args.calc_type != "PHONOPY":
+            parser.error(f"--{next(iter(phonopy_flags)).replace('_', '-')} goes with --calc-type PHONOPY")
+        import d12_calc_phonopy
+        try:
+            d12_calc_phonopy.normalize(phonopy_flags)
+        except ValueError as e:
+            parser.error(str(e))
+        d12_calc_phonopy.REQUESTED = phonopy_flags
+    if getattr(args, "elastic_settings", None):
+        import d12_calc_elastic
+        try:
+            d12_calc_elastic.REQUESTED = d12_calc_elastic.load_requested(args.elastic_settings)
+        except (OSError, ValueError) as e:
+            parser.error(f"--elastic-settings: {e}")
     if args.static_kpath:
         from d3_kpoints import request_static_kpath
         request_static_kpath()
@@ -3413,6 +3806,9 @@ Examples:
 
                 # Get shared settings
                 shared_settings = get_calculation_options_from_current(settings, shared_mode=True)
+                # An ELASTIC/EOS/QHA/CPHF batch: the module's questions, once for
+                # every file (each file's own run gives no answers in shared mode)
+                shared_settings = ask_shared_elastic_settings(shared_settings, settings)
 
                 print()
                 ui.rule("Shared settings defined. These will be applied to all files.")

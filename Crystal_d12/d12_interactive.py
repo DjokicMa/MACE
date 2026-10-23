@@ -26,6 +26,7 @@ from d12_constants import (
     CUSTOM_FUNCTIONAL, describe_custom_functional,
     SCF_TOLERANCE_PRESETS, scf_tolerances, describe_scf_preset,
     FREQ_SCF_LEVEL, freq_default_tolerances, INTERNAL_BASIS_SETS,
+    KEEP_PARENT_OPTION, FREQ_TIGHTER_OPTION, describe_scf_values, scf_preset_for,
 )
 
 # Import calculation-specific modules
@@ -377,6 +378,12 @@ except Exception:  # pragma: no cover - defensive fallback
         return input(prompt)
 
 
+# Typed answers a menu also takes besides its numbers: {prompt: text -> the menu's key or None}. A menu
+# sets one for the length of its prompt (configure_method: a functional's name at the method or family
+# prompt). A number is always read as a number; only text that is not a key reaches an alias.
+_CHOICE_ALIASES: Dict[str, Any] = {}
+
+
 def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = "1") -> str:
     """Get user choice from a list of options with concise prompting
     
@@ -390,10 +397,13 @@ def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = 
     """
     # Don't print the prompt here as it's already printed in the calling code
     valid_keys = [opt[0] for opt in options]
+    alias = _CHOICE_ALIASES.get(prompt)
     # Use _nav_read on the FIRST read too (not plain input): otherwise a single 'b'
     # back-request is only intercepted on the retry, so the user must press 'b'
     # twice. _nav_read is a pass-through when no back-nav flow is active.
     choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
+    if alias and choice not in valid_keys:
+        choice = alias(choice) or choice
 
     invalid = 0
     while choice not in valid_keys:
@@ -402,12 +412,22 @@ def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = 
         stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_keys)}")
         print(f"Invalid input. Please choose from: {', '.join(valid_keys)}")
         choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
+        if alias and choice not in valid_keys:
+            choice = alias(choice) or choice
     
     return choice
 
 
-def get_calculation_type() -> str:
-    """Get the type of calculation from user"""
+#: set by CRYSTALOptToD12 for the file in hand: called with the type chosen in
+#: the menu, it raises ParentRefused when that parent cannot seed a 4-8 deck
+FOLLOW_UP_CHECK = None
+
+
+def get_calculation_type(from_parent: bool = False) -> str:
+    """Get the type of calculation from user. ``from_parent`` (mace opt2d12, a
+    finished run as the parent): the response-property modules and phonopy's
+    displaced supercells too, appended after FREQ so the numbers 1-3 keep their
+    meaning (as --calc-type offers them)."""
     calc_options = [
         ("1", "Single Point (SP)"),
         ("2", "Optimization (OPT)"),
@@ -419,12 +439,23 @@ def get_calculation_type() -> str:
         "2": "OPT",
         "3": "FREQ"
     }
-    
+    if from_parent:
+        calc_options += [
+            ("4", "Elastic, piezoelectric or photoelastic constants (ELASTIC)"),
+            ("5", "Equation of state (EOS)"),
+            ("6", "Quasi-harmonic approximation (QHA)"),
+            ("7", "Dielectric response, CPHF/KS (CPHF)"),
+            ("8", "Finite-displacement phonons with phonopy (PHONOPY)"),
+        ]
+        calc_types.update({"4": "ELASTIC", "5": "EOS", "6": "QHA", "7": "CPHF", "8": "PHONOPY"})
+
     print("\nSelect calculation type:")
     for key, desc in calc_options:
         print(f"{key}. {desc}")
-    
+
     choice = get_user_choice("Select calculation type", calc_options, "2")
+    if from_parent and FOLLOW_UP_CHECK is not None:
+        FOLLOW_UP_CHECK(calc_types[choice])
     return calc_types[choice]
 
 
@@ -565,32 +596,9 @@ _TOLERANCE_PRESETS = {
 }
 
 
-def _tolerance_preset_for(tolerances: Optional[Dict[str, Any]]) -> str:
-    """Return the SP/OPT tolerance-menu choice that matches ``tolerances``.
-
-    "1"/"2"/"3" for a preset, "keep" when the parent's values match no preset
-    (a blank answer then leaves them untouched), and "1" when there is nothing
-    to go by. TOLINTEG is compared token by token because the parser keeps the
-    raw line's spacing.
-    """
-    if not tolerances:
-        return "1"
-    tolinteg = tolerances.get("TOLINTEG", tolerances.get("tolinteg"))
-    toldee = tolerances.get("TOLDEE", tolerances.get("toldee"))
-    if tolinteg is None and toldee is None:
-        return "1"
-    if isinstance(tolinteg, (list, tuple)):
-        tolinteg = " ".join(map(str, tolinteg))
-    try:
-        tolinteg_key = tuple(int(float(x)) for x in str(tolinteg).split())
-        toldee_key = int(float(toldee)) if toldee is not None else None
-    except (TypeError, ValueError):
-        return "keep"
-    for choice, (preset_tolinteg, preset_toldee) in _TOLERANCE_PRESETS.items():
-        if (tolinteg_key == tuple(int(x) for x in preset_tolinteg.split())
-                and toldee_key == preset_toldee):
-            return choice
-    return "keep"
+# The SP/OPT/FREQ tolerance-menu choice matching a parent's TOLINTEG/TOLDEE
+# (d12_constants.scf_preset_for, which the Setup form uses too).
+_tolerance_preset_for = scf_preset_for
 
 
 def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any], 
@@ -1122,13 +1130,62 @@ def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
     options["dft_functional"] = options["functional"]
 
 
+# The functional named at the method or family prompt: (family key or "HF", its number in that family's
+# list, the name). The functional says its method and family, so the questions after it are not asked.
+_TYPED_FUNCTIONAL: Dict[str, Any] = {}
+
+
+def _named_functional(text: str):
+    t = text.strip().lower()
+    if not t or t.isdigit():
+        return None
+    for fam in ("LDA", "GGA", "HYBRID", "MGGA", "3C", "HF"):
+        for i, name in enumerate(FUNCTIONAL_CATEGORIES[fam]["functionals"], 1):
+            if name.lower() == t:
+                return fam, i, name
+    return None
+
+
+def _alias_method(text: str):
+    hit = _named_functional(text)
+    if hit is None:
+        return None
+    _TYPED_FUNCTIONAL["hit"] = hit
+    return "1" if hit[0] == "HF" else "2"
+
+
+def _alias_family(text: str):
+    hit = _named_functional(text)
+    if hit is None or hit[0] == "HF":
+        return None
+    _TYPED_FUNCTIONAL["hit"] = hit
+    return str(["LDA", "GGA", "HYBRID", "MGGA", "3C"].index(hit[0]) + 1)
+
+
 def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[str, Any]:
     """Configure method type and functional
 
     from_parent is False for a deck built from scratch (a CIF): there is no
     parent functional to identify, so the menus are shown and D3 defaults
     to yes, as in 1.1.1.
+
+    A functional typed at the method prompt (or the family prompt) is taken
+    for what it says: its method and family are not asked again. Numbers
+    answer the menus as before.
     """
+    _TYPED_FUNCTIONAL.clear()
+    _CHOICE_ALIASES["Select method type"] = _alias_method
+    _CHOICE_ALIASES["Select functional category"] = _alias_family
+    try:
+        return _configure_method(options, from_parent)
+    finally:
+        _TYPED_FUNCTIONAL.clear()
+        _CHOICE_ALIASES.pop("Select method type", None)
+        _CHOICE_ALIASES.pop("Select functional category", None)
+
+
+def _configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[str, Any]:
+    """configure_method's menus (see there)."""
     parent_functional_unknown = from_parent and _functional_unknown(options)
 
     method_options = [
@@ -1150,6 +1207,7 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
     print("\nSelect method type:")
     for key, desc in method_options:
         print(f"{key}. {desc}")
+    print("(or type a functional's name, e.g. PBE0: its method and family follow)")
     
     method_choice = get_user_choice("Select method type", method_options, method_default)
     
@@ -1165,13 +1223,17 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
         if current_functional in hf_methods:
             hf_default = str(hf_methods.index(current_functional) + 1)
         
-        print("\nSelect Hartree-Fock method:")
-        for i, method in enumerate(hf_methods, 1):
-            desc = FUNCTIONAL_CATEGORIES["HF"]["descriptions"][method]
-            print(f"{i}: {method} - {desc}")
-            hf_options.append((str(i), f"{method} - {desc}"))
-        
-        hf_choice = get_user_choice("Select Hartree-Fock method", hf_options, hf_default)
+        named = _TYPED_FUNCTIONAL.pop("hit", None)
+        if named and named[0] == "HF":
+            print(f"\nHartree-Fock method: {named[2]}")
+            hf_choice = str(named[1])
+        else:
+            print("\nSelect Hartree-Fock method:")
+            for i, method in enumerate(hf_methods, 1):
+                desc = FUNCTIONAL_CATEGORIES["HF"]["descriptions"][method]
+                print(f"{i}: {method} - {desc}")
+                hf_options.append((str(i), f"{method} - {desc}"))
+            hf_choice = get_user_choice("Select Hartree-Fock method", hf_options, hf_default)
         options["functional"] = hf_methods[int(hf_choice) - 1]
         options["hf_method"] = options["functional"]  # Added for compatibility
     else:
@@ -1237,19 +1299,25 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
                     listed = True
                     break
         
-        print("\nAvailable functional categories:")
+        # a functional typed at the method prompt says its family: the family menu is not shown
+        named = _TYPED_FUNCTIONAL.get("hit")
+        if not named:
+            print("\nAvailable functional categories:")
         for i, cat in enumerate(ordered_categories, 1):
             cat_info = FUNCTIONAL_CATEGORIES[cat]
-            print(f"{i}. {cat_info['name']}")
-            print(f"   {cat_info['description']}")
-            # Show appropriate examples for each category
-            if cat == "HYBRID":
-                print(f"   Examples: B3LYP, PBE0, HSE06, LC-wPBE")
-            elif cat == "3C":
-                print(f"   Examples: PBEH3C, HSE3C, B973C")
-            else:
-                print(f"   Examples: {', '.join(cat_info['functionals'][:4])}")
+            if not named:
+                print(f"{i}. {cat_info['name']}")
+                print(f"   {cat_info['description']}")
+                # Show appropriate examples for each category
+                if cat == "HYBRID":
+                    print(f"   Examples: B3LYP, PBE0, HSE06, LC-wPBE")
+                elif cat == "3C":
+                    print(f"   Examples: PBEH3C, HSE3C, B973C")
+                else:
+                    print(f"   Examples: {', '.join(cat_info['functionals'][:4])}")
             cat_options.append((str(i), cat))
+        if not named:
+            print("(or type a functional's name, e.g. PBE0)")
 
         # A CRYSTAL23 functional keyword the menus do not list (e.g. SOGGA11),
         # or the parent's own EXCHANGE/CORRELAT/HYBRID definition: keeping it
@@ -1267,7 +1335,12 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
             cat_options.append((keep_key, "KEEP"))
             cat_default = keep_key
 
-        cat_choice = get_user_choice("Select functional category", cat_options, cat_default)
+        if named:
+            cat_choice = str(ordered_categories.index(named[0]) + 1)
+            print(f"\nFunctional: {named[2]} ({FUNCTIONAL_CATEGORIES[named[0]]['name']})")
+        else:
+            cat_choice = get_user_choice("Select functional category", cat_options, cat_default)
+            named = _TYPED_FUNCTIONAL.get("hit")          # typed at the family prompt
         if keep_key and cat_choice == keep_key:
             options["dft_functional"] = options["functional"]
             return options
@@ -1276,7 +1349,8 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
         functionals = FUNCTIONAL_CATEGORIES[category]["functionals"]
         
         # Select specific functional
-        print(f"\nAvailable {FUNCTIONAL_CATEGORIES[category]['name']}:")
+        if not named:
+            print(f"\nAvailable {FUNCTIONAL_CATEGORIES[category]['name']}:")
         func_options = []
         default_func = None
         
@@ -1288,7 +1362,8 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
             # Check if functional supports D3
             d3_marker = " [D3✓]" if func in D3_FUNCTIONALS else ""
             full_desc = f"{func} - {desc}{d3_marker}"
-            print(f"{i}: {full_desc}")
+            if not named:
+                print(f"{i}: {full_desc}")
             func_options.append((str(i), func))
             
             # Set default to current functional if it's in this category
@@ -1308,7 +1383,10 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
                      or current_functional.upper().endswith("-D3"))
 
         while True:
-            func_choice = get_user_choice(f"Select {FUNCTIONAL_CATEGORIES[category]['name'].split()[0]} functional", func_options, default_func)
+            if named:
+                func_choice, named = str(named[1]), None       # asked for once: a second pass (D3 refused) asks
+            else:
+                func_choice = get_user_choice(f"Select {FUNCTIONAL_CATEGORIES[category]['name'].split()[0]} functional", func_options, default_func)
             chosen = functionals[int(func_choice) - 1]
             use_d3 = None
             # Ask about D3 dispersion if functional supports it
@@ -1480,7 +1558,7 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             options["calculation_type"] = calc_type
             print(f"\n  Calculation type: {calc_type} (pre-selected)")
         else:
-            options["calculation_type"] = get_calculation_type()
+            options["calculation_type"] = get_calculation_type(from_parent=True)
         
         # Calculation-specific settings - do this IMMEDIATELY after calc type selection
         print("\n" + "="*60)
@@ -1535,7 +1613,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 # Refuse a dispersion this system cannot take now, not after
                 # the method, basis and SCF questions (a batch's files are
                 # checked one by one when their decks are written).
-                from d12_calc_freq import phonon_dispersion_refusal, PhononDispersionRefused
+                from d12_calc_freq import phonon_dispersion_refusal, PhononDispersionRefused, gamma_only_phonon_dos
+                freq_settings = gamma_only_phonon_dos(options.get("dimensionality", "CRYSTAL"), freq_settings)
+                options["freq_settings"] = freq_settings
                 refusal = phonon_dispersion_refusal(
                     options.get("dimensionality", "CRYSTAL"), freq_settings, None)
                 if refusal:
@@ -1634,13 +1714,15 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 
                 print("\n4. Custom - Set your own tolerances")
                 
-                # Very tight by default, whatever the parent optimization
-                # used. A FREQ parent chose its tolerances for FREQ: its own
+                # Very tight by default, or the parent's values where they are
+                # tighter (freq_default_tolerances: never looser than the
+                # parent). A FREQ parent chose its tolerances for FREQ: its own
                 # level is the default then.
-                if parent_calc_type == "FREQ":
-                    default_choice = _tolerance_preset_for(options.get("tolerances"))
-                else:
-                    default_choice = FREQ_SCF_LEVEL
+                freq_tol = freq_default_tolerances(parent_calc_type, options.get("tolerances"))
+                default_choice = _tolerance_preset_for(freq_tol)
+                if (default_choice == "keep" and describe_scf_values(freq_tol)
+                        != describe_scf_values(options.get("tolerances") or {})):
+                    default_choice = "tighter"
             else:
                 # SP and OPT calculations
                 print(f"1. Standard - {describe_scf_preset('1')}")
@@ -1663,13 +1745,33 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 # Default to the parent's own level, so pressing Enter keeps it.
                 default_choice = _tolerance_preset_for(options.get("tolerances"))
 
-            shown_default = "keep current" if default_choice == "keep" else default_choice
-            convergence_choice = input(f"\nSelect SCF convergence level [1-4, default={shown_default}]: ").strip() or default_choice
+            # Parent tolerances that match no preset are a choice of their
+            # own, after Custom (the preset numbers stay the same), and the
+            # default wherever the parent's level would be.
+            keep_key = None
+            if _tolerance_preset_for(options.get("tolerances")) == "keep":
+                keep_key = "5"
+                print(f"\n{keep_key}. {KEEP_PARENT_OPTION} - {describe_scf_values(options['tolerances'])}")
+                print("   The parent's own TOLINTEG and TOLDEE, unchanged")
+                if default_choice == "keep":
+                    default_choice = keep_key
+            # FREQ on a parent tighter than Very tight in some values only:
+            # each value the larger of the two, as its own choice.
+            tighter_key = None
+            if default_choice == "tighter":
+                tighter_key = "6" if keep_key else "5"
+                print(f"\n{tighter_key}. {FREQ_TIGHTER_OPTION} - {describe_scf_values(freq_tol)}")
+                print("   Each value the larger of the parent's and Very tight's: none looser than the parent's")
+                default_choice = tighter_key
+            last = tighter_key or keep_key or "4"
+            convergence_choice = input(f"\nSelect SCF convergence level [1-{last}, default={default_choice}]: ").strip() or default_choice
 
-            if convergence_choice == "keep":
-                # Blank answer on a parent whose tolerances match no preset:
-                # leave options["tolerances"] as parsed from the parent.
+            if keep_key and convergence_choice in (keep_key, "keep"):
+                # Leave options["tolerances"] as parsed from the parent.
                 print("Keeping the current SCF convergence settings")
+            elif tighter_key and convergence_choice == tighter_key:
+                options["tolerances"] = dict(freq_tol)
+                print(f"Using {describe_scf_values(freq_tol)}")
             elif convergence_choice in SCF_TOLERANCE_PRESETS:
                 options["tolerances"] = scf_tolerances(convergence_choice)
                 if options["calculation_type"] == "SP" and convergence_choice != "1":
@@ -1677,8 +1779,14 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 name = SCF_TOLERANCE_PRESETS[convergence_choice]["name"].lower()
                 print(f"Using {name} SCF convergence")
             else:
-                # Custom tolerances
-                options["tolerances"] = configure_tolerances(calculation_type=options["calculation_type"])
+                # Custom tolerances: the menu's default level and values are
+                # the parent's (FREQ: freq_default_tolerances, Very tight or
+                # tighter).
+                current_tol = options.get("tolerances")
+                if options["calculation_type"] == "FREQ":
+                    current_tol = freq_default_tolerances(parent_calc_type, current_tol)
+                options["tolerances"] = configure_tolerances(calculation_type=options["calculation_type"],
+                                                             current=current_tol)
         else:
             # This else block should not be reached anymore since we handle FREQ above
             # But keep it for any future calculation types

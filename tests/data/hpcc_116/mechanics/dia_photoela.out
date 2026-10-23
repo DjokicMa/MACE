@@ -1,0 +1,554 @@
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+MPI startup(): Warning: I_MPI_PMI_LIBRARY will be ignored since the hydra process manager was found
+ PROCESS           12  OF           16  WORKING
+ PROCESS           13  OF           16  WORKING
+ PROCESS            8  OF           16  WORKING
+ PROCESS           11  OF           16  WORKING
+ PROCESS           10  OF           16  WORKING
+ PROCESS           15  OF           16  WORKING
+ PROCESS           14  OF           16  WORKING
+ PROCESS            2  OF           16  WORKING
+ PROCESS            1  OF           16  WORKING
+ PROCESS            3  OF           16  WORKING
+ PROCESS            4  OF           16  WORKING
+ PROCESS            6  OF           16  WORKING
+ PROCESS            7  OF           16  WORKING
+ PROCESS            5  OF           16  WORKING
+ PROCESS            0  OF           16  WORKING
+
+         
+ *******************************************************************************
+ *                                                                             *
+ *                               CRYSTAL23                                     *
+ *                      public : 1.0.1 - October 2022                          *
+ *                       HTTP://WWW.CRYSTAL.UNITO.IT                           *
+ *                                                                             *
+ *                              MAIN AUTHORS                                   *
+ *                                                                             *
+ *  R. DOVESI(1,11), V.R. SAUNDERS(2), C. ROETTI(1,11), R. ORLANDO(1,11),      *
+ *  C.M. ZICOVICH-WILSON(1,3), F. PASCALE(4), B. CIVALLERI(1,11),              *
+ *  K. DOLL(5), N.M. HARRISON(6), I.J. BUSH(7), Ph. D'ARCO(8),                 *
+ *  M. LLUNELL(9), M. CAUSA'(10), Y. NOEL(8), L. MASCHIO(1,11), A. ERBA(1,11)  *
+ *  M. RE'RAT(14), S. CASASSA(1,11), B.G. SEARLE(2), J.K. DESMARAIS(1)         *
+ *                                                                             *
+ *        CONTRIBUTIONS TO THE CODE HAVE ALSO BEEN GIVEN BY                    *
+ *                                                                             *
+ *  M. FERRABONE(1,11), M. DE LA PIERRE(1,11), M. FERRERO(1,11),               *
+ *  J. BAIMA(1,11), E. ALBANESE(1,11), M.F. PEINTINGER(12), R. BAST(13),       *
+ *  B. KIRTMAN(15), V. LACIVITA(1,11), R. DEMICHELIS(1,16)                     *
+ *  G. BRANDEBURG(17), S. SALUSTRO(1,11), G. SANSONE(1,11)                     *
+ *  M.T. RUGGIERO(18), L.E. DAGA(1), L. DONA'(1), A. COSSARD(1)                *
+ *                                                                             *
+ * (1) THEORETICAL CHEMISTRY GROUP - UNIVERSITA' DI TORINO - TORINO (ITALY)    *
+ * (2) SCIENTIFIC COMPUTING DEPARTMENT - STFC DARESBURY (UK)                   *
+ * (3) UNIVERSIDAD AUTONOMA DEL ESTADO DE MORELOS - CUERNAVACA (MEXICO)        *
+ * (4) UNIVERSITE' DE LORRAINE - NANCY (FRANCE)                                *
+ * (5) UNIVERSITAET STUTTGART- STUTTGART (GERMANY)                             *
+ * (6) IMPERIAL COLLEGE - LONDON (UK)                                          *
+ * (7) SCIENTIFIC COMPUTING DEPARTMENT - STFC RAL (UK)                         *
+ * (8) UPMC - SORBONNE UNIVERSITES - PARIS (FRANCE)                            *
+ * (9) UNIVERSIDAD DE BARCELONA - BARCELONA (SPAIN)                            *
+ *(10) UNIVERSITA' DI NAPOLI "FEDERICO II" - NAPOLI (ITALY)                    *
+ *(11) NIS - NANOSTRUCTURED INTERFACES AND SURFACES - TORINO (ITALY)           *
+ *(12) MPI FUER CHEMISCHE ENERGIEKONVERSION - MUELHEIM AN DER RUHR (GERMANY)   *
+ *(13) UNIVERSITY OF TROMSO - TROMSO (NORWAY)                                  *
+ *(14) UNIVERSITE' DE PAU ET DES PAYS DE L'ADOUR - PAU (FRANCE)                *
+ *(15) UNIVERSITY OF CALIFORNIA SANTA BARBARA - SANTA BARBARA (USA)            *
+ *(16) CURTIN UNIVERSITY - PERTH (AUSTRALIA)                                   *
+ *(17) UNIVERSITY COLLEGE LONDON - LONDON (UK)                                 *
+ *(18) UNIVERSITY OF VERMONT - BURLINGTON (USA)                                *
+ *                                                                             *
+ *******************************************************************************
+ EEEEEEEEEE STARTING  DATE 21 10 2026 TIME 14:09:46.3
+ 1_dia_opt_rev1_photoela_B3LYP-D3_optimized                                      
+
+ CRYSTAL CALCULATION
+ (INPUT ACCORDING TO THE INTERNATIONAL TABLES FOR X-RAY CRYSTALLOGRAPHY)
+ CRYSTAL FAMILY                       :  CUBIC       
+ CRYSTAL CLASS  (GROTH - 1921)        :  CUBIC HEXAKISOCTAHEDRAL              
+
+ SPACE GROUP (CENTROSYMMETRIC)        :  F D 3 M         
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+        A           B           C        ALPHA        BETA       GAMMA
+     3.54481     3.54481     3.54481    90.00000    90.00000    90.00000
+
+
+ NUMBER OF IRREDUCIBLE ATOMS IN THE CONVENTIONAL CELL:    1
+
+ INPUT COORDINATES
+
+ ATOM AT. N.              COORDINATES
+   1   6     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+
+ *******************************************************************************
+
+ << INFORMATION >>: FROM NOW ON, ALL COORDINATES REFER TO THE PRIMITIVE CELL
+
+ *******************************************************************************
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - PRIMITIVE CELL
+       A          B          C        ALPHA      BETA     GAMMA        VOLUME
+    2.50656    2.50656    2.50656    60.00000  60.00000  60.00000     11.135747
+
+ COORDINATES OF THE EQUIVALENT ATOMS (FRACTIONAL UNITS)
+
+ N. ATOM EQUIV AT. N.          X                  Y                  Z
+
+   1   1   1    6 C     1.25000000000E-01  1.25000000000E-01  1.25000000000E-01
+   2   1   2    6 C    -1.25000000000E-01 -1.25000000000E-01 -1.25000000000E-01
+
+ NUMBER OF SYMMETRY OPERATORS         :   48
+ *******************************************************************************
+ * GEOMETRY EDITING - INPUT COORDINATES ARE GIVEN IN ANGSTROM         
+ *******************************************************************************
+
+ GEOMETRY NOW FULLY CONSISTENT WITH THE GROUP
+ INFORMATION **** NEW DEFAULT **** FINALRUN 4 FOR GEOMETRY OPTIMIZATIONS
+ INFORMATION **** NEW DEFAULT **** OPTGEOM OPTIMIZES BOTH ATOMIC COORDINATES AND CELL PARAMETERS
+ INFORMATION **** NEW DEFAULT **** TOL. ON ATOMIC DISP TO REDEFINE REF. GEOMETRY: 0.8 Angs
+ INFORMATION **** NEW DEFAULT **** N POINTS TO REDEFINE REF. GEOMETRY: N OF OPT DEGS OF FREEDOM
+ INFORMATION **** NEW DEFAULT **** TOL. ON ENERGY TO REDEFINE REF. GEOMETRY: 10**-3*(5*N. ATOMS)
+
+ IMPORTANT INFORMATION:
+ THE COORDINATE SYSTEM ADOPTED IN THE OPTIMIZATION IS NOT IN
+ GENERAL HOMOGENEOUS UNITS. FOR THIS REASON THE GRADIENT AND 
+ HESSIAN MATRIX IN TERMS OF THIS SYSTEM ARE GIVEN WITHOUT
+ UNITS. FOR MORE DETAILS SEE THE MANUAL.
+
+ INITIAL TRUST RADIUS         0.50000 MAXIMUM TRUST RADIUS               4.00000
+ MAXIMUM GRADIENT COMPONENT   0.00045 MAXIMUM DISPLACEMENT COMPONENT     0.00180
+ R.M.S. OF GRADIENT COMPONENT 0.00030 R.M.S. OF DISPLACEMENT COMPONENTS  0.00120
+ THRESHOLD ON ENERGY CHANGE 0.100E-06 EXTRAPOLATING POLYNOMIAL ORDER           2
+ MAXIMUM ALLOWED NUMBER OF STEPS   -1 SORTING OF ENERGY POINTS:               NO
+ ANALYTICAL  GRADIENT                 HESSIAN UPDATING                      BFGS
+ STEP SIZE NUMERICAL GRADIENT 0.00100
+ INITIAL HESSIAN MATRIX: SCHLEGEL MODEL 2
+ *******************************************************************************
+
+
+ ELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELAELA
+
+                       ELASTIC CALCULATION
+
+ INFORMATION **** TOLDEX ****  CONVERGENCE CRITERION FOR RMS DISPLACEMENT MODIFIED  6.200000E-04
+ INFORMATION **** TOLDEG **** MODIFY CONVERGENCE CRITERION FOR RMS GRADIENT  3.000000E-04
+ INFORMATION **** TOLDEE **** CONVERGENCE CRITERION FOR ENERGY MODIFIED: 10**-           8
+
+ GCALCO - MAX INDICES DIRECT LATTICE VECTOR    14    14    14
+ NO.OF VECTORS CREATED 6999 STARS  105 RMAX    50.12865 BOHR
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    3
+ (NON PERIODIC DIRECTION: LATTICE PARAMETER FORMALLY SET TO 500)
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL - CENTRING CODE 5/0 VOLUME=    11.135747 - DENSITY  3.579 g/cm^3
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.50656004     2.50656004     2.50656004    60.000000  60.000000  60.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    1 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL
+ -1.0000  1.0000  1.0000  1.0000 -1.0000  1.0000  1.0000  1.0000 -1.0000
+
+ *******************************************************************************
+ CRYSTALLOGRAPHIC CELL (VOLUME=         44.54298604)
+         A              B              C           ALPHA      BETA       GAMMA 
+     3.54481120     3.54481120     3.54481120    90.000000  90.000000  90.000000
+
+ COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   6 C     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01
+      2 F   6 C    -1.250000000000E-01 -1.250000000000E-01 -1.250000000000E-01
+
+ T = ATOM BELONGING TO THE ASYMMETRIC UNIT
+
+ ****   48 SYMMOPS - TRANSLATORS IN FRACTIONAL UNITS
+ **** MATRICES AND TRANSLATORS IN THE CRYSTALLOGRAPHIC REFERENCE FRAME
+   V INV                    ROTATION MATRICES                   TRANSLATORS
+   1   1  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00
+   2   2  0.00  1.00 -0.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   3   3 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  0.00  1.00 -0.00  0.50  0.00 -0.00
+   4   4 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+   5   6  0.00 -0.00  1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+   6   5  0.00  1.00 -0.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.00  0.00  0.00
+   7   8  1.00  0.00  0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+   8   7  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+   9  10 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  10   9 -0.00 -0.00  1.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  11  12 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+  12  11 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.50  0.00 -0.00
+  13  13 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  14  14 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  15  16  0.00  0.00 -1.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  16  15  1.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  17  17 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  18  18 -0.00  0.00 -1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  19  21 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  20  22  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.50  0.00 -0.00
+  21  19  0.00 -1.00  0.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  22  20  0.00 -1.00  0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  23  23  1.00  1.00  1.00  0.00 -1.00  0.00 -0.00  0.00 -1.00  0.50  0.00 -0.00
+  24  24 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  25  25 -1.00 -0.00 -0.00 -0.00 -1.00  0.00  0.00  0.00 -1.00  0.00  0.00  0.00
+  26  26 -0.00 -1.00  0.00 -1.00 -0.00 -0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  27  27  1.00  1.00  1.00  0.00  0.00 -1.00 -0.00 -1.00  0.00  0.50  0.00 -0.00
+  28  28  0.00  0.00 -1.00  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.50 -0.00
+  29  30 -0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00 -1.00  0.00  0.00  0.00  0.00
+  30  29 -0.00 -1.00  0.00  0.00  0.00 -1.00 -1.00 -0.00 -0.00  0.00  0.00  0.00
+  31  32 -1.00 -0.00 -0.00 -0.00  0.00 -1.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  32  31 -1.00 -0.00 -0.00  1.00  1.00  1.00 -0.00 -1.00  0.00  0.00  0.50 -0.00
+  33  34  1.00  1.00  1.00  0.00 -1.00  0.00 -1.00 -0.00 -0.00  0.50  0.00 -0.00
+  34  33  0.00  0.00 -1.00 -0.00 -1.00  0.00  1.00  1.00  1.00  0.00 -0.00  0.50
+  35  36  0.00 -1.00  0.00  1.00  1.00  1.00 -0.00  0.00 -1.00  0.00  0.50 -0.00
+  36  35  1.00  1.00  1.00 -1.00 -0.00 -0.00  0.00  0.00 -1.00  0.50  0.00 -0.00
+  37  37  0.00  1.00 -0.00  1.00  0.00  0.00 -0.00 -0.00  1.00  0.00  0.00  0.00
+  38  38  1.00  0.00  0.00  0.00  1.00 -0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  39  40 -0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00  1.00 -0.00  0.00  0.50 -0.00
+  40  39 -1.00 -1.00 -1.00 -0.00 -0.00  1.00  1.00  0.00  0.00  0.50  0.00 -0.00
+  41  41  1.00  0.00  0.00  0.00 -0.00  1.00 -0.00  1.00 -0.00  0.00  0.00  0.00
+  42  42  0.00 -0.00  1.00 -0.00  1.00 -0.00  1.00  0.00  0.00  0.00  0.00  0.00
+  43  45  0.00 -0.00  1.00  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  44  46 -1.00 -1.00 -1.00  1.00  0.00  0.00 -0.00  1.00 -0.00  0.50  0.00 -0.00
+  45  43 -0.00  1.00 -0.00 -1.00 -1.00 -1.00  1.00  0.00  0.00  0.00  0.50 -0.00
+  46  44 -0.00  1.00 -0.00  0.00 -0.00  1.00 -1.00 -1.00 -1.00  0.00 -0.00  0.50
+  47  47 -1.00 -1.00 -1.00 -0.00  1.00 -0.00  0.00 -0.00  1.00  0.50  0.00 -0.00
+  48  48  1.00  0.00  0.00 -1.00 -1.00 -1.00  0.00 -0.00  1.00  0.00  0.50 -0.00
+
+ DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)
+          X                    Y                    Z
+   0.000000000000E+00   0.177240560000E+01   0.177240560000E+01
+   0.177240560000E+01   0.000000000000E+00   0.177240560000E+01
+   0.177240560000E+01   0.177240560000E+01   0.000000000000E+00
+
+
+ CARTESIAN COORDINATES - PRIMITIVE CELL
+ *******************************************************************************
+ *      ATOM          X(ANGSTROM)         Y(ANGSTROM)         Z(ANGSTROM)
+ *******************************************************************************
+    1     6 C     4.431014000000E-01  4.431014000000E-01  4.431014000000E-01
+    2     6 C    -4.431014000000E-01 -4.431014000000E-01 -4.431014000000E-01
+
+ *******************************************************************************
+ LOCAL ATOMIC FUNCTIONS BASIS SET
+ *******************************************************************************
+   ATOM   X(AU)   Y(AU)   Z(AU)  N. TYPE  EXPONENT  S COEF   P COEF   D/F/G COEF
+ *******************************************************************************
+   1 C    0.837   0.837   0.837
+                                  1 S  
+                                         1.358E+04 2.225E-04 0.000E+00 0.000E+00
+                                         2.035E+03 1.723E-03 0.000E+00 0.000E+00
+                                         4.632E+02 8.926E-03 0.000E+00 0.000E+00
+                                         1.312E+02 3.573E-02 0.000E+00 0.000E+00
+                                         4.285E+01 1.108E-01 0.000E+00 0.000E+00
+                                         1.558E+01 2.430E-01 0.000E+00 0.000E+00
+                                  2 S  
+                                         6.207E+00 4.144E-01 0.000E+00 0.000E+00
+                                         2.576E+00 2.374E-01 0.000E+00 0.000E+00
+                                  3 S  
+                                         4.941E-01 1.000E+00 0.000E+00 0.000E+00
+                                  4 S  
+                                         1.644E-01 1.000E+00 0.000E+00 0.000E+00
+                           5-     7 P  
+                                         3.470E+01 0.000E+00 5.333E-03 0.000E+00
+                                         7.958E+00 0.000E+00 3.586E-02 0.000E+00
+                                         2.378E+00 0.000E+00 1.422E-01 0.000E+00
+                                         8.143E-01 0.000E+00 3.427E-01 0.000E+00
+                           8-    10 P  
+                                         5.662E-01 0.000E+00 1.000E+00 0.000E+00
+                          11-    13 P  
+                                         2.674E-01 0.000E+00 1.000E+00 0.000E+00
+                          14-    18 D  
+                                         8.792E-01 0.000E+00 0.000E+00 1.000E+00
+   2 C   -0.837  -0.837  -0.837
+ INFORMATION **** SET_MPP **** PCRYSTAL CALCULATION
+ INFORMATION **** READM2 **** NEW DEFAULT: FOCK/KS MATRIX MIXING SET TO 30 %
+ INFORMATION **** READM2 **** NEW DEFAULT: FULL DIRECT SCF MODE
+ INFORMATION **** READM2 **** NEW DEFAULT: COULOMB BIPOLAR BUFFER SET TO 32 Mb
+ INFORMATION **** READM2 **** NEW DEFAULT: EXCHANGE BIPOLAR BUFFER SET TO 32 Mb
+
+ *******************************************************************************
+ NEW DEFAULT: DFT INTEGRATION GRID INCREASED TO XLGRID
+ NEW DEFAULT: DIIS ACCELERATOR ACTIVE
+ USE KEYWORD NODIIS TO TURN IT OFF
+ *******************************************************************************
+
+ INFORMATION **** DFTD3_INPUT **** PERFORM LATEST DISPERSION CORRECTION DFT-D3(BJ) WITH AUTOMATIC PARAMETER SETUP
+ PLEASE CITE:
+ (1) DFT-D3 Reference
+  S. Grimme, J. Antony, S. Ehrlich, and H. Krieg, J. Chem. Phys. 132 (2010), 154104
+ (2) BJ-Damping Reference
+  S. Grimme, S. Ehrlich, and L. Goerigk, J. Comput. Chem. 32 (2011), 1456-1465
+ (3) General DFT-D Review
+  S. Grimme, A. Hansen, J. G. Brandenburg, and C. Bannwarth,
+  Chem. Rev. 116 (2016), 5105-5154
+
+ INFORMATION **** SPINLOCK **** LOCK IN A GIVEN SPIN STATE
+ ALPHA-BETA ELECTRONS LOCKED TO   0 FOR  50 SCF CYCLES
+ INFORMATION **** TOLINTEG **** COULOMB AND EXCHANGE SERIES TOLERANCES MODIFIED
+ INFORMATION **** TOLDEE **** SCF TOL ON TOTAL ENERGY SET TO           8
+ INFORMATION **** READM2 **** FULL DIRECT SCF (MONO AND BIEL INT) SELECTED
+ INFORMATION **** MAXCYCLE **** MAX NUMBER OF SCF CYCLES SET TO        1600
+ INFORMATION **** DIIS **** DIIS FOR SCF ACTIVE
+ INFORMATION **** DIIS **** LEVEL SHIFTER DISABLED
+ INFORMATION **** READM2 ****  FREQCALC - MULLIKEN POPULATION ANALYSIS NOT PERFORMED
+ *******************************************************************************
+ N. OF ATOMS PER CELL         2  COULOMB OVERLAP TOL         (T1) 10**   -7
+ NUMBER OF SHELLS            16  COULOMB PENETRATION TOL     (T2) 10**   -7
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CP_DRIVER **** CONVERGENCE ON ALPHA: 10**          -2
+ INFORMATION **** CP_DRIVER **** MAX NUMBER OF CPHF/CPKS CYCLES         200
+ INFORMATION **** CP_DRIVER **** CPHF/CPKS DAMPING PERCENTAGE:          60
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** opta001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CP_DRIVER **** CONVERGENCE ON ALPHA: 10**          -2
+ INFORMATION **** CP_DRIVER **** MAX NUMBER OF CPHF/CPKS CYCLES         200
+ INFORMATION **** CP_DRIVER **** CPHF/CPKS DAMPING PERCENTAGE:          60
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** opta001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CP_DRIVER **** CONVERGENCE ON ALPHA: 10**          -2
+ INFORMATION **** CP_DRIVER **** MAX NUMBER OF CPHF/CPKS CYCLES         200
+ INFORMATION **** CP_DRIVER **** CPHF/CPKS DAMPING PERCENTAGE:          60
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** opta001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CP_DRIVER **** CONVERGENCE ON ALPHA: 10**          -2
+ INFORMATION **** CP_DRIVER **** MAX NUMBER OF CPHF/CPKS CYCLES         200
+ INFORMATION **** CP_DRIVER **** CPHF/CPKS DAMPING PERCENTAGE:          60
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** opta001 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** fort.34 **** GEOMETRY OUTPUT FILE
+ INFORMATION **** EXCPOG **** EXCH. BIPO BUFFER LENGTH (WORDS) =     1800864
+ INFORMATION **** GENPOG **** BIPO BUFFER LENGTH (WORDS) =      429400
+ INFORMATION **** DFTD3 ENERGY **** CALCULATE DFTD3 ENERGY
+ INFORMATION **** DFTD3 ENERGY **** NORMAL TERMINATION OF DFTD3 MODULE
+ INFORMATION **** CP_DRIVER **** CONVERGENCE ON ALPHA: 10**          -2
+ INFORMATION **** CP_DRIVER **** MAX NUMBER OF CPHF/CPKS CYCLES         200
+ INFORMATION **** CP_DRIVER **** CPHF/CPKS DAMPING PERCENTAGE:          60
+ P64 =               0.00000000
+
+ ************************************************************************
+ ************************************************************************
+                           FINAL RESULTS START
+ ************************************************************************
+ ************************************************************************
+
+ THE CALCULATION HAS BEEN PERFORMED WITH   3 POINTS AND
+ A STEP OF     0.01000
+ THIS PERMITS TO PERFORM A FITTING UP TO SECOND   ORDER
+
+ DATA FOR MAXIMUM NUMBER OF POINTS AND ORDER OF FIT
+
+ SYMMETRIZED ELASTIC CONSTANTS FOR CUBIC        CASE, IN GPa
+
+ |  1150.370  122.645  122.645    0.000    0.000    0.000 |
+ |           1150.370  122.645    0.000    0.000    0.000 |
+ |                    1150.370    0.000    0.000    0.000 |
+ |                              618.188    0.000    0.000 |
+ |                                       618.188    0.000 |
+ |                                                618.188 |
+
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    0.8875  -0.0855  -0.0855   0.0000   0.0000   0.0000 |
+ |             0.8875  -0.0855   0.0000   0.0000   0.0000 |
+ |                      0.8875   0.0000   0.0000   0.0000 |
+ |                               1.6176   0.0000   0.0000 |
+ |                                        1.6176   0.0000 |
+ |                                                 1.6176 |
+
+
+ BULK MODULUS K, SHEAR MODULUS G, YOUNG MODULUS E AND
+ POISSON RATIO v (ALL IN GPa) ACCORDING TO VOIGT-REUSS-HILL
+
+    K_V     G_V     K_R     G_R     K_H     G_H    E_H      v_H
+
+  465.22  576.46  465.22  571.76  465.22  574.11 1220.33   0.063
+
+ SEISMIC VELOCITIES BY CHRISTOFFEL EQUATION (km/s)
+
+       WAVE VECTOR                Vp        Vs1       Vs2
+
+ [ 0.000  0.000  1.000]         17.929    13.143    13.143
+ [ 0.000  1.000  0.000]         17.929    13.143    13.143
+ [ 1.000  0.000  0.000]         17.929    13.143    13.143
+ [ 1.000  1.000  0.000]         18.724    13.143    11.983
+ [ 1.000  0.000  1.000]         18.724    13.143    11.983
+ [ 0.000  1.000  1.000]         18.724    13.143    11.983
+ [ 1.000  1.000  1.000]         18.982    12.381    12.381
+
+ ELASTO-OPTIC (PHOTOELASTIC) POCKELS TENSOR
+
+ Users of this module are kindly asked to cite the following references:
+ A. Erba and R. Dovesi, Phys. Rev. B, 88, 045121 (2013)
+ A. Erba, M.T. Ruggiero, T. M. Korter and R. Dovesi, J. Chem. Phys., 143, 144504 (2015)
+
+ |    -0.280    0.072    0.072    0.000    0.000    0.000 |
+ |     0.072   -0.280    0.072    0.000    0.000    0.000 |
+ |     0.072    0.072   -0.280    0.000    0.000    0.000 |
+ |     0.000    0.000    0.000   -0.188    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -0.188    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -0.188 |
+
+ PIEZO-OPTIC TENSOR (IN BREWSTERS; 1B = 10^-12 Pa^-1 = 1 TPa^-1)
+
+ |    -0.261    0.082    0.082    0.000    0.000    0.000 |
+ |     0.082   -0.261    0.082    0.000    0.000    0.000 |
+ |     0.082    0.082   -0.261    0.000    0.000    0.000 |
+ |     0.000    0.000    0.000   -0.304    0.000    0.000 |
+ |     0.000    0.000    0.000    0.000   -0.304    0.000 |
+ |     0.000    0.000    0.000    0.000    0.000   -0.304 |
+
+ ************************************************************************
+ ************************************************************************
+                           FINAL RESULTS END
+ ************************************************************************
+ ************************************************************************
+
+ 
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            2           1
+  C-MATRIX BEFORE INVERSION
+ |  1134.849  114.481  114.481    0.000    0.000    0.000 |
+ |           1134.849  114.481    0.000    0.000    0.000 |
+ |                    1134.849    0.000    0.000    0.000 |
+ |                              618.189    0.000    0.000 |
+ |                                       618.189    0.000 |
+ |                                                618.189 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    0.8978  -0.0823  -0.0823   0.0000   0.0000   0.0000 |
+ |             0.8978  -0.0823   0.0000   0.0000   0.0000 |
+ |                      0.8978   0.0000   0.0000   0.0000 |
+ |                               1.6176   0.0000   0.0000 |
+ |                                        1.6176   0.0000 |
+ |                                                 1.6176 |
+
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           1
+  C-MATRIX BEFORE INVERSION
+ |  1165.891  130.808  130.808    0.000    0.000    0.000 |
+ |           1165.891  130.808    0.000    0.000    0.000 |
+ |                    1165.891    0.000    0.000    0.000 |
+ |                              618.186    0.000    0.000 |
+ |                                       618.186    0.000 |
+ |                                                618.186 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    0.8776  -0.0885  -0.0885   0.0000   0.0000   0.0000 |
+ |             0.8776  -0.0885   0.0000   0.0000   0.0000 |
+ |                      0.8776   0.0000   0.0000   0.0000 |
+ |                               1.6176   0.0000   0.0000 |
+ |                                        1.6176   0.0000 |
+ |                                                 1.6176 |
+
+ 
+ ELASTIC DATA FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ 
+  NUMBER OF POINTS, ORDER=            3           2
+  C-MATRIX BEFORE INVERSION
+ |  1150.370  122.645  122.645    0.000    0.000    0.000 |
+ |           1150.370  122.645    0.000    0.000    0.000 |
+ |                    1150.370    0.000    0.000    0.000 |
+ |                              618.188    0.000    0.000 |
+ |                                       618.188    0.000 |
+ |                                                618.188 |
+
+ 
+
+ ELASTIC MODULI (COMPLIANCE TENSOR), IN TPa^-1
+
+ |    0.8875  -0.0855  -0.0855   0.0000   0.0000   0.0000 |
+ |             0.8875  -0.0855   0.0000   0.0000   0.0000 |
+ |                      0.8875   0.0000   0.0000   0.0000 |
+ |                               1.6176   0.0000   0.0000 |
+ |                                        1.6176   0.0000 |
+ |                                                 1.6176 |
+
+ BULK MODULUS (GPa) FOR DIFFERENT NUMBER OF POINTS AND ORDER OF FIT
+ NUMBER OF POINTS, ORDER=            2           1
+       
+ K =     454.60
+       
+ NUMBER OF POINTS, ORDER=            3           1
+       
+ K =     475.84
+       
+ NUMBER OF POINTS, ORDER=            3           2
+       
+ K =     465.22
+       
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT END         TELAPSE     2519.65 TCPU     2507.13
+ EEEEEEEEEE TERMINATION  DATE 21 10 2026 TIME 14:51:43.5
+NODE    0 CPU TIME =      2507.134
+NODE    1 CPU TIME =      2510.808
+NODE    2 CPU TIME =      2508.942
+NODE    3 CPU TIME =      2510.227
+NODE    4 CPU TIME =      2509.105
+NODE    5 CPU TIME =      2508.679
+NODE    6 CPU TIME =      2510.975
+NODE    7 CPU TIME =      2510.285
+NODE    8 CPU TIME =      2508.048
+NODE    9 CPU TIME =      2509.733
+NODE   10 CPU TIME =      2509.026
+NODE   11 CPU TIME =      2509.070
+NODE   12 CPU TIME =      2508.608
+NODE   13 CPU TIME =      2509.652
+NODE   14 CPU TIME =      2510.396
+NODE   15 CPU TIME =      2509.085
+    TOTAL CPU TIME =     40149.772

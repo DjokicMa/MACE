@@ -1,9 +1,12 @@
-"""`mace phonopy generate | collect` - argument parsing and reporting."""
+"""The command line of phonopy's collect step, ``mace analyze phonopy DIR``
+(mace/analysis/cli.py registers it), and the walltime opt2d12 suggests for a
+displacement set (calculation type PHONOPY, Crystal_d12/d12_calc_phonopy.py)."""
 
 from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -11,24 +14,6 @@ from typing import List, Optional
 INSTALL_HINT = ("phonopy is not installed. Install the optional dependency with\n"
                 "    pip install 'phonopy<5'\n"
                 "(see requirements-optional.txt).")
-
-GENERATE_EPILOG = """
-Writes one EXTERNAL deck per displaced supercell (<stem>_ph<dim>_disp-NNN.d12
-with its geometry in .ext, staged as fort.34 by the job script), plus
-phonopy_disp.yaml and mace_phonopy.json. Then:
-
-    mace submit DIR --walltime <printed>    (never --track or --progress)
-    mace phonopy collect DIR [--nac-from FREQ.out]
-
-The parent must be a finished 3D OPT (OPT END - CONVERGED) or SP run. The
-method, basis and tolerances of the parent are kept. The deck is phonopy's own
-layout: EXTERNAL, the parent's basis and SCF block (no END, TOLDEE or GRADCAL in
-it - written to TEMPLATE for an explicit basis), then TOLDEE (at least 10),
-GRADCAL and END. GUESSP is dropped, buffers are added for large cells, and
-SHRINK is divided by the supercell size in each direction (rounded up when it
-does not divide; kept for a non-diagonal --dim or with --keep-shrink). Every
-edit is printed.
-"""
 
 COLLECT_EPILOG = """
 Checks every output first (present, normal termination, SCF converged, one
@@ -74,37 +59,9 @@ def suggest_walltime(n_kpoints: int, n_atoms: int):
     return format_walltime(min(hours, MAX_WALLTIME_HOURS)), capped
 
 
-def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mace phonopy",
-                                description="Finite-displacement phonons with phonopy")
-    sub = p.add_subparsers(dest="action")
-
-    g = sub.add_parser("generate", help="write the displaced-supercell decks",
-                       epilog=GENERATE_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
-    g.add_argument("parent_out", help="finished parent output (OPT or SP)")
-    g.add_argument("--d12", help="parent deck (default: same stem as the output)")
-    g.add_argument("--dim", required=True, nargs="+",
-                   help='supercell: "N N N" or 9 integers (row-major matrix)')
-    g.add_argument("--output-dir", help="default: phonopy_<stem>_<dim>/")
-    g.add_argument("--force", action="store_true", help="write into a non-empty --output-dir")
-    g.add_argument("--amplitude", type=float, default=None,
-                   help="displacement in Angstrom (default: phonopy's 0.01)")
-    g.add_argument("--pm", choices=["auto", "yes", "no"], default="auto",
-                   help="plus/minus displacements (default: auto)")
-    g.add_argument("--toldee", type=int, default=None,
-                   help="TOLDEE for the supercells; can only raise the parent's (default: max(10, parent))")
-    g.add_argument("--cry-sym", action="store_true",
-                   help="write each displaced cell's symmetry into its .ext (phonopy's "
-                        "CRY_SYM): fewer k-points, but phonopy warns some space groups "
-                        "(e.g. R-3m) do not work")
-    g.add_argument("--keep-shrink", action="store_true",
-                   help="keep the parent's SHRINK (default: divide it by the supercell size, "
-                        "rounding up; diagonal --dim only)")
-    g.add_argument("--scale-shrink", action="store_true", help=argparse.SUPPRESS)
-
-    c = sub.add_parser("collect", help="check outputs, then forces -> phonons",
-                       epilog=COLLECT_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
-    c.add_argument("directory")
+def add_collect_arguments(c: argparse.ArgumentParser) -> None:
+    """The options of ``mace analyze phonopy`` (the collect step)."""
+    c.add_argument("directory", help="the displacement set opt2d12 wrote (--calc-type PHONOPY)")
     c.add_argument("--check", action="store_true", help="only check the outputs")
     c.add_argument("--band", default="auto",
                    help='"auto" (SeeK-path, needs seekpath) or phonopy BAND points, e.g. '
@@ -117,7 +74,6 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--tstep", type=float, default=10.0)
     c.add_argument("--nac-from", help="Gamma FREQCALC output with INTENS + INTCPHF")
     c.add_argument("--plot", action="store_true", help="write band_dos.pdf")
-    return p
 
 
 def _require_phonopy() -> bool:
@@ -127,160 +83,6 @@ def _require_phonopy() -> bool:
         print(INSTALL_HINT, file=sys.stderr)
         return False
     return True
-
-
-def _inside_workflow_outputs(path: Path) -> bool:
-    return "workflow_outputs" in path.resolve().parts
-
-
-# ---------------------------------------------------------------------------
-# generate
-# ---------------------------------------------------------------------------
-
-def cmd_generate(a) -> int:
-    import numpy as np
-
-    from mace import __version__ as mace_version
-
-    from . import parent as P
-    from . import structure as S
-    from . import writer as W
-
-    out_path = Path(a.parent_out)
-    d12_path = Path(a.d12) if a.d12 else out_path.with_suffix(".d12")
-    for f in (out_path, d12_path):
-        if not f.is_file():
-            print(f"Error: {f} not found", file=sys.stderr)
-            return 1
-    try:
-        dim = S.normalize_dim(" ".join(a.dim).split())
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-    tag = S.dim_tag(dim)
-    stem = out_path.stem
-    if a.keep_shrink and a.scale_shrink:
-        print("Error: --keep-shrink and --scale-shrink contradict each other", file=sys.stderr)
-        return 1
-    diagonal = P.is_diagonal(dim.tolist())
-    scale_shrink = diagonal and not a.keep_shrink
-
-    outdir = Path(a.output_dir) if a.output_dir else Path(f"phonopy_{stem}_{tag}")
-    if _inside_workflow_outputs(outdir):
-        print(f"Error: {outdir} is inside a workflow_outputs tree; the workflow engine would "
-              "pick these jobs up. Choose another --output-dir.", file=sys.stderr)
-        return 1
-    if outdir.exists() and any(outdir.iterdir()) and not a.force:
-        print(f"Error: {outdir} is not empty (use --force to write into it)", file=sys.stderr)
-        return 1
-
-    try:
-        deck, out_text = P.read_parent(d12_path, out_path)
-    except P.DeckSplitError as exc:
-        print(f"Error: {d12_path}: {exc}", file=sys.stderr)
-        return 1
-    reasons = P.refusal_reasons(deck, out_text)
-    if reasons:
-        print(f"Refusing {out_path.name}:", file=sys.stderr)
-        for code, msg in reasons:
-            print(f"  [{code}] {msg}", file=sys.stderr)
-        return 1
-    warns = P.warnings_for(deck, out_text)
-
-    cell, conv = S.read_parent_cell(out_path)
-    fold = S.folded_warning(cell)
-    if fold:
-        warns.append(fold)
-    phonon = S.make_phonopy(cell, dim)
-    S.generate(phonon, a.amplitude, a.pm)
-    conv_super = S.supercell_conv_numbers(phonon, conv)
-    n_super = len(phonon.supercell.numbers)
-    template = P.template_lines(
-        deck, n_super, toldee=a.toldee,
-        scale_shrink_dims=[int(v) for v in np.diag(dim)] if scale_shrink else None)
-    if not diagonal and not a.keep_shrink:
-        warns.append(("SHRINK_KEPT", "non-diagonal --dim: SHRINK kept as in the parent (it "
-                      "cannot be divided per direction); set it in the decks by hand"))
-
-    try:
-        P._check_template(deck, template)
-    except ValueError as exc:       # refusal_reasons should have caught it already
-        print(f"Error: {d12_path}: {exc}", file=sys.stderr)
-        return 1
-
-    outdir.mkdir(parents=True, exist_ok=True)
-    if a.cry_sym:
-        warns += [("CRY_SYM", m) for m in S.cry_sym_warnings(cell)]
-    names = W.write_set(outdir, stem, tag, deck, template, phonon, conv_super,
-                        cry_sym=a.cry_sym)
-    if a.cry_sym:
-        (outdir / W.CRY_SYM).write_text("")   # phonopy-init --crystal -d reads it too
-    template_file = None
-    if deck.basis_kind == "explicit":
-        # phonopy-init --crystal -d reads this; it puts EXTERNAL / ENDGEOM in front,
-        # which only an explicit basis can follow.
-        template_file = W.TEMPLATE
-        (outdir / W.TEMPLATE).write_text(P.template_text(template))
-    with W.working_directory(outdir):
-        phonon.save(W.DISP_YAML)
-    n_cells = int(round(abs(np.linalg.det(dim))))
-    kp = _kpoints(template.lines)
-    nk = kp[0] * kp[1] * kp[2] if kp else None
-    if nk:
-        walltime, capped = suggest_walltime(nk, n_super)
-    else:
-        walltime, capped = FALLBACK_WALLTIME, False
-
-    import phonopy
-    W.write_manifest(outdir, {
-        "parent_out": str(out_path.resolve()), "parent_out_sha256": W.sha256(out_path),
-        "parent_d12": str(d12_path.resolve()), "parent_d12_sha256": W.sha256(d12_path),
-        "dim": dim.tolist(), "amplitude": a.amplitude if a.amplitude is not None else 0.01,
-        "pm": a.pm, "toldee": template.toldee, "scale_shrink": bool(scale_shrink),
-        "template": template_file, "cry_sym": bool(a.cry_sym), "walltime": walltime,
-        "edits": template.edits, "dropped_block1_keywords": deck.dropped_keywords,
-        "basis": deck.basis_kind, "method_lines": P.method_lines(deck),
-        "conv_numbers": [int(c) for c in conv], "conv_numbers_supercell": conv_super,
-        "n_atoms_supercell": n_super, "jobs": names,
-        "warnings": [w[1] for w in warns],
-        "mace_version": mace_version, "phonopy_version": phonopy.__version__,
-    })
-
-    # ---- report
-    print(f"Parent: {out_path} ({deck.basis_kind} basis"
-          + (f" {deck.basis_label}" if deck.basis_label else "") + ")")
-    for _, msg in warns:
-        print(f"  Warning: {msg}")
-    if deck.dropped_keywords:
-        print("Dropped with block 1 (geometry comes from the output): "
-              + ", ".join(deck.dropped_keywords))
-    print("Deck edits relative to the parent:")
-    for e in template.edits:
-        print(f"  {e}")
-    print(f"Supercell {tag}: {n_super} atoms ({n_cells} cells), {len(names)} displaced "
-          "deck(s), " + ("symmetry of each displaced cell (--cry-sym)" if a.cry_sym
-                         else "P1 (no symmetry)"))
-    if nk:
-        print(f"  cost per job ~ {nk} k-points (before time reversal) x {n_super} atoms"
-              f" = {nk * n_super} k-point x atom")
-        if not scale_shrink and n_cells > 1:
-            print(f"  The supercell keeps the parent's SHRINK: {n_cells}x the k-point density "
-                  "the parent used.")
-    if nk:
-        print(f"Walltime per job ~ {walltime} at mace submit's 32 tasks (k-points x atoms^3, "
-              "calibrated on a hybrid-DFT diamond supercell measured on CRYSTAL23, with a 1.5x "
-              "margin; lighter methods and --cry-sym run faster). A job that hits its walltime leaves no forces, and "
-              "collect reports it.")
-        if capped:
-            print("  WARNING: the estimate is beyond 7 days, the longest mace submit asks "
-                  "for: use --cry-sym, a smaller supercell or fewer k-points (SHRINK).")
-    else:
-        print(f"Walltime per job: no SHRINK found to estimate from; {walltime} suggested.")
-    print(f"Wrote {len(names)} deck(s) + .ext to {outdir}/")
-    print("Next:")
-    print(f"  mace submit {outdir} --walltime {walltime}    (do NOT add --track)")
-    print(f"  mace phonopy collect {outdir}")
-    return 0
 
 
 def _kpoints(lines: List[str]) -> Optional[List[int]]:
@@ -306,8 +108,8 @@ def cmd_collect(a) -> int:
 
     d = Path(a.directory)
     if not (d / "mace_phonopy.json").is_file():
-        print(f"Error: {d} has no mace_phonopy.json (not made by mace phonopy generate)",
-              file=sys.stderr)
+        print(f"Error: {d} has no mace_phonopy.json (not a displacement set written by "
+              "mace opt2d12 --calc-type PHONOPY)", file=sys.stderr)
         return 1
     band = None if a.band.lower() == "none" else a.band
     if band == "auto":
@@ -356,18 +158,72 @@ def cmd_collect(a) -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    p = _parser()
-    a = p.parse_args(argv)
-    if a.action is None:
-        p.print_help()
-        return 2
+def analyze(a) -> int:
+    """``mace analyze phonopy DIR``: check the outputs, then forces -> phonons."""
     if not _require_phonopy():
         return 2
-    if a.action == "generate":
-        return cmd_generate(a)
     return cmd_collect(a)
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+#: made when a completion callback starts a set's analysis: the callbacks of
+#: jobs that end together run it once
+AUTO_MARKER = ".mace_phonopy_analysis"
+_ENDED = b"EEEEEEEEEE TERMINATION"
+
+
+def _ended(out: Path) -> bool:
+    try:
+        with open(out, "rb") as fh:
+            size = out.stat().st_size
+            if size > 400_000:
+                fh.seek(size - 400_000)
+            return _ENDED in fh.read()
+    except OSError:
+        return False
+
+
+def analyze_when_complete(directory: Optional[str], job: Optional[str]) -> Optional[int]:
+    """The completion callback's step for a phonopy set: when ``job`` is one of
+    the set's displaced jobs in ``directory`` and every job of the set has
+    ended (CRYSTAL's termination line), run ``mace analyze phonopy DIR`` with
+    its defaults (--band auto with seekpath, else none), once. Returns its exit
+    status, or None when there was nothing to do. A set already analyzed
+    (FORCE_SETS) is left alone; without phonopy where the job ends, it says
+    to run the command by hand."""
+    if not directory or not job:
+        return None
+    d = Path(directory)
+    if not (d / "mace_phonopy.json").is_file() or (d / "FORCE_SETS").exists():
+        return None
+    from .writer import read_manifest
+    try:
+        names = [str(n) for n in read_manifest(d).get("jobs") or []]
+    except (OSError, ValueError):
+        return None
+    if job not in names or not all(_ended(d / f"{n}.out") for n in names):
+        return None
+    try:
+        fd = os.open(str(d / AUTO_MARKER), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        return None
+    try:
+        import phonopy  # noqa: F401
+    except ImportError:
+        print(f"  phonopy set {d}: every job has ended, but phonopy is not installed where this "
+              f"job ends; run: mace analyze phonopy {d}")
+        (d / AUTO_MARKER).unlink()
+        return None
+    p = argparse.ArgumentParser(prog="mace analyze phonopy")
+    add_collect_arguments(p)
+    try:
+        import seekpath  # noqa: F401
+        argv = [str(d)]
+    except ImportError:
+        argv = [str(d), "--band", "none"]
+    print(f"  phonopy set {d}: every job has ended; mace analyze phonopy {' '.join(argv)}")
+    rc = cmd_collect(p.parse_args(argv))
+    if rc != 0:
+        # an output to fix (a resubmitted job's callback tries again)
+        (d / AUTO_MARKER).unlink()
+    return rc

@@ -10,7 +10,7 @@ Author: Marcus Djokic
 
 import subprocess
 import re
-from typing import Callable, List, Tuple, Optional, Sequence, Set
+from typing import Callable, Dict, List, Tuple, Optional, Sequence, Set
 import sys
 
 
@@ -53,6 +53,21 @@ def msu_menus(env=None) -> bool:
     SLURM to ask (a workstation keeps today's menus)."""
     site = _site()
     return True if site is None else site.msu_choices(env)
+
+
+# The named groups `mace submit` excludes with one switch each: kind -> (switch, label). The GUI's Submit dialog
+# offers them where msu_menus() says the cluster's choices apply; the CLI accepts the switches everywhere.
+SUBMIT_GROUPS = {
+    "amd20": ("--exclude-amd20", "the AMD20 nodes (amr and nvf types)"),
+    "mendoza": ("--exclude-mendoza", "the Mendoza group's nodes"),
+}
+
+
+def submit_groups(env=None) -> List[Dict[str, str]]:
+    """The named exclusions to offer on this cluster ([] where MSU HPCC's choices do not apply)."""
+    if not msu_menus(env):
+        return []
+    return [{"kind": k, "switch": sw, "label": label} for k, (sw, label) in SUBMIT_GROUPS.items()]
 
 
 def site_menu(menu: Sequence[str], env=None) -> Tuple[Optional[str], ...]:

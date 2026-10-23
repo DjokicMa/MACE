@@ -289,10 +289,15 @@ python Ghosts/manual_create_d12_w-ghosts.py
   - Preserves calculation settings from original input
   - Handles both .out and .gui files
   - Fallback to original D12 for missing parameters
-- **Calculation Types**:
-  - Single Point (SP) - energy and properties at optimized geometry
-  - Frequency (FREQ) - vibrational analysis with all options from NewCifToD12
-  - Custom - user-defined calculation sequences
+- **Calculation Types** ("Select calculation type", `--calc-type`):
+  - 1 Single Point (SP) - energy and properties at optimized geometry
+  - 2 Optimization (OPT)
+  - 3 Frequency (FREQ) - vibrational analysis with all options from NewCifToD12
+  - 4 ELASTIC, 5 EOS, 6 QHA, 7 CPHF - CRYSTAL's mechanical and dielectric modules
+    (results: `mace analyze elastic`)
+  - 8 PHONOPY - phonopy's finite-displacement supercells (results: `mace analyze phonopy`);
+    see [docs/cli.md](../docs/cli.md#mechanical-properties-and-phonopy-opt2d12-choices-4-8)
+  - 4-8 need a finished OPT or SP output as the parent
 - **Setting Preservation**:
   - Maintains functional, basis set, and method settings
   - Intelligently adjusts tolerances for different calculations
@@ -551,14 +556,16 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 **Features:**
 
 - **Interactive Configuration**: Guided setup with templates and custom options
-- **Calculation Templates**:
-  - Basic frequencies: Gamma point vibrations
-  - IR spectrum: With intensity calculations
-  - Raman spectrum: With CPHF and experimental conditions
-  - IR + Raman: Combined spectroscopy
-  - Phonon bands: Dispersion and DOS
-  - Elastic + Phonon: Mechanical properties
-  - Custom: Build your own configuration
+- **Calculation Templates** ("Select template (1-8) [1]"; from a parent with FREQCALC
+  settings, 0 keeps them and is the default):
+  1. Basic frequencies: Gamma point vibrations
+  2. IR spectrum: With intensity calculations
+  3. Raman spectrum: With CPHF and experimental conditions
+  4. IR + Raman: Combined spectroscopy
+  5. Thermodynamic properties: thermal analysis at several temperatures
+  6. Phonon band structure: Dispersion with a supercell
+  7. Phonon density of states: from a supercell calculation
+  8. Custom settings: Build your own configuration
 
 - **Intensity Methods**:
   - Berry Phase: Fast, good for periodic systems

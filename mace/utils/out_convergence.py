@@ -692,9 +692,9 @@ def parse(path, size: Optional[int] = None, complete_lines_only: bool = False,
 
 
 # ------------------------------------------------------------------ energy along the run
-HARTREE_EV = 27.211386245988
+from mace.constants import CALORIE_J, EV_TO_KJ_MOL, HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 # eV per unit, as the GUI's energy chart converts (app.js E_UNITS, plotkit ENERGY_UNITS)
-ENERGY_UNITS = {"eV": 1.0, "meV": 1000.0, "Ha": 1 / HARTREE_EV, "kJ/mol": 96.48533212331, "kcal/mol": 23.060547830619}
+ENERGY_UNITS = {"eV": 1.0, "meV": 1000.0, "Ha": 1 / HARTREE_EV, "kJ/mol": EV_TO_KJ_MOL, "kcal/mol": EV_TO_KJ_MOL / CALORIE_J}
 SEGMENT_MODES = ("continuous", "separate")
 RELATIVE_TO = ("final", "first", "minimum", "absolute")
 

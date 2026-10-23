@@ -16,7 +16,8 @@ import functools
 from typing import Dict, Any, Optional
 
 from d12_constants import (OPT_CONVERGENCE_PRESETS, opt_convergence, scf_tolerances,
-                           describe_opt_preset, describe_scf_preset)
+                           describe_opt_preset, describe_scf_preset,
+                           KEEP_PARENT_OPTION, describe_opt_values)
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers. Falls back to
 # plain input() behavior if menu_nav is unavailable.
@@ -270,21 +271,27 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     # Default to the parent's own level. A blank answer keeps the parent's
     # OPTGEOM values exactly (a MAXCYCLE of its own, and a tolerance it never
     # wrote stays unwritten); it used to reset every parent to Standard.
+    # Parent values that match no preset are a choice of their own, after
+    # Custom (the preset numbers stay the same).
     parent_level = _opt_preset_for(parent) if parent else None
+    choices = ["1", "2", "3", "4"]
     if parent_level is None:
         shown_default = "1"
     elif parent_level == "keep":
-        shown_default = "keep current"
+        choices.append("5")
+        print(f"\n5. {KEEP_PARENT_OPTION} - {describe_opt_values(parent)}")
+        print("   The parent's own OPTGEOM criteria, unchanged")
+        shown_default = "5"
     else:
         shown_default = f"{parent_level} (current)"
     while True:
-        conv_choice = _nav_read(f"\nSelect convergence level [1-4, default={shown_default}]: ",
-                                valid_set={"1", "2", "3", "4"}).strip()
-        if conv_choice in ("", "1", "2", "3", "4"):
+        conv_choice = _nav_read(f"\nSelect convergence level [1-{choices[-1]}, default={shown_default}]: ",
+                                valid_set=set(choices)).strip()
+        if conv_choice == "" or conv_choice in choices:
             break
         # Anything else used to fall through to Custom.
-        print("Please enter 1, 2, 3 or 4.")
-    if not conv_choice:
+        print(f"Please enter {', '.join(choices[:-1])} or {choices[-1]}.")
+    if not conv_choice or conv_choice == "5":
         conv_choice = "keep" if parent_level is not None else "1"
 
     if conv_choice == "keep":

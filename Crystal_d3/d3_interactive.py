@@ -33,6 +33,7 @@ from d3_kpoints import (
     get_seekpath_full_kpath,
     extract_and_process_shrink,
     scale_kpoint_segments,
+    default_band_format,
     BAND_TEMPLATES
 )
 
@@ -131,6 +132,218 @@ def crystal_family_and_centring(out_file: str) -> Tuple[str, str]:
         if number <= top:
             return family, symbol[0].upper()
     return "CUBIC", "P"
+
+
+def _ask_doss_resolution(out_file: Optional[str], doss_config: Dict[str, Any]) -> Dict[str, Any]:
+    """DOSS's energy resolution: a preset step (Standard by default), another step, or a number of
+    points honored as given. Each choice shows the points and step it gives for this output. When a
+    step over all bands needs more than DOSS_WINDOW_OFFER_NPTS points, a window around E_F is offered."""
+    try:
+        import d3_config as C
+    except ImportError:
+        from Crystal_d3 import d3_config as C
+    text = ""
+    if out_file and os.path.exists(out_file):
+        with open(out_file, errors="replace") as fh:
+            text = fh.read()
+    span, estimated = C.doss_span(doss_config, C.doss_atomic_numbers(text))
+    chosen = {k: v for k, v in C.doss_override().items() if k not in ("energy_window", "all_bands")}
+    if not chosen:
+        chosen = _doss_resolution_menu(C, span, estimated)
+    # a step over every band (core levels to the highest virtual bands): offer a window around E_F
+    if (estimated and C.doss_explicit_points(chosen) is None and not doss_config.get("band_range")
+            and not set(C.doss_override()) & {"energy_window", "all_bands"} and not C.non_interactive()):
+        step = C.doss_step_ev(chosen)
+        offer = C.doss_window_offer(span, C.doss_npts(span, None, step), step)
+        if offer:
+            chosen.update(_offer_doss_window(C, out_file, offer))
+    return chosen
+
+
+def _offer_doss_window(C, out_file: Optional[str], offer: str) -> Dict[str, Any]:
+    """The window around E_F, the default for a fine all-bands grid. {} is the default window (the deck
+    writer applies it, as on every route), an energy_window other bounds, all_bands every band. A 1D
+    material's default is its bands by index instead (CRYSTAL needs a window's bounds in band gaps):
+    {} again, conduction_bands another number of conduction bands."""
+    banded = _offer_band_index(C, out_file, offer)
+    if banded is not None:
+        return banded
+    fermi, why = trusted_fermi_au(out_file)
+    print(f"\n{offer}.")
+    if fermi is None:
+        print(f"No window around E_F can be written: {why}. The deck covers all bands.")
+        return {}
+    lo, hi = C.DOSS_DEFAULT_WINDOW_EV
+    raw = _nav_read(f"Use a window around E_F ({lo:g} to +{hi:g} eV) instead? [Y/n]: ",
+                    valid_set={"y", "n", "yes", "no"}).strip().lower()
+    if raw in ("n", "no"):
+        return {"all_bands": True}
+    while True:
+        lo_ev = _nav_float(f"Window below E_F (eV) [{lo:g}]: ", default=lo)
+        hi_ev = _nav_float(f"Window above E_F (eV) [{hi:g}]: ", default=hi)
+        if lo_ev < 0 < hi_ev:
+            if (lo_ev, hi_ev) == (lo, hi):
+                return {}
+            return {"energy_window": C.doss_window_ha(lo_ev, hi_ev)}
+        print("The window must run from below E_F (a negative number) to above it (a positive one).")
+
+
+def _offer_band_index(C, out_file: Optional[str], offer: str) -> Optional[Dict[str, Any]]:
+    """A 1D material's default (d3_config.doss_band_index_range): its valence and low conduction bands by
+    index. None for another dimensionality (or an output without band counts)."""
+    if not out_file or not os.path.exists(str(out_file)):
+        return None
+    try:
+        from d3_kpoints import output_dimensionality
+        if output_dimensionality(str(out_file)) != 1:
+            return None
+    except Exception:
+        return None
+    with open(out_file, errors="replace") as fh:
+        counts = C.doss_band_counts(fh.read())
+    if counts is None:
+        return None
+    first, last = C.doss_band_index_range(counts)
+    occ = counts["occupied"]
+    print(f"\n{offer}.")
+    print(f"A 1D material's DOS takes its bands by index (CRYSTAL needs an energy window's bounds in band gaps): "
+          f"bands {first} to {last}, from the first band above the {counts['core']} core bands to {last - occ} "
+          f"bands above the highest occupied one (band {occ}).")
+    raw = _nav_read(f"Use bands {first} to {last} by index instead? [Y/n]: ",
+                    valid_set={"y", "n", "yes", "no"}).strip().lower()
+    if raw in ("n", "no"):
+        return {"all_bands": True}
+    while True:
+        n = _nav_int(f"Conduction bands above the highest occupied band [{last - occ}]: ", default=last - occ)
+        if n >= 1:
+            return {} if n == last - occ else {"conduction_bands": n}
+        print("Please enter at least 1 band.")
+
+
+def _doss_resolution_menu(C, span, estimated) -> Dict[str, Any]:
+    menu = C.doss_resolution_menu(span, estimated)
+    where = (f"the {span:.0f} eV window" if not estimated else
+             f"all bands, ~{span:.0f} eV (estimated from the atoms; the run prints the real span)") if span else None
+    print("\nEnergy resolution (the energy step of the DOS grid" + (f"; {where}" if where else "") + "):")
+    for k, (_, line) in enumerate(menu, 1):
+        print(f"{k}: {line}")
+    default = str(C.DOSS_RESOLUTIONS.index("standard") + 1)
+    invalid = 0
+    while True:
+        raw = _nav_read(f"Select energy resolution (1-{len(menu)}) [{default}]: ", valid_set={"_choice_"}).strip() or default
+        if raw.isdigit() and 1 <= int(raw) <= len(menu):
+            break
+        invalid += 1
+        try:
+            from menu_nav import stop_if_out_of_step
+            stop_if_out_of_step(invalid, "Select energy resolution", f"1-{len(menu)}")
+        except ImportError:
+            pass
+        print(f"Please choose 1-{len(menu)}.")
+    name = menu[int(raw) - 1][0]
+    if name in C.DOSS_STEP_PRESETS:
+        return {"energy_resolution": name, "n_points": "auto"}
+    if name == "step":
+        while True:
+            step = _nav_float(f"DOS energy step (eV) [{C.DOSS_DEFAULT_STEP_EV}]: ", default=C.DOSS_DEFAULT_STEP_EV)
+            if step > 0:
+                return {"energy_resolution": "step", "energy_step_ev": step, "n_points": "auto"}
+            print("Please enter a step larger than 0.")
+    while True:
+        n = _nav_int(f"Number of energy points [{C.DOSS_NPTS_RANGE[0]}]: ", default=C.DOSS_NPTS_RANGE[0])
+        if 2 <= n <= C.DOSS_MAX_NPTS:
+            return {"energy_resolution": "points", "n_points": n}
+        print(f"Please enter 2 to {C.DOSS_MAX_NPTS} points.")
+
+
+def parent_newk_is(out_file: Optional[str]) -> Optional[int]:
+    """The parent SCF's IS as a DOSS/TRANSPORT NEWK takes it (its .d12, else its .out)."""
+    if not out_file or not os.path.exists(str(out_file)):
+        return None
+    try:
+        from d3_kpoints import output_dimensionality
+        dim = output_dimensionality(str(out_file))
+    except Exception:
+        dim = None
+    d12 = Path(out_file).with_suffix(".d12")
+    try:
+        lines = (extract_shrink_from_d12(str(d12), for_doss=True, dimensionality=dim) if d12.exists()
+                 else extract_shrink_from_out(str(out_file), for_doss=True, dimensionality=dim))
+        n = int(lines[0].split()[0]) if lines else 0
+    except Exception:
+        return None
+    return n if n > 0 else None
+
+
+def _ask_transport_k(out_file: Optional[str]) -> Dict[str, Any]:
+    """TRANSPORT's k mesh: a preset spacing (Standard by default), the parent's mesh, another spacing, or an IS."""
+    try:
+        import d3_config as C
+    except ImportError:
+        from Crystal_d3 import d3_config as C
+    if C.transport_override():
+        return C.transport_override()
+    parent = parent_newk_is(out_file)
+    recip = C.reciprocal_lengths(out_file) if out_file else None
+    menu = C.transport_k_menu(parent, recip)
+    print("\nk-point mesh for the transport distribution (BOLTZTRA's NEWK; the SCF's mesh converges energies, "
+          "not transport):")
+    for k, (_, line) in enumerate(menu, 1):
+        print(f"{k}: {line}")
+    default = str(C.TRANSPORT_K_RESOLUTIONS.index("standard") + 1)
+    while True:
+        raw = _nav_read(f"Select k-point mesh (1-{len(menu)}) [{default}]: ", valid_set={"_choice_"}).strip() or default
+        if raw.isdigit() and 1 <= int(raw) <= len(menu):
+            break
+        print(f"Please choose 1-{len(menu)}.")
+    name = menu[int(raw) - 1][0]
+    if name in C.TRANSPORT_K_PRESETS:
+        return {"k_resolution": name}
+    if name == "spacing":
+        while True:
+            std = C.transport_k_spacing({"k_resolution": "standard"}, len(recip) if recip else 3)
+            sp = _nav_float(f"k-point spacing (1/Å) [{std:g}]: ", default=std)
+            if sp > 0:
+                return {"k_resolution": "spacing", "k_spacing": sp}
+            print("Please enter a spacing larger than 0.")
+    while True:
+        n = _nav_int(f"NEWK shrinking factor IS [{parent or 12}]: ", default=parent or 12)
+        if n >= 1:
+            return {"k_resolution": "is", "newk_is": n}
+        print("Please enter at least 1.")
+
+
+def trusted_fermi_au(out_file: Optional[str]) -> Tuple[Optional[float], str]:
+    """(E_F in Hartree or None, why) for E_F-relative ranges of a deck written from ``out_file``
+    (a DOSS window, TRANSPORT's chemical potentials): the SCF's printed one unless it is missing or
+    CRYSTAL's -1.0 placeholder (spins locked, SPINLOCK), else a BAND or DOSS run of the same SCF
+    beside it (mace.utils.fermi_level.scf_fermi). None means: no window may be put around it."""
+    if not out_file or not os.path.exists(str(out_file)):
+        return None, "no output to read a Fermi energy from"
+    printed = get_band_info_from_output(str(out_file)).get('fermi_energy')
+    try:
+        from mace.utils.fermi_level import scf_fermi
+    except ImportError:
+        if printed is not None and abs(float(printed) + 1.0) > 5e-6:
+            return float(printed), ""
+        return None, "no trustworthy Fermi energy in the output (CRYSTAL's -1.0 placeholder or none)"
+    f = scf_fermi(str(out_file), printed)
+    return f.value_au, f.note
+
+
+def band_extents(out_file: Optional[str]):
+    """(BAND.DAT, first band, each band's (lowest, highest) energy, Hartree, absolute) of a BAND run of the
+    SCF ``out_file`` beside it (mace.utils.fermi_level.sibling_band_extents), else None."""
+    if not out_file or not os.path.exists(str(out_file)):
+        return None
+    try:
+        from mace.utils.fermi_level import sibling_band_extents
+    except ImportError:
+        return None
+    try:
+        return sibling_band_extents(str(out_file))
+    except Exception:
+        return None
 
 
 def get_band_info_from_output(out_file: str) -> Dict[str, Any]:
@@ -756,7 +969,16 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         print("2: K-point vectors (fractional coordinates)")
         print("3: Literature path with vectors (comprehensive, includes non-CRYSTAL points)")
         print("4: SeeK-path full paths (extended Bravais lattice notation)")
-        format_choice = _nav_read("Select format (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
+        # SeeK-path for a 3D crystal, the label path for a slab or polymer
+        # (d3_kpoints.default_band_format)
+        default_format = default_band_format(out_file)
+        format_choice = _nav_read(f"Select format (1-4) [{default_format}]: ", valid_set={"_choice_"}).strip()
+        if not format_choice:
+            format_choice = default_format
+            # the default, not a choice: a slab or polymer of a batch gets the label path
+            band_config["kpath_default"] = True
+            if default_format == "1":
+                print("  A slab or polymer: the high-symmetry label path (SeeK-path's is format 4)")
         
         if format_choice == "1":
             # Use labels - CRYSTAL-compatible subset
@@ -1301,8 +1523,12 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     if range_choice == "2":
         # Energy window - collect in eV but convert to Ha
         EV_TO_HA = EV_TO_HARTREE
-        bmi_ev = _nav_float("Lower energy limit (eV below Fermi) [-10]: ", default=-10)
-        bma_ev = _nav_float("Upper energy limit (eV above Fermi) [20]: ", default=20)
+        try:
+            from d3_config import DOSS_DEFAULT_WINDOW_EV as _win
+        except ImportError:
+            from Crystal_d3.d3_config import DOSS_DEFAULT_WINDOW_EV as _win
+        bmi_ev = _nav_float(f"Lower energy limit (eV below Fermi) [{_win[0]:g}]: ", default=_win[0])
+        bma_ev = _nav_float(f"Upper energy limit (eV above Fermi) [{_win[1]:g}]: ", default=_win[1])
         # Convert to Hartree
         bmi_ha = bmi_ev * EV_TO_HA
         bma_ha = bma_ev * EV_TO_HA
@@ -1314,9 +1540,8 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         if last > 0:
             doss_config["band_range"] = (first, last)
     
-    # Other parameters
-    n_points = _nav_int("\nNumber of energy points [10000]: ", default=10000)
-    doss_config["n_points"] = n_points
+    # Energy resolution: the step of the energy grid, or a number of points (d3_config.doss_npts)
+    doss_config.update(_ask_doss_resolution(out_file, doss_config))
     
     # Output format
     print("\nOutput format:")
@@ -1354,57 +1579,76 @@ def configure_transport_calculation(out_file: Optional[str] = None) -> Dict[str,
     # Chemical potential range
     print("\nChemical potential range:")
     
-    # Try to get Fermi energy if output file provided
+    # E_F: the SCF's, else a BAND or DOSS run of it (never CRYSTAL's -1.0 placeholder): MURANGE and
+    # TDFRANGE hold absolute eV, so a range relative to E_F (or the VBM, the top of the occupied bands)
+    # needs it. Without an output (settings for many outputs) a relative range is kept relative and
+    # placed per material when its deck is written.
     fermi_energy_ev = None
-    if out_file:
-        band_info = get_band_info_from_output(out_file)
-        if band_info.get('fermi_energy') is not None:
-            # Convert from Hartree to eV
-            fermi_energy_ev = band_info['fermi_energy'] * HARTREE_TO_EV
-            print(f"Detected Fermi energy: {fermi_energy_ev:.3f} eV")
-    
-    print("\nChemical potential options:")
-    print("1: Relative to Fermi energy (automatic)")
-    print("2: Relative to VBM (manual)")
-    print("3: Absolute values")
-    
-    mu_option = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
-    
-    if mu_option == "1" and fermi_energy_ev is not None:
-        # Relative to Fermi energy
-        print("\nRange relative to Fermi energy:")
+    fermi_au, why = trusted_fermi_au(out_file) if out_file else (None, "")
+    if fermi_au is not None:
+        fermi_energy_ev = fermi_au * HARTREE_TO_EV
+        print(f"Detected Fermi energy: {fermi_energy_ev:.3f} eV" + (f" ({why})" if why else ""))
+
+    if out_file and fermi_energy_ev is None:
+        print(f"\nWARNING: {why[0].upper() + why[1:] if why else 'No Fermi energy'}.")
+        print("The chemical potentials cannot be placed relative to E_F: give them as absolute energies "
+              "(eV, CRYSTAL's scale), e.g. around the VBM of a BAND run.")
+        mu_min = _nav_float("Minimum μ (eV, absolute): ")
+        mu_max = _nav_float("Maximum μ (eV, absolute): ")
+        mu_step = _nav_float("μ step (eV) [0.01]: ", default=0.01)
+        transport_config["mu_range"] = (mu_min, mu_max, mu_step)
+        transport_config["mu_reference"] = "absolute"
+        mu_option = None
+    else:
+        print("\nChemical potential options:")
+        print("1: Relative to Fermi energy (automatic)")
+        print("2: Relative to VBM (manual)")
+        print("3: Absolute values")
+        mu_option = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
+
+    if mu_option in ("1", "2"):
+        # Relative to E_F (an insulator's E_F from these sources is its VBM)
+        print("\nRange relative to Fermi energy:" if mu_option == "1" else "\nRange relative to the VBM:")
         mu_min_rel = _nav_float("Minimum μ (eV below Fermi) [-2.0]: ", default=-2.0)
         mu_max_rel = _nav_float("Maximum μ (eV above Fermi) [2.0]: ", default=2.0)
         mu_step = _nav_float("μ step (eV) [0.01]: ", default=0.01)
-        
-        # Store as absolute values
-        transport_config["mu_range"] = (fermi_energy_ev + mu_min_rel, 
-                                      fermi_energy_ev + mu_max_rel, 
-                                      mu_step)
-        transport_config["mu_reference"] = "fermi"
-        transport_config["mu_relative_range"] = (mu_min_rel, mu_max_rel)
-    else:
-        # Manual entry (relative to VBM or absolute)
-        if mu_option == "3":
-            print("\nAbsolute chemical potential range:")
-            reference = "absolute"
+        if fermi_energy_ev is not None:
+            # Store as absolute values
+            transport_config["mu_range"] = (fermi_energy_ev + mu_min_rel,
+                                          fermi_energy_ev + mu_max_rel,
+                                          mu_step)
+            transport_config["mu_reference"] = "fermi"
+            transport_config["mu_relative_range"] = (mu_min_rel, mu_max_rel)
         else:
-            print("\nChemical potential range (relative to VBM):")
-            reference = "vbm"
-            
+            # no output: kept relative, placed around each material's E_F by the deck writer
+            transport_config["mu_range"] = (mu_min_rel, mu_max_rel, mu_step)
+            transport_config["mu_reference"] = "fermi" if mu_option == "1" else "vbm"
+            if mu_option == "1":
+                transport_config["mu_range_type"] = "auto_fermi"
+    elif mu_option == "3":
+        print("\nAbsolute chemical potential range:")
         mu_min = _nav_float("Minimum μ (eV) [-2.0]: ", default=-2.0)
         mu_max = _nav_float("Maximum μ (eV) [2.0]: ", default=2.0)
         mu_step = _nav_float("μ step (eV) [0.01]: ", default=0.01)
         transport_config["mu_range"] = (mu_min, mu_max, mu_step)
-        transport_config["mu_reference"] = reference
-    
-    # Transport distribution function range
-    print("\nTransport distribution function range:")
+        transport_config["mu_reference"] = "absolute"
+
+    # Transport distribution function range: TDFRANGE holds absolute eV, and the distribution must
+    # cover the chemical potentials, so with μ relative to E_F it is relative to E_F too
+    relative = transport_config.get("mu_reference") in ("fermi", "vbm")
+    print("\nTransport distribution function range" + (" (eV around E_F):" if relative else " (eV, absolute):"))
     tdf_min = _nav_float("Minimum energy (eV) [-5.0]: ", default=-5.0)
     tdf_max = _nav_float("Maximum energy (eV) [5.0]: ", default=5.0)
     tdf_step = _nav_float("Energy step (eV) [0.01]: ", default=0.01)
-    transport_config["tdf_range"] = (tdf_min, tdf_max, tdf_step)
+    if relative and fermi_energy_ev is not None:
+        transport_config["tdf_range"] = (fermi_energy_ev + tdf_min, fermi_energy_ev + tdf_max, tdf_step)
+        transport_config["tdf_relative_range"] = (tdf_min, tdf_max)
+    else:
+        transport_config["tdf_range"] = (tdf_min, tdf_max, tdf_step)
     
+    # The k mesh of BOLTZTRA's NEWK (d3_config.transport_mesh)
+    transport_config.update(_ask_transport_k(out_file))
+
     # Relaxation time
     tau = _nav_float("\nRelaxation time (fs) [10]: ", default=10)
     transport_config["relaxation_time"] = tau

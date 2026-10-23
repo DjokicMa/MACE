@@ -1325,22 +1325,34 @@ class MaterialDatabase:
     def store_material_property(self, material_id: str, property_name: str,
                                property_value: any, property_category: str = 'General',
                                calc_id: str = None, property_unit: str = None,
-                               confidence: float = None, extractor_script: str = None) -> int:
+                               confidence: float = None, extractor_script: str = None,
+                               blob: bool = False) -> int:
         """Store a material property in the database.
 
         Returns the autoincremented integer property_id. The ``property_id``
         column is ``INTEGER PRIMARY KEY AUTOINCREMENT``, so it must NOT be set
         explicitly (a string UUID raises a SQLite datatype mismatch).
+
+        A dict or list value is stored as JSON text. ``blob=True`` (a large
+        JSON value, such as a derived property's curve) puts the row in the
+        property_blobs table instead, one row per (material, calculation,
+        property) there too; the return value is then its blob_id.
         """
+        if blob:
+            return self._store_property_blob(material_id, property_name, property_value, property_category,
+                                             calc_id, property_unit, extractor_script)
         with self._get_connection() as conn:
             # Handle both numeric and text values
             property_value_num = None
             property_value_text = None
 
-            try:
-                property_value_num = float(property_value)
-            except (ValueError, TypeError):
-                property_value_text = str(property_value)
+            if isinstance(property_value, (dict, list, tuple)):
+                property_value_text = json.dumps(property_value)
+            else:
+                try:
+                    property_value_num = float(property_value)
+                except (ValueError, TypeError):
+                    property_value_text = str(property_value)
 
             # one row per (material, calculation, property) (the unique
             # index of the 1.1.6 schema): a stored one is replaced
@@ -1364,9 +1376,31 @@ class MaterialDatabase:
                 datetime.now().isoformat()
             ))
 
-            conn.commit()
+            if self._shared_connection() is None:
+                # inside transaction() the block commits once, at its end
+                conn.commit()
             return cursor.lastrowid
-            
+
+    def _store_property_blob(self, material_id: str, property_name: str, property_value, property_category,
+                             calc_id, property_unit, extractor_script) -> int:
+        """store_material_property(blob=True): the property_blobs row (a
+        copy of the name in the properties table goes)."""
+        text = property_value if isinstance(property_value, str) else json.dumps(property_value)
+        key = (material_id, property_name, calc_id, calc_id)
+        where = "material_id = ? AND property_name = ? AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))"
+        with self._get_connection() as conn:
+            conn.execute(f"DELETE FROM properties WHERE {where}", key)
+            conn.execute(f"DELETE FROM property_blobs WHERE {where}", key)
+            cursor = conn.execute("""
+                INSERT INTO property_blobs (material_id, calc_id, property_category, property_name,
+                                            property_value_text, property_unit, extracted_at, extractor_script)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (material_id, calc_id, property_category, property_name, text, property_unit,
+                  datetime.now().isoformat(), extractor_script))
+            if self._shared_connection() is None:
+                conn.commit()
+            return cursor.lastrowid
+
     def get_material_properties(self, material_id: str, include_blobs: bool = True) -> List[Dict]:
         """Get all properties for a specific material: the large JSON values
         of the property_blobs table too, unless ``include_blobs`` is False

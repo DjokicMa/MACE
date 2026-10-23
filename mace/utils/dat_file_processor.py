@@ -65,6 +65,13 @@ class DatFileProcessor:
 
             # Parse the band structure data
             results.update(self._parse_band_dat_content(content))
+            # E - E_F with the Fermi level fermi_level trusts (CRYSTAL's placeholder -1.0 replaced)
+            from mace.utils import fermi_level
+            fl = fermi_level.band_fermi(file_path)
+            if not fl.known and fermi_level.is_placeholder(fl.file_au):
+                return {"error": f"{file_path.name}: {fl.note}"}
+            if fl.shift_au:
+                results['eigenvalues'] = [[e + fl.shift_au for e in row] for row in results['eigenvalues']]
 
             # Extract electronic properties
             results['electronic_properties'] = self._analyze_band_structure(

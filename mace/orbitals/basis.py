@@ -27,6 +27,8 @@ from typing import List, Optional
 
 import numpy as np
 
+from mace.constants import BOHR_TO_ANGSTROM
+
 from .molden import MoldenData, MoldenError
 
 CART = {
@@ -108,7 +110,7 @@ class Basis:
         self.md = md
         self.pos = md.positions_bohr() if positions_bohr is None else np.asarray(positions_bohr, float)
         self.periodic = md.periodic_dims
-        self.axes = (md.axes_ang / 0.529177210903) if md.axes_ang is not None else None  # bohr rows
+        self.axes = (md.axes_ang / BOHR_TO_ANGSTROM) if md.axes_ang is not None else None  # bohr rows
         self.shells = []
         off = 0
         for sh in md.shells:

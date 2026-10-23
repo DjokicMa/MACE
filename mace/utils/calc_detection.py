@@ -100,8 +100,129 @@ _TRANSPORT_TIMING_LINE = re.compile(r'[ \t]*T{10,}[ \t]+BOLTZTRA\b')
 
 
 def is_optimization_output(content: str) -> bool:
-    """True when a CRYSTAL .out is from a geometry optimization (OPTGEOM)."""
-    return _OPT_OUTPUT_LINE.search(content) is not None
+    """True when a CRYSTAL .out is from a geometry optimization (OPTGEOM).
+
+    An elastic, EOS or QHA run (``mechanics_output_type``) is not one: it
+    prints the OPTGEOM lines too, and every strain or volume ends in its own
+    OPT END."""
+    return _OPT_OUTPUT_LINE.search(content) is not None and mechanics_output_type(content) is None
+
+
+# The banner CRYSTAL prints while it reads the input of an ELASTCON, ELAPIEZO,
+# PIEZOCON or PHOTOELA run ("ELASTIC CALCULATION", under a row of ELAELA...)
+# and of an EOS or QHA run ("EQUATION OF STATE CALCULATION", under EOSEOS...).
+# These runs also print the "OPTGEOM OPTIMIZES" NEW DEFAULT line, and each
+# strained cell or volume is optimized to its own OPT END, FINAL OPTIMIZED
+# GEOMETRY included (CRYSTAL23 on HPCC, tests/data/hpcc_116/mechanics). A QHA
+# run computes the phonons of each volume, so it prints the FREQCALC lines too.
+_ELASTIC_OUTPUT_LINE = re.compile(r'^[ \t]*ELASTIC CALCULATION[ \t]*$', re.MULTILINE)
+_EOS_OUTPUT_LINE = re.compile(r'^[ \t]*EQUATION OF STATE CALCULATION[ \t]*$', re.MULTILINE)
+
+
+def mechanics_output_type(content: str) -> Union[str, None]:
+    """'ELASTIC', 'EOS' or 'QHA' for the .out of such a run, else None.
+
+    The names are the calculation types of ``mace opt2d12 --calc-type``:
+    ELASTCON, ELAPIEZO, PIEZOCON and PHOTOELA runs are all ELASTIC."""
+    if 'ELASTIC CALCULATION' in content and _ELASTIC_OUTPUT_LINE.search(content):
+        return 'ELASTIC'
+    if 'EQUATION OF STATE CALCULATION' in content and _EOS_OUTPUT_LINE.search(content):
+        return 'QHA' if is_frequency_output(content) else 'EOS'
+    return None
+
+
+# The structure of such a run is its reference (unstrained) cell, not any
+# FINAL OPTIMIZED GEOMETRY: those are the strained cells or volumes. CRYSTAL
+# prints the reference once, as the input geometry: the first "GEOMETRY FOR
+# WAVE FUNCTION" block, right after the module banner. The central point is
+# computed at it: "VOLUME OF THE CELL:" (ELASTCON, ELAPIEZO, PHOTOELA) and
+# "VOLUME OF PRIMITIVE CELL (A^3)=" (EOS, QHA) repeat its primitive volume
+# (tests/data/hpcc_116/mechanics and the full HPCC outputs they were cut from).
+# With PREOPTGEOM (or ELASTCON PRESSURE, which adds it) the reference is the
+# pre-optimized structure instead; no real output shows where CRYSTAL prints
+# that one, so such a run gives no structure.
+_GEOMETRY_BLOCK_LINE = re.compile(r'^[ \t]*GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY', re.MULTILINE)
+_BLOCK_VOLUME = re.compile(r'PRIMITIVE CELL - CENTRING CODE[^\n]*?VOLUME=\s*(\d+\.\d+)')
+_CENTRAL_VOLUME = re.compile(
+    r'^[ \t]*(?:VOLUME OF THE CELL:|VOLUME OF PRIMITIVE CELL \(A\^3\)=)\s*(\d+\.\d+)', re.MULTILINE)
+_FULLOPTG_LINE = re.compile(r'^[ \t]*INFORMATION \*+ FULLOPTG \*+', re.MULTILINE)
+
+
+def mechanics_reference_problem(content: str) -> Union[str, None]:
+    """Why the reference structure of an ELASTIC/EOS/QHA output cannot be read.
+
+    None when it can (the input geometry block, see above) or when the output
+    is not such a run. The message tells the user to take the structure from
+    the optimization the run started from."""
+    kind = mechanics_output_type(content)
+    if kind is None:
+        return None
+    use = "use the output of the optimization it started from (the OPT .out) as the parent"
+    block = _GEOMETRY_BLOCK_LINE.search(content)
+    if block is None:
+        return (f"this {kind} output holds strained cells and no input geometry block, "
+                f"so its reference structure is unknown: {use}")
+    if _FULLOPTG_LINE.search(content):         # the strains are CVOLOPT or atoms only
+        return (f"this {kind} run pre-optimized its structure (PREOPTGEOM) and printed only the "
+                f"strained cells after it: {use}")
+    volume = _BLOCK_VOLUME.search(content, block.start())
+    central = _CENTRAL_VOLUME.search(content, block.start())
+    if volume and central:
+        v, vc = float(volume.group(1)), float(central.group(1))
+        if abs(v - vc) > 1e-5 * max(abs(v), 1.0):
+            return (f"this {kind} run computed its central point at a volume of {vc:g} A^3, not at its "
+                    f"input geometry's {v:g} A^3 (a pre-optimized structure): {use}")
+    return None
+
+
+# Where the strained cells start: the first strain (ELASTIC: "STRAIN MATRIX   1 :";
+# all: "ELASTIC STRAIN MATRIX (ADIMENSIONAL)"), a volume's CVOLOPT, or anything
+# of an optimization. Before it: the header, the reference cell and its SCF.
+_STRAINED_CELL_LINE = re.compile(
+    r'^[ \t]*(?:(?:ELASTIC )?STRAIN MATRIX\b|INFORMATION \*+ CVOLOPT\b|REFERENCE GEOMETRY DEFINED'
+    r'|\* OPT END\b|FINAL OPTIMIZED GEOMETRY\b|[A-Z]+ OPTIMIZATION - POINT\b)', re.MULTILINE)
+_MECHANICS_BANNER_LINE = re.compile(
+    r'^[ \t]*(?:ELASTIC CALCULATION|EQUATION OF STATE CALCULATION)[ \t]*$', re.MULTILINE)
+
+
+def mechanics_reference_text(content: str) -> str:
+    """The part of an output that is about its structure.
+
+    The whole output, except for an ELASTIC, EOS or QHA run: there, what
+    comes before its first strained cell (the header, the reference cell and,
+    in a full output, the central point's SCF), or only what comes before the
+    module banner when the reference cell cannot be read
+    (``mechanics_reference_problem``)."""
+    if mechanics_output_type(content) is None:
+        return content
+    banner = _MECHANICS_BANNER_LINE.search(content)
+    if mechanics_reference_problem(content):
+        return content[:banner.start()]
+    strained = _STRAINED_CELL_LINE.search(content, banner.start())
+    return content[:strained.start()] if strained else content
+
+
+# A standalone CPHF/CPKS run (opt2d12 --calc-type CPHF: an SCF, then the
+# CPHF block): the module banner CRYSTAL prints after the SCF ("* *  COUPLED-
+# PERTURBED KOHN-SHAM CALCULATION (CPKS)  * *", HARTREE-FOCK/CPHF for an HF
+# reference) and the table of its results (CRYSTAL23 on HPCC,
+# tests/data/hpcc_116/mechanics/dia_cphf*.out). A FREQCALC run with INTCPHF
+# and a PHOTOELA run print the same banner and table: they are FREQ and
+# ELASTIC, so is_cphf_output leaves them out.
+_CPHF_OUTPUT_LINE = re.compile(
+    r'^[ \t]*(?:\*[ \t]*\*[ \t]+COUPLED-PERTURBED [A-Z -]+CALCULATION \(CP(?:HF|KS)\)'
+    r'|POLARIZABILITY \(ALPHA\), DIELECTRIC \(EPSILON\))',
+    re.MULTILINE,
+)
+
+
+def is_cphf_output(content: str) -> bool:
+    """True when a CRYSTAL .out is from a standalone CPHF/CPKS run (the deck's
+    own CPHF block), not from a FREQ (INTCPHF), elastic (PHOTOELA) or OPT run."""
+    if 'COUPLED-PERTURBED' not in content and 'POLARIZABILITY (ALPHA)' not in content:
+        return False
+    return (_CPHF_OUTPUT_LINE.search(content) is not None and not is_frequency_output(content)
+            and mechanics_output_type(content) is None and _OPT_OUTPUT_LINE.search(content) is None)
 
 
 def is_frequency_output(content: str) -> bool:
@@ -163,12 +284,22 @@ def d3_calc_type(records: Set[str]) -> Union[str, None]:
     return None
 
 
+# The module block of a deck opt2d12 --calc-type ELASTIC, EOS, QHA or CPHF
+# writes (Crystal_d12/d12_calc_elastic.py), and the type it is.
+D12_MODULE_TYPES = (('ELASTCON', 'ELASTIC'), ('ELAPIEZO', 'ELASTIC'), ('PIEZOCON', 'ELASTIC'),
+                    ('PIEZOCP', 'ELASTIC'), ('PHOTOELA', 'ELASTIC'), ('EOS', 'EOS'), ('QHA', 'QHA'),
+                    ('CPHF', 'CPHF'))
+
+
 def d12_calc_type(records: Set[str]) -> str:
-    """OPT, FREQ or SP from a .d12 deck's records."""
+    """OPT, FREQ, ELASTIC, EOS, QHA, CPHF or SP from a .d12 deck's records."""
     if 'OPTGEOM' in records:
         return 'OPT'
     if 'FREQCALC' in records:
         return 'FREQ'
+    for keyword, calc_type in D12_MODULE_TYPES:
+        if keyword in records:
+            return calc_type
     return 'SP'
 
 

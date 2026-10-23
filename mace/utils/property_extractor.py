@@ -23,6 +23,7 @@ import math
 import sqlite3
 import time
 import argparse
+import contextlib
 import json
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
@@ -33,7 +34,7 @@ from mace.utils import db_build
 from mace.utils.fast_text import ci_findall, ci_search
 from mace.utils.calc_detection import (
     is_band_output, is_optimization_output, is_transport_output,
-    is_two_component_output)
+    is_two_component_output, mechanics_output_type, mechanics_reference_text, is_cphf_output)
 
 # Import MACE components
 try:
@@ -98,15 +99,7 @@ _SCF_INFO_LITERALS = {
 }
 
 
-def _scf_parent_of_band_output(output_file: Path) -> Optional[Path]:
-    """The SCF .out a BAND .out was run from, when it sits beside it as <stem>.out."""
-    stem = output_file.stem
-    for suffix in ("_band", "_BAND", ".band", ".BAND"):
-        if stem.endswith(suffix) and len(stem) > len(suffix):
-            candidate = output_file.with_name(stem[:-len(suffix)] + ".out")
-            if candidate.exists() and candidate != output_file:
-                return candidate
-    return None
+from mace.utils.fermi_level import scf_parent_of_band_output as _scf_parent_of_band_output  # noqa: E402
 
 
 def band_occupied_count(content: str, output_file: Optional[Path] = None) -> Optional[int]:
@@ -141,6 +134,50 @@ def _property_tables(conn) -> List[str]:
     large JSON values) where the database has it (1.1.6 on)."""
     has = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'property_blobs'").fetchone()
     return ['properties', 'property_blobs'] if has else ['properties']
+
+
+def _derived_keys() -> List[str]:
+    """Every key a derived property writes, and the provenance row: what a
+    run that computes none of them (--no-derived, a failure) keeps."""
+    try:
+        from mace.properties import registry
+        registry.load()
+        return sorted({o.name for p in registry.properties(None) for o in p.outputs} | {registry.PROVENANCE_KEY})
+    except Exception:
+        return []
+
+
+def _kept_outputs(registry, report: Dict[str, Any]) -> List[str]:
+    """The outputs of the properties that failed or were not computed
+    (``kept``): their stored rows stay."""
+    keep = []
+    for name, entry in report.items():
+        prop = registry.get(name)
+        if prop is not None and (entry.get('status') == 'error' or entry.get('kept')):
+            keep += [o.name for o in prop.outputs]
+    return keep
+
+
+def _reference_choices(registry, report: Dict[str, Any], refs: Dict[str, List[Any]]) -> Optional[Dict[str, Any]]:
+    """The given references to save with the run (_save_properties): those
+    of a property that stored a value, and the ones given as "auto"
+    (forgotten); None when there are none."""
+    used, forget = {}, {}
+    for name, entry in report.items():
+        prop = registry.get(name)
+        if prop is None or not prop.references:
+            continue
+        for ref in prop.references:
+            if any(v == registry.AUTO for v in refs.get(ref.name, [])):
+                forget.setdefault(name, []).append(ref.name)
+            recs = (entry.get('references') or {}).get(ref.name) or []
+            if entry.get('status') == 'stored' and recs and all(r.get('via') == 'given' for r in recs):
+                used.setdefault(name, {})[ref.name] = [{**r, 'file': str(Path(r['file']).resolve())}
+                                                       if r.get('file') else r for r in recs]
+    if not (used or forget):
+        return None
+    choices = {'used': used, 'forget': forget}
+    return choices
 
 
 class CrystalPropertyExtractor:
@@ -195,13 +232,28 @@ class CrystalPropertyExtractor:
             material_id = self._extract_material_id_from_filename(output_file)
         
         properties = {}
-        
+
+        # An ELASTIC, EOS or QHA run optimizes strained cells or volumes, each
+        # to its own SCF, FINAL OPTIMIZED GEOMETRY and (QHA) frequencies. The
+        # structure, energies and populations are its reference cell's: read
+        # from the part before the first strained cell. Its type is its own
+        # (completion_checker); timings, settings and the module's results
+        # are read from the whole output.
+        full_content = content
+        mechanics = mechanics_output_type(content)
+        if mechanics:
+            content = mechanics_reference_text(content)
+
         # Extract different property categories
         properties.update(self._extract_structural_properties(content))
         properties.update(self._extract_electronic_properties(content))
         properties.update(self._extract_population_analysis(content))
         properties.update(self._extract_energy_properties(content))
         properties.update(self._extract_geometry_optimization(content))
+        if mechanics:
+            properties['calculation_type'] = mechanics
+        elif is_cphf_output(content):
+            properties['calculation_type'] = 'CPHF'      # an SP with the CPHF/CPKS block (not FREQ INTCPHF)
         properties.update(self._extract_crystallographic_info(content))
         if 'space_group_number' not in properties:
             # CRYSTAL23 prints the symbol ("SPACE GROUP (CENTROSYMMETRIC) : F D 3 M"), not a
@@ -214,12 +266,18 @@ class CrystalPropertyExtractor:
             except Exception:
                 pass
         properties.update(self._extract_neighbor_information(content))
-        properties.update(self._extract_computational_properties(content))
+        properties.update(self._extract_computational_properties(full_content))
         properties.update(self._extract_band_structure_properties(content, output_file))
         properties.update(self._extract_dos_properties(content, output_file))
-        properties.update(self._extract_frequency_properties(content))
-        properties.update(self._extract_raman_intensities(content))
+        if not mechanics:
+            properties.update(self._extract_frequency_properties(content))
+            properties.update(self._extract_raman_intensities(content))
         properties.update(self._extract_transport_properties(content, output_file))
+        # ELASTCON / ELAPIEZO / PIEZOCON / PIEZOCP / PHOTOELA / EOS tensors and
+        # moduli (mace.elastic.analysis), and a two-component SCF's
+        # magnetization; both self-skipping
+        properties.update(self._extract_mechanical_properties(full_content))
+        properties.update(self._extract_two_component_properties(full_content))
         # CHARGE+POTENTIAL (CRYSTAL ECH3/POT3): grid metadata + references to the
         # generated .CUBE grid files. Additive and self-skipping -- returns {} when
         # the .out has no ECH3/POT3 markers, so non-charge calcs are untouched.
@@ -236,7 +294,7 @@ class CrystalPropertyExtractor:
             properties['calculation_type'] = 'ORBITALS'
 
         # Extract SCF settings from output
-        properties.update(self._extract_scf_settings(content))
+        properties.update(self._extract_scf_settings(full_content))
 
         # A molecule has no space group (CRYSTAL prints P 1 for one)
         if self._dimensionality(content) == 0:
@@ -249,17 +307,24 @@ class CrystalPropertyExtractor:
         if 'fermi_energy_au' not in properties:
             fermi = band_fermi if band_fermi is not None else dos_fermi
             if fermi is not None:
-                properties['fermi_energy_au'] = fermi
+                # CRYSTAL's -1.0 placeholder (an SCF that ended spin-locked): the band data's
+                # derived Fermi level, the DOSS.DAT's, or none (mace.utils.fermi_level)
+                from mace.utils import fermi_level
+                fl = fermi_level.run_fermi(output_file, fermi)
+                if fl.value_au is not None:
+                    properties['fermi_energy_au'] = fl.value_au
+                if fl.note:
+                    properties['fermi_energy_note'] = fl.note
 
         # Advanced electronic analysis using BAND/DOSS data if available
-        properties.update(self._extract_advanced_band_dos_analysis(output_file, properties))
+        properties.update(self._extract_advanced_band_dos_analysis(output_file, properties, full_content))
 
         # One spin flag: an unrestricted run by any sign of one (spin-channel
         # gaps or band edges, the alpha-beta Mulliken table, the SPIN cube of
         # an ECH3 run, CRYSTAL's UNRESTRICTED OPEN SHELL line)
         properties['spin_polarized'] = bool(
             properties.get('spin_polarized') or properties.get('_mulliken_spin')
-            or properties.pop('_chargepot_spin', False) or 'UNRESTRICTED OPEN SHELL' in content)
+            or properties.pop('_chargepot_spin', False) or 'UNRESTRICTED OPEN SHELL' in full_content)
 
         # Add electronic classification based on band gap
         properties.update(self._classify_electronic_properties(properties, content))
@@ -312,9 +377,216 @@ class CrystalPropertyExtractor:
             pass  # Population processor not available
         except Exception as e:
             print(f"Warning: Error processing population analysis: {e}")
-        
+
+        # Derived properties (mace/properties): computed from what was read
+        # above, the run's sibling files and reference runs; added after it,
+        # nothing above changes. extraction_provenance says which ran.
+        if self.derived_enabled():
+            self._add_derived_properties(output_file, full_content, properties)
+        elif self.enable_tracking:
+            # --no-derived / MACE_DERIVED=0: none computed, the stored ones stay
+            properties['_keep_rows'] = _derived_keys()
+
         return properties
-    
+
+    # Derived properties after the extraction (mace.properties.registry);
+    # False reads the output alone (the registry's own reference loading),
+    # and `--no-derived` / MACE_DERIVED=0 (a stored derived row then stays).
+    run_derived = True
+    # names of derived properties not computed (`--skip-property NAME`, also
+    # MACE_SKIP_PROPERTIES=a,b); their stored rows stay
+    skip_derived = frozenset()
+    # a bulk build (a folder): the properties that read other runs wait until
+    # every run's own rows are stored (refresh_reference_properties), so their
+    # values do not depend on the order the folder is read in
+    defer_references = False
+    # {reference name: file | calc_id | RunRef} for derived properties that
+    # need other runs (`--reference NAME=FILE|CALC_ID`)
+    references = None
+    # a database to look reference runs up in when this extraction writes to
+    # none (the GUI's values of a run not in a database; read only)
+    reference_db = None
+
+    def derived_enabled(self) -> bool:
+        """Whether derived properties are computed (run_derived, and MACE_DERIVED is not 0)."""
+        return bool(self.run_derived) and os.environ.get('MACE_DERIVED', '1').strip().lower() not in (
+            '0', 'false', 'no', 'off')
+
+    def skipped_properties(self) -> set:
+        """skip_derived and MACE_SKIP_PROPERTIES (comma-separated)."""
+        env = {n.strip() for n in os.environ.get('MACE_SKIP_PROPERTIES', '').split(',') if n.strip()}
+        return set(self.skip_derived or ()) | env
+
+    def _given_references(self, registry) -> Dict[str, List[Any]]:
+        refs = {}
+        for name, given in (self.references or {}).items():
+            # each a file, a calc_id of the database, N*either (a coefficient) or "auto"
+            refs[name] = [registry.given_ref(v) if isinstance(v, str) else v
+                          for v in (given if isinstance(given, (list, tuple)) else [given])]
+        return refs
+
+    def _ro_opener(self, opened: List[Any]):
+        def ro_conn():
+            # read-only, and only when a property needs reference runs
+            conn = None
+            if self.enable_tracking and self.db_path and Path(self.db_path).is_file():
+                conn = db_build.open_ro(self.db_path)
+            elif self.reference_db and Path(self.reference_db).is_file():
+                conn = db_build.open_ro(self.reference_db)
+            if conn is not None:
+                opened.append(conn)
+            return conn
+        return ro_conn
+
+    def _add_derived_properties(self, output_file: Path, content: str, properties: Dict[str, Any]) -> None:
+        try:
+            from mace.properties import registry
+        except Exception as e:
+            print(f"Warning: derived properties not available: {e}")
+            if self.enable_tracking:
+                properties['_keep_rows'] = _derived_keys()
+            return
+
+        opened = []
+        refs = self._given_references(registry)
+        meta = properties.get('_metadata') or {}
+        skip = {n: "turned off (--skip-property, MACE_SKIP_PROPERTIES)" for n in self.skipped_properties()}
+        if self.defer_references and meta.get('calc_id'):
+            for prop in registry.reference_properties():
+                skip.setdefault(prop.name, "computed after the build's runs are stored (it reads other runs)")
+        try:
+            values, report = registry.run_derived(
+                output_file, content, {k: v for k, v in properties.items() if not k.startswith('_')},
+                calc_type=properties.get('calculation_type'), references=refs, conn=self._ro_opener(opened),
+                dimensionality=self._dimensionality(content), calc_id=meta.get('calc_id'),
+                material_id=meta.get('material_id'), skip=skip)
+        except Exception as e:
+            # nothing was computed: the stored derived rows stay
+            print(f"Warning: derived properties failed: {e}")
+            if self.enable_tracking:
+                properties['_keep_rows'] = _derived_keys()
+            return
+        finally:
+            for conn in opened:
+                conn.close()
+        for name, entry in report.items():
+            if entry.get('status') == 'error':
+                print(f"Warning: derived property {name} failed: {entry.get('reason')}")
+        properties.update(values)
+        if report:
+            properties['extraction_provenance'] = registry.provenance(report, output_file)
+        # the stored rows of a property that failed, or was not computed this
+        # time, stay (a failure never deletes an earlier value)
+        keep = _kept_outputs(registry, report)
+        if keep and self.enable_tracking:
+            properties['_keep_rows'] = keep
+        choices = _reference_choices(registry, report, refs)
+        if choices:
+            properties['_reference_choices'] = choices
+
+    def refresh_reference_properties(self, runs) -> Dict[str, int]:
+        """The derived properties that read other runs
+        (registry.reference_properties: reference energies, ...) of ``runs``
+        ([(output_file, calc_id)] of tracked runs), computed from what the
+        database holds now and stored: a bulk build's second pass, after
+        every run's own rows are stored, so a lookup's answer does not depend
+        on the order the runs were read in. A saved choice (reference_runs)
+        and ``references`` win over the lookup, as in an extraction. A
+        property that fails keeps its stored rows. Returns counts."""
+        counts = {'runs': 0, 'changed': 0, 'errors': 0}
+        if not self.enable_tracking or self.db is None or not self.derived_enabled():
+            return counts
+        try:
+            from mace.properties import registry
+            props = [p for p in registry.reference_properties() if p.name not in self.skipped_properties()]
+        except Exception as e:
+            print(f"Warning: derived properties not available: {e}")
+            return counts
+        if not props or not Path(self.db_path).is_file():
+            return counts
+        refs = self._given_references(registry)
+        derived = set(_derived_keys())
+        conn = db_build.open_ro(self.db_path)
+        if conn is None:
+            return counts
+        try:
+            for output_file, calc_id in runs:
+                if not calc_id or not Path(output_file).is_file():
+                    continue
+                row = conn.execute("SELECT material_id, calc_type FROM calculations WHERE calc_id = ?",
+                                   (calc_id,)).fetchone()
+                if not row:
+                    continue
+                material_id = row[0]
+                stored = registry.stored_values(conn, calc_id)
+                calc_type = stored.get('calculation_type') or row[1]
+                todo = [p.name for p in props if p.applies_to(calc_type)]
+                if not todo:
+                    continue
+                try:
+                    content = Path(output_file).read_text(errors='replace')
+                except OSError:
+                    continue
+                # what the extractor read (as an extraction gives it), not the derived rows
+                own = {k: v for k, v in stored.items() if k not in derived}
+                values, report = registry.run_derived(
+                    Path(output_file), content, own, calc_type=calc_type, references=refs, conn=lambda: conn,
+                    only=todo, dimensionality=self._dimensionality(content), calc_id=calc_id,
+                    material_id=material_id)
+                counts['runs'] += 1
+                before = {o.name: stored.get(o.name) for p in props if p.name in report for o in p.outputs}
+                after = dict(before)
+                for name, entry in report.items():
+                    if entry.get('status') == 'error':
+                        counts['errors'] += 1
+                        print(f"Warning: derived property {name} of {Path(output_file).name} failed: "
+                              f"{entry.get('reason')}")
+                    elif not entry.get('kept'):
+                        for o in registry.get(name).outputs:
+                            after[o.name] = values.get(o.name)
+                if after != before:
+                    counts['changed'] += 1
+                self._store_reference_values(registry, material_id, calc_id, Path(output_file), values, report,
+                                             stored.get(registry.PROVENANCE_KEY))
+                choices = _reference_choices(registry, report, refs)
+                if choices:
+                    self._save_reference_choices(material_id, calc_id, choices)
+        finally:
+            conn.close()
+        return counts
+
+    def _store_reference_values(self, registry, material_id: str, calc_id: str, output_file: Path,
+                                values: Dict[str, Any], report: Dict[str, Any], provenance) -> None:
+        """refresh_reference_properties' rows: each property's outputs (the
+        ones it no longer writes removed, a failed one's kept) and its entry
+        of the run's extraction_provenance, in one transaction."""
+        now = datetime.now().isoformat()
+        transaction = getattr(self.db, 'transaction', None)
+        try:
+            with (transaction() if transaction is not None else contextlib.nullcontext()):
+                for name, entry in report.items():
+                    if entry.get('status') == 'error' or entry.get('kept'):
+                        continue
+                    outs = [o.name for o in registry.get(name).outputs]
+                    stale = [o for o in outs if o not in values]
+                    if stale:
+                        with self.db._get_connection() as conn:
+                            for table in _property_tables(conn):
+                                conn.execute(
+                                    f"DELETE FROM {table} WHERE material_id = ? AND calc_id = ? "
+                                    "AND extractor_script = 'crystal_property_extractor.py' "
+                                    f"AND property_name IN ({','.join('?' * len(stale))})",
+                                    (material_id, calc_id, *stale))
+                    for o in outs:
+                        if o in values:
+                            self._store_row(material_id, calc_id, o, values[o], now)
+                prov = provenance if isinstance(provenance, dict) else registry.provenance({}, output_file)
+                prov.setdefault('derived', {}).update(
+                    registry.provenance(report, output_file)['derived'])
+                self._store_row(material_id, calc_id, registry.PROVENANCE_KEY, prov, now)
+        except sqlite3.Error as e:
+            print(f"⚠️  Error saving the reference properties of {output_file.name}: {e}; none of them were written")
+
     # Fragment charges for every run, not only charged ones (opt-in; also
     # MACE_FRAGMENT_CHARGES=1 or `mace analyze --extract-properties DIR --fragments`).
     extract_fragments = False
@@ -1674,8 +1946,10 @@ class CrystalPropertyExtractor:
         # when it holds just one (db_build.calc_for_output; the dry run of
         # --register/--skip-unchanged uses the same lookup read-only).
         try:
+            # and a path the database records relative to its own folder (examples/gui/materials.db)
+            base = Path(self.db.db_path).parent if getattr(self.db, "db_path", None) else None
             with self.db._get_connection() as conn:
-                return db_build.calc_for_output(conn, Path(output_file))
+                return db_build.calc_for_output(conn, Path(output_file), base)
         except Exception:
             return None
     
@@ -1708,6 +1982,12 @@ class CrystalPropertyExtractor:
         metadata = properties['_metadata']
         material_id = metadata['material_id']
         calc_id = metadata['calc_id']
+        try:
+            # the derived properties' keys (their category, unit, table)
+            from mace.properties import registry
+            registry.load()
+        except Exception:
+            pass
         
         saved_count = 0
 
@@ -1721,6 +2001,10 @@ class CrystalPropertyExtractor:
             # calculation's material (UPDATE, never DELETE)
             self._migrate_calc_rows(material_id, calc_id)
             produced = [name for name in properties if not name.startswith('_')]
+            # the rows of a derived property that failed or was not computed
+            # this time (--skip-property, --no-derived, a bulk build's later
+            # pass) stay: an error never deletes a stored value
+            produced += [n for n in properties.get('_keep_rows') or () if n not in produced]
             # a TRANSPORT run's total ZT came from a kappa_L the user gave an
             # earlier extraction (--kappa-lattice): one without it keeps those
             # rows while the run is unchanged (_settle_earlier_total)
@@ -1745,97 +2029,141 @@ class CrystalPropertyExtractor:
         for prop_name, prop_value in properties.items():
             if prop_name.startswith('_'):
                 continue  # Skip metadata
-            
-            # Determine property category
-            category = self._categorize_property(prop_name)
-            if prop_name not in property_keys.KEYS and prop_name not in self._unregistered:
-                # every name written is in the registry (tests/test_property_keys.py)
-                self._unregistered.add(prop_name)
-                print(f"⚠️  {prop_name} is not in mace/utils/property_keys.py: stored under 'other'")
-            
-            # Handle complex values (convert to JSON)
-            if isinstance(prop_value, (dict, list)):
-                value_text = json.dumps(prop_value)
-                value_numeric = None
-            elif isinstance(prop_value, (int, float)):
-                value_numeric = float(prop_value)
-                value_text = str(prop_value)
-            else:
-                value_numeric = None
-                value_text = str(prop_value)
-            
-            # Determine units
-            unit = self._get_property_unit(prop_name)
-            
-            try:
-                # Check if property already exists. NULL-safe calc_id match:
-                # untracked extractions have calc_id=None, and `calc_id = ?`
-                # never matches NULL, so every re-extraction inserted a full
-                # duplicate set of property rows.
-                with self.db._get_connection() as conn:
-                    key = (material_id, prop_name, calc_id, calc_id)
-                    where = ("material_id = ? AND property_name = ? "
-                             "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))")
-                    if prop_name in property_keys.BLOB_KEYS and 'property_blobs' in _property_tables(conn):
-                        # a large JSON value: the property_blobs table (a
-                        # copy an earlier version left in properties goes)
-                        conn.execute(f"DELETE FROM properties WHERE {where}", key)
-                        existing = conn.execute(f"SELECT blob_id FROM property_blobs WHERE {where}", key).fetchone()
-                        if existing:
-                            conn.execute("""
-                                UPDATE property_blobs
-                                SET property_value_text = ?, property_unit = ?, property_category = ?,
-                                    extracted_at = ?, extractor_script = ?
-                                WHERE blob_id = ?
-                            """, (value_text, unit, category, metadata['extracted_at'],
-                                  'crystal_property_extractor.py', existing[0]))
-                        else:
-                            conn.execute("""
-                                INSERT INTO property_blobs
-                                (material_id, calc_id, property_category, property_name,
-                                 property_value_text, property_unit, extracted_at, extractor_script)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (material_id, calc_id, category, prop_name, value_text, unit,
-                                  metadata['extracted_at'], 'crystal_property_extractor.py'))
-                        saved_count += 1
-                        continue
-                    cursor = conn.execute(f"SELECT property_id FROM properties WHERE {where}", key)
-                    existing = cursor.fetchone()
-                    
-                    if existing:
-                        # Update existing property (unit and category too:
-                        # a database built by an earlier version gets this
-                        # version's labels)
-                        conn.execute("""
-                            UPDATE properties 
-                            SET property_value = ?, property_value_text = ?, property_unit = ?,
-                                property_category = ?, extracted_at = ?, extractor_script = ?
-                            WHERE property_id = ?
-                        """, (value_numeric, value_text, unit, category,
-                              metadata['extracted_at'], 'crystal_property_extractor.py',
-                              existing[0]))
-                    else:
-                        # Insert new property
-                        conn.execute("""
-                            INSERT INTO properties 
-                            (material_id, calc_id, property_category, property_name, 
-                             property_value, property_value_text, property_unit, 
-                             extracted_at, extractor_script)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (material_id, calc_id, category, prop_name,
-                              value_numeric, value_text, unit,
-                              metadata['extracted_at'], 'crystal_property_extractor.py'))
-                    
-                    saved_count += 1
-                    
-            except Exception as e:
-                print(f"⚠️  Error saving property {prop_name}: {e}")
+            if self._store_row(material_id, calc_id, prop_name, prop_value, metadata['extracted_at']):
+                saved_count += 1
+
+        # the --reference choices of the derived properties that stored a
+        # value (and those given as "auto"): the run's reference_runs row,
+        # which a re-extraction keeps and uses (registry.CHOICES_KEY)
+        if calc_id is not None and properties.get('_reference_choices'):
+            self._save_reference_choices(material_id, calc_id, properties['_reference_choices'])
+        elif properties.get('_reference_choices'):
+            print(f"⚠️  {Path(metadata['output_file']).name} has no calculation record: its --reference choices "
+                  "are used now but not saved for later extractions (register it: --register)")
 
         if calc_id is not None and saved_count:
             self._fill_placeholder_material(material_id, properties, Path(metadata['output_file']), calc_id)
-        
+
         return saved_count
-    
+
+    def _store_row(self, material_id: str, calc_id, prop_name: str, prop_value, extracted_at: str) -> bool:
+        """One row of this extractor (properties, or property_blobs for a
+        large JSON value): replaced when the run has it. True when written."""
+        # Determine property category
+        category = self._categorize_property(prop_name)
+        if not property_keys.known(prop_name) and prop_name not in self._unregistered:
+            # every name written is in the registry (tests/test_property_keys.py)
+            self._unregistered.add(prop_name)
+            print(f"⚠️  {prop_name} is not in mace/utils/property_keys.py: stored under 'other'")
+        
+        # Handle complex values (convert to JSON)
+        if isinstance(prop_value, (dict, list)):
+            value_text = json.dumps(prop_value)
+            value_numeric = None
+        elif isinstance(prop_value, (int, float)):
+            value_numeric = float(prop_value)
+            value_text = str(prop_value)
+        else:
+            value_numeric = None
+            value_text = str(prop_value)
+        
+        # Determine units
+        unit = self._get_property_unit(prop_name)
+        
+        try:
+            # Check if property already exists. NULL-safe calc_id match:
+            # untracked extractions have calc_id=None, and `calc_id = ?`
+            # never matches NULL, so every re-extraction inserted a full
+            # duplicate set of property rows.
+            with self.db._get_connection() as conn:
+                key = (material_id, prop_name, calc_id, calc_id)
+                where = ("material_id = ? AND property_name = ? "
+                         "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))")
+                if property_keys.is_blob(prop_name) and 'property_blobs' in _property_tables(conn):
+                    # a large JSON value: the property_blobs table (a
+                    # copy an earlier version left in properties goes)
+                    conn.execute(f"DELETE FROM properties WHERE {where}", key)
+                    existing = conn.execute(f"SELECT blob_id FROM property_blobs WHERE {where}", key).fetchone()
+                    if existing:
+                        conn.execute("""
+                            UPDATE property_blobs
+                            SET property_value_text = ?, property_unit = ?, property_category = ?,
+                                extracted_at = ?, extractor_script = ?
+                            WHERE blob_id = ?
+                        """, (value_text, unit, category, extracted_at,
+                              'crystal_property_extractor.py', existing[0]))
+                    else:
+                        conn.execute("""
+                            INSERT INTO property_blobs
+                            (material_id, calc_id, property_category, property_name,
+                             property_value_text, property_unit, extracted_at, extractor_script)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (material_id, calc_id, category, prop_name, value_text, unit,
+                              extracted_at, 'crystal_property_extractor.py'))
+                    return True
+                cursor = conn.execute(f"SELECT property_id FROM properties WHERE {where}", key)
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # Update existing property (unit and category too:
+                    # a database built by an earlier version gets this
+                    # version's labels)
+                    conn.execute("""
+                        UPDATE properties 
+                        SET property_value = ?, property_value_text = ?, property_unit = ?,
+                            property_category = ?, extracted_at = ?, extractor_script = ?
+                        WHERE property_id = ?
+                    """, (value_numeric, value_text, unit, category,
+                          extracted_at, 'crystal_property_extractor.py',
+                          existing[0]))
+                else:
+                    # Insert new property
+                    conn.execute("""
+                        INSERT INTO properties 
+                        (material_id, calc_id, property_category, property_name, 
+                         property_value, property_value_text, property_unit, 
+                         extracted_at, extractor_script)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (material_id, calc_id, category, prop_name,
+                          value_numeric, value_text, unit,
+                          extracted_at, 'crystal_property_extractor.py'))
+                
+                return True
+                
+        except Exception as e:
+            print(f"⚠️  Error saving property {prop_name}: {e}")
+            return False
+
+    def _save_reference_choices(self, material_id: str, calc_id: str, choices: Dict[str, Any]) -> None:
+        try:
+            from mace.properties import reference, registry
+            used = choices.get('used') or {}
+            with self.db._get_connection() as conn:
+                current = registry.saved_choices(conn, calc_id)
+                # a file the database tracks is saved as its calc_id (it survives a move)
+                for roles in used.values():
+                    for recs in roles.values():
+                        for r in recs:
+                            if r.get('file'):
+                                cid = reference.tracked_calc(conn, Path(r['file']))
+                                if cid:
+                                    r['calc_id'] = cid
+                                    r.pop('file')
+            merged = registry.merge_choices(current, used, choices.get('forget') or {})
+            if merged == current:
+                return
+            if merged:
+                prop = registry.get(registry.CHOICES_KEY)
+                self.db.store_material_property(material_id, registry.CHOICES_KEY, merged,
+                                                prop.category if prop else 'computational', calc_id=calc_id,
+                                                property_unit='JSON', extractor_script=registry.REFERENCE_SCRIPT)
+            else:
+                with self.db._get_connection() as conn:
+                    conn.execute("DELETE FROM properties WHERE calc_id = ? AND property_name = ?",
+                                 (calc_id, registry.CHOICES_KEY))
+        except Exception as e:
+            print(f"⚠️  Error saving the reference choices of {calc_id}: {e}")
+
     def _settle_earlier_total(self, properties: Dict[str, Any], material_id: str, calc_id) -> bool:
         """Whether a TRANSPORT run's earlier ``transport_zt_total*`` rows stay.
 
@@ -2759,6 +3087,12 @@ class CrystalPropertyExtractor:
                 pass  # DAT file processor not available
             except Exception as e:
                 print(f"Warning: Could not process DOSS.DAT file: {e}")
+            # a band-index DOS that stops below E_F + 15 eV (mace.utils.doss_reach: the plot's note too)
+            from mace.utils import doss_reach
+            reach = doss_reach.cached_note(dat_file)
+            if reach:
+                props['doss_reach_note'] = reach
+                print(f"Note: {output_file.name}: {reach}")
         
         # Mark this as a DOS calculation
         if props:
@@ -2887,7 +3221,10 @@ class CrystalPropertyExtractor:
         # inner parens), so the anchor must tolerate both "(CM**-1)" and the
         # older "(CM**(-1))" form.
         freq_section = re.search(
-            r'MODES\s+EIGV\s+FREQUENCIES\s+IRREP.*?\n\s*\(HARTREE\*\*2\)\s*\(CM\*\*-?\(?-?1\)?\)\s*\(THZ\).*?\n(.*?)(?=NORMAL MODES|VIBRATIONAL TEMPERATURES|<RAMAN>|\*{5,})',
+            # the table ends at the next of these, else at the next dispersion k point or the end of the
+            # file: a polymer's phonon-band output has no other terminator after its 99 k-point tables, and
+            # the search then rescanned the rest of the file from every one of them (minutes per file)
+            r'MODES\s+EIGV\s+FREQUENCIES\s+IRREP.*?\n\s*\(HARTREE\*\*2\)\s*\(CM\*\*-?\(?-?1\)?\)\s*\(THZ\).*?\n(.*?)(?=NORMAL MODES|VIBRATIONAL TEMPERATURES|<RAMAN>|\*{5,}|DISPERSION K POINT|\Z)',
             content, re.DOTALL
         )
         
@@ -3261,8 +3598,12 @@ class CrystalPropertyExtractor:
         def key(r):
             return (round(r[0], 3), round(r[1], 4))
 
-        seebeck = ('seebeck' in (descriptor or '').lower()
-                   or '.seebeck.' in dat_file.name.lower())
+        # the file's kind by its name, else by its header: SIGMAS.dat's header ("electrical
+        # conductivity * Seebeck coefficient") names the Seebeck coefficient too, and an open-shell
+        # SIGMAS.dat read as a per-spin SEEBECK.dat gave no rows
+        named = re.search(r'\.(seebeck|sigmas|sigma|kappa)\.dat$', dat_file.name.lower())
+        seebeck = (named.group(1) == 'seebeck' if named
+                   else (descriptor or '').lower().startswith('seebeck'))
         if not seebeck:
             # additive: alpha + beta, component by component
             b_lut = {key(r): r for r in beta}
@@ -3281,7 +3622,7 @@ class CrystalPropertyExtractor:
         idx = name.lower().rfind('.seebeck.dat')
         sig_file = None
         if idx >= 0:
-            for suffix in ('.SIGMA.dat', '.sigma.dat'):
+            for suffix in ('.SIGMA.dat', '.sigma.dat', '.SIGMA.DAT'):
                 cand = dat_file.with_name(name[:idx] + suffix)
                 if cand.exists():
                     sig_file = cand
@@ -3344,7 +3685,10 @@ class CrystalPropertyExtractor:
             header), and the electronic kappa_e = kappa0 - T*sigma*S^2 (zero current). So
             ZT_e = x / (1 - x) with x = PF*T/kappa0 (PF*T/kappa0 alone is
             below 1 always). A point with x >= 1 (kappa_e <= 0, outside the
-            model) is skipped with a warning; kappa0 and kappa_e at the peak
+            model) is skipped with a warning, and so is one whose kappa_e is
+            below the files' 8-digit precision (|kappa_e| < 2e-6 * kappa0,
+            transport_zt.kappa_e_state: rounding noise, where ZT_e ran up to
+            1e9); kappa0 and kappa_e at the peak
             are stored as transport_kappa0_at_zt_max and
             transport_kappa_electronic_at_zt_max (W/m/K). All from the
             diagonal averages of the tensors.
@@ -3384,11 +3728,13 @@ class CrystalPropertyExtractor:
                 # whose stem starts at a separator boundary (same rule as the
                 # CUBE sidecar match) so a sibling material's data in a shared
                 # directory is never silently attributed to this one.
-                exact = out_dir / f"{stem}.{suffix}"
-                if exact.exists():
-                    return exact
-                cands = sorted(set(list(out_dir.glob(f"*.{suffix}"))
-                                   + list(out_dir.glob(f"*.{suffix.lower()}"))))
+                # MACE's own runs write .DAT (x.SEEBECK.DAT): every case of the extension
+                variants = (suffix, suffix.lower(), suffix[:-len('dat')] + 'DAT')
+                for v in variants:
+                    exact = out_dir / f"{stem}.{v}"
+                    if exact.exists():
+                        return exact
+                cands = sorted({c for v in variants for c in out_dir.glob(f"*.{v}")})
                 for c in cands:
                     c_stem = c.name[:-(len(suffix) + 1)]
                     if (c_stem == stem or c_stem.startswith(stem + '_')
@@ -3477,7 +3823,9 @@ class CrystalPropertyExtractor:
             peak_zt_loc = None
             peak_zt_kappas = None  # (kappa0, kappa_e) at the ZT peak, W/m/K
             n_kappa_skipped = 0    # points with kappa_e <= 0 (x >= 1)
+            n_kappa_masked = 0     # points with kappa_e below the files' precision
             n_usable = 0
+            from mace.utils.transport_zt import kappa_e_state
 
             for (T, mu, n_carr, s_val) in s_rows:
                 key = (round(T, 3), round(mu, 4))
@@ -3499,8 +3847,12 @@ class CrystalPropertyExtractor:
                     k = kap_lut.get(key)   # kappa0 (K coefficient), not kappa_e
                     if k and abs(k) > 0.0:
                         kappa_e = abs(k) - pf * T
-                        if kappa_e <= 0.0:
-                            n_kappa_skipped += 1
+                        state = kappa_e_state(k, kappa_e)
+                        if state != "ok":
+                            if state == "masked":
+                                n_kappa_masked += 1
+                            else:
+                                n_kappa_skipped += 1
                             continue
                         zt = pf * T / kappa_e
                         if zt > peak_zt:
@@ -3510,6 +3862,9 @@ class CrystalPropertyExtractor:
             if n_kappa_skipped:
                 print(f"Warning: {output_file.name}: {n_kappa_skipped} transport points with "
                       f"T*sigma*S^2 >= kappa0 (kappa_e <= 0) left out of ZT")
+            if n_kappa_masked:
+                print(f"Note: {output_file.name}: kappa_e below the files' precision at {n_kappa_masked} "
+                      f"transport points (|kappa0 - T*sigma*S^2| < 2e-6 * kappa0) left out of ZT_e")
 
             has_usable = abs(peak_s) > 0.0
             # Carrier-type convention: N(#carriers) > 0 -> holes (p-type),
@@ -3573,6 +3928,7 @@ class CrystalPropertyExtractor:
                 'kappa_electronic_at_zt_max_w_per_m_k': (float(peak_zt_kappas[1])
                                                          if peak_zt_kappas else None),
                 'zt_points_skipped_kappa_e_nonpositive': int(n_kappa_skipped),
+                'zt_points_kappa_e_below_precision': int(n_kappa_masked),
             }
             # each axis: the peak PF and ZT_e of its diagonal element alone
             per_axis = {}
@@ -3591,6 +3947,13 @@ class CrystalPropertyExtractor:
                             'kappa_electronic_at_zt_max_w_per_m_k': float(peak_a['kappa_e'])})
                     per_axis[a] = entry
                 summary['per_axis'] = per_axis
+            # a k mesh too coarse for transport (mace.utils.transport_mesh: the plot's note too)
+            from mace.utils import transport_mesh
+            mesh_note = transport_mesh.cached_note(seebeck_file)
+            summary['mesh_note'] = mesh_note
+            if mesh_note:
+                props['transport_mesh_note'] = mesh_note
+                print(f"Note: {output_file.name}: {mesh_note}")
             props['transport'] = summary
 
             # Flat, numerically-queryable scalar rows.
@@ -3846,6 +4209,144 @@ class CrystalPropertyExtractor:
         
         return props
     
+    def _extract_mechanical_properties(self, content: str) -> Dict[str, Any]:
+        """Elastic, piezoelectric, photoelastic tensors and EOS fits (CRYSTAL23
+        manual ch. 12-13), with the Voigt-Reuss-Hill moduli of a 3D run or the
+        in-plane moduli of a slab. {} for a run without them."""
+        props: Dict[str, Any] = {}
+        if not any(k in content for k in ("ELASTIC CONSTANTS", "PIEZOELECTRIC", "POCKELS TENSOR",
+                                          "FITTING USING ALL POINTS", "THERMAL PROPERTIES FROM HELMHOLTZ",
+                                          "DIELECTRIC (EPSILON)")):
+            return props
+        try:
+            from mace.elastic.analysis import analyze
+            data = analyze(content)
+        except Exception as e:
+            print(f"Warning: could not read the elastic/EOS results: {e}")
+            return props
+        el = data.get("elastic")
+        if el:
+            props['elastic_tensor'] = {"matrix": el["matrix"], "unit": el["unit"], "system": el.get("system")}
+        if data.get("compliance"):
+            props['elastic_compliance_tensor'] = data["compliance"]
+        if data.get("seismic"):
+            props['elastic_seismic_velocities'] = data["seismic"]
+        mod = data.get("moduli") or {}
+        if "bulk_modulus_hill_gpa" in mod:
+            props['bulk_modulus_voigt_gpa'] = mod["bulk_modulus_voigt_gpa"]
+            props['bulk_modulus_reuss_gpa'] = mod["bulk_modulus_reuss_gpa"]
+            props['bulk_modulus_hill_gpa'] = mod["bulk_modulus_hill_gpa"]
+            props['shear_modulus_voigt_gpa'] = mod["shear_modulus_voigt_gpa"]
+            props['shear_modulus_reuss_gpa'] = mod["shear_modulus_reuss_gpa"]
+            props['shear_modulus_hill_gpa'] = mod["shear_modulus_hill_gpa"]
+            props['elastic_min_eigenvalue_gpa'] = mod["min_eigenvalue_gpa"]
+        # an unstable C (not positive definite) keeps its tensor, VRH averages and eigenvalues; the
+        # moduli derived from them are unphysical and not stored (mace.elastic.properties does the same)
+        if "bulk_modulus_hill_gpa" in mod and mod.get("born_stable") is not False:
+            if "youngs_modulus_gpa" in mod:
+                props['youngs_modulus_gpa'] = mod["youngs_modulus_gpa"]
+                props['poisson_ratio'] = mod["poisson_ratio"]
+            if "universal_anisotropy" in mod:
+                props['elastic_anisotropy_universal'] = mod["universal_anisotropy"]
+            if "debye_temperature_k" in mod:
+                props['debye_temperature_elastic_k'] = mod["debye_temperature_k"]
+                props['sound_velocity_mean_km_s'] = mod["sound_velocity_mean_km_s"]
+        if "born_stable" in mod:
+            props['elastic_born_stable'] = mod["born_stable"]
+        if "layer_modulus" in mod:
+            props['elastic_2d_moduli'] = mod
+        if data.get("piezo_e"):
+            props['piezoelectric_e_tensor'] = data["piezo_e"]
+        if data.get("piezo_d"):
+            props['piezoelectric_d_tensor'] = data["piezo_d"]
+        if data.get("pockels"):
+            props['photoelastic_tensor'] = data["pockels"]
+        if data.get("piezo_optic"):
+            props['piezo_optic_tensor'] = data["piezo_optic"]
+        eos = data.get("eos") or {}
+        # the Å³ / GPa keys hold a 3D run's values; a slab's or polymer's QHA prints an area or a length
+        # and a modulus per length or area (its tables, with their units, are kept whole)
+        flat = data.get("dimensionality") in (None, 3)
+        if eos.get("fits") and not flat:
+            props['eos_fits'] = eos["fits"]
+        elif eos.get("fits"):
+            props['eos_fits'] = eos["fits"]
+            bm = eos["fits"].get("birch_murnaghan") or next(iter(eos["fits"].values()))
+            props['eos_bulk_modulus_gpa'] = bm["bulk_modulus_gpa"]
+            props['eos_bulk_modulus_prime'] = bm["bulk_modulus_prime"]
+            props['eos_equilibrium_volume_ang3'] = bm["volume_ang3"]
+        if eos.get("points"):
+            props['eos_points'] = eos["points"]
+        diel = data.get("dielectric")
+        if diel:
+            props['dielectric_cphf'] = diel
+            eps = diel.get("principal_epsilon")
+            if eps:
+                props['dielectric_constant_electronic'] = sum(eps) / len(eps)
+            ri = diel.get("refractive_indices")
+            if ri:
+                props['refractive_index_electronic'] = sum(ri) / len(ri)
+        if data.get("beta"):
+            props['hyperpolarizability_beta'] = data["beta"]
+        if data.get("gamma"):
+            props['hyperpolarizability_gamma'] = data["gamma"]
+        qha = data.get("qha")
+        if qha:
+            props['qha_thermal_properties'] = qha
+            temps = qha["temperature_k"]
+            i300 = min(range(len(temps)), key=lambda i: abs(temps[i] - 300.0))
+            if abs(temps[i300] - 300.0) <= 15.0 and flat:
+                props['qha_volume_300k_ang3'] = qha["volume_ang3"][i300]
+                props['qha_bulk_modulus_300k_gpa'] = qha["bulk_modulus_t_gpa"][i300]
+                props['qha_thermal_expansion_300k_per_k'] = qha["alpha_v_per_k"][i300]
+        return props
+
+    _TWOC_MAG = re.compile(r"TOTAL ([XYZ])-COMP MAGNETIZATION\s+([-+]?\d+\.\d+(?:[EeDd][-+]?\d+)?)")
+
+    def _extract_two_component_properties(self, content: str) -> Dict[str, Any]:
+        """A two-component (TWOCOMPON) SCF (scf_two_component is
+        _extract_scf_settings'): the final total and per-atom magnetization vectors it prints each cycle ("TOTAL X-COMP
+        MAGNETIZATION" + "ATOMIC MX :" rows; HPCC CRYSTAL23 outputs). {} for a
+        one-component run."""
+        props: Dict[str, Any] = {}
+        if "TWO-COMPONENT SCF" not in content:
+            return props
+        last = content.rfind("TOTAL X-COMP MAGNETIZATION")
+        if last < 0:
+            return props
+        block = content[last:last + 200000]
+        total: Dict[str, float] = {}
+        atoms: Dict[str, List[float]] = {}
+        lines = block.splitlines()
+        i = 0
+        while i < len(lines):
+            m = self._TWOC_MAG.search(lines[i])
+            if m:
+                axis = m.group(1)
+                if axis in total:
+                    break                         # the next cycle's block
+                total[axis] = float(m.group(2).replace("D", "E"))
+                vals: List[float] = []
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith(f"ATOMIC M{axis}"):
+                    j = i + 2
+                    while j < len(lines) and re.fullmatch(r"(\s*[-+]?\d+\.\d+)+\s*", lines[j] or "x"):
+                        vals += [float(x) for x in lines[j].split()]
+                        j += 1
+                    i = j - 1
+                atoms[axis] = vals
+                if len(total) == 3:
+                    break
+            i += 1
+        if len(total) == 3:
+            mx, my, mz = total["X"], total["Y"], total["Z"]
+            props['two_component_magnetization'] = [mx, my, mz]
+            props['two_component_magnetization_norm'] = (mx * mx + my * my + mz * mz) ** 0.5
+            n = min(len(atoms.get(a, [])) for a in "XYZ")
+            if n:
+                props['two_component_atomic_magnetization'] = [
+                    [atoms["X"][k], atoms["Y"][k], atoms["Z"][k]] for k in range(n)]
+        return props
+
     def _extract_thermodynamic_properties(self, content: str) -> Dict[str, Any]:
         """Extract thermodynamic properties from FREQ calculations."""
         props = {}
@@ -4042,9 +4543,17 @@ class CrystalPropertyExtractor:
             if fm:
                 try:
                     fermi_energy = float(fm.group(1))
-                    summary['fermi_energy_au'] = fermi_energy
                 except ValueError:
                     pass
+                else:
+                    # CRYSTAL's -1.0 placeholder (an SCF that ended spin-locked) is no Fermi level
+                    from mace.utils import fermi_level
+                    fl = fermi_level.run_fermi(output_file, fermi_energy)
+                    fermi_energy = fl.value_au
+                    if fermi_energy is not None:
+                        summary['fermi_energy_au'] = fermi_energy
+                    if fl.note:
+                        summary['fermi_energy_note'] = fl.note
 
             # --- Which 3D properties were computed (provenance list).
             computed = []
@@ -4246,11 +4755,38 @@ class CrystalPropertyExtractor:
                 return None, [p.name for p in rank]
         return None, []
 
-    def _extract_advanced_band_dos_analysis(self, output_file: Path, properties: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _parent_dos_file(output_file: Path) -> Optional[Path]:
+        """The DOSS.DAT that decides metal or semimetal of a gapless BAND run:
+        ``_dat_file_for`` (the run's folder), else the DOSS run of the same
+        parent in a folder beside the run's (``step_006_DOSS/<base>_doss.DOSS.DAT``
+        of a workflow, ``DOSS/`` beside ``BAND/``): exactly one such file."""
+        path, ambiguous = CrystalPropertyExtractor._dat_file_for(Path(output_file), "DOSS")
+        if path is not None or ambiguous:
+            return path
+        output_file = Path(output_file)
+        base = output_file.stem
+        for suffix in ("_band", "_doss"):
+            if base.lower().endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        names = (f"{base}_doss.DOSS.DAT", f"{base}.DOSS.DAT")
+        own = output_file.parent
+        try:
+            dirs = [d for d in own.parent.iterdir() if d.is_dir() and d != own][:2000]
+        except OSError:
+            return None
+        hits = [d / n for d in dirs for n in names if (d / n).is_file()]
+        return hits[0] if len(hits) == 1 else None
+
+    def _extract_advanced_band_dos_analysis(self, output_file: Path, properties: Dict[str, Any],
+                                            content: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract advanced electronic properties using BAND/DOSS data analysis.
         
-        Uses sophisticated DOS/BAND analysis for accurate effective mass and classification.
+        The band gap and, for a gapless band structure, metal or semimetal by
+        N(E_F) per atom (the rule and the DOSS.DAT of band_path_gap_type);
+        the quick effective-mass estimate real_*_effective_mass.
         """
         advanced_props = {}
         
@@ -4264,6 +4800,8 @@ class CrystalPropertyExtractor:
             # directory can hold other calculations' files.
             band_file, band_ambiguous = self._dat_file_for(output_file, "BAND")
             doss_file, doss_ambiguous = self._dat_file_for(output_file, "DOSS")
+            if band_file and not doss_file and not doss_ambiguous:
+                doss_file = self._parent_dos_file(output_file)
             notes = [f"ambiguous {kind}.DAT files skipped: {', '.join(names)}"
                      for kind, names in (("BAND", band_ambiguous), ("DOSS", doss_ambiguous))
                      if names]
@@ -4274,15 +4812,23 @@ class CrystalPropertyExtractor:
                 return advanced_props  # nothing to analyze
             
             # Perform advanced analysis
+            from mace.utils.advanced_electronic_analyzer import atoms_per_cell
+            if content is None and properties.get('atoms_in_unit_cell') is None:
+                try:
+                    content = Path(output_file).read_text(errors='replace')
+                except OSError:
+                    content = ''
             analyzer = AdvancedElectronicAnalyzer()
-            analysis_results = analyzer.analyze_material(band_file, doss_file)
+            analysis_results = analyzer.analyze_material(band_file, doss_file,
+                                                         atoms_per_cell(properties, content))
             
-            # metal or semimetal of a gapless band structure with a DOS
-            # beside it (_classify_electronic_properties; not stored itself)
-            if band_file and doss_file and analysis_results.get('electronic_classification') is not None:
+            # metal or semimetal of a gapless band structure, decided by
+            # N(E_F) per atom (_classify_electronic_properties; not stored itself)
+            if band_file and doss_file and analysis_results.get('classified_by_dos'):
                 advanced_props['_band_dos_classification'] = analysis_results['electronic_classification']
             
-            # Real effective masses from band structure
+            # The quick effective-mass estimate (one band along the path at
+            # the edge); the accurate m_c / m_d are effective_mass_*_mc / _md
             if analysis_results.get('has_real_effective_mass'):
                 if analysis_results.get('electron_effective_mass') is not None:
                     advanced_props['real_electron_effective_mass'] = analysis_results['electron_effective_mass']
@@ -4295,7 +4841,8 @@ class CrystalPropertyExtractor:
             
             # the metal/semimetal criterion of the DOS analysis
             if analysis_results.get('dos_data_available'):
-                advanced_props['dos_threshold'] = analysis_results.get('dos_threshold', 0.0)
+                if analysis_results.get('dos_threshold') is not None:
+                    advanced_props['dos_threshold'] = analysis_results['dos_threshold']
                 advanced_props['dos_mean'] = analysis_results.get('dos_mean', 0.0)
             
             # Band structure analysis results
@@ -4319,7 +4866,8 @@ class CrystalPropertyExtractor:
                 
             print(f"      🚀 Advanced analysis: {analysis_results.get('electronic_classification') or 'no'} classification")
             if analysis_results.get('has_real_effective_mass'):
-                print(f"      📊 Real effective masses calculated from band structure")
+                print(f"      📊 Effective mass, quick estimate (one band along the path): real_*_effective_mass; "
+                      f"the accurate m_c / m_d are effective_mass_*")
             
         except ImportError:
             advanced_props['advanced_analysis_note'] = 'AdvancedElectronicAnalyzer not available'
@@ -4411,6 +4959,49 @@ def _ensure_material(db, material_id: str, output_file: Path) -> None:
     print(f"   📝 Created material {material_id} for an output with no calculation record")
 
 
+def _parse_references(items) -> Dict[str, List[str]]:
+    """--reference NAME=FILE|CALC_ID (repeatable; one name may be given
+    several times: the runs of a reference with many, such as the elements).
+    NAME is a reference a derived property takes (registry.reference_roles)."""
+    refs: Dict[str, List[str]] = {}
+    roles = None
+    for item in items or []:
+        name, sep, value = str(item).partition('=')
+        if not sep or not name.strip() or not value.strip():
+            print(f"❌ --reference {item!r}: NAME=FILE or NAME=CALC_ID", file=sys.stderr)
+            sys.exit(2)
+        if roles is None:
+            try:
+                from mace.properties import registry
+                roles = registry.reference_roles()
+            except Exception:
+                roles = {}
+        if roles and name.strip() not in roles:
+            print(f"❌ --reference {item!r}: no derived property takes a reference named {name.strip()!r}; "
+                  f"the names are {', '.join(sorted(roles))}", file=sys.stderr)
+            sys.exit(2)
+        refs.setdefault(name.strip(), []).append(value.strip())
+    return refs
+
+
+def _parse_skips(names) -> set:
+    """--skip-property NAME (repeatable, or comma-separated): registered derived properties."""
+    from mace.properties import registry
+    known = {p.name for p in registry.properties(None, interactive=False)}
+    out = set()
+    for item in names or []:
+        for name in str(item).split(','):
+            name = name.strip()
+            if not name:
+                continue
+            if name not in known:
+                print(f"❌ --skip-property {name!r}: not a derived property (mace analyze --list-properties "
+                      "--derived lists them)", file=sys.stderr)
+                sys.exit(2)
+            out.add(name)
+    return out
+
+
 def _json_line(stream, obj) -> None:
     stream.write(json.dumps(obj) + "\n")
     stream.flush()
@@ -4429,6 +5020,18 @@ def main():
     parser.add_argument("--filter-type", help="Only extract properties from specific calculation type")
     parser.add_argument("--fragments", action="store_true",
                         help="Per-fragment Mulliken charges for every run (charged runs get them anyway)")
+    parser.add_argument("--reference", action="append", default=[], metavar="NAME=FILE|CALC_ID",
+                        help="A reference run a derived property needs (mace/properties: the elements, the "
+                             "isolated atoms, a bulk, a clean surface and an adsorbate, the reactants and "
+                             "products): its output file or calc_id, N*FILE for a coefficient, auto for the "
+                             "database's choice again; repeat for several. Saved with the run when the "
+                             "property is stored")
+    parser.add_argument("--no-derived", action="store_true",
+                        help="Compute no derived property (mace/properties: reference energies, Bader charges, "
+                             "...); their stored rows stay. Also MACE_DERIVED=0")
+    parser.add_argument("--skip-property", action="append", default=[], metavar="NAME",
+                        help="Do not compute this derived property (repeatable); its stored rows stay. Also "
+                             "MACE_SKIP_PROPERTIES=NAME,NAME")
     # Building a database from a folder (all opt-in; without them a run is unchanged)
     # On by default for a folder (--scan-directory): without the calculation
     # records, `mace database` lists none of the materials and an export is
@@ -4438,6 +5041,9 @@ def main():
                              "rows); the default with --scan-directory")
     parser.add_argument("--no-register", dest="register", action="store_false",
                         help="Do not record calculations: store the properties of untracked outputs only")
+    parser.add_argument("--register-output-only", action="store_true",
+                        help="With --output-file --register: record that output only, not the other "
+                             "completed outputs of its folder and the folders below it")
     parser.add_argument("--dry-run", action="store_true",
                         help="Write nothing: list each output as new, changed, unchanged, not tracked, "
                              "unreadable or incomplete")
@@ -4455,9 +5061,10 @@ def main():
                         help="Lattice thermal conductivity in W/(m·K) for the total ZT = S²σT/(κe + κL) of "
                              "TRANSPORT runs: one value, or a CSV of T,kappa_L rows (linear interpolation, "
                              "no extrapolation)")
-    parser.add_argument("--tau-fs", metavar="FS",
+    parser.add_argument("--tau-fs", metavar="FS|TAU.json",
                         help="With --kappa-lattice: the relaxation time in fs to evaluate the total ZT at "
-                             "(default: the run's RELAXTIM; σ and κ0 are scaled by tau/tau_run)")
+                             "(default: the run's RELAXTIM; σ and κ0 are scaled by tau/tau_run), or the "
+                             "JSON a mace tau ... --save wrote (its method is recorded as the tau source)")
     
     args = parser.parse_args()
     
@@ -4466,6 +5073,9 @@ def main():
         sys.exit(1)
     if args.register is None:
         args.register = bool(args.scan_directory) and not args.output_file
+    if args.register_output_only and not (args.output_file and args.register):
+        print("❌ --register-output-only goes with --output-file and --register", file=sys.stderr)
+        sys.exit(2)
     if args.keep_backups is not None and not args.backup:
         print("❌ --keep-backups needs --backup", file=sys.stderr)
         sys.exit(2)
@@ -4581,6 +5191,12 @@ def _run(args, keep: int, real_stdout) -> None:
 
     extractor = CrystalPropertyExtractor(args.db_path, ase_db_path=ase_db)
     extractor.extract_fragments = args.fragments
+    extractor.references = _parse_references(args.reference)
+    extractor.run_derived = not args.no_derived
+    extractor.skip_derived = frozenset(_parse_skips(args.skip_property))
+    # a folder: the properties that read other runs are computed once every
+    # run's own rows are stored (the second pass below)
+    extractor.defer_references = bool(args.scan_directory)
     extractor.kappa_lattice = args.kappa_lattice_parsed
     extractor.tau_fs = args.tau_fs_parsed
     if extractor.kappa_lattice is not None:
@@ -4592,9 +5208,10 @@ def _run(args, keep: int, real_stdout) -> None:
         from mace.database.populate_completed_jobs import scan_for_completed_calculations, populate_database
         # absolute paths, as `mace submit` records them: a path relative to the
         # shell's folder is found neither from the database's folder nor by the GUI
-        calcs = scan_for_completed_calculations(scan_root.resolve())
+        only = [Path(args.output_file).resolve()] if getattr(args, "register_output_only", False) else None
+        calcs = scan_for_completed_calculations(scan_root.resolve(), files=only)
         added = populate_database(calcs, extractor.db) if calcs else 0
-        print(f"📋 Registered {added} new calculation(s) from {scan_root}")
+        print(f"📋 Registered {added} new calculation(s) from {only[0].name if only else scan_root}")
 
     classes = {}
     reasons = {}
@@ -4638,10 +5255,15 @@ def _run(args, keep: int, real_stdout) -> None:
     n_files = len(output_files)
     summary = {"extracted": 0, "skipped": 0, "failed": 0, "by_class": {}}
     
+    # the tracked runs whose reference properties the second pass computes:
+    # every run of the folder, an unchanged one (--skip-unchanged) too
+    second_pass = []
     for i, output_file in enumerate(output_files, start=1):
         cls = classes.get(str(output_file))
         if cls:
             summary["by_class"][cls] = summary["by_class"].get(cls, 0) + 1
+        if args.skip_unchanged and cls == "unchanged" and extractor.defer_references:
+            second_pass.append((output_file, extractor._find_calc_id_for_output(output_file)))
         if (args.skip_unchanged and cls == "unchanged") or cls == db_build.SKIPPED:
             # a build files nothing for a failed run no calculation records,
             # or for the _temp copy of a run's output: their rows had no material
@@ -4697,6 +5319,8 @@ def _run(args, keep: int, real_stdout) -> None:
             if saved_count and 'transport_zt_total_max_avg' in properties:
                 zt_materials.setdefault(material or Path(output_file).stem, []).append(Path(output_file).name)
             meta = properties.get('_metadata', {})
+            if extractor.defer_references and meta.get('calc_id') and saved_count:
+                second_pass.append((output_file, meta['calc_id']))
             if meta.get('calc_id') is None and saved_count and not args.material_id:
                 untracked.setdefault(meta['material_id'], set()).add(Path(output_file).resolve())
             if building and meta.get('calc_id') and saved_count:
@@ -4721,6 +5345,16 @@ def _run(args, keep: int, real_stdout) -> None:
         if args.progress_json:
             _json_line(real_stdout, rec)
     
+    # Second pass: the derived properties that read other runs (reference
+    # energies), now that every run's own rows are stored: the same values
+    # whatever order the folder was read in, and a lookup whose answer
+    # changed (a new or better reference run) is updated
+    if second_pass:
+        print(f"\n🔗 Reference properties of {len(second_pass)} run(s) (they read the other runs)")
+        done2 = extractor.refresh_reference_properties(second_pass)
+        print(f"   {done2['runs']} run(s) computed, {done2['changed']} changed"
+              + (f", {done2['errors']} error(s) (their stored values kept)" if done2['errors'] else ""))
+
     # The untracked clean-up needs every output of the material re-extracted:
     # with --skip-unchanged the extracted set is not complete
     for material_id, extracted in ({} if args.skip_unchanged else untracked).items():

@@ -1282,29 +1282,441 @@ def format_opt_tolerance(value: float) -> str:
 
 def describe_opt_preset(level: str) -> str:
     """'TOLDEG=0.0003, TOLDEX=0.0012, TOLDEE=7, MAXCYCLE=800' for ``level``."""
-    p = OPT_CONVERGENCE_PRESETS[level]
-    return (f"TOLDEG={format_opt_tolerance(p['toldeg'])}, "
-            f"TOLDEX={format_opt_tolerance(p['toldex'])}, "
-            f"TOLDEE={p['toldee']}, MAXCYCLE={p['maxcycle']}")
+    return describe_opt_values(OPT_CONVERGENCE_PRESETS[level])
 
 
 def describe_scf_preset(level: str) -> str:
     """'TOLINTEG: 7 7 7 7 14, TOLDEE: 7' for ``level``."""
-    p = SCF_TOLERANCE_PRESETS[level]
-    return f"TOLINTEG: {p['TOLINTEG']}, TOLDEE: {p['TOLDEE']}"
+    return describe_scf_values(SCF_TOLERANCE_PRESETS[level])
+
+
+# The menu option that keeps a parent's values when they are none of the
+# presets (opt2d12's SCF tolerance and optimization convergence menus). It is
+# numbered after the presets and Custom, so their numbers stay the same.
+KEEP_PARENT_OPTION = "Keep the parent's"
+# FREQ's menu option when the parent is tighter than Very tight in some values
+# and looser in others: each value the larger of the two (freq_default_tolerances).
+FREQ_TIGHTER_OPTION = "Very tight, or the parent's where tighter"
+
+
+def describe_opt_values(values: Dict[str, Any]) -> str:
+    """describe_opt_preset's text for any OPTGEOM values (either key spelling);
+    a value that is not there is left out."""
+    parts = []
+    for key in ("toldeg", "toldex", "toldee", "maxcycle"):
+        value = values.get(key, values.get(key.upper()))
+        if value is None:
+            continue
+        if key in ("toldeg", "toldex"):
+            try:
+                value = format_opt_tolerance(float(value))
+            except (TypeError, ValueError):
+                pass
+        parts.append(f"{key.upper()}={value}")
+    return ", ".join(parts)
+
+
+def describe_scf_values(tolerances: Dict[str, Any]) -> str:
+    """describe_scf_preset's text for any TOLINTEG/TOLDEE (either key spelling,
+    TOLINTEG as a string or a list); a value that is not there is left out."""
+    tolinteg = tolerances.get("TOLINTEG", tolerances.get("tolinteg"))
+    toldee = tolerances.get("TOLDEE", tolerances.get("toldee"))
+    parts = []
+    if tolinteg is not None:
+        if isinstance(tolinteg, (list, tuple)):
+            tolinteg = " ".join(map(str, tolinteg))
+        parts.append(f"TOLINTEG: {' '.join(str(tolinteg).split())}")
+    if toldee is not None:
+        parts.append(f"TOLDEE: {toldee}")
+    return ", ".join(parts)
+
+
+def scf_preset_for(tolerances: Optional[Dict[str, Any]]) -> str:
+    """Return the SCF tolerance-menu choice that matches ``tolerances``.
+
+    "1"/"2"/"3" for a preset, "keep" when the parent's values match no preset
+    (the menu's KEEP_PARENT_OPTION is then the default), and "1" when there is
+    nothing to go by. TOLINTEG is compared token by token because the parser
+    keeps the raw line's spacing.
+    """
+    if not tolerances:
+        return "1"
+    tolinteg = tolerances.get("TOLINTEG", tolerances.get("tolinteg"))
+    toldee = tolerances.get("TOLDEE", tolerances.get("toldee"))
+    if tolinteg is None and toldee is None:
+        return "1"
+    if isinstance(tolinteg, (list, tuple)):
+        tolinteg = " ".join(map(str, tolinteg))
+    try:
+        tolinteg_key = tuple(int(float(x)) for x in str(tolinteg).split())
+        toldee_key = int(float(toldee)) if toldee is not None else None
+    except (TypeError, ValueError):
+        return "keep"
+    for choice, preset in SCF_TOLERANCE_PRESETS.items():
+        if (tolinteg_key == tuple(int(x) for x in preset["TOLINTEG"].split())
+                and toldee_key == preset["TOLDEE"]):
+            return choice
+    return "keep"
+
+
+def tighter_scf_tolerances(parent: Optional[Dict[str, Any]], floor: Dict[str, Any]) -> Dict[str, Any]:
+    """``floor`` (TOLINTEG/TOLDEE) with each value the parent sets tighter kept.
+
+    Larger is tighter for every TOLINTEG entry and for TOLDEE, so each is the
+    larger of the two; a value the parent lacks, or a TOLINTEG that is not
+    five integers, is the floor's.
+    """
+    tolinteg = [int(x) for x in str(floor["TOLINTEG"]).split()]
+    toldee = int(floor["TOLDEE"])
+    parent = parent or {}
+    p_tolinteg = parent.get("TOLINTEG", parent.get("tolinteg"))
+    p_toldee = parent.get("TOLDEE", parent.get("toldee"))
+    if isinstance(p_tolinteg, (list, tuple)):
+        p_tolinteg = " ".join(map(str, p_tolinteg))
+    try:
+        values = [int(float(x)) for x in str(p_tolinteg).split()] if p_tolinteg is not None else []
+    except (TypeError, ValueError):
+        values = []
+    if len(values) == len(tolinteg):
+        tolinteg = [max(a, b) for a, b in zip(tolinteg, values)]
+    try:
+        if p_toldee is not None:
+            toldee = max(toldee, int(float(p_toldee)))
+    except (TypeError, ValueError):
+        pass
+    return {"TOLINTEG": " ".join(map(str, tolinteg)), "TOLDEE": toldee}
 
 
 def freq_default_tolerances(parent_calc_type: Optional[str] = None,
                             parent_tolerances: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """SCF tolerances for a FREQ deck when nothing (user, plan, config) names any.
 
-    Very tight, whatever the parent used: frequencies need tighter SCF
-    tolerances than the optimization they follow. A parent that is itself a
-    FREQ calculation chose its tolerances for FREQ, so those are kept.
+    Very tight at least: frequencies need tighter SCF tolerances than the
+    optimization they follow, and a value the parent sets tighter still is the
+    parent's (each TOLINTEG entry and TOLDEE the larger of the two), so the
+    deck never loosens one. A parent that is itself a FREQ calculation chose
+    its tolerances for FREQ, so those are kept.
     """
     if parent_calc_type == "FREQ" and parent_tolerances:
         return dict(parent_tolerances)
-    return scf_tolerances(FREQ_SCF_LEVEL)
+    return tighter_scf_tolerances(parent_tolerances, scf_tolerances(FREQ_SCF_LEVEL))
+
+
+# The fewest SCF cycles a deck gets whose SCF threshold MACE tightens past the
+# parent's: FREQ (TOLDEE 11), the ELASTIC/EOS/QHA/CPHF modules (TOLDEE 8 or
+# 10) and phonopy's displaced supercells (TOLDEE 10). A metallic or semimetal
+# parent that converged at TOLDEE 7 in 100 cycles can stop at the tighter
+# threshold with "SCF ENDED - TOO MANY CYCLES" (graphene's FREQ did, at 100).
+TIGHT_SCF_MIN_MAXCYCLE = 200
+TIGHT_SCF_CALC_TYPES = ("FREQ", "ELASTIC", "EOS", "QHA", "CPHF", "PHONOPY")
+
+
+class ParentRefused(Exception):
+    """A follow-up deck refused for its parent before anything is asked or
+    written (opt2d12's PHONOPY set and ELASTIC/EOS/QHA/CPHF decks need a
+    finished OPT or SP run): ``lines`` are printed to stderr."""
+
+    def __init__(self, lines):
+        self.lines = list(lines)
+        super().__init__("\n".join(self.lines))
+
+# The SCF MAXCYCLE opt2d12 writes when the parent deck has none.
+SCF_MAXCYCLE_FALLBACK = 800
+
+
+def tight_scf_maxcycle(parent_maxcycle: Optional[Any]) -> int:
+    """SCF MAXCYCLE for a FREQ (or ELASTIC/EOS/QHA/CPHF) deck: the parent's
+    value, raised to TIGHT_SCF_MIN_MAXCYCLE when it is lower. A parent with
+    none gets SCF_MAXCYCLE_FALLBACK, as every other child deck does, so the
+    floor never lowers what opt2d12 wrote before it."""
+    try:
+        value = int(parent_maxcycle)
+    except (TypeError, ValueError):
+        return max(SCF_MAXCYCLE_FALLBACK, TIGHT_SCF_MIN_MAXCYCLE)
+    return max(value, TIGHT_SCF_MIN_MAXCYCLE)
+
+
+# A follow-up deck's SCF records set over its parent's: a workflow step's
+# "scf_modifications" (spec, plan and opt2d12's config file use the same key).
+# The values are the ones opt2d12's interactive "modify settings" questions
+# set: MAXCYCLE and FMIXING (percent), the mixing METHOD, LEVSHIFT as
+# [ISHIFT, ILOCK] (null: none), SMEAR as a width in hartree (null: none),
+# SPINLOCK as nalpha-nbeta (0: no lock), TOLDEE and SPIN (true: spin-polarized,
+# false: closed shell; see spin_state_change). A key left out keeps the
+# parent's record. An explicit MAXCYCLE is written as given, also on a FREQ
+# (or ELASTIC/EOS/QHA/CPHF) deck, whose floor (tight_scf_maxcycle) applies only
+# to the parent's value.
+SCF_MODIFICATION_KEYS = ("MAXCYCLE", "FMIXING", "METHOD", "LEVSHIFT", "SMEAR", "SPINLOCK", "TOLDEE", "SPIN")
+SCF_MIXING_METHODS = ("DIIS", "BROYDEN", "ANDERSON")
+
+
+def _whole(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
+
+def check_scf_modifications(mods: Any) -> Dict[str, Any]:
+    """``mods`` as a clean scf_modifications dict; ValueError naming what is wrong."""
+    if not isinstance(mods, dict):
+        raise ValueError("scf_modifications is an object of " + ", ".join(SCF_MODIFICATION_KEYS))
+    bad = sorted(set(mods) - set(SCF_MODIFICATION_KEYS))
+    if bad:
+        raise ValueError(f"scf_modifications: {', '.join(bad)} not known "
+                         f"(the keys are {', '.join(SCF_MODIFICATION_KEYS)})")
+    out: Dict[str, Any] = {}
+    for key, value in mods.items():
+        if key in ("MAXCYCLE", "TOLDEE"):
+            n = _whole(value)
+            if n is None or n < 1:
+                raise ValueError(f"scf_modifications.{key} is a whole number of 1 or more, not {value!r}")
+            out[key] = n
+        elif key == "FMIXING":
+            n = _whole(value)
+            if n is None or not 0 <= n <= 100:
+                raise ValueError(f"scf_modifications.FMIXING is a percentage, 0 to 100, not {value!r}")
+            out[key] = n
+        elif key == "SPINLOCK":
+            n = _whole(value)
+            if n is None:
+                raise ValueError(f"scf_modifications.SPINLOCK is a whole number (nalpha-nbeta, 0 for no lock), "
+                                 f"not {value!r}")
+            out[key] = n
+        elif key == "METHOD":
+            m = str(value).strip().upper()
+            if m not in SCF_MIXING_METHODS:
+                raise ValueError(f"scf_modifications.METHOD is one of {', '.join(SCF_MIXING_METHODS)}, not {value!r}")
+            out[key] = m
+        elif key == "LEVSHIFT":
+            if value in (None, False):
+                out[key] = None
+                continue
+            pair = [_whole(x) for x in value] if isinstance(value, (list, tuple)) else []
+            if len(pair) != 2 or pair[0] is None or pair[1] not in (0, 1):
+                raise ValueError(f"scf_modifications.LEVSHIFT is [ISHIFT, ILOCK] (ILOCK 0 or 1), or null for "
+                                 f"none, not {value!r}")
+            out[key] = pair
+        elif key == "SMEAR":
+            if value in (None, False):
+                out[key] = None
+                continue
+            try:
+                width = float(value)
+            except (TypeError, ValueError):
+                width = float("nan")
+            if isinstance(value, bool) or not width > 0:
+                raise ValueError(f"scf_modifications.SMEAR is a width in hartree above 0, or null for none, "
+                                 f"not {value!r}")
+            out[key] = width
+        elif key == "SPIN":
+            if not isinstance(value, bool):
+                raise ValueError(f"scf_modifications.SPIN is true (spin-polarized) or false (closed shell), "
+                                 f"not {value!r}")
+            out[key] = value
+    if out.get("SPIN") is False and out.get("SPINLOCK"):
+        raise ValueError(f"scf_modifications: SPINLOCK {out['SPINLOCK']} needs a spin-polarized deck, and SPIN "
+                         f"is false (CRYSTAL stops on SPINLOCK in a closed-shell run)")
+    return out
+
+
+def describe_scf_modifications(mods: Dict[str, Any]) -> str:
+    """'MAXCYCLE 300, FMIXING 40, no LEVSHIFT' for a checked scf_modifications."""
+    words = []
+    for key in SCF_MODIFICATION_KEYS:
+        if key not in mods:
+            continue
+        value = mods[key]
+        if key == "LEVSHIFT":
+            words.append("no LEVSHIFT" if value is None else f"LEVSHIFT {value[0]} {value[1]}")
+        elif key == "SMEAR":
+            words.append("no SMEAR" if value is None else f"SMEAR {value} Ha")
+        elif key == "METHOD":
+            words.append(str(value))
+        elif key == "SPINLOCK":
+            words.append("no SPINLOCK" if not value else f"SPINLOCK {value}")
+        elif key == "SPIN":
+            words.append("spin-polarized (SPIN)" if value else "closed shell (no SPIN)")
+        else:
+            words.append(f"{key} {value}")
+    return ", ".join(words)
+
+
+def apply_scf_modifications(options: Dict[str, Any], mods: Dict[str, Any]) -> None:
+    """Set a checked scf_modifications on deck settings ``options`` (the keys
+    the deck writer reads, as opt2d12's interactive questions set them)."""
+    scf = dict(options.get("scf_settings") or {})
+    if "MAXCYCLE" in mods:
+        scf["maxcycle"] = options["scf_maxcycle"] = mods["MAXCYCLE"]
+        options["scf_maxcycle_explicit"] = True
+    if "FMIXING" in mods:
+        scf["fmixing"] = options["fmixing"] = mods["FMIXING"]
+    if "METHOD" in mods:
+        scf["method"] = options["scf_method"] = mods["METHOD"]
+    if "LEVSHIFT" in mods:
+        scf["levshift"] = mods["LEVSHIFT"]
+    if "SMEAR" in mods:
+        width = mods["SMEAR"]
+        options["use_smearing"] = width is not None
+        options["smearing"] = width
+        options["smearing_width"] = width if width is not None else 0.0
+    if "SPINLOCK" in mods:
+        options["spinlock"] = mods["SPINLOCK"]
+        options["spinlock_explicit"] = False
+    if "TOLDEE" in mods:
+        options["tolerances"] = {**(options.get("tolerances") or {}), "TOLDEE": mods["TOLDEE"]}
+    if "SPIN" in mods:
+        set_spin_polarized(options, mods["SPIN"])
+    options["scf_settings"] = scf
+
+
+def is_spin_polarized(settings: Dict[str, Any]) -> bool:
+    """Whether deck settings are an open-shell run: DFT SPIN, UHF, or an
+    HF-3c method written UHF (the writer's spin_polarized flag)."""
+    return bool(settings.get("spin_polarized", settings.get("is_spin_polarized"))) \
+        or str(settings.get("functional") or "").upper() == "UHF"
+
+
+def set_spin_polarized(options: Dict[str, Any], spin: bool) -> None:
+    """Turn spin polarization on or off in deck settings ``options``: DFT
+    SPIN (and UHF in an HF-3c deck) through the spin_polarized flag, and a
+    Hartree-Fock deck's UHF/RHF. A closed-shell deck carries no SPINLOCK
+    (CRYSTAL stops on one); a spin-polarized one gets what MACE's own
+    spin-polarized decks get: SPIN alone, a SPINLOCK only where it is set
+    (a charged cell's, or the step's own)."""
+    options["spin_polarized"] = options["is_spin_polarized"] = bool(spin)
+    functional = str(options.get("functional") or "").upper()
+    if functional in ("UHF", "RHF"):
+        options["functional"] = "UHF" if spin else "RHF"
+        if "hf_method" in options:
+            options["hf_method"] = options["functional"]
+    if not spin:
+        options["spinlock"] = 0
+        options["spinlock_explicit"] = False
+
+
+# Why a step that turns spin polarization on or off starts from a fresh SCF
+# guess. GUESSP reads the parent's density matrix from fort.20 (manual p. 114:
+# "same symmetry, and same number of atoms, basis functions and shells"; it
+# says nothing of the spin). CRYSTAL23's reader of that file stops on a
+# restricted matrix for an unrestricted run: "ERROR **** READFG **** RESTART
+# NOT POSSIBLE - OPEN-CLOSED SHELL INCOMPATIBILITY", measured on HPCC for a
+# GUESSPNOSO deck from a closed-shell parent (CRYSTALOptToD12.READFG_SHELLS).
+# And a closed-shell matrix has no spin density to start an open-shell SCF
+# from. So the parent's matrix is never the guess across a spin change.
+SPIN_CHANGE_GUESS = ("CRYSTAL's restart reader stops on a density matrix of the other spin "
+                     "treatment (\"RESTART NOT POSSIBLE - OPEN-CLOSED SHELL INCOMPATIBILITY\")")
+
+
+def spin_state_change(parent: Dict[str, Any], options: Dict[str, Any]) -> Optional[str]:
+    """"on" when deck settings ``options`` are spin-polarized and the parent's
+    settings were closed shell, "off" for the reverse, None when the spin
+    treatment is the parent's."""
+    before, after = is_spin_polarized(parent), is_spin_polarized(options)
+    if before == after:
+        return None
+    return "on" if after else "off"
+
+
+def spin_change_title(change: str) -> str:
+    """The deck title's note for a step that turns spin polarization on or off."""
+    return (" - SPIN on (closed-shell parent), fresh SCF guess" if change == "on"
+            else " - SPIN off (spin-polarized parent), fresh SCF guess")
+
+
+# A workflow step's k-point mesh over its parent's ("kpoint_modifications":
+# {"new_k_points": ...}), and one mesh for every file of a --config-file
+# ("k_points_for_all_files"). The SHRINK record (manual p. 124): two numbers
+# are always CRYSTAL's one-line "IS ISP" (8 16; ISP = IS for an insulator),
+# three the per-axis "IS1 IS2 IS3" (written as IS = 0 with the factors along
+# each reciprocal vector; a slab's third factor is 1, a polymer's second and
+# third), one number n the mesh n n n. "auto" is MACE's own density rule
+# from each structure's cell (generate_k_points, the rule mace convert gives
+# a CIF). A deck left without either keeps its parent's mesh. A changed mesh
+# keeps GUESSP: the restart matrix is the direct-lattice P0, and the manual
+# lets "computational conditions" change across it (p. 114).
+KPOINT_MODIFICATION_KEYS = ("new_k_points",)
+AUTO_K_POINTS = "auto"
+K_MESH_FORMS = ('"IS ISP" (e.g. "8 16"), "IS1 IS2 IS3" per axis (e.g. "8 8 4"; a slab\'s third '
+                'factor is 1), one number n (n n n) or "auto"')
+
+
+def k_mesh_text(value: Any) -> Optional[str]:
+    """A mesh as the deck writer reads it ("IS ISP", "IS1 IS2 IS3"), "auto",
+    or None if it is neither 1 to 3 whole numbers above 0 nor "auto". One
+    number n means n n n."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().lower() == AUTO_K_POINTS:
+        return AUTO_K_POINTS
+    parts = [value] if isinstance(value, int) else (
+        list(value) if isinstance(value, (list, tuple)) else str(value).split())
+    try:
+        numbers = [int(str(p)) for p in parts]
+    except ValueError:
+        return None
+    if not 1 <= len(numbers) <= 3 or any(n <= 0 for n in numbers):
+        return None
+    if len(numbers) == 1:
+        numbers *= 3
+    return " ".join(str(n) for n in numbers)
+
+
+def check_kpoint_modifications(mods: Any) -> Dict[str, Any]:
+    """A step's kpoint_modifications, checked and normalized:
+    {"new_k_points": "IS ISP" | "IS1 IS2 IS3" | "auto"} (ValueError if not)."""
+    if not isinstance(mods, dict) or set(mods) != set(KPOINT_MODIFICATION_KEYS):
+        raise ValueError(f"kpoint_modifications: {{\"new_k_points\": <{K_MESH_FORMS}>}} only")
+    mesh = k_mesh_text(mods["new_k_points"])
+    if mesh is None:
+        raise ValueError(f"kpoint_modifications.new_k_points is {K_MESH_FORMS}, not {mods['new_k_points']!r}")
+    return {"new_k_points": mesh}
+
+
+def describe_k_mesh(mesh: str) -> str:
+    """A checked mesh in words, as the deck gets it."""
+    if mesh == AUTO_K_POINTS:
+        return "MACE's automatic mesh from each structure's cell"
+    return f"SHRINK {mesh}" if len(mesh.split()) == 2 else f"SHRINK factors {mesh} (per axis)"
+
+
+def symmetric_k_points(k_points: Tuple[int, int, int], dimensionality: str, group: Any) -> Tuple[int, int, int]:
+    """A mesh someone set (not the parent's own), with the factors of the
+    directions the symmetry makes equivalent made equal (the larger one).
+    CRYSTAL stops with "SHRINK BREAKS SYMMETRY" otherwise. A slab follows
+    slab_k_points (its layer-group rule only: the factors set are not raised
+    to a density from the cell); in 3D a cubic group ties all three factors,
+    a tetragonal, trigonal or hexagonal P group the first two, and a centered
+    lattice (the factors are along its primitive vectors) gets one factor for
+    all three.
+    A primitive triclinic, monoclinic or orthorhombic cell keeps the mesh, as
+    does a polymer (one periodic direction) and anything without a group."""
+    ka, kb, kc = k_points
+    if dimensionality == "SLAB":
+        return slab_k_points(k_points, group)
+    if dimensionality != "CRYSTAL" or isinstance(group, bool):
+        return k_points
+    try:
+        sg = int(group)
+    except (TypeError, ValueError):
+        return k_points
+    if not 3 <= sg <= 230:
+        return k_points
+    lattice = str(SPACEGROUP_SYMBOLS.get(sg, "P"))[:1].upper()
+    if sg >= 195 or lattice in "ABCFIR":
+        k = max(ka, kb, kc)
+        return k, k, k
+    if sg >= 75:
+        k = max(ka, kb)
+        return k, k, kc
+    return k_points
+
+
+# DFT integration grids a workflow step's "grid_modifications" may name ({"new_grid": <grid>})
+DFT_GRID_NAMES = tuple(DFT_GRIDS.values())
 
 
 # Default SCF tolerances
@@ -1497,13 +1909,17 @@ DFT_GRID_OPTIONS = ["XLGRID", "LGRID", "GRID", "SMALLGRID"]
 # Configuration Functions (from d12_config_common.py)
 # ============================================================
 
-def configure_tolerances(shared_mode: bool = False, calculation_type: str = None) -> Dict[str, Any]:
+def configure_tolerances(shared_mode: bool = False, calculation_type: str = None,
+                         current: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Configure integral and SCF tolerances.
     
     Args:
         shared_mode: If True, configuration will be used for multiple files
         calculation_type: Type of calculation (SP, OPT, FREQ) to provide appropriate recommendations
+        current: The parent's TOLINTEG/TOLDEE (opt2d12's Custom choice): its
+            level is the menu's default (Custom when it is none of the
+            presets), and its values are the defaults of the custom entries
         
     Returns:
         Dictionary with tolerance settings
@@ -1511,6 +1927,22 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
     # yes_no_prompt is already defined above
     
     tolerances = {}
+    default_tolinteg, default_toldee = "7 7 7 7 14", 7
+    current_level = None
+    if current:
+        current_level = scf_preset_for(current)
+        tolinteg = current.get("TOLINTEG", current.get("tolinteg"))
+        if isinstance(tolinteg, (list, tuple)):
+            tolinteg = " ".join(map(str, tolinteg))
+        if tolinteg:
+            default_tolinteg = " ".join(str(tolinteg).split())
+        toldee = current.get("TOLDEE", current.get("toldee"))
+        try:
+            default_toldee = int(float(toldee)) if toldee is not None else default_toldee
+        except (TypeError, ValueError):
+            pass
+        if current_level == "keep":
+            current_level = "4"
     
     print("\n=== SCF CONVERGENCE SETTINGS ===")
     
@@ -1522,9 +1954,10 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
         print(f"3: Very tight - {describe_scf_preset('3')} (default for FREQ)")
         print("4: Custom")
         
-        choice = input(f"Select tolerance level (1-4) [{FREQ_SCF_LEVEL}]: ").strip()
+        level = current_level or FREQ_SCF_LEVEL
+        choice = input(f"Select tolerance level (1-4) [{level}]: ").strip()
         if not choice:
-            choice = FREQ_SCF_LEVEL  # Default to very tight for FREQ
+            choice = level  # Default to very tight for FREQ
     else:
         # SP/OPT calculations
         print("\nSelect SCF convergence level:")
@@ -1533,9 +1966,10 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
         print(f"3: Very tight - {describe_scf_preset('3')} (ultra-high precision)")
         print("4: Custom")
         
-        choice = input("Select tolerance level (1-4) [1]: ").strip()
+        level = current_level or "1"
+        choice = input(f"Select tolerance level (1-4) [{level}]: ").strip()
         if not choice:
-            choice = "1"  # Default to standard for SP/OPT
+            choice = level  # Default to standard for SP/OPT
     
     # Process the choice
     if choice in SCF_TOLERANCE_PRESETS:
@@ -1544,32 +1978,30 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
         # Custom tolerances
         print("\nTOLINTEG controls integral accuracy (5 integers):")
         print("  - Higher values = more accurate but slower")
-        print("  - Standard: 7 7 7 7 14")
-        print("  - Tight: 8 8 8 9 24")
-        print("  - Very tight: 9 9 9 11 38")
+        for preset in SCF_TOLERANCE_PRESETS.values():
+            print(f"  - {preset['name']}: {preset['TOLINTEG']}")
         print("  - Ultra tight: 10 10 10 12 40")
         
-        tolinteg_input = input("Enter TOLINTEG values (5 integers) [7 7 7 7 14]: ").strip()
+        tolinteg_input = input(f"Enter TOLINTEG values (5 integers) [{default_tolinteg}]: ").strip()
         if tolinteg_input:
             tolerances["TOLINTEG"] = tolinteg_input
         else:
-            tolerances["TOLINTEG"] = "7 7 7 7 14"
+            tolerances["TOLINTEG"] = default_tolinteg
         
         print("\nTOLDEE controls SCF convergence (energy threshold):")
         print("  - Value N means convergence at 10^-N Hartree")
-        print("  - Default: 7 (10^-7 Ha)")
-        print("  - Tight: 9 (10^-9 Ha)")
-        print("  - Very tight: 11 (10^-11 Ha)")
+        for preset in SCF_TOLERANCE_PRESETS.values():
+            print(f"  - {preset['name']}: {preset['TOLDEE']} (10^-{preset['TOLDEE']} Ha)")
         
-        toldee_input = input("Enter TOLDEE value (integer) [7]: ").strip()
+        toldee_input = input(f"Enter TOLDEE value (integer) [{default_toldee}]: ").strip()
         if toldee_input:
             try:
                 tolerances["TOLDEE"] = int(toldee_input)
             except ValueError:
-                print("Invalid input, using default value of 7")
-                tolerances["TOLDEE"] = 7
+                print(f"Invalid input, using default value of {default_toldee}")
+                tolerances["TOLDEE"] = default_toldee
         else:
-            tolerances["TOLDEE"] = 7
+            tolerances["TOLDEE"] = default_toldee
     else:
         # Invalid choice, use defaults
         print("Invalid choice, using default tolerances.")
@@ -1692,6 +2124,22 @@ def configure_scf_settings(shared_mode: bool = False) -> Dict[str, Any]:
     return scf_settings
 
 
+class _BasisChoice(str):
+    """A basis directory (still the path to everything that uses it) that a
+    numbered menu prints as ``<name> - <path>``: the name first, so a long
+    path wraps or scrolls behind it instead of hiding it."""
+
+    def __new__(cls, path, label, detail=None):
+        obj = super().__new__(cls, path)
+        obj.label, obj.detail = label, detail
+        return obj
+
+    def __format__(self, spec):
+        if spec:
+            return str.__format__(self, spec)
+        return f"{self.label} - {self.detail if self.detail is not None else str(self)}"
+
+
 def select_basis_set(elements: List[int], method: str = "DFT", 
                     functional: Optional[str] = None,
                     shared_mode: bool = False) -> Dict[str, Any]:
@@ -1755,14 +2203,14 @@ def select_basis_set(elements: List[int], method: str = "DFT",
             sys.path.insert(0, str(Path(__file__).parent.parent))
             from mace_config import DEFAULT_DZ_PATH, DEFAULT_TZ_PATH
             external_options = {
-                "1": DEFAULT_DZ_PATH,  # DZVP-REV2
-                "2": DEFAULT_TZ_PATH,  # TZVP-REV2
+                "1": _BasisChoice(DEFAULT_DZ_PATH, "DZVP-REV2"),
+                "2": _BasisChoice(DEFAULT_TZ_PATH, "TZVP-REV2"),
             }
         except ImportError:
             # Fallback to local paths
             external_options = {
-                "1": "./basis_sets/full.basis.doublezeta/",  # DZVP-REV2
-                "2": "./basis_sets/full.basis.triplezeta/",  # TZVP-REV2
+                "1": _BasisChoice("./basis_sets/full.basis.doublezeta/", "DZVP-REV2"),
+                "2": _BasisChoice("./basis_sets/full.basis.triplezeta/", "TZVP-REV2"),
             }
         
         print("\nExternal basis set:")
@@ -1776,9 +2224,10 @@ def select_basis_set(elements: List[int], method: str = "DFT",
         print("     La uses a 46-electron ECP core (basis_sets/PROVENANCE.md)")
 
         # Add custom option
-        external_options["3"] = "CUSTOM"
+        external_options["3"] = _BasisChoice("CUSTOM", "Custom path", "type the directory next")
         # The 2022 update lives beside full.basis.triplezeta (basis_library.py)
-        external_options["4"] = external_options["2"].rstrip("/") + ".rev2022/"
+        external_options["4"] = _BasisChoice(external_options["2"].rstrip("/") + ".rev2022/",
+                                             "TZVP-REV2 (2022 update)")
 
         external_choice = get_user_input(
             "Select external basis set",
@@ -1817,7 +2266,7 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                     retry = input("Try again? [Y/n]: ").strip().lower()
                     if retry == 'n':
                         print("Falling back to TZVP-REV2")
-                        basis_config["basis_set"] = external_options["2"]
+                        basis_config["basis_set"] = str(external_options["2"])
                         break
                     continue
 
@@ -1840,8 +2289,8 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                 print(f"Using custom basis set: {basis_config['basis_set']}")
                 break
         else:
-            basis_config["basis_set"] = external_options[external_choice]
-            basis_config["basis_set_path"] = external_options[external_choice]  # Also set basis_set_path for write_d12_file
+            basis_config["basis_set"] = str(external_options[external_choice])
+            basis_config["basis_set_path"] = str(external_options[external_choice])  # Also set basis_set_path for write_d12_file
         
     else:
         # Internal basis set selection
@@ -2883,3 +3332,13 @@ def _external_basis_file_exists(basis_dir, atomic_number):
             read_record(basis_dir, n)
             return True
     return False
+
+
+def a_calc(word: Any) -> str:
+    """A calculation type (or module keyword) with its article, as it is read
+    aloud: an ELASTIC, an EOS, an OPT, an ORBITALS, an SP (letters: "es-pee",
+    SP2 too); a QHA, a CPHF, a FREQ, a BAND, a SOC. For messages such as
+    "not read for an ELASTIC step"."""
+    w = str(word)
+    an = w[:1].upper() in "AEIOU" or w.upper().rstrip("0123456789") == "SP"
+    return f"{'an' if an else 'a'} {w}"

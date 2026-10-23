@@ -1,4 +1,4 @@
-"""Write the displaced-supercell decks, their .ext files and the manifest."""
+"""The displaced supercells' .ext files, phonopy_disp.yaml and the manifest."""
 
 from __future__ import annotations
 
@@ -9,11 +9,8 @@ import os
 from pathlib import Path
 from typing import Dict, Iterator, List, Sequence
 
-from . import parent as P
-
 MANIFEST = "mace_phonopy.json"
 DISP_YAML = "phonopy_disp.yaml"
-TEMPLATE = "TEMPLATE"
 CRY_SYM = "CRY_SYM"
 
 
@@ -37,26 +34,23 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def job_names(stem: str, tag: str, n: int) -> List[str]:
+def job_names(stem: str, n: int) -> List[str]:
+    """<stem>_disp-NNN for each displaced supercell (stem: the name opt2d12
+    gives the set, e.g. mat_opt_ph222_PBE0_optimized)."""
     width = max(3, len(str(n)))
-    return [f"{stem}_ph{tag}_disp-{i:0{width}d}" for i in range(1, n + 1)]
+    return [f"{stem}_disp-{i:0{width}d}" for i in range(1, n + 1)]
 
 
-def write_set(outdir: Path, stem: str, tag: str, deck: P.ParentDeck, template: P.Template,
-              phonon, conv_super: Sequence[int], cry_sym: bool = False) -> List[str]:
-    """One <job>.ext + <job>.d12 per displaced supercell; returns the job names.
-    ``cry_sym`` writes each cell's symmetry operators into its .ext, as phonopy's
-    writer does when a CRY_SYM file exists."""
+def write_ext_files(outdir: Path, names: Sequence[str], phonon, conv_super: Sequence[int],
+                    cry_sym: bool = False) -> None:
+    """One <job>.ext per displaced supercell, by phonopy's own CRYSTAL writer
+    (the job script stages it as fort.34; the deck itself is opt2d12's).
+    ``cry_sym`` writes each cell's symmetry operators into its .ext, as
+    phonopy's writer does when a CRY_SYM file exists."""
     from phonopy.interface.crystal import get_crystal_structure
 
-    cells = phonon.supercells_with_displacements
-    names = job_names(stem, tag, len(cells))
-    width = max(3, len(str(len(cells))))
-    for i, (name, cell) in enumerate(zip(names, cells), start=1):
+    for name, cell in zip(names, phonon.supercells_with_displacements):
         (outdir / f"{name}.ext").write_text(get_crystal_structure(cell, list(conv_super), cry_sym))
-        title = f"{deck.title.strip()} phonopy displacement {i:0{width}d}/{len(cells):0{width}d}"
-        (outdir / f"{name}.d12").write_text(P.deck_text(title, deck, template))
-    return names
 
 
 def write_manifest(outdir: Path, data: Dict) -> Path:
