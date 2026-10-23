@@ -436,11 +436,12 @@ def test_classic_clean_button_opens_panel(fresh):
     U.keys(drv, Keys.ESCAPE)
 
 
-def test_clean_on_metal_shows_message(fresh):
+def test_clean_with_no_bonded_pair_shows_message(fresh):
+    """A lone atom has no bond to hold (copper has its metal bonds since 1.1.6: tests/gui/test_bonds_e2e.py)."""
     drv = fresh[0]
     drv.execute_async_script("""const done = arguments[0];
-        window.MACE.api('edit/from_structure', {body: {name: 'Cu', cell: [[3.61,0,0],[0,3.61,0],[0,0,3.61]], numbers: [29,29,29,29],
-          frac: [[0,0,0],[0,.5,.5],[.5,0,.5],[.5,.5,0]]}}).then((r) => window.__mace.openUntitled(r, 'Cu')).then(() => done(1))""")
+        window.MACE.api('edit/from_structure', {body: {name: 'Ar', cell: [[10,0,0],[0,10,0],[0,0,10]], numbers: [18],
+          frac: [[0,0,0]]}}).then((r) => window.__mace.openUntitled(r, 'Ar')).then(() => done(1))""")
     H.wait(drv, "return window.__mace.viewport.displayed() > 0", 10)
     drv.execute_script("window.__mace.run('build.clean')")
     dialog_open(drv, "clean")
@@ -448,13 +449,14 @@ def test_clean_on_metal_shows_message(fresh):
     f = frame(drv)
     assert f["goDisabled"] and f["error"].startswith("Nothing to clean: no bonded pairs"), f
     assert drv.execute_script("return window.__mace.viewport.models().ghost") == 0
-    U.shot(drv, "clean_on_metal")
+    U.shot(drv, "clean_no_bonds")
     U.keys(drv, Keys.ESCAPE)
 
 
 def test_supercell_dialog_on_a_slab_repeats_a_and_b(fresh):
-    """A SLAB output: n3 is 1 and fixed, the 2×2 build is made (a held view of a
-    slab), and a matrix that touches c says why it cannot be built."""
+    """A SLAB output: n3 defaults to 1 (since 1.1.6 it can be raised: the slab repeats at the Vacuum
+    spacing), the 2×2 build is made (a held view of a slab), and a matrix that mixes c with a or b says
+    why it cannot be built."""
     drv = fresh[0]
     U.open_doc(drv, "outputs/graphene_slab_sp.out")
     n0 = U.doc(drv)["n"]
@@ -462,7 +464,7 @@ def test_supercell_dialog_on_a_slab_repeats_a_and_b(fresh):
     drv.execute_script("window.__mace.run('build.supercell')")
     dialog_open(drv, "supercell")
     vals = drv.execute_script("return [...document.querySelectorAll('.builder-dialog [data-n]')].map((i) => [i.value, i.disabled])")
-    assert vals == [["2", False], ["2", False], ["1", True]], vals
+    assert vals == [["2", False], ["2", False], ["1", False]], vals
     H.wait(drv, f"const f = window.__mace.builderFrame(); return f && f.readout.includes('{4 * n0} atoms')", 10)
     assert frame(drv)["name"].endswith("_2x2x1")
     drv.execute_script("document.querySelector('.builder-dialog [data-tab=matrix]').click()")

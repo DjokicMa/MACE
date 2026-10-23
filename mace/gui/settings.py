@@ -55,7 +55,15 @@ _RANGES = {"depthCue": (0.0, 1.0), "ambient": (0.0, 1.0), "shininess": (0.0, 1.0
            "lightStrength": (0.3, 1.6), "outlineWidth": (0.02, 0.3), "atomScale": (0.05, 1.5), "bondRadius": (0.01, 1.0),
            "files.liveMinutes": (1, 1440), "files.historyKeep": (1, 1000), "files.historyDays": (1, 3650),
            "files.historyMaxMB": (10, 100000), "files.historyOutputsMaxMB": (10, 100000),
-           "analysis.imagNoiseCm": (0, 200), "plots.lineWidth": (0.5, 6), "plots.dosSmooth": (0, 1), "plots.exportScale": (1, 8)}
+           "analysis.imagNoiseCm": (0, 200), "viewport.vacuumGap": (0, 1000), "plots.lineWidth": (0.5, 6), "plots.dosSmooth": (0, 1), "plots.exportScale": (1, 8),
+           # 1.1.6: Settings › Viewport › Custom angle (the Rotate tool's snap step), degrees
+           "viewport.snapStep": (0.1, 180),
+           # 1.1.6: the coordination polyhedra's face opacity
+           "polyOpacity": (0.1, 1.0),
+           # 1.1.6: the bond rule (static/js/geom/core.js bondRule; Build › Calculate Bonds…): tolerance and minimum, Å
+           "bondTolerance": (0.8, 1.6), "bondMin": (0.0, 3.0),
+           # 1.1.6: the opacity of Analysis › Porosity's pore surfaces
+           "pores.opacity": (0.05, 1.0)}
 # the plot presets and families (mace/plotting/presets.py; plotpresets.js)
 PLOT_PRESETS = ("default", "publication", "vesta", "presentation", "grayscale", "colorblind")
 PLOT_FAMILIES = ("band", "spectra", "maps", "scf")
@@ -72,6 +80,8 @@ _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": (
             "plots.per": ("cell", "atom", "fu"),
             "plots.segments": ("continuous", "separate"),
             "plots.surface": ("theme", "light", "dark"),
+            # 1.1.6: a plot's background (plots.backgroundColor holds the custom color)
+            "plots.background": ("theme", "white", "black", "custom"),
             # Plot style (1.1.6): a preset for every plot family ("Same for all"), and per family
             # "same" (follow it) or a preset of its own (mace/plotting/presets.py ORDER)
             "plots.style": PLOT_PRESETS,
@@ -83,8 +93,45 @@ _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": (
             "plots.spinColors": ("auto", "mace", "blue-red", "black-vermilion", "custom"),
             # a closed-shell run's bands (presets.py BAND_STYLES)
             "plots.bandStyle": ("auto", "single", "overlay", "ink"),
-            "energyUnit": ("eV", "meV", "Ha", "kJ/mol", "kcal/mol")}
+            "energyUnit": ("eV", "meV", "Ha", "kJ/mol", "kcal/mol"),
+            # 1.1.6: a slab's, polymer's or molecule's vacuum (static/js/viewport/vacuum.js): bounding box, open,
+            # file-defined ("cell"), CRYSTAL's 500 Å, custom ("gap")
+            "viewport.vacuumMode": ("bbox", "open", "cell", "crystal", "gap"),
+            # 1.1.6: a polyhedron's center atom (Inspector › Rendering › Polyhedra)
+            "polyCenterAtom": ("small", "hidden", "full")}
 _RANGE_KEYS = ("displayLo", "displayHi")
+# the coordination polyhedra's center elements (settings.js POLY_CENTERS)
+POLY_CENTERS = re.compile(r"auto|([A-Z][a-z]?(,[A-Z][a-z]?)*)?")
+# 1.1.6: Calculate Bonds…' pair rules (geom/core.js pairRules): {"O-Si": {min, max} | {never: true}}, symbols sorted
+BOND_PAIR = re.compile(r"[A-Z][a-z]?-[A-Z][a-z]?")
+BOND_PAIRS_MAX = 200
+BOND_PAIR_MAX_A = 10.0
+
+
+def _bond_pairs_problem(value: Any) -> Optional[str]:
+    why = ('must be {"El-El": {"min": Å, "max": Å} or {"never": true}} (at most %d pairs, lengths 0 to %g Å)'
+           % (BOND_PAIRS_MAX, BOND_PAIR_MAX_A))
+    if not isinstance(value, dict) or len(value) > BOND_PAIRS_MAX:
+        return why
+    for k, r in value.items():
+        if not isinstance(k, str) or not BOND_PAIR.fullmatch(k) or not isinstance(r, dict) or not r \
+                or set(r) - {"min", "max", "never"}:
+            return why
+        if "never" in r and not isinstance(r["never"], bool):
+            return why
+        for f in ("min", "max"):
+            x = r.get(f)
+            if x is not None and (isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
+                                  or not 0 <= x <= BOND_PAIR_MAX_A):
+                return why
+        if isinstance(r.get("min"), (int, float)) and isinstance(r.get("max"), (int, float)) and r["max"] <= r["min"]:
+            return why
+    return None
+
+
+# 1.1.6: the Rotate tool's pivot (settings.js ROTATE_PIVOT): Settings › Viewport offers the first four; a
+# document keeps a picked atom as "atom:N" (1-based), as mace transform --about takes it
+ROTATE_PIVOT = re.compile(r"centroid|com|cell|origin|atom:[1-9][0-9]{0,6}")
 RANGE_LIMITS = (-5.0, 10.0)
 RANGE_MIN_SPAN = 0.05
 # plan E keys with a fixed set of values
@@ -93,11 +140,23 @@ ENUMS = {
     "volume.quality": ("low", "medium", "high"),
     "volume.mepColors": ("chemistry", "physics"),
     "viewport.rotation": ("free", "axes"),
-    "viewport.angleSnap": ("off", "15", "30", "45", "90"),
+    "viewport.angleSnap": ("off", "15", "30", "45", "90", "custom"),
     "viewport.zoomToward": ("center", "pointer"),
+    "viewport.printPatterns": ("off", "auto", "all"),
     "spectra.lineShape": ("lorentzian", "gaussian"),
     "export.units": ("in", "cm"),
     "export.vectorShading": ("flat", "shaded"),
+    # 1.1.6: a FREQ mode drawn at its zero-point classical amplitude, or its largest atom at 0.5 Å
+    "freq.amplitudeScale": ("physical", "normalized"),
+    # 1.1.6: the Inspector's detail per view kind as last picked, or every view in Basic or in Advanced
+    "inspector.detail": ("remember", "basic", "advanced"),
+    # 1.1.6: Analysis › Porosity's pore surfaces: filled, their triangle edges, filled with edges, or their
+    # vertices as points; smooth or flat shading; far and faint near walls, far walls only, or both sides
+    "pores.style": ("solid", "wireframe", "edges", "points"),
+    "pores.shading": ("smooth", "flat"),
+    "pores.sides": ("auto", "single", "double"),
+    # 1.1.6: every 3D surface's mesh quality (mace/analysis/mesh_quality.py PRESETS)
+    "mesh.quality": ("draft", "standard", "high", "publication"),
 }
 
 
@@ -162,11 +221,22 @@ def check(key: Any, value: Any) -> Optional[str]:
         return None
     if key in _CHOICES:
         return None if not isinstance(value, bool) and value in _CHOICES[key] else "must be one of " + ", ".join(map(str, _CHOICES[key]))
-    if key == "plots.dosTotal":
+    if key in ("plots.dosTotal", "invertWheelZoom", "polyEdges", "pores.accessible", "pores.inaccessible",
+               "pores.colorPockets", "pores.dropNearWhileDragging"):
         return None if isinstance(value, bool) else "must be true or false"
-    if key in ("outlineColor", "plots.spinUp", "plots.spinDown", "plots.bandColor"):
+    if key in ("outlineColor", "plots.spinUp", "plots.spinDown", "plots.bandColor", "plots.backgroundColor"):
         return None if isinstance(value, str) and (value == "" or re.fullmatch(r"#[0-9a-fA-F]{6}", value)) else \
             'must be "" or a color like #1a2b3c'
+    if key == "bondPairs":
+        return _bond_pairs_problem(value)
+    if key == "bondMetalMetal":
+        return None if isinstance(value, bool) else "must be true or false"
+    if key == "polyCenters":
+        return None if isinstance(value, str) and POLY_CENTERS.fullmatch(value) else \
+            'must be "auto", "" (none) or element symbols separated by commas, like "Ti,Si"'
+    if key == "viewport.rotatePivot":
+        return None if isinstance(value, str) and ROTATE_PIVOT.fullmatch(value) else \
+            'must be "centroid", "com", "cell", "origin" or "atom:N" (a 1-based atom number)'
     if key in _RANGES:
         lo, hi = _RANGES[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not lo <= value <= hi:
@@ -178,6 +248,9 @@ def check(key: Any, value: Any) -> Optional[str]:
             else "must be 0 or null (never) or one of 1, 4, 12, 24, 72 hours"
     if key == "session.maxDays":
         return _int_in(value, 1, 30, " days")
+    # 1.1.6: Analyze Structures… (a Structure Analysis tool on many files): how many run at once
+    if key == "analysis.batchJobs":
+        return _int_in(value, 1, 4)
     if key == "server.idleStopHours":
         return None if value is None else _int_in(value, 0, 72, " hours (0 = never)")
     if key == "cluster.pollSeconds":

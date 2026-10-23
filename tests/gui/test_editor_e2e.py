@@ -519,8 +519,11 @@ def test_disabled_reasons_slab_trajectory_large(fresh):
     drv, base, root = fresh[0], fresh[1], fresh[2]
     reason = """return window.__mace.menuReason(arguments[0])"""
     open_doc(drv, "outputs/graphene_slab_sp.out")
-    assert drv.execute_script("return window.__mace.ctx().docEditable") is False
-    assert drv.execute_script(reason, "build.symModeSym") == "Editing needs a 3D periodic cell (this is a slab)"
+    # 1.1.6: a slab edits (in P1); Sym mode needs a 3D crystal
+    assert drv.execute_script("return window.__mace.ctx().docEditable") is True
+    assert drv.execute_script(reason, "build.symModeSym") == \
+        "Symmetry-aware editing needs a 3D crystal; slabs, polymers and molecules edit in P1"
+    assert drv.execute_script(reason, "build.symModeP1") == ""
     drv.execute_script("window.__mace.closeAll()")
     drv.execute_async_script("const d = arguments[1]; window.__mace.open(arguments[0]).then(() => d())",
                              "outputs/Ag2Br3_opt_unfinished.out")

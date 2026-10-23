@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import Callable, Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import quote
 
+from mace.utils import plot_labels as L
+
 KINDS = ("band", "dos", "bandos", "ir", "raman", "opt", "scf", "structure")
 LABELS = {"band": "Band structure", "dos": "Density of states", "bandos": "Band structure + DOS",
           "ir": "IR spectrum", "raman": "Raman spectrum", "opt": "Optimization energy",
@@ -46,7 +48,7 @@ EWINDOW = (-6.0, 6.0)      # the synchronized energy window, relative to the Fer
 REFERENCES = ("auto", "fermi", "vacuum")    # mace plotting --energy-reference
 MAX_POINTS = 2000          # per series in a pane: a pane is small
 MAX_COLS = 8
-HARTREE_EV = 27.211386245988
+from mace.constants import HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 FIGURE_FORMATS = ("svg", "png", "pdf")
 CAPTION_COLUMNS = ("n", "material_id", "formula", "band_gap_eV", "energy_eV", "file")
 _GAP_NAMES = ("band_gap_ev", "band_gap", "electronic_band_gap", "gap_ev")
@@ -104,14 +106,24 @@ def _is_opt(path: Path) -> bool:
     return _is_crystal_out(path) and b"OPTGEOM" in _head(path)
 
 
+def _lone_f25(path: Path, want: str) -> bool:
+    """A fort.25 of BAND (``band``) or DOSS (``dos``) blocks with no BAND.DAT/DOSS.DAT of the same run
+    beside it (where the DAT exists it is the file the gallery draws)."""
+    from . import f25
+    try:
+        return f25.is_f25_name(path.name) and f25.plot_kind(path, want) is not None and not f25.has_dat_twin(path)
+    except OSError:
+        return False
+
+
 def matches(path: Path, kind: str) -> bool:
     """Whether ``path`` is a file this gallery kind plots (by name; an output
     by its CRYSTAL banner and, for ``opt``, its OPTGEOM)."""
     name = path.name
     if kind in ("band", "bandos"):
-        return _is_band(name)
+        return _is_band(name) or _lone_f25(path, "band")
     if kind == "dos":
-        return _is_dos(name)
+        return _is_dos(name) or _lone_f25(path, "dos")
     if kind in ("ir", "raman"):
         up = name.upper()
         return up.endswith("IRSPEC.DAT") if kind == "ir" else up.endswith("RAMSPEC.DAT")
@@ -180,10 +192,12 @@ def _related(path: Path, kind: str) -> List[Path]:
 
 
 def collect(inputs: Sequence[Any], kind: str, cap: int = MAX_ITEMS,
-            inside: Optional[Callable[[Path], bool]] = None) -> Dict[str, Any]:
+            inside: Optional[Callable[[Path], bool]] = None, page: int = 1) -> Dict[str, Any]:
     """The files of the set, in order: ``{"items": [Path], "total", "capped",
-    "message", "scan_capped"}``. ``inputs`` are files and folders. ``inside``:
-    a file it refuses is left out (the GUI: a symbolic link out of the served folder)."""
+    "message", "scan_capped", "page", "pages", "offset"}``. ``inputs`` are files and folders.
+    ``cap`` is the page size and ``page`` the page wanted (1-based): a set larger than one page is
+    read a page at a time. ``inside``: a file it refuses is left out (the GUI: a symbolic link out
+    of the served folder)."""
     if kind not in KINDS:
         raise GalleryError(f"the gallery kind is one of {', '.join(KINDS)}")
     cap = max(1, int(cap))
@@ -219,17 +233,29 @@ def collect(inputs: Sequence[Any], kind: str, cap: int = MAX_ITEMS,
                 for f in _related(p, kind):
                     add(f)
     total = len(found)
-    items = found[:cap]
+    return _paged(found, total, cap, page, kind, budget[0] <= 0)
+
+
+def _paged(found: List[Path], total: int, cap: int, page: int, kind: str, scan_capped: bool = False) -> Dict[str, Any]:
+    """One page of ``found`` (``cap`` per page) with the message that says which part of the set it is."""
+    pages = max(1, -(-total // cap))
+    page = max(1, min(int(page or 1), pages))
+    offset = (page - 1) * cap
+    items = found[offset:offset + cap]
     msg = None
     if total > cap:
-        msg = (f"Showing the first {cap} of {total} files. Narrow the set (a subfolder, a selection or a "
-               f"database filter) to see the others.")
-    if budget[0] <= 0:
+        if page == 1:
+            msg = (f"Showing the first {cap} of {total} files. Page through the set, or narrow it (a subfolder, "
+                   "a selection or a database filter).")
+        else:
+            msg = f"Showing files {offset + 1}-{offset + len(items)} of {total} (page {page} of {pages})."
+    if scan_capped:
         msg = ((msg + " ") if msg else "") + (f"The search stopped after {SCAN_CAP} files; pick a smaller folder "
                                               "to be sure every file is included.")
     if not items:
         msg = f"No {LABELS[kind].lower()} files in this set."
-    return {"items": items, "total": total, "capped": total > cap, "message": msg, "scan_capped": budget[0] <= 0}
+    return {"items": items, "total": total, "capped": total > cap, "message": msg, "scan_capped": scan_capped,
+            "page": page, "pages": pages, "offset": offset, "page_size": cap}
 
 
 def _partner(path: Path, kind: str) -> Optional[Path]:
@@ -286,9 +312,8 @@ def _reference(d: Dict[str, Any], reference: str, shift: float) -> Tuple[float, 
 
 
 def _elabel(vac: bool, shift: float) -> str:
-    if not shift:
-        return "E (eV)" if not vac else "E vs vacuum (eV)"
-    return f"E − (E<sub>{'vac' if vac else 'F'}</sub> {shift:+g}) (eV)"
+    """The energy axis as mace plotting --band and the GUI's band plot title it (plot_labels.energy_title)."""
+    return L.with_unit(L.energy_title("vacuum" if vac else "fermi", shift), "eV")
 
 
 def _moved(vals: List[Any], off: float) -> List[Any]:
@@ -298,7 +323,11 @@ def _moved(vals: List[Any], off: float) -> List[Any]:
 def _band_panel(path: Path, ewin: Tuple[float, float], shift: float = 0.0,
                 reference: str = "auto") -> Dict[str, Any]:
     from mace.gui import results
+    from . import presets
     d = results.band_data(path)
+    if d.get("domain") == "phonon":
+        raise ValueError("phonon bands are drawn in the Plot viewer and by mace plotting --band, not in the gallery")
+    metal = presets.is_metallic(d)           # Band style Auto: overlay for a metal, else single
     off, f, vac = _reference(d, reference, shift)
     if off:
         d = {**d, "up": [_moved(c, off) for c in d["up"]],
@@ -316,7 +345,7 @@ def _band_panel(path: Path, ewin: Tuple[float, float], shift: float = 0.0,
             "fermi": f, "eflines": [f], "vlines": list(d.get("ticks") or []), "ticks": list(d.get("ticks") or []),
             "ticklabels": list(d.get("labels") or []), "width": 3,
             # one set of bands (closed shell, or alpha = beta): drawn in the neutral band color, not spin up's
-            "closed": not d.get("down"), "spin_identical": bool(d.get("spin_identical"))}
+            "closed": not d.get("down"), "spin_identical": bool(d.get("spin_identical")), "metal": metal}
 
 
 def _dos_series(d: Dict[str, Any], f: float, ewin: Tuple[float, float], rotate: bool,
@@ -371,6 +400,8 @@ def _dos_panel(path: Path, ewin: Tuple[float, float], rotate: bool = False, shif
     from mace.gui import results
     from . import presets
     d = results.dos_data(path)
+    if d.get("domain") == "phonon":
+        raise ValueError("a phonon DOS is drawn in the Plot viewer and by mace plotting --dos, not in the gallery")
     off, f, vac = _reference(d, reference, shift)
     if off:
         d = {**d, "energy": _moved(d["energy"], off),
@@ -391,7 +422,7 @@ def _spectrum_panel(path: Path) -> Dict[str, Any]:
     col = "absorbance" if d["kind"] == "ir" else "total"
     ys = d["columns"].get(col) or next(iter(d["columns"].values()))
     x, y = _thin([_r(v, 3) for v in d["x"]], [_r(v, 6) for v in ys])
-    return {"series": [{"x": x, "y": y, "name": col, "role": "total"}], "xlabel": "Wavenumber (cm⁻¹)",
+    return {"series": [{"x": x, "y": y, "name": col, "role": "total"}], "xlabel": L.with_unit("Wavenumber", "cm-1"),
             "ylabel": d.get("ylabel") or "", "energy": None, "width": 1}
 
 
@@ -406,8 +437,8 @@ def _opt_panel(path: Path) -> Dict[str, Any]:
     x = [r["point"] for r in rows if not r["final"]] or [rows[-1]["point"]]
     y = [_r(r["de_au"] * HARTREE_EV * 1000, 4) for r in rows if not r["final"]] or [0.0]
     end = (res.get("opt") or {}).get("end") or {}
-    return {"series": [{"x": x, "y": y, "name": "E − E(final)", "role": "total", "markers": True}],
-            "xlabel": "Optimization step", "ylabel": "E − E(final) (meV)", "energy": None, "hlines": [0.0],
+    return {"series": [{"x": x, "y": y, "name": f"E {L.MINUS} {L.SYMBOLS['E_final']}", "role": "total", "markers": True}],
+            "xlabel": "Optimization step", "ylabel": L.with_unit(f"E {L.MINUS} {L.SYMBOLS['E_final']}", "meV"), "energy": None, "hlines": [0.0],
             "status": end.get("category") or end.get("status"), "width": 1}
 
 
@@ -477,12 +508,14 @@ def _structure_panel(path: Path) -> Dict[str, Any]:
 
 
 def pane(path: Any, kind: str, ewin: Tuple[float, float] = EWINDOW, shift: float = 0.0,
-         reference: str = "auto", dos_colors: str = "auto", dos_smooth: float = 0.0) -> Dict[str, Any]:
+         reference: str = "auto", dos_colors: str = "auto", dos_smooth: float = 0.0,
+         partner: Any = None, dos_shift: float = 0.0) -> Dict[str, Any]:
     """One pane's description; an unreadable file gives ``error`` (the grid
     shows it in the pane), never an exception. ``shift``/``reference``: the
     band/DOS energy zero (mace plotting --fermi-shift/--energy-reference);
     ``dos_colors``: which DOS projections (mace plotting --dos-colors); ``dos_smooth``: the
-    DOS's Gaussian smoothing in eV, 0 off (--dos-smooth)."""
+    DOS's Gaussian smoothing in eV, 0 off (--dos-smooth). ``partner``: a band + DOS pane's DOS
+    from another folder (--partner), ``dos_shift`` (eV) added to its energies (its E_F on the bands')."""
     path = Path(path)
     if kind not in KINDS:
         raise GalleryError(f"the gallery kind is one of {', '.join(KINDS)}")
@@ -501,9 +534,12 @@ def pane(path: Any, kind: str, ewin: Tuple[float, float] = EWINDOW, shift: float
             out["panels"] = [_dos_panel(path, ewin, dos_colors=dos_colors, smooth=dos_smooth, **eref)]
         elif kind == "bandos":
             out["panels"] = [_band_panel(path, ewin, **eref)]
-            other = _partner(path, "band")
+            other = Path(partner) if partner else _partner(path, "band")
             if other is not None:
-                out["panels"].append(_dos_panel(other, ewin, rotate=True, dos_colors=dos_colors, smooth=dos_smooth, **eref))
+                # the DOS drawn at E - s: its energies + dos_shift are drawn with s - dos_shift
+                dref = {**eref, "shift": eref["shift"] - float(dos_shift or 0.0)}
+                out["panels"].append(_dos_panel(other, ewin, rotate=True, dos_colors=dos_colors, smooth=dos_smooth, **dref))
+                out["panels"][1]["metal"] = out["panels"][0].get("metal", False)
                 out["partner"] = str(other)
             else:
                 out["note"] = "No DOSS file of this run beside it"
@@ -663,7 +699,7 @@ def _lookup(index: Dict[Any, Tuple[str, str]], p: Path) -> Tuple[Optional[str], 
 
 
 def captions(items: Sequence[Any], db: Optional[Path] = None, stop: Optional[Path] = None,
-             rel=None) -> Dict[str, Any]:
+             rel=None, start: int = 1) -> Dict[str, Any]:
     """One caption row per item (``CAPTION_COLUMNS``); ``db`` is the
     database to read, else the materials.db found beside each file. ``rel``
     turns a path into the text the ``file`` column shows."""
@@ -673,7 +709,7 @@ def captions(items: Sequence[Any], db: Optional[Path] = None, stop: Optional[Pat
     rows = []
     used = set()
     try:
-        for n, raw in enumerate(items, start=1):
+        for n, raw in enumerate(items, start=start):
             p = Path(raw)
             mid = material_of(p)
             row = {"n": n, "material_id": mid, "formula": None, "band_gap_eV": None, "energy_eV": None,
@@ -735,7 +771,7 @@ def captions_csv(rows: Sequence[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------- the figure
 
 def _mpl_label(s: str) -> str:
-    return re.sub(r"<sub>(.*?)</sub>", r"$_{\1}$", str(s))
+    return L.mathtext(s)
 
 
 def _mpl_rgba(color: str):
@@ -779,8 +815,17 @@ def _draw_panel(ax, pl: Dict[str, Any], shared: Optional[Dict[str, Any]], small:
             for i, lab in enumerate(pl.get("dos_order") or [] if ppal else []):
                 if lab in look:
                     look[lab] = {**look[lab], "color": ppal[i % len(ppal)], "dash": "solid"}
-    # a closed-shell run's bands and DOS total: --band-color (settings' band color), else the preset's
-    bands = presets.band_color(style, "band", "light", sl.get("band_color"), ink)
+    # a closed-shell run's bands and DOS total, by --band-style as the plotly figure draws them (plotly_bands.look_parts):
+    # single: the pair's first color (or --band-color), overlay: the first color with the second dashed on top,
+    # ink: the preset's neutral color; auto: overlay for a metal, else single
+    bstyle = presets.band_style(sl.get("band_style"), {"fermi": 0, "up": [[-1.0, 1.0]]} if pl.get("metal") else None)
+    custom = sl.get("band_color")
+    if bstyle == "ink":
+        bands = presets.band_color(style, "band", "light", None, ink)
+    elif bstyle == "single" and custom and presets._HEXCOLOR.match(custom):
+        bands = custom.lower()
+    else:
+        bands = spin["up"]
     fills = presets.spin_fills(spin, style)
     nfill = presets.neutral_fill(bands, style)
     rot = pl.get("energy") == "y"
@@ -817,6 +862,9 @@ def _draw_panel(ax, pl: Dict[str, Any], shared: Optional[Dict[str, Any]], small:
                          if role == "total" else c, ("#888888" if both else bands) if role == "total" else c))
         ax.plot(x, y, color=c, lw=0.7 if role in ("up", "down") else 1.0 if role == "total" and side else 0.9,
                 linestyle=ls, marker="o" if s.get("markers") else None, ms=2.5, zorder=2)
+        if role == "up" and pl.get("closed") and bstyle == "overlay":      # the second color dashed on top
+            ax.plot(x, y, color=spin["down"], lw=0.7, linestyle=presets.mpl_dash("dash" if down_dash == "solid" else down_dash),
+                    zorder=2.1)
     at = pl.get("atoms")
     if at and at["x"]:
         r = np.array(at["r"], float)
@@ -878,8 +926,8 @@ def _draw_panel(ax, pl: Dict[str, Any], shared: Optional[Dict[str, Any]], small:
         # a long path (a molecule's, every point a tick) has no room for its labels in a pane
         ax.set_xticklabels(labels if labels and len(labels) <= 12 else [""] * len(pl["ticks"]),
                            fontsize=5 if small else 7)
-    ax.set_xlabel(pl.get("xlabel") or "", fontsize=6 if small else 8)
-    ax.set_ylabel(pl.get("ylabel") or "", fontsize=6 if small else 8)
+    ax.set_xlabel(_mpl_label(pl.get("xlabel") or ""), fontsize=6 if small else 8)
+    ax.set_ylabel(_mpl_label(pl.get("ylabel") or ""), fontsize=6 if small else 8)
     ax.tick_params(labelsize=5 if small else 7, length=2)
     spin2 = both if side else (not pl.get("closed") if pl.get("energy") == "y" and "closed" in pl else None)
     return {"spin2": spin2, "identical": bool(pl.get("spin_identical")), "keys": keys, "ink": ink, "bands": bands,
@@ -935,9 +983,10 @@ def _legend(fig, ax, infos: Sequence[Dict[str, Any]], band_dos: bool, small: boo
 def render_figure(panes: Sequence[Dict[str, Any]], out: Any, cols: int = 3, shared_axes: bool = True,
                   title: Optional[str] = None, dpi: int = 150, style: str = "default",
                   size: Optional[Tuple[Optional[float], Optional[float]]] = None,
-                  spin_look: Optional[Dict[str, Any]] = None, legend: bool = False) -> Path:
+                  spin_look: Optional[Dict[str, Any]] = None, legend: bool = False, start: int = 1) -> Path:
     """The grid as one figure (SVG, PNG or PDF by the file's suffix): pane
-    *n* titled "n. material id", an unreadable one saying why. ``size``: (width, height) in
+    *n* titled "n. material id" (counted from ``start``: a later page goes on from the
+    page before, as its captions), an unreadable one saying why. ``size``: (width, height) in
     inches, either None for the grid's own (mace plotting --width/--height). ``legend``: each
     band/DOS pane with its grouped legend (_legend; the gallery's grid has none, as in the GUI)."""
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -963,7 +1012,7 @@ def render_figure(panes: Sequence[Dict[str, Any]], out: Any, cols: int = 3, shar
     for i, pn in enumerate(panes):
         cell = gs[i // cols, i % cols]
         panels = pn.get("panels") or []
-        head = f"{i + 1}. {pn.get('title') or pn.get('name')}"
+        head = f"{i + start}. {pn.get('title') or pn.get('name')}"
         if not panels:
             ax = fig.add_subplot(cell)
             ax.set_axis_off()
@@ -1000,13 +1049,18 @@ def command(kind: str, inputs: Sequence[str], cols: int, out: str, shared_axes: 
             shift: float = 0.0, reference: str = "auto", style: str = "default",
             dos_colors: str = "auto", spin_colors: str = "auto", spin_up_color: Optional[str] = None,
             spin_down_color: Optional[str] = None, spin_down_style: str = "dash", dos_smooth: float = 0.0,
-            band_color: Optional[str] = None, explicit: bool = False) -> List[str]:
+            band_color: Optional[str] = None, explicit: bool = False, page: int = 1, page_size: int = 0,
+            band_style: Optional[str] = None) -> List[str]:
     """The ``mace plotting --gallery`` arguments (after ``mace``) for these
     choices: the GUI shows it and runs it for Export (in the GUI's plot style,
     DOS colors and spin look, when they are not the defaults). ``explicit``:
     the defaults too, so a mace-folder.toml's [plots] values do not replace
     them (the GUI's grid does not read the file's values the CLI would)."""
     a = ["plotting", "--gallery", kind, *[str(x) for x in inputs], "--cols", str(int(cols)), "-o", str(out)]
+    if page_size and int(page_size) != MAX_ITEMS:
+        a += ["--max", str(int(page_size))]
+    if page and int(page) > 1:
+        a += ["--page", str(int(page))]
     if not shared_axes:
         a.append("--independent-axes")
     if (style and style != "default") or explicit:
@@ -1021,9 +1075,9 @@ def command(kind: str, inputs: Sequence[str], cols: int, out: str, shared_axes: 
         from . import presets
         spin = presets.style_flags({"spin_colors": spin_colors or "auto", "spin_up_color": spin_up_color,
                                     "spin_down_color": spin_down_color, "spin_down_style": spin_down_style or "dash",
-                                    "band_color": band_color}, explicit=explicit)
+                                    "band_color": band_color, "band_style": band_style or "auto"}, explicit=explicit)
         a += [f for f in spin if f.startswith(("--spin-colors", "--spin-up-color", "--spin-down-color",
-                                                "--spin-down-style", "--spin-down-solid", "--band-color"))]
+                                                "--spin-down-style", "--spin-down-solid", "--band-color", "--band-style"))]
     if kind in ("band", "dos", "bandos"):            # always: the line reproduces the figure in any folder
         a += [f"--e-lower={float(ewin[0]):g}", f"--e-upper={float(ewin[1]):g}"]
         if shift or explicit:
@@ -1047,7 +1101,7 @@ def run_cli(args) -> int:
         print(f"❌ Not found: {', '.join(missing)}", file=sys.stderr)
         return 2
     cap = getattr(args, "max", None) or MAX_ITEMS
-    got = collect(inputs, kind, cap=cap)
+    got = collect(inputs, kind, cap=cap, page=getattr(args, "page", None) or 1)
     if got["message"]:
         print(f"  {got['message']}")
     if not got["items"]:
@@ -1060,7 +1114,7 @@ def run_cli(args) -> int:
         target = o / f"gallery_{kind}.{fmt if fmt in FIGURE_FORMATS else 'svg'}"
     ewin = (args.e_lower, args.e_upper) if getattr(args, "e_lower", None) is not None else EWINDOW
     panes = []
-    for n, (p, t) in enumerate(zip(got["items"], titles(got["items"])), start=1):
+    for n, (p, t) in enumerate(zip(got["items"], titles(got["items"])), start=got["offset"] + 1):
         pn = pane(p, kind, ewin, getattr(args, "fermi_shift", 0.0) or 0.0,
                   getattr(args, "energy_reference", None) or "auto",
                   dos_colors=getattr(args, "dos_colors", None) or "auto",
@@ -1072,12 +1126,13 @@ def run_cli(args) -> int:
     cols = getattr(args, "cols", None) or min(3, len(panes))
     spin_look = {"spin_colors": getattr(args, "spin_colors", None), "spin_up_color": getattr(args, "spin_up_color", None),
                  "spin_down_color": getattr(args, "spin_down_color", None),
-                 "spin_down_style": getattr(args, "spin_style", None), "band_color": getattr(args, "band_color", None)}
+                 "spin_down_style": getattr(args, "spin_style", None), "band_color": getattr(args, "band_color", None),
+                 "band_style": getattr(args, "band_style", None)}
     render_figure(panes, target, cols=cols, shared_axes=not getattr(args, "independent_axes", False),
                   title=f"{LABELS[kind]} ({len(panes)} files)", style=getattr(args, "style", None) or "default",
                   spin_look=spin_look,
-                  size=(getattr(args, "width", None), getattr(args, "height", None)))
-    cap_rows = captions(got["items"], db=Path(args.db) if getattr(args, "db", None) else None)
+                  size=(getattr(args, "width", None), getattr(args, "height", None)), start=got["offset"] + 1)
+    cap_rows = captions(got["items"], db=Path(args.db) if getattr(args, "db", None) else None, start=got["offset"] + 1)
     print(f"\n  {'#':>3}  {'Material':<40} {'Formula':<14} {'Gap (eV)':>9} {'Energy (eV)':>16}")
     for r in cap_rows["rows"]:
         print(f"  {r['n']:>3}  {str(r['material_id'])[:40]:<40} {str(r['formula'] or '—')[:14]:<14} "

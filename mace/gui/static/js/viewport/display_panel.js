@@ -8,12 +8,19 @@
  * Rendering holds two dropdowns (1.1.7, viewport/presets.js): Style (how
  * atoms are drawn and colored) and Lighting. Each applies only its own keys,
  * so they combine freely; each has a Custom, the user's own look, saved
- * (Settings styleCustom / renderCustom) whenever one of its values is edited. */
+ * (Settings styleCustom / renderCustom) whenever one of its values is edited.
+ *
+ * 1.1.6: Range starts with the N × M × L cells picker (js/cells_picker.js; it
+ * replaced the 2×2×2 and 3×3×3 buttons); the fractional from/to rows, Cell +
+ * 10%, bonded atoms outside and the finer lighting are tagged
+ * data-tier="advanced" (the Inspector's Advanced tab, js/inspector_tiers.js).
+ * The optimization view repeats whole cells only: its Range is the picker. */
 import * as DS from "./display_state.js";
 import { LIGHTING, STYLES, options as presetOptions, byId } from "./presets.js";
 import * as settings from "../settings.js";
 import * as G from "../geom/core.js";
 import { autoOutline } from "./rendering.js";
+import { cellsPicker } from "../cells_picker.js";
 
 const NUM = (x) => String(+Number(x).toFixed(3));
 const LARGE = 20000, REFUSE = 200000;
@@ -30,7 +37,7 @@ export function createDisplayPanel(deps) {
   // each dropdown's preset key, its Custom's setting, and the keys its presets and Custom set
   const PRESET = {
     render: { key: "renderPreset", saved: "renderCustom", table: DS.PRESETS, keys: DS.GROUPS.render.filter((k) => k !== "renderPreset") },
-    style: { key: "stylePreset", saved: "styleCustom", table: DS.STYLE_PRESETS, keys: DS.GROUPS.style.filter((k) => k !== "stylePreset") },
+    style: { key: "stylePreset", saved: "styleCustom", table: DS.STYLE_PRESETS, keys: DS.GROUPS.style.filter((k) => k !== "stylePreset" && !DS.POLY_KEYS.includes(k)) },
   };
   const groupOf = (k) => (PRESET.render.keys.includes(k) ? "render" : PRESET.style.keys.includes(k) ? "style" : null);
   // Custom is the user's own look: saved whenever one of its values is edited,
@@ -67,7 +74,12 @@ export function createDisplayPanel(deps) {
   function rangeHtml() {
     const d = doc(), s = deps.structure(), pbc = (s && s.pbc) || [true, true, true];
     const r = DS.rangeOf(d);
-    const rows = [0, 1, 2].map((k) => `<div class="ins-row dp-axis" data-axis="${k}"><span class="dp-ax">${"abc"[k]}</span>` +
+    // the optimization view (app.js drawOpt) repeats whole cells: the picker, and nothing it cannot draw
+    if (d && d.kind === "trajectory") {
+      return `<div class="dp-group" data-group="range"><div class="dp-cells"></div>
+        <p class="insp-hint">The optimization view repeats whole cells of the run, each step moving every image as its atom.</p></div>`;
+    }
+    const rows = [0, 1, 2].map((k) => `<div class="ins-row dp-axis" data-tier="advanced" data-axis="${k}"><span class="dp-ax">${"abc"[k]}</span>` +
       (pbc[k] ? `<label>from <input class="field dp-num" type="number" step="0.1" min="-5" max="10" data-lo="${k}" value="${NUM(r.lo[k])}" aria-label="Range ${"abc"[k]} from"></label>` +
         `<label>to <input class="field dp-num" type="number" step="0.1" min="-5" max="10" data-hi="${k}" value="${NUM(r.hi[k])}" aria-label="Range ${"abc"[k]} to"></label>`
         : `<span class="insp-hint">Not periodic</span>`) + `</div>`).join("");
@@ -82,17 +94,17 @@ export function createDisplayPanel(deps) {
     }
     return `<div class="dp-group" data-group="range">
       <div class="dp-sub">Range${DS.isOverride(d, "displayLo") || DS.isOverride(d, "displayHi")
-        ? `<button type="button" class="ovr-dot" data-unset="range" title="Changed for this document. Click to use the default." aria-label="Use the default range"></button>` : ""}</div>${rows}
+        ? `<button type="button" class="ovr-dot" data-unset="range" title="Changed for this document. Click to use the default." aria-label="Use the default range"></button>` : ""}</div>
+      <div class="dp-cells"></div>${rows}
       <div class="ins-row dp-quick"><button type="button" class="tb-btn-text sm" data-quick="unit">Unit Cell</button>
-        <button type="button" class="tb-btn-text sm" data-quick="cell10" title="Range −0.1 to 1.1 on each periodic axis">Cell + 10%</button>
-        <button type="button" class="tb-btn-text sm" data-quick="2">2×2×2</button><button type="button" class="tb-btn-text sm" data-quick="3">3×3×3</button></div>
+        <button type="button" class="tb-btn-text sm" data-quick="cell10" data-tier="advanced" title="Range −0.1 to 1.1 on each periodic axis">Cell + 10%</button></div>
       <p class="insp-hint dp-est${estCls}" aria-live="polite">≈ ${est.toLocaleString("en-US")} atoms drawn${est > LARGE ? " (Large: simplified drawing)" : ""}</p>
       <p class="set-err dp-range-err" role="alert"></p>
       <div class="ins-row dp-boundary" title="Also draw atoms on the faces, edges and corners of the range.">${dot("showBoundary")}</div>
-      <div class="ins-row dp-row" data-key="bondedOutside">${lab("bondedOutside", "Bonded Atoms Outside", "dp-bondedOutside")}
+      <div class="ins-row dp-row" data-tier="advanced" data-key="bondedOutside">${lab("bondedOutside", "Bonded Atoms Outside", "dp-bondedOutside")}
         <select class="field" id="dp-bondedOutside" data-k="bondedOutside" title="Draw atoms outside the range that are bonded to atoms inside it (one shell), or complete every discrete molecule that crosses the range.">
         ${[["off", "None"], ["neighbors", "Bonded Neighbors"], ["molecules", "Whole Molecules"]].map(([o, t]) => `<option value="${o}"${val("bondedOutside") === o ? " selected" : ""}>${t}</option>`).join("")}</select></div>
-      <p class="insp-hint dp-bonded-note"${note ? "" : " hidden"}>${esc(note)}</p>
+      <p class="insp-hint dp-bonded-note" data-tier="advanced"${note ? "" : " hidden"}>${esc(note)}</p>
       <div class="ins-row end dp-foot"><button type="button" class="tb-btn-text sm" data-reset-group="range">Reset</button>
         <button type="button" class="tb-btn-text sm" data-save-group="range">Save as Default</button></div></div>`;
   }
@@ -121,10 +133,29 @@ export function createDisplayPanel(deps) {
       <p class="insp-hint dp-style-custom-note"${customNote.style ? "" : " hidden"}>${esc(customNote.style)}</p>
       <p class="insp-hint dp-style-info"${info ? "" : " hidden"}>${esc(info)}</p>
       <p class="insp-hint dp-style-na"${notes.length && !curWhy ? "" : " hidden"}>${esc(notes.join(". "))}${notes.length ? "." : ""}</p>
-      ${!d || d.kind === "structure" ? `<div class="ins-row dp-row" data-key="showPolyhedra"><label class="tog"><input type="checkbox" data-k="showPolyhedra"${val("showPolyhedra") ? " checked" : ""}><span>Polyhedra</span></label>${dot("showPolyhedra")}</div>` : ""}
+      ${!d || d.kind === "structure" ? `<div class="ins-row dp-row" data-key="showPolyhedra"><label class="tog"><input type="checkbox" data-k="showPolyhedra"${val("showPolyhedra") ? " checked" : ""}><span>Polyhedra</span></label>${dot("showPolyhedra")}</div>${val("showPolyhedra") ? polyHtml() : ""}` : ""}
       ${slider("atomScale", "Atom Size", 0.1, 1, 0.05)}${slider("bondRadius", "Bond Radius", 0.03, 0.4, 0.01)}
       <div class="ins-row end dp-foot"><button type="button" class="tb-btn-text sm" data-reset-group="style">Reset</button>
         <button type="button" class="tb-btn-text sm" data-save-group="style">Save as Default</button></div></div>`;
+  }
+  /* The polyhedra's own controls (1.1.6), under the Polyhedra checkbox while it is on: which elements are
+   * centers (the candidates the 3D view found; checked: drawn), face opacity, edges, and the center atom. */
+  function polyHtml() {
+    const p = deps.polyhedra ? deps.polyhedra() : null;
+    const cand = (p && p.candidates) || [], cur = new Set((p && p.centers) || []);
+    const left = ((p && p.spacers) || []).filter((el) => !cur.has(el));
+    const chips = cand.length
+      ? cand.map((el) => `<label class="tog dp-poly-el"><input type="checkbox" data-poly-center="${esc(el)}"${cur.has(el) ? " checked" : ""}><span>${esc(el)}</span></label>`).join("")
+      : `<span class="insp-hint">${p && p.skipped ? "Off above 2,000 drawn atoms" : p && p.candidates ? "No cation here has 4 to 12 anion ligands" : "Finding the centers…"}</span>`;
+    const ca = val("polyCenterAtom");
+    return `<div class="dp-poly" data-sub="poly">
+      <div class="ins-row dp-row" data-key="polyCenters">${lab("polyCenters", "Centers")}<span class="dp-poly-centers" title="The cations a polyhedron is drawn around: each has 4 to 12 anion ligands (O, N, F, Cl, S…)">${chips}</span></div>
+      <p class="insp-hint dp-poly-note"${left.length && val("polyCenters") === "auto" ? "" : " hidden"}>${esc(left.join(", "))} left out: ${left.length > 1 ? "their polyhedra share" : "its polyhedra share"} faces with smaller ones (an A site), so ${left.length > 1 ? "they are" : "it is"} drawn as ${left.length > 1 ? "balls" : "a ball"}, as in VESTA. Check ${left.length > 1 ? "them" : "it"} to draw ${left.length > 1 ? "their" : "its"} polyhedra.</p>
+      ${slider("polyOpacity", "Face Opacity", 0.1, 1, 0.05, true)}
+      <div class="ins-row dp-row" data-key="polyEdges"><label class="tog"><input type="checkbox" data-k="polyEdges"${val("polyEdges") !== false ? " checked" : ""}><span>Edges</span></label>${dot("polyEdges")}</div>
+      <div class="ins-row dp-row" data-key="polyCenterAtom">${lab("polyCenterAtom", "Center Atom", "dp-polyCenterAtom")}
+        <select class="field" id="dp-polyCenterAtom" data-k="polyCenterAtom" title="The atom inside each polyhedron">
+        ${[["small", "Small"], ["hidden", "Hidden"], ["full", "Full Size"]].map(([o, t]) => `<option value="${o}"${ca === o ? " selected" : ""}>${t}</option>`).join("")}</select></div></div>`;
   }
   function renderHtml() {
     const dir = val("lightDirection");
@@ -134,7 +165,7 @@ export function createDisplayPanel(deps) {
       <p class="insp-hint dp-custom-note"${customNote.render ? "" : " hidden"}>${esc(customNote.render)}</p>
       ${slider("depthCue", "Depth Cueing", 0, 1, 0.05, true)}
       <p class="insp-hint">How much the farthest atoms fade toward the background. 0 is off.</p>
-      ${slider("lightStrength", "Light Strength", 0.3, 1.6, 0.05)}
+      <div data-tier="advanced">${slider("lightStrength", "Light Strength", 0.3, 1.6, 0.05)}
       <div class="ins-row dp-row" data-key="lightDirection">${lab("lightDirection", "Light Direction")}<span class="segment" role="radiogroup" aria-label="Light direction">
         ${[["front", "Front"], ["upper-left", "Upper Left"], ["top", "Top"]].map(([o, t]) => `<button type="button" role="radio" data-dir="${o}" aria-checked="${dir === o}">${t}</button>`).join("")}</span></div>
       <p class="insp-hint dp-dir-note" hidden></p>
@@ -147,7 +178,7 @@ export function createDisplayPanel(deps) {
       <div class="ins-row dp-row" data-key="outline"><label class="tog"><input type="checkbox" data-k="outline"${val("outline") ? " checked" : ""}><span>Outline</span></label>${dot("outline")}</div>
       ${slider("outlineWidth", "Outline Width", 0.02, 0.3, 0.01)}
       <div class="ins-row dp-row" data-key="outlineColor">${lab("outlineColor", "Outline Color", "dp-outlineColor")}<input type="color" id="dp-outlineColor" data-k="outlineColor" value="${/^#[0-9a-f]{6}$/i.test(val("outlineColor")) ? val("outlineColor") : autoOutlineHex()}">
-        <button type="button" class="tb-btn-text sm" data-theme-outline>Theme</button></div>
+        <button type="button" class="tb-btn-text sm" data-theme-outline>Theme</button></div></div>
       <div class="ins-row dp-row" data-key="background">${lab("background", "Background", "dp-background")}
         <select class="field" id="dp-background" data-k="background">${[["theme", "Theme"], ["white", "White"], ["black", "Black"], ["custom", "Custom"]]
           .map(([o, t]) => `<option value="${o}"${bg === o ? " selected" : ""}>${t}</option>`).join("")}</select>
@@ -162,7 +193,7 @@ export function createDisplayPanel(deps) {
     el.addEventListener("input", (e) => {
       const t = e.target;
       if (t.type === "range" && t.dataset.k) {
-        const k = t.dataset.k, pct = ["depthCue", "ambient", "shininess"].includes(k);
+        const k = t.dataset.k, pct = ["depthCue", "ambient", "shininess", "polyOpacity"].includes(k);
         t.nextElementSibling.textContent = pct ? Math.round(t.value * 100) + "%" : NUM(t.value);
         clearTimeout(timer);
         timer = setTimeout(() => edit(k, Number(t.value)), 120);
@@ -171,6 +202,7 @@ export function createDisplayPanel(deps) {
     el.addEventListener("change", (e) => {
       const t = e.target;
       if (t.dataset.lo !== undefined || t.dataset.hi !== undefined) return rangeInput();
+      if (t.dataset.polyCenter !== undefined) return polyCenters(el);
       const k = t.dataset.k;
       if (!k) return;
       if (t.type === "checkbox") edit(k, t.checked);
@@ -232,6 +264,13 @@ export function createDisplayPanel(deps) {
     customNote[g] = "";
     DS.set(d, { ...P.table[name], [P.key]: name });
   }
+  /** The checked center elements: "auto" when they are the default ones, else "Ti,Si" ("" for none). */
+  function polyCenters(el) {
+    const p = deps.polyhedra ? deps.polyhedra() : null;
+    const on = [...el.querySelectorAll("[data-poly-center]")].filter((x) => x.checked).map((x) => x.dataset.polyCenter);
+    const auto = (p && p.auto) || [];
+    edit("polyCenters", on.length === auto.length && on.every((x) => auto.includes(x)) ? "auto" : on.join(","));
+  }
   function lightDirection(dir) {
     const d = doc();
     if (!d) return;
@@ -284,6 +323,17 @@ export function createDisplayPanel(deps) {
     el.innerHTML = html();
     const slot = el.querySelector(".dp-boundary");
     if (slot && box) slot.prepend(box);
+    const cs = el.querySelector(".dp-cells");
+    if (cs) mountCells(cs);
+  }
+  /* the N × M × L picker: whole cells from 0 along a, b and c (a fractional range shows as its rounded cells) */
+  function mountCells(slot) {
+    const d = doc(), s = deps.structure();
+    if (!d || !s) return;
+    const r = DS.rangeOf(d), cells = r.hi.map((x, k) => Math.max(1, Math.round(x - r.lo[k])));
+    const pick = cellsPicker({ id: "dp-cells", cells, pbc: s.pbc || [true, true, true], repeatNonPeriodic: d.kind === "structure",
+      label: "Cells", onChange: (c) => { const dd = doc(); if (dd) DS.setCells(dd, c); } });
+    if (pick) slot.replaceChildren(pick);
   }
   /** Redraw both groups with the drawn document's values (a field being typed in keeps its text). */
   function refresh() {

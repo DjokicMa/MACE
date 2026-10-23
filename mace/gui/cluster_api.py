@@ -107,6 +107,13 @@ class ClusterService:
             from mace.cluster.quotas import scratch_roots
             return [os.path.expanduser("~")] + scratch_roots()
 
+    def research_real(self):
+        try:
+            from . import roots
+            return {os.path.realpath(str(p)) for p in roots.research_roots()}
+        except Exception:
+            return set()
+
     def path_policy(self, real: str) -> str:
         root = str(self.st.root)
         if real == root or real.startswith(root.rstrip("/") + "/"):
@@ -119,7 +126,8 @@ class ClusterService:
             rr = os.path.realpath(r)
             if real == rr or real.startswith(rr.rstrip("/") + "/"):
                 try:
-                    if os.stat(real).st_uid != os.getuid():
+                    # a research space is shared with your group: its files belong to the group's members
+                    if os.stat(real).st_uid != os.getuid() and rr not in self.research_real():
                         return "outside"
                 except OSError:
                     pass

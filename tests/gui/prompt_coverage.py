@@ -28,6 +28,7 @@ UNANSWERED = {
     ("CRYSTALOptToD12.py", "Enter CRYSTAL output file path"): (NOT_REACHABLE, "several/no --out-file only (Setup passes one)"),
     ("CRYSTALOptToD12.py", "Apply to all X files?"): (NOT_REACHABLE, "several files with --config-file only"),
     ("CRYSTALOptToD12.py", "Use shared settings for all files?"): (NOT_REACHABLE, "several files only"),
+    ("CRYSTALOptToD12.py", "is not empty. Write the set into it?"): (NOT_REACHABLE, "PHONOPY into a set folder that has files: Setup's run writes into a fresh --output-dir, and its saved command passes --yes (refused with a message, never asked)"),
     ("CRYSTALOptToD12.py", "SMEAR width in hartree for this SOC deck"): (NOT_REACHABLE, "SOC deck from a metallic-looking parent: asked only at a terminal"),
     # d12_interactive.py
     ("d12_interactive.py", "TOLINTEG [X]"): (NOT_REACHABLE, "configure_tolerances_with_defaults(): not called"),
@@ -102,6 +103,10 @@ UNANSWERED = {
     ("d3_interactive.py", "Enter atom numbers (e.g., 1 3 5)"): (NO_DEFAULT, "DOSS atom selection 2 (Enter falls back to atom 1)"),
     ("d3_interactive.py", "Enter projection specification"): (NO_DEFAULT, "DOSS manual projections"),
     ("d3_interactive.py", "Enter atom numbers: "): (NO_DEFAULT, "POTC at chosen atoms (Calculate at all atoms? No)"),
+    ("d3_interactive.py", "Minimum μ (eV, absolute)"): (NO_DEFAULT, "TRANSPORT from an output with no trustworthy E_F "
+                                                               "(a spin-locked SCF with no BAND or DOSS run beside it): "
+                                                               "absolute chemical potentials, never a guessed -2..+2 eV"),
+    ("d3_interactive.py", "Maximum μ (eV, absolute)"): (AFTER_A_STOP, "after Minimum μ (eV, absolute)"),
 
     # ---------------------------------------------------------------- reachable only past a stop
     ("d12_constants.py", "Try again? [Y/n]"): (AFTER_A_STOP, "after the custom basis directory path"),

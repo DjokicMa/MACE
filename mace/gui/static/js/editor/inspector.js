@@ -4,7 +4,10 @@
  * apply), Nudge, an editable Cell, and the live Symmetry with its
  * tolerance and the P1/Sym mode. Fields commit on Enter or when they lose
  * focus; they take expressions ("1/3", "0.5+0.01"); a value that is not
- * one gets a red border and a message, and nothing is sent. */
+ * one gets a red border and a message, and nothing is sent.
+ * 1.1.6: the niche rows (occupancy, scale atoms with the cell, Hall symbol,
+ * operations, the symmetry tolerance) carry data-tier="advanced": the
+ * Inspector's Basic tab hides them (js/inspector_tiers.js). */
 import * as G from "../geom/core.js";
 import * as CO from "./coordination.js";
 
@@ -66,8 +69,8 @@ export function createInspector(E, S) {
 
   /* the "CN 6 (O×6, 2.106 Å)" line (plan B9): up to 2000 atoms, else the Coordination tab */
   function cnText(s, i) {
-    const tol = Number(S.setting("bondTolerance")) || s.bond_scale || 1.15;
-    const r = CO.rowsSync(s, [i], tol);
+    const rule = G.bondRule(s, S.setting);
+    const r = CO.rowsSync(s, [i], rule.tol, rule);
     return r ? CO.cnLine(r[0]) : "— (Analysis › Coordination Analysis)";
   }
   /* ---------------------------------------------------------------- Selection */
@@ -92,7 +95,7 @@ export function createInspector(E, S) {
         </div>
         <div class="ins-row ins-coords-head"><span class="ins-k">${cart ? "Cartesian (Å)" : "Fractional"}</span></div>
         <div class="ins-xyz"></div>
-        <div class="ins-row"><span class="ins-k">Occupancy</span><span class="ins-v">1.0</span></div>
+        <div class="ins-row" data-tier="advanced"><span class="ins-k">Occupancy</span><span class="ins-v">1.0</span></div>
         <div class="ins-row"><span class="ins-k">Coordination</span><span class="ins-v ins-cn">${esc(cnText(s, i))}</span></div>`;
       root.querySelector(".ins-coords-head").appendChild(toggle);
       root.querySelector(".ins-el").addEventListener("click", (e) => S.pickElement(e.currentTarget, (el) => E.edit(ed, "replace", { indices: [i], element: el })));
@@ -154,7 +157,7 @@ export function createInspector(E, S) {
       E.edit(ed, "move", cart ? { indices, delta: v } : { indices, frac_delta: v }, { merge: `nudge:${indices.join(",")}` });
     });
     root.appendChild(pad);
-    root.insertAdjacentHTML("beforeend", `<p class="insp-hint">Move tool: Alt+arrows, Alt+PgUp/PgDn; Shift: 10× the step.</p>`);
+    root.insertAdjacentHTML("beforeend", `<p class="insp-hint" data-tier="advanced">Move tool: Alt+arrows, Alt+PgUp/PgDn; Shift: 10× the step.</p>`);
     return root;
   }
 
@@ -167,16 +170,32 @@ export function createInspector(E, S) {
     const grid = document.createElement("div");
     grid.className = "ins-grid3";
     const keys = [["a", "a", "Å", dl], ["b", "b", "Å", dl], ["c", "c", "Å", dl], ["alpha", "α", "°", da], ["beta", "β", "°", da], ["gamma", "γ", "°", da]];
-    for (const [k, t, u, d] of keys) {
+    // a slab, polymer or molecule (1.1.6): a non-periodic vector is only the drawing box, so its length and
+    // the angles it takes part in are shown, not edited, as the read-only lattice card shows them
+    const pbc = (ed.structure.pbc || [true, true, true]).map(Boolean), C = ed.structure.cell;
+    const fixed = (i) => (i < 3 ? !pbc[i] : !pbc[[1, 0, 0][i - 3]] || !pbc[[2, 2, 1][i - 3]]);
+    keys.forEach(([k, t, u, d], i) => {
+      if (fixed(i)) {
+        const ro = document.createElement("div");
+        ro.className = "ins-row";
+        ro.innerHTML = i < 3 ? `<span class="ins-k">${t}</span><span class="ins-v muted" title="not periodic: the drawn box only spans the atoms">not periodic</span>`
+          : `<span class="ins-k">${t}</span><span class="ins-v">${G.fmtNum(L[k], d)}°</span>`;
+        grid.appendChild(ro);
+        return;
+      }
       grid.appendChild(exprField(t, G.fmtNum(L[k], d), (v) => {
         const p = keys.map(([kk]) => (kk === k ? v : L[kk]));
         if (!G.cellFromParams(...p)) { S.toast("Those cell parameters make no cell", "error"); return; }
         E.edit(ed, "set_cell", { cellpar: p, scale_atoms: scale });
       }, { aria: `Cell ${t}`, unit: u }));
-    }
+    });
     root.appendChild(grid);
-    root.insertAdjacentHTML("beforeend", `<div class="ins-row"><span class="ins-k">Volume</span><span class="ins-v">${G.fmtNum(L.volume, 3)} Å³</span></div>
-      <label class="tog ins-row"><input type="checkbox" class="ins-scale"${scale ? " checked" : ""}><span>Scale atoms with cell</span></label>
+    const per = [0, 1, 2].filter((i) => pbc[i]);
+    const size = per.length === 3 ? `<span class="ins-k">Volume</span><span class="ins-v">${G.fmtNum(L.volume, 3)} Å³</span>`
+      : per.length === 2 ? `<span class="ins-k">Area</span><span class="ins-v">${G.fmtNum(G.norm3(G.cross3(C[per[0]], C[per[1]])), 3)} Å²</span>`
+      : per.length === 1 ? `<span class="ins-k">Length</span><span class="ins-v">${G.fmtNum(G.norm3(C[per[0]]), 3)} Å</span>` : "";
+    root.insertAdjacentHTML("beforeend", `${size ? `<div class="ins-row">${size}</div>` : ""}
+      <label class="tog ins-row" data-tier="advanced"><input type="checkbox" class="ins-scale"${scale ? " checked" : ""}><span>Scale atoms with cell</span></label>
       <div class="ins-row end"><button type="button" class="tb-btn-text ins-build" data-cmd-run="build.supercell">Supercell…</button>
         <button type="button" class="tb-btn-text ins-build" data-cmd-run="build.transform">Transform…</button>
         <button type="button" class="tb-btn-text ins-editcell" data-cmd-run="edit.editCell">Edit Cell…</button></div>`);
@@ -206,13 +225,13 @@ export function createInspector(E, S) {
       <table class="kv">
         <tr><td>Crystal system</td><td>${esc(crystalSystem(y.number))}</td></tr>
         <tr><td>Point group</td><td class="pg">${hm(y.pointgroup)}</td></tr>
-        <tr><td>Hall symbol</td><td>${esc(y.hall)}</td></tr>
-        <tr><td>Operations</td><td${ops !== y.n_operations ? ` title="${y.n_operations} in this cell, counting its lattice translations"` : ""}>${ops}</td></tr>
+        <tr data-tier="advanced"><td>Hall symbol</td><td>${esc(y.hall)}</td></tr>
+        <tr data-tier="advanced"><td>Operations</td><td${ops !== y.n_operations ? ` title="${y.n_operations} in this cell, counting its lattice translations"` : ""}>${ops}</td></tr>
         <tr><td>Unique atoms</td><td>${unique} of ${s.numbers.length}</td></tr>
       </table>
       ${lowered ? `<p class="insp-hint warn">Lower than ${esc(ref.international)} (${ref.number}), the group this structure had.</p>` : ""}
       <div class="ins-row ins-mode"><span class="ins-k">Editing</span></div>
-      <div class="ins-tol"></div>
+      <div class="ins-tol" data-tier="advanced"></div>
       <div class="ins-row end"><button type="button" class="tb-btn-text ins-symmetrize">Symmetrize…</button></div>`;
     root.querySelector(".ins-mode").appendChild(mode);
     root.querySelector(".ins-tol").appendChild(exprField("Tolerance", String(ed.symprec), (v) => {

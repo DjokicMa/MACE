@@ -81,6 +81,8 @@ export function request(fmt) {
     background: q("background").value, outline: q("outline").checked, dpi: num("dpi") };
   const body = { format: fmt, options };
   if (scope.symbols) body.symbols = scope.symbols; else body.paths = scope.paths;
+  // the active structure's print patterns (Settings › Viewport), on its swatches as on its atoms
+  if (scope.patterns) body.patterns = scope.patterns;
   if (q("palette").value === "__draft") { body.palette = M().schemeName(); body.colors = M().state.paletteDraft; }
   else body.palette = q("palette").value;
   return body;
@@ -142,14 +144,16 @@ async function exportNow() {
 }
 
 /** The legend of symbols as SVG text and its size, for an exported structure image's corner
- * (export_image.js): the active palette (or the one being edited), text that suits the background. */
-export async function forImage(handle, symbols, { background = null, scale = 1 } = {}) {
+ * (export_image.js): the active palette (or the one being edited), text that suits the background,
+ * and the print patterns ({element: pattern}) the image draws on the atoms. */
+export async function forImage(handle, symbols, { background = null, scale = 1, patterns = null } = {}) {
   H = handle;
   const dark = background ? lum(background) < 0.4 : isDarkTheme(H.settings.get("theme"));
   const body = { format: "svg", symbols, palette: M().schemeName(),
     options: { layout: "vertical", label: "symbol", text: dark ? "light" : "dark", background: "none",
       swatch: Math.round(16 * scale), font_size: Math.round(13 * scale) } };
   if (M().state.paletteDraft) body.colors = M().state.paletteDraft;
+  if (patterns && Object.keys(patterns).length) body.patterns = patterns;
   const r = await H.api("legend", { body });
   return { svg: r.content, width: r.width, height: r.height };
 }

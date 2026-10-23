@@ -115,8 +115,9 @@ def test_export_fills_the_defaults_and_parses_back(tmp_path):
     # no profile file at all: the exported defaults alone give the same argv
     got = _argv_lines(subprocess.run(["bash", str(out), "--dry-run"], env=env, capture_output=True, text=True,
                          timeout=60).stdout)
-    want = C.build_ssh_argv({**prof, "local_port": 8800}, 8800, 40000, 40001, "jump", user_for_node="me")
-    assert got == want
+    want = C.build_ssh_argv({**prof, "local_port": 8800}, 8800, 40000, 40001, "jump", user_for_node="me",
+                            prompt=C.prompt_wait(C.jump_chain(prof, "jump", "me")))
+    assert got == want and "ConnectTimeout=120" in want         # -J: the gateway's login may prompt
     ps = CS.export_script("powershell", prof)
     assert "$D_GATEWAY = 'me@gw.example.edu'" in ps and "$D_ROOTS = @('~/proj', '/mnt/scratch/x')" in ps
     assert "$D_LOCAL_PORT = 8800" in ps
@@ -380,7 +381,8 @@ def _want(tmp_path, conf_text):
     unode = C.effective_node_user(prof["gateway"])
     return C.build_ssh_argv(prof, int(prof.get("local_port") or 8765), 40000, 40001, prof.get("hop", "jump"), unode,
                             node_keys=C.node_key_options(prof["gateway"], C.node_target(prof, unode))
-                            if prof.get("hop", "jump") == "jump" else [])
+                            if prof.get("hop", "jump") == "jump" else [],
+                            prompt=C.prompt_wait(C.jump_chain(prof, prof.get("hop", "jump"), unode)))
 
 
 def _toml_cases(tmp_path):
@@ -430,9 +432,10 @@ def test_toml_escapes_round_trip_in_the_powershell_script(tmp_path, case):
     from test_connect_windows import _ms_argv
     text = dict(_toml_cases(tmp_path))[case]
     env = _ps_env(tmp_path)
-    conf = Path(env["APPDATA"]) / "mace" / "connect.toml"
-    conf.parent.mkdir(parents=True)
-    conf.write_text(text, encoding="utf-8")
+    for base in (env["APPDATA"], env["XDG_CONFIG_HOME"]):     # Windows reads APPDATA, pwsh elsewhere XDG
+        conf = Path(base) / "mace" / "connect.toml"
+        conf.parent.mkdir(parents=True, exist_ok=True)
+        conf.write_text(text, encoding="utf-8")
     want = _want(tmp_path, text)
     r = _run_ps(env, "-DryRun")
     assert r.returncode == 0, r.stderr.decode()
@@ -652,9 +655,10 @@ def test_powershell_real_run_reaches_its_hints(tmp_path, stderr_line, code, want
     the real one does."""
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
+    # one ssh for -V and for the session (the script finds one program, Find-Native, for both)
     (fakebin / "ssh").write_text("#!/bin/sh\n[ \"$1\" = -V ] && { echo 'OpenSSH_for_Windows_9.5p2' >&2; exit 0; }\n"
-                                 "exit 0\n")
-    (fakebin / "ssh.exe").write_text("#!/bin/sh\necho %s >&2\nexit %d\n" % (shlex.quote(stderr_line), code))
+                                 "echo %s >&2\nexit %d\n" % (shlex.quote(stderr_line), code))
+    (fakebin / "ssh.exe").write_text("#!/bin/sh\nexit 0\n")
     for f in ("ssh", "ssh.exe"):
         (fakebin / f).chmod(0o755)
     env = _ps_env(tmp_path)
@@ -960,10 +964,11 @@ def test_config_connect_timeout_parity(tmp_path, hop, value):
     assert r.returncode == 0, r.stderr
     want = shlex.split([ln for ln in r.stdout.splitlines() if ln.startswith("ssh ")][0])
     if value == "90":
-        assert "ConnectTimeout=20" not in want
+        assert "ConnectTimeout=20" not in want and "ConnectTimeout=120" not in want
         assert ("ConnectTimeout=90" in want[-1]) is (hop == "nested")
     else:
-        assert "ConnectTimeout=20" in want
+        # through -J the gateway's login (a passphrase, 2FA) happens inside the node's ConnectTimeout
+        assert ("ConnectTimeout=120" if hop == "jump" else "ConnectTimeout=20") in want
     got = _argv_lines(subprocess.run(["bash", str(SH), *flags], env=env, capture_output=True, text=True,
                                      timeout=60).stdout)
     assert got == want

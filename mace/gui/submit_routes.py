@@ -7,6 +7,7 @@ GET  jobs/recent                  own jobs that ended in the last two days (sacc
 POST submit/preview               {root_gen, targets, where, options, mixed_choice} -> task
 POST submit/run                   {root_gen, preview_id, confirm_*} -> task
 POST jobs/cancel                  {root_gen, ids}
+POST jobs/release                 {root_gen, ids}
 POST jobs/recover/preview         {root_gen, ids | all} -> task (mace recover --dry-run, recover.py)
 POST jobs/recover/run             {root_gen, preview_id, include_stale} -> task (mace recover --yes)
 POST batch/scan | batch/plan | batch/write, GET batch/deck | batch/diff (batch.py)
@@ -217,6 +218,18 @@ def post(handler, route: str, body: Dict[str, Any]):
         if res["canceled"]:
             st.jobs.own.get(fresh="force")
         return handler._json(res)
+    if route == "jobs/release":
+        _gen(handler, body)
+        if _network(st):              # scontrol release changes SLURM's state as scancel does
+            raise sub.SubmitConflict("Releasing jobs is turned off while MACE GUI is open to the network")
+        ids = body.get("ids") or []
+        if not isinstance(ids, list) or not ids or len(ids) > 2000:
+            raise sub.SubmitError("ids is a list of job ids")
+        from . import jobs
+        res = jobs.release(st.root, [str(i) for i in ids])
+        if res["released"]:
+            st.jobs.own.get(fresh="force")
+        return handler._json(res)
     if route.startswith("jobs/recover/"):
         from . import recover
         return recover.post(handler, route, body, _gen, _network(st))
@@ -241,7 +254,7 @@ def drop_check_folder(kept) -> bool:
 
 
 GET_ROUTES = {"submit/capabilities", "submit/suggest", "jobs", "jobs/recent", "batch/deck", "batch/diff"}
-POST_ROUTES = {"submit/preview", "submit/run", "submit/site-check", "jobs/cancel", "jobs/recover/preview",
+POST_ROUTES = {"submit/preview", "submit/run", "submit/site-check", "jobs/cancel", "jobs/release", "jobs/recover/preview",
                "jobs/recover/run", "batch/scan", "batch/plan", "batch/write", "batch/stutsc"}
 # Settings › Advanced: cluster defaults (site_routes.py: mace site, set/unset, --init)
 GET_ROUTES |= {"site/settings"}

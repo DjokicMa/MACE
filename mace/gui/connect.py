@@ -46,7 +46,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-import webbrowser
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -60,6 +59,15 @@ SLOW_NOTE_S = 15.0
 # one: an unreachable host fails in this time with "cannot reach host", not
 # after the system's TCP timeout of a minute or more
 CONNECT_TIMEOUT_S = 20
+# ... except through a jump host: with -J (a ProxyJump), ssh reaches the
+# target over ``ssh -W`` to the jump host, and the target's ConnectTimeout
+# also covers the wait for its banner, which includes the login to the jump
+# host: its passphrase prompt or 2FA approval. One answered after 20 s failed
+# with "Connection timed out during banner exchange" / "Connection to UNKNOWN
+# port 65535 timed out" (a connection through a proxy has no address). Then
+# PROMPT_TIMEOUT_S is the limit, and first_hop_timed_out keeps an unreachable
+# jump host a fast failure (the -J ssh gets none of our -o options).
+PROMPT_TIMEOUT_S = 120
 # where the remote login shell looks for MACE when the mace command is not on
 # its PATH (the default "mace", or a path that does not exist there)
 MACE_FALLBACKS = ('${MACE_HOME:+"$MACE_HOME"/mace_cli}', '"$HOME"/mace/mace_cli', '"$HOME"/MACE/mace_cli')
@@ -503,18 +511,20 @@ def slurm_args(profile: Dict[str, Any]) -> List[str]:
     return out
 
 
-def _base_opts(extra: Sequence[str] = (), configured: Optional[str] = None) -> List[str]:
+def _base_opts(extra: Sequence[str] = (), configured: Optional[str] = None,
+               seconds: int = CONNECT_TIMEOUT_S) -> List[str]:
     out = ["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"]
-    return out + _timeout_opts(extra, configured)
+    return out + _timeout_opts(extra, configured, seconds)
 
 
-def _timeout_opts(extra: Sequence[str] = (), configured: Optional[str] = None) -> List[str]:
-    """-o ConnectTimeout=CONNECT_TIMEOUT_S, unless the extra ssh options or
-    your ssh config (``configured``: config_connect_timeout) set one: a
-    command-line -o would beat the config's own value (a slow VPN's)."""
+def _timeout_opts(extra: Sequence[str] = (), configured: Optional[str] = None,
+                  seconds: int = CONNECT_TIMEOUT_S) -> List[str]:
+    """-o ConnectTimeout=CONNECT_TIMEOUT_S (or ``seconds``), unless the extra
+    ssh options or your ssh config (``configured``: config_connect_timeout)
+    set one: a command-line -o would beat the config's own value (a slow VPN's)."""
     if configured or any("connecttimeout" in str(x).lower() for x in extra):
         return []
-    return ["-o", f"ConnectTimeout={CONNECT_TIMEOUT_S}"]
+    return ["-o", f"ConnectTimeout={seconds}"]
 
 
 def opt_connect_timeout(extra: Sequence[str]) -> Optional[str]:
@@ -530,6 +540,130 @@ def config_connect_timeout(host: str, runner: Callable = subprocess.run) -> Opti
         return None
     v = (ssh_g(host, runner).get("connecttimeout") or [""])[0]
     return v if v.isdigit() and int(v) > 0 else None
+
+
+def _jump_spec(spec: str) -> Tuple[str, Optional[int]]:
+    """A ProxyJump entry ``[user@]host[:port]`` -> (``[user@]host``, port or None)."""
+    m = re.match(r"^(.*?):(\d+)$", spec)
+    return (m.group(1), int(m.group(2))) if m and "[" not in spec else (spec, None)
+
+
+def jump_chain(profile: Dict[str, Any], hop: str, user_for_node: Optional[str] = None,
+               runner: Callable = subprocess.run) -> List[str]:
+    """The jump hosts the connection goes through before its destination: the
+    command's -J list, else a ProxyJump your ssh config sets for the
+    destination ("proxycommand" for a ProxyCommand), else none."""
+    gateway = str(profile.get("gateway") or "")
+    jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
+    if profile.get("node") and gateway and hop != "nested":
+        return jumps + [gateway]
+    if jumps:
+        return jumps
+    g = ssh_g(ssh_destination(profile, hop, user_for_node), runner)
+    pj = (g.get("proxyjump") or ["none"])[0]
+    if pj.lower() != "none":
+        return [j.strip() for j in pj.split(",") if j.strip()]
+    return ["proxycommand"] if (g.get("proxycommand") or ["none"])[0].lower() != "none" else []
+
+
+def prompt_wait(chain: Sequence[str], runner: Callable = subprocess.run) -> bool:
+    """True when the connection goes through jump hosts (jump_chain) and one
+    of them may ask for a passphrase, a password or a 2FA code (no BatchMode
+    yes in its ssh config): ssh logs in to them inside the destination's
+    ConnectTimeout, so it gets PROMPT_TIMEOUT_S."""
+    if not chain:
+        return False
+    if "proxycommand" in chain:
+        return True
+    return any((ssh_g(_jump_spec(h)[0], runner).get("batchmode") or ["no"])[0].lower() != "yes" for h in chain)
+
+
+def first_hop_timed_out(chain: Sequence[str], runner: Callable = subprocess.run,
+                        connect: Callable = socket.create_connection) -> Optional[str]:
+    """The first jump host's HostName when a TCP connection to it does not
+    open within its ConnectTimeout (yours, else CONNECT_TIMEOUT_S), else None:
+    it answered, refused, does not resolve, or is reached through a proxy
+    (ssh reports those at once by itself). The ssh that -J starts for it gets
+    none of the command's options, so only this keeps an unreachable gateway
+    a fast "cannot reach host" when PROMPT_TIMEOUT_S applies."""
+    if not chain or chain[0] == "proxycommand":
+        return None
+    spec, port = _jump_spec(chain[0])
+    g = ssh_g(spec, runner)
+    if any((g.get(k) or ["none"])[0].lower() != "none" for k in ("proxyjump", "proxycommand")):
+        return None
+    name = (g.get("hostname") or [_host_of(spec)])[0]
+    pv = (g.get("port") or ["22"])[0]
+    p = port or (int(pv) if pv.isdigit() else 22)
+    t = (g.get("connecttimeout") or [""])[0]
+    try:
+        s = connect((name, p), timeout=int(t) if t.isdigit() and int(t) > 0 else CONNECT_TIMEOUT_S)
+    except socket.timeout:
+        return name
+    except (OSError, UnicodeError, ValueError):
+        return None
+    try:
+        s.close()
+    except OSError:
+        pass
+    return None
+
+
+# A node that is down (or hangs) behind the gateway: through -J, ssh can tell
+# that only when the node's ConnectTimeout runs out (PROMPT_TIMEOUT_S while a
+# prompt may need the time). Beside the connection, node_probe logs in to the
+# gateway once more, unable to prompt (BatchMode: it works with an agent's key
+# or one without a passphrase, and says nothing otherwise), and asks whether the
+# node's ssh sends its first bytes within NODE_PROBE_S: a node whose ssh does
+# not (no answer to the connection, or a hung sshd) fails in seconds.
+NODE_PROBE_S = 8
+
+
+def node_probe(profile: Dict[str, Any], user_for_node: Optional[str] = None,
+               runner: Callable = subprocess.run) -> Tuple[List[str], str]:
+    """(ssh argv, script for its stdin) of the probe: ``bash -s`` on the
+    gateway connects to the node's ssh port (the HostName and Port that -J's
+    ``-W`` uses) and reads 4 bytes, under ``timeout``; its last line is
+    ``MACE_NODE_PROBE <exit code>`` (124: nothing came in time)."""
+    gateway = str(profile.get("gateway") or "")
+    jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
+    g = ssh_g(node_target(profile, user_for_node), runner)
+    host = (g.get("hostname") or [_host_of(str(profile.get("node") or ""))])[0]
+    port = (g.get("port") or ["22"])[0]
+    argv = (["ssh"] + (["-J", ",".join(jumps)] if jumps else []) + ["-T", "-o", "BatchMode=yes"]
+            + _timeout_opts((), config_connect_timeout(gateway, runner)) + [gateway, "bash -s"])
+    script = (f"timeout {NODE_PROBE_S} bash -c 'exec 3<>/dev/tcp/\"$0\"/\"$1\" && head -c 4 <&3' "
+              f"{shlex.quote(host)} {port if port.isdigit() else '22'}\nc=$?\necho\necho \"MACE_NODE_PROBE $c\"\n")
+    return argv, script
+
+
+def node_down(argv: List[str], script: str, runner: Callable = subprocess.run) -> bool:
+    """True when the probe ran on the gateway and the node's ssh sent nothing
+    within NODE_PROBE_S. Anything else (no login without a prompt, no bash or
+    timeout on the gateway, a refused or unresolvable node, which ssh -J
+    reports at once by itself) is False: the connection goes on."""
+    kw: Dict[str, Any] = {"input": script, "capture_output": True, "text": True,
+                          "timeout": NODE_PROBE_S + 3 * CONNECT_TIMEOUT_S}
+    if os.name == "posix" and runner is subprocess.run:
+        kw["start_new_session"] = True      # no terminal: the probe can never ask for anything
+    try:
+        r = runner(argv, **kw)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    return re.search(r"^MACE_NODE_PROBE 124\s*$", r.stdout or "", re.M) is not None
+
+
+def start_node_probe(sess: "Session", profile: Dict[str, Any], user_for_node: Optional[str]) -> threading.Thread:
+    """node_probe beside the session: a node that does not answer puts MACE_NODE_DOWN on its events."""
+    def go():
+        try:
+            if node_down(*node_probe(profile, user_for_node)):
+                sess.events.put(("MACE_NODE_DOWN", {}))
+        except Exception:
+            pass
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    return t
 
 
 def ssh_destination(profile: Dict[str, Any], hop: str, user_for_node: Optional[str] = None) -> str:
@@ -551,20 +685,22 @@ def node_target(profile: Dict[str, Any], user_for_node: Optional[str]) -> str:
 
 def build_ssh_argv(profile: Dict[str, Any], lp: int, rp: int, gp: int, hop: str,
                    user_for_node: Optional[str] = None, ssh: str = "ssh",
-                   node_keys: Sequence[str] = (), timeout: Optional[str] = None) -> List[str]:
+                   node_keys: Sequence[str] = (), timeout: Optional[str] = None,
+                   prompt: bool = False) -> List[str]:
     """The one ssh command for a hop ("jump" or "nested"); no -n, no -t, so
     stdin and its EOF pass through every hop to the server. node_keys: the
     gateway's key options for the node hop of "jump" (node_key_options).
     timeout: the ConnectTimeout your ssh config sets for ssh_destination
     (config_connect_timeout): then no default is added, and the nested hop's
-    inner ssh gets it (or --ssh-option's) too."""
+    inner ssh gets it (or --ssh-option's) too. prompt: a jump host may ask
+    for a passphrase or 2FA (prompt_wait): the default is PROMPT_TIMEOUT_S."""
     gateway = str(profile.get("gateway") or "")
     jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
     extra = [str(x) for x in (profile.get("ssh_options") or [])]
     rcmd = remote_command(profile, rp)
     node = profile.get("node")
     argv = [ssh]
-    base = _base_opts(extra, timeout)
+    base = _base_opts(extra, timeout, PROMPT_TIMEOUT_S if prompt else CONNECT_TIMEOUT_S)
     if not node:                                 # the server runs on the gateway itself
         if jumps:
             argv += ["-J", ",".join(jumps)]
@@ -640,11 +776,14 @@ def host_key_leg(stderr_lines: Sequence[str], node: str, gateway: str, gateway_h
 
 def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str = "", gateway: str = "",
                      stdout_lines: Sequence[str] = (), hop: str = "", trust_cmd: str = "",
-                     gateway_cmd: str = "", gateway_hostname: str = "") -> Tuple[str, str]:
+                     gateway_cmd: str = "", gateway_hostname: str = "", via: Sequence[str] = (),
+                     wait_s: Optional[int] = None, add_key: str = "") -> Tuple[str, str]:
     """(kind, message) for a session that ended before the server was ready.
     hop: the hop this session used; trust_cmd: host_key_trust_command's line
     for this hop; gateway_cmd: the same for the gateway alone (hop nested);
-    gateway_hostname: the gateway's HostName (ssh -G), which ssh's messages use."""
+    gateway_hostname: the gateway's HostName (ssh -G), which ssh's messages use;
+    via: the jump hosts on the way (jump_chain), wait_s: the ConnectTimeout
+    that applied, add_key: a key the agent does not hold (unloaded_key)."""
     err = "\n".join(stderr_lines)
     out = "\n".join(stdout_lines)
     both = err + "\n" + out
@@ -707,6 +846,14 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
         return ("dir", f"The folder does not exist on {where}, or the arguments were refused: check --dir "
                        "(and --setup / --mace).")
     gone = unreachable(stderr_lines, node)
+    if gone and (gone[0] == "UNKNOWN" or gone[0] == "the host" and via):
+        # ssh's name for a target reached through a proxy (-J): it did not answer in time (with LogLevel
+        # ERROR, ssh leaves out the line that names it)
+        jumped = bool(node and gateway and hop != "nested")
+        hosts = ", ".join(h for h in via if h != "proxycommand") or "its proxy"
+        what, through = ((f"the node {node}", f"the gateway {gateway}") if jumped else
+                         (gateway or node or "the host", hosts))
+        return ("unreachable", behind_jump_message(what, through, wait_s, add_key))
     if gone:
         return ("unreachable", unreachable_message(*gone))
     if node_auth_refused(stderr_lines, node, gateway):
@@ -762,6 +909,16 @@ def _banner_host(stderr_lines: Sequence[str]) -> str:
 
 def unreachable_message(host: str, why: str) -> str:
     return f"cannot reach host {host} ({why}): check the name, and your network or VPN."
+
+
+def behind_jump_message(what: str, through: str, wait_s: Optional[int], add_key: str = "") -> str:
+    """ssh's "Connection to UNKNOWN port 65535 timed out": the target behind
+    a jump host did not answer within ConnectTimeout. Most often the node is
+    down (or hangs); else the wait, which includes the login to the jump host,
+    ran out during its passphrase prompt or 2FA."""
+    from .connect_check import msg
+    return msg("behind-jump", what=what, via=through, wait=f"{wait_s} s" if wait_s else "its ConnectTimeout",
+               key=add_key or "<your key>", opt="--ssh-option=-oConnectTimeout=300", check="mace gui connect --check")
 
 
 def node_auth_refused(stderr_lines: Sequence[str], node: str, gateway: str) -> bool:
@@ -1008,6 +1165,18 @@ STTY_NOISE_RE = re.compile(r"^stty: .*standard input.*: Inappropriate ioctl for 
 # until the tunnel answers (Session.tunnel_confirmed); a real problem after.
 REFUSED_NOISE_RE = re.compile(r"^channel \d+: open failed: connect failed: Connection refused\s*$")
 
+def child_pids(pid: int) -> List[int]:
+    """The child processes of pid (POSIX: pgrep -P), else []."""
+    if os.name != "posix":
+        return []
+    try:
+        r = subprocess.run(["pgrep", "-P", str(pid)], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [int(x) for x in (r.stdout or "").split() if x.isdigit()]
+
+
 class Session:
     """One ssh process and the protocol it carries."""
 
@@ -1154,7 +1323,16 @@ class Session:
             return self.proc.wait(wait_s)
         except subprocess.TimeoutExpired:
             pass
+        # its -J helper (ssh -W) too: an ssh ended while it still waits for the node's banner leaves that
+        # helper running (until the gateway gives up on a node that does not answer, or for good). Windows:
+        # the job object of kill_with_this_process ends it
+        helpers = child_pids(self.proc.pid)
         self.proc.terminate()
+        for pid in helpers:
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                pass
         try:
             return self.proc.wait(3)
         except subprocess.TimeoutExpired:
@@ -1194,9 +1372,12 @@ def running_tasks(base: str, token: str) -> List[Dict[str, Any]]:
         return []
 
 
-def open_url(url: str) -> bool:
+def open_url(url: str, mode: Optional[str] = None, say: Optional[Callable[[str], None]] = None) -> bool:
+    """The URL in this computer's browser: its own app window, or a tab
+    (mode, --browser), its output kept out of this terminal (appwindow.py)."""
     try:
-        return webbrowser.open(url)
+        from .appwindow import open_url as _open
+        return _open(url, mode, say=say)
     except Exception:
         return False
 
@@ -1249,22 +1430,47 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
     bad = gateway_unresolvable(gateway, str(profile.get("jump") or "")) if gateway else None
     if bad:
         say(unresolvable_warning(bad))
+    from .connect_check import passphrase_hint, unloaded_key
+    unloaded = unloaded_key(profile)
+    add_key = unloaded[0] if unloaded else ""
+    extra = [str(x) for x in (profile.get("ssh_options") or [])]
     tries = 0
     hop_i = 0
+    probed = False
     while True:
         cur = hops[hop_i] if node and gateway else "jump"
         rp, gp = random_port(), random_port()
-        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node, node_keys=keys,
-                              timeout=config_connect_timeout(ssh_destination(profile, cur, user_for_node)))
+        chain = jump_chain(profile, cur, user_for_node)
+        prompt = prompt_wait(chain)
+        dest_t = config_connect_timeout(ssh_destination(profile, cur, user_for_node))
+        if prompt and not probed:
+            # ssh now waits PROMPT_TIMEOUT_S for the jump hosts: a first one that does not answer fails fast here
+            probed = True
+            slow = first_hop_timed_out(chain)
+            if slow:
+                say(f"mace gui connect: {unreachable_message(slow, 'timeout')}")
+                say("mace gui connect --check (with this profile or these flags) tests each step of the connection.")
+                return 1
+        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node, node_keys=keys, timeout=dest_t,
+                              prompt=prompt)
+        wait_s = int(opt_connect_timeout(extra) or dest_t or (PROMPT_TIMEOUT_S if prompt else CONNECT_TIMEOUT_S))
+        if unloaded and tries == 0 and hop_i == 0:
+            say(passphrase_hint(*unloaded, twice=bool(node and gateway and cur == "jump")))
         via = f" through {gateway}" if node and gateway else ""
         say(f"Connecting to {where}{via}...")
+        jumped = bool(node and gateway and cur == "jump")
+        if jumped:
+            from .connect_check import msg as check_msg
+            say(check_msg("waiting-node", node=node, gateway=gateway, wait=f"{wait_s} s"))
         sess = Session(argv, say)
+        if jumped:
+            start_node_probe(sess, profile, user_for_node)
         try:
             outcome = _drive(sess, profile, args, lp, where, say, ask,
                              jump_node=node if (gateway and cur == "jump") else "", hop=cur,
                              trust_cmd=host_key_trust_command(profile, cur, user_for_node),
                              gateway_cmd=host_key_trust_command(profile, "nested", user_for_node),
-                             gateway_hostname=gw_hostname)
+                             gateway_hostname=gw_hostname, via=chain, wait_s=wait_s, add_key=add_key)
         finally:
             # the readers are daemon threads: none may write to the console while Python shuts down
             sess.finish_readers()
@@ -1301,12 +1507,16 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
         return {"old-remote": 3, "mace-not-found": 127, "dir": 2}.get(kind, 1)
 
 
-def waiting_note(jump_node: str = "") -> str:
+def waiting_note(jump_node: str = "", add_key: str = "") -> str:
     """Shown once when nothing came back for SLOW_NOTE_S: ssh may be waiting
-    for an answer in this terminal (2FA, or the host-key question that a
-    node reached with ssh -J for the first time asks)."""
+    for an answer in this terminal (2FA, a key's passphrase, or the host-key
+    question that a node reached with ssh -J for the first time asks)."""
     note = ("(waiting: approve the 2FA prompt if there is one. If ssh asks whether to continue connecting "
             "(the host-key yes/no question), check the fingerprint and answer yes")
+    if add_key:
+        from .connect_check import shell_path         # one argument of this computer's shell (a space in a path)
+        note += (f". If ssh asks for the passphrase of {add_key}, type it; "
+                 f"ssh-add {shell_path(add_key, os.name == 'nt')} before connecting makes ssh ask only once")
     if jump_node:
         note += (f". If ssh asks for {jump_node}'s password, your key is not accepted on {jump_node} from this "
                  f"computer: see {DOCS_NODE_PASSWORD}")
@@ -1314,7 +1524,8 @@ def waiting_note(jump_node: str = "") -> str:
 
 
 def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_node: str = "",
-           hop: str = "", trust_cmd: str = "", gateway_cmd: str = "", gateway_hostname: str = "") -> Any:
+           hop: str = "", trust_cmd: str = "", gateway_cmd: str = "", gateway_hostname: str = "",
+           via: Sequence[str] = (), wait_s: Optional[int] = None, add_key: str = "") -> Any:
     """Wait for READY, then serve; an int exit code, or (kind, message) on failure before READY."""
     t0 = time.monotonic()
     noted = False
@@ -1326,7 +1537,7 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_nod
             tag, data = sess.events.get(timeout=1.0)
         except queue.Empty:
             if not noted and job is None and time.monotonic() - t0 > SLOW_NOTE_S:
-                say(waiting_note(jump_node))
+                say(waiting_note(jump_node, add_key))
                 noted = True
             continue
         except KeyboardInterrupt:
@@ -1351,6 +1562,13 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_nod
             return 2 if data.get("kind") in ("args", "dir") else 130 if data.get("kind") == "canceled" else 1
         elif tag == "MACE_GUI_READY" and isinstance(data, dict):
             ready = data
+        elif tag == "MACE_NODE_DOWN":
+            # node_probe: the node's ssh did not answer the gateway; ssh would wait out its ConnectTimeout
+            sess.end(2)
+            from .connect_check import msg as check_msg
+            return ("node-down", check_msg("node-down", node=jump_node or where,
+                                           gateway=str(profile.get("gateway") or ""), probe=NODE_PROBE_S,
+                                           check="mace gui connect --check"))
         elif tag == "MACE_GUI_USING" and data:
             say(f"mace is not on {where}'s PATH there; using {data}. To skip the search, save it: mace gui connect "
                 f"--mace {shlex.quote(str(data))} --save")
@@ -1360,7 +1578,7 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_nod
             return classify_failure(code, sess.stderr_lines, str(profile.get("node") or ""),
                                     str(profile.get("gateway") or ""), sess.stdout_lines, hop=hop,
                                     trust_cmd=trust_cmd, gateway_cmd=gateway_cmd,
-                                    gateway_hostname=gateway_hostname)
+                                    gateway_hostname=gateway_hostname, via=via, wait_s=wait_s, add_key=add_key)
         elif tag == "MACE_GUI_ERROR":
             sess.end(3)
             return classify_failure(98 if "port-busy" in str(data) else 1, sess.stderr_lines,
@@ -1425,10 +1643,10 @@ def _serve_session(sess: Session, profile, args, lp: int, where: str, say, ask, 
     elif not profile.get("node"):
         say("Note: this runs on the login node, which is shared; prefer a dev node (--node).")
     if not getattr(args, "no_open", False) and profile.get("open", True) is not False:
-        open_url(url)
+        open_url(url, getattr(args, "browser", None), say)
     say(f"MACE GUI on {where}: {url}")
     if login:
-        say("(the link signs in once; press Enter here to open MACE GUI in the browser again)")
+        say("(the link signs in once; press Enter here to open MACE GUI again)")
     if ready.get("job"):
         say(f"Press Ctrl+C to stop MACE GUI; its job {ready['job']} ends and the allocation is released.")
     else:
@@ -1451,7 +1669,7 @@ def _serve_session(sess: Session, profile, args, lp: int, where: str, say, ask, 
                 u = _local_url(data["url"], lp)
                 say(f"New sign-in link: {u}")
                 if not getattr(args, "no_open", False):
-                    open_url(u)
+                    open_url(u, getattr(args, "browser", None))
             elif tag == "MACE_GUI_STOPPED":
                 reason = data.get("reason") if isinstance(data, dict) else str(data)
                 stop_ev.set()
@@ -1568,6 +1786,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", action="append", default=None, metavar="DIR",
                    help="a folder File > Open Folder may switch to (repeatable; none turns it off)")
     p.add_argument("--no-open", action="store_true", help="print the URL; do not open a browser")
+    p.add_argument("--browser", choices=("app", "tab"), default=None,
+                   help="app: MACE GUI in its own window of a Chromium-family browser (Brave, Chrome, Chromium, "
+                        "Edge, Vivaldi; the default when one is installed); tab: a tab of your default browser "
+                        "(also the default when $BROWSER is set). [gui] open in site.toml sets your default")
     g = p.add_argument_group("run MACE GUI as a SLURM batch job (mace gui --slurm on the node or gateway)")
     g.add_argument("--slurm", action="store_true", default=None,
                    help="submit MACE GUI as a small batch job, wait for a compute node, and tunnel to it; the "
@@ -1719,7 +1941,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             else []
         for h in (["jump", "nested"] if hop == "auto" else [hop]) if (node and gateway) else ["jump"]:
             argv = build_ssh_argv(prof, lp, 40000, 40001, h, unode, node_keys=keys,
-                                  timeout=config_connect_timeout(ssh_destination(prof, h, unode)))
+                                  timeout=config_connect_timeout(ssh_destination(prof, h, unode)),
+                                  prompt=prompt_wait(jump_chain(prof, h, unode)))
             label = f"hop {h}" if node and gateway else "no hop"
             print(f"# {label} (the remote port is random on a real run)")
             if on_windows():
@@ -1731,6 +1954,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("# remote command")
         print(remote_command(prof, 40000))
         return 0
+    from . import sshfind
+    found, why = sshfind.ensure_ssh(lambda t: print(f"mace gui connect: {t}", file=sys.stderr))
+    if found is None:
+        print(why, file=sys.stderr)
+        print(f"mace gui connect --check tests the whole setup; {DOCS_WINDOWS if on_windows() else DOCS_MANUAL}",
+              file=sys.stderr)
+        return 2
     return run(prof, args, ask=input)
 
 

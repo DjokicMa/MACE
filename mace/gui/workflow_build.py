@@ -36,6 +36,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import socket
 import sys
 import time
@@ -46,6 +47,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import clirun
 from . import submit as sub
 from . import slurm_preview_shim as shim
+# opt2d12's modules (Crystal_d12/d12_calc_elastic.py): steps after an OPT or SP, nothing built from them
+from mace.constants import HARTREE_TO_EV
+from mace.workflow.common.constants import MODULE_STEP_TYPES, STAND_IN_FERMI_AU
 
 SPEC_DIR = "workflow_configs/gui_specs"
 UI_DRAFT_NAME = "builder_draft.json"
@@ -55,11 +59,29 @@ MIRROR_MARKER = ".mace_preview_mirror"
 MAX_INPUTS = 2000
 D3_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "ORBITALS")
 METHOD_FIELDS = ("functional", "dispersion")
+# A later SCF step's DFT grid and SCF block: each inherited from the structure's parent step unless set here
+# (the spec's grid_modifications, tolerance_modifications and scf_modifications)
+# (and its spin polarization, the spec's scf_modifications SPIN, and its k-point mesh, kpoint_modifications)
+# The k-point mesh row is Calculation Setup's opt2d12 patch row (k_points_for_all_files, the key opt2d12 reads
+# for a mesh): its answer goes to the CLI as that patch, and to the spec as kpoint_modifications.
+KMESH = "k_points_for_all_files"
+SCF_FIELDS = ("dft_grid", "tolerance", "maxcycle", "fmixing", "scf_method", "levshift", "levshift_values",
+              "spinlock", "smearing", "smear_width", "spin", KMESH)
+# What a later SCF step's form can change, per step type: the functional, the basis set, the DFT grid and the
+# SCF block on every SCF step; OPT's type and convergence; FREQ's template, NUMDERIV and IR. Everything else
+# stays what the structure's parent step had.
+LATER_FIELDS = {
+    "OPT": METHOD_FIELDS + ("basis_set",) + SCF_FIELDS + ("opt_type", "opt_convergence"),
+    "SP": METHOD_FIELDS + ("basis_set",) + SCF_FIELDS,
+    "FREQ": METHOD_FIELDS + ("basis_set",) + SCF_FIELDS + ("freq_template", "numderiv", "ir"),
+}
 RESOURCE_KEYS = ("ntasks", "walltime", "memory", "memory_per_cpu", "account", "constraint", "partition", "exclude")
 NO_TEMPLATES = ("custom", "interactive")
 LABEL_RE = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
 STEP_KEY_RE = re.compile(r"^([A-Z+]+[0-9]*)_(\d+)$")
 NOT_WRITING = re.compile(r"Not writing \S+?\.d12: (.+)$", re.M)
+# opt2d12's refusal of an ELASTIC/EOS/QHA/CPHF deck (d12_calc_elastic.resolve_for_opt2d12)
+NOT_WRITING_MODULE = re.compile(r"Not writing the (?:ELASTIC|EOS|QHA|CPHF) deck: (.+)$", re.M)
 
 # Plain words for the builder (a student who never used the CLI reads these).
 CALC_HELP = {
@@ -73,6 +95,17 @@ CALC_HELP = {
     "CHARGE+POTENTIAL": "Charge density and electrostatic potential maps.",
     "ORBITALS": "Every orbital as Molden files, at Γ and the band-edge k points (one file for a molecule), "
                 "to draw single orbitals.",
+    "TAU": "Relaxation time for TRANSPORT from deformation potentials: strained single points of the SP "
+           "(4 per axis), fitted to E1 and C, with the masses from BAND and DOSS. TRANSPORT then runs with "
+           "RELAXTIM = τ (10 fs, with the reason, when τ cannot be computed).",
+    "ELASTIC": "Elastic constants (ELASTCON), with piezoelectric (ELAPIEZO, PIEZOCON, PIEZOCP) or photoelastic "
+               "(PHOTOELA) constants: strained cells of the optimized structure, one CRYSTAL job.",
+    "EOS": "Equation of state: energy against volume around the optimized cell, the bulk modulus and its "
+           "pressure derivative (3D crystals).",
+    "QHA": "Quasi-harmonic approximation: Γ phonons at several volumes, thermal expansion and thermodynamics "
+           "against temperature (3D crystals).",
+    "CPHF": "Dielectric response (CPHF/KS): polarizability and dielectric tensors, optionally the "
+            "hyperpolarizabilities and frequency-dependent values.",
 }
 
 
@@ -92,7 +125,10 @@ def base_type(calc_type: str) -> str:
 def templates_info() -> Dict[str, Any]:
     from mace.workflow.common.constants import (CALC_TYPES, WORKFLOW_TEMPLATE_DESCRIPTIONS,
                                                 WORKFLOW_TEMPLATES)
-    temps = [{"name": n, "sequence": list(seq), "help": WORKFLOW_TEMPLATE_DESCRIPTIONS.get(n, " → ".join(seq))}
+    from mace.workflow.common.constants import planner_template_numbers
+    nums = planner_template_numbers()          # the number the CLI's template menu gives each
+    temps = [{"name": n, "sequence": list(seq), "help": WORKFLOW_TEMPLATE_DESCRIPTIONS.get(n, " → ".join(seq)),
+              "num": nums.get(n)}
              for n, seq in WORKFLOW_TEMPLATES.items() if n not in NO_TEMPLATES]
     types = {t: {"name": v.get("name", t), "help": CALC_HELP.get(t, v.get("name", t)),
                  "depends_on": list(v.get("depends_on") or []), "kind": calc_kind(t),
@@ -224,6 +260,11 @@ def setup_schema() -> Dict[str, Any]:
     return _SCHEMA
 
 
+def _hf_names() -> set:
+    from . import setup as gui_setup
+    return {n.upper() for n in gui_setup.hf_methods()}
+
+
 def _schema_functionals() -> set:
     cats = setup_schema().get("functional_categories") or []
     if not cats:
@@ -312,8 +353,88 @@ def soc_group(inp: Inputs, seq: List[str], i: int) -> Dict[str, Any]:
             "guesses": info.get("guesses") or ["guesspso", "guesspnoso"]}
 
 
+# A SOC deck needs explicit basis input (no BASISSET: soc_ecp.BASISSET_REFUSAL). The external library a
+# step's SOC deck is written with when its basis is an internal set, and the official SOC set that matches
+# a library's valence shells (pob-TZVP-rev2-SOC: pob-TZVP-rev2's shells with CRYSTAL's STUTSC ECP).
+SOC_EXTERNAL_FOR = {"POB-TZVP-REV2": "full.basis.triplezeta", "POB-DZVP-REV2": "full.basis.doublezeta"}
+SOC_SET_FOR = {"full.basis.triplezeta": "pob-tzvp-rev2-soc", "full.basis.triplezeta.rev2022": "pob-tzvp-rev2-soc"}
+
+
+def _soc_tables():
+    """d12_constants, basis_library and soc_ecp: the deck writer's own tables."""
+    from mace.workflow.spec import _d12_constants
+    C = _d12_constants()
+    import basis_library as BL
+    import soc_ecp as E
+    return C, BL, E
+
+
+def soc_functionals() -> List[str]:
+    """The functionals a two-component deck takes (soc_ecp.TWOC_FUNCTIONALS, and those whose -D3 form it
+    takes), as the Functional row names them."""
+    _, _, E = _soc_tables()
+    return sorted(set(E.TWOC_FUNCTIONALS) | {f[:-3] for f in E.TWOC_D3_FUNCTIONALS})
+
+
+def soc_basis_default(inp: Inputs, kind: Optional[str], name: Optional[str]) -> Dict[str, Any]:
+    """What a SOC deck of a step whose basis is ``kind``/``name`` (the step's own or inherited) is written with
+    by default: the external library (``basis_set``, a Basis set row option; None keeps the step's), the
+    official SOC set for its heavy atoms (``soc_basis``; None: MACE's INPSOC ECP, the default route), and a
+    note saying why, naming the elements that have no SOC basis."""
+    from . import setup as gui_setup
+    C, BL, E = _soc_tables()
+    label = lambda fam: BL.FAMILY_LABELS.get(fam, fam)                     # noqa: E731
+    out: Dict[str, Any] = {"parent_kind": kind, "parent": name, "basis_set": None, "soc_basis": None,
+                           "missing": [], "note": ""}
+    words = []
+    if kind == "INTERNAL":
+        fam = SOC_EXTERNAL_FOR.get(str(name or "").upper(), "full.basis.triplezeta")
+        out["basis_set"] = label(fam)
+        same = str(name or "").upper() in SOC_EXTERNAL_FOR
+        out["parent"] = f"{name} (internal)"
+        words.append(f"A SOC deck needs explicit basis input, and {name} is an internal set (BASISSET): the "
+                     f"basis set becomes {label(fam)}, MACE's external library"
+                     + (f" with the same shells as {name}." if same else
+                        f" (no external library matches {name}; pick another in Basis set)."))
+    else:
+        fam = BL.bundled_family_for(name) if name else None
+        out["parent"] = label(fam) if fam else (name or "the parent's own records")
+    soc_set = SOC_SET_FOR.get(fam)
+    elements, unread = set(), []
+    for f in inp.files:
+        z = gui_setup._atomic_numbers(f)
+        if isinstance(z, str):
+            unread.append(z)
+        else:
+            elements |= set(z)
+    ecp = sorted(z for z in elements if z in C.ECP_ELEMENTS_EXTERNAL)
+    covered = set(BL.soc_basis_elements())
+    out["missing"] = [E._symbol(z) for z in ecp if z not in covered]
+    if soc_set and ecp and not out["missing"] and not unread:
+        out["soc_basis"] = soc_set
+        words.append(f"The ECP atoms ({', '.join(E._symbol(z) for z in ecp)}) take the official "
+                     f"pob-TZVP-rev2-SOC basis set (its STUTSC spin-orbit ECP), which matches "
+                     f"{label(fam)}'s shells.")
+    elif soc_set and out["missing"]:
+        words.append(f"{', '.join(out['missing'])} {'has' if len(out['missing']) == 1 else 'have'} no "
+                     f"pob-TZVP-rev2-SOC basis set (it covers Rb-I but Tc, Cs, Ba and Hf-Bi), so the ECPs get "
+                     f"MACE's INPSOC spin-orbit records (the default route).")
+    elif soc_set and unread:
+        words.append("The elements could not be read (" + "; ".join(unread[:2]) + "): the ECPs get MACE's INPSOC "
+                     "records; pick the official SOC basis set by hand if every heavy element has one.")
+    elif not ecp and elements:
+        words.append(f"No element of these structures has an ECP in {label(fam) if fam else 'this basis'}: "
+                     f"CRYSTAL puts spin-orbit coupling only in the ECP (manual p. 175), so the CLI notes "
+                     f"that the all-electron atoms get no spin-orbit term.")
+    else:
+        words.append("The ECPs get MACE's INPSOC spin-orbit records (the default route).")
+    out["note"] = " ".join(words)
+    return out
+
+
 def spec_files(inp: Inputs, draft: Dict[str, Any], spec_dir: Optional[Path] = None,
-               step1_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+               step1_overrides: Optional[Dict[str, Any]] = None,
+               later_overrides: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, str]:
     """``spec.json`` and the step settings files for this draft. Input paths
     are relative to the spec's folder (``<folder>/workflow_configs/gui_specs/<x>/``),
     or absolute when ``spec_dir`` is None (a check in the GUI's scratch).
@@ -365,7 +486,8 @@ def spec_files(inp: Inputs, draft: Dict[str, Any], spec_dir: Optional[Path] = No
                                  f"({', '.join(D3_TYPES)})")
             named = _d3_calc_types(text) - {base_type(seq[i])}
             if named:
-                raise BuildError(f"{key}: the settings file is for a {sorted(named)[0]} step")
+                from mace.workflow.spec import _a
+                raise BuildError(f"{key}: the settings file is for {_a(sorted(named)[0])} step")
             from . import setup as gui_setup
             bad = gui_setup.validate("opt2d3", text)
             if bad:
@@ -389,6 +511,9 @@ def spec_files(inp: Inputs, draft: Dict[str, Any], spec_dir: Optional[Path] = No
             base = re.sub(r"-D3$", "", fn, flags=re.I)
             if functionals and base.upper() not in functionals:
                 raise BuildError(f"{key}: {fn} is not a functional MACE knows")
+            if base.upper() in _hf_names():
+                raise BuildError(f"{key}: {fn} is a Hartree-Fock method; the method (Hartree-Fock or DFT) is "
+                                 f"set on the first step, and a later step keeps it")
             mods = {"new_functional": base}
             if m.get("dispersion") is not None:
                 mods["use_dispersion"] = bool(m.get("dispersion"))
@@ -396,6 +521,44 @@ def spec_files(inp: Inputs, draft: Dict[str, Any], spec_dir: Optional[Path] = No
                 mods["use_dispersion"] = True
             # else: no word on dispersion, the parent's D3 is kept (engine + opt2d12)
             entry["overrides"] = {"method_modifications": mods}
+        # a later SCF step's other settings (basis set, SCF convergence, OPT and FREQ settings): the CLI's own
+        # answers to the form (Builder.later_overrides)
+        extra = (later_overrides or {}).get(key)
+        if extra:
+            if i == 0 or calc_kind(seq[i]) != "d12":
+                raise BuildError(f"{key}: these settings are changed only on a later SCF step (SP, OPT2, FREQ)")
+            from mace.workflow.spec import _merge
+            _merge(entry.setdefault("overrides", {}), copy.deepcopy(extra))
+        # a TAU step's options, a TRANSPORT step's relaxation time (mace/workflow/tau_step.py)
+        tau_opts = s.get("tau")
+        if tau_opts:
+            if base_type(seq[i]) != "TAU":
+                raise BuildError(f"{key}: these are a TAU step's settings")
+            from mace.workflow.tau_step import TauOptionError, check_options
+            try:
+                check_options(tau_opts, key)
+            except TauOptionError as e:
+                raise BuildError(str(e))
+            entry.setdefault("overrides", {}).update(copy.deepcopy(tau_opts))
+        # an ELASTIC/EOS/QHA/CPHF step's module block (spec override elastic_settings)
+        mod = s.get("module")
+        if mod:
+            if base_type(seq[i]) not in MODULE_STEP_TYPES:
+                raise BuildError(f"{key}: these are an ELASTIC, EOS, QHA or CPHF step's settings")
+            from mace.workflow.spec import module_settings_problem
+            why = module_settings_problem(seq[i], mod)
+            if why:
+                raise BuildError(f"{key}: {why}")
+            entry.setdefault("overrides", {})["elastic_settings"] = copy.deepcopy(mod)
+        rt = s.get("relaxation_time")
+        if rt not in (None, "", "default"):                  # default: CRYSTAL's 10 fs, nothing written
+            if base_type(seq[i]) != "TRANSPORT":
+                raise BuildError(f"{key}: the relaxation time is a TRANSPORT step's setting")
+            from mace.workflow.tau_step import TauOptionError, check_relaxation_time
+            try:
+                entry.setdefault("overrides", {})["relaxation_time"] = check_relaxation_time(rt, key)
+            except TauOptionError as e:
+                raise BuildError(str(e))
         # spin-orbit coupling: an SP step's overrides (a CIF start's first step gets them through its
         # conversion settings: step1_overrides, from the form's patches)
         soc = soc_patches(s)
@@ -491,11 +654,12 @@ def cli_env() -> Dict[str, str]:
 
 
 def check_spec(root: Path, inp: Inputs, draft: Dict[str, Any], work: Path, ctx=None,
-               step1_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+               step1_overrides: Optional[Dict[str, Any]] = None,
+               later_overrides: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """``mace workflow --spec SPEC --json`` (nothing written) in the GUI's
     scratch: each step's settings and resources and where they come from,
     with the partition's time limit checked."""
-    files = spec_files(inp, draft, None, step1_overrides)
+    files = spec_files(inp, draft, None, step1_overrides, later_overrides)
     d = work / "check"
     write_files(d, files)
     wd = work / "wd"
@@ -555,18 +719,51 @@ def step_request(draft: Dict[str, Any], step: str) -> Tuple[List[str], int]:
     return seq, int(m.group(2)) - 1
 
 
+def split_kmesh(answers: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """A later SCF step's answers for Calculation Setup: (the answers to the CLI's questions, the patch of the
+    k-point mesh row, which no question sets)."""
+    ans = {k: v for k, v in (answers or {}).items() if k != KMESH}
+    return ans, ({KMESH: str((answers or {})[KMESH]).strip()} if KMESH in (answers or {}) else {})
+
+
+def kmesh_answer(key: str, value: Any) -> str:
+    """The k-point mesh row's answer as the spec's kpoint_modifications new_k_points (BuildError if it is not
+    one: d12_constants.check_kpoint_modifications)."""
+    from mace.workflow.spec import _d12_constants
+    try:
+        return _d12_constants().check_kpoint_modifications({"new_k_points": str(value).strip()})["new_k_points"]
+    except ValueError:
+        raise BuildError(f"{key}: the k-point mesh is {_d12_constants().K_MESH_FORMS}, not {value!r}")
+
+
 def check_form_answers(inp: Inputs, seq: List[str], i: int, body: Dict[str, Any]) -> None:
     """A later SCF step inherits its parent's settings: only the method changes there."""
     if i == 0 and inp.kind == "d12":
         return
+    if base_type(seq[i]) == "TAU":
+        # the step's options, checked as the CLI checks them (mace/workflow/tau_step.py)
+        from mace.workflow.tau_step import TauOptionError, check_options
+        key = f"{seq[i]}_{i + 1}"
+        try:
+            check_options(((body.get("draft") or {}).get("steps") or {}).get(key, {}).get("tau") or {}, key)
+        except TauOptionError as e:
+            raise BuildError(str(e))
     check_soc(f"{seq[i]}_{i + 1}", seq[i], {k: v for k, v in (body.get("patches") or {}).items() if k in SOC_KEYS})
     if i > 0 and calc_kind(seq[i]) == "d12":
         answers = body.get("answers") or {}
-        bad = sorted(set(answers) - set(METHOD_FIELDS)) + (["the settings file"] if body.get("json_text") else []) \
-            + sorted(k for k in (body.get("patches") or {}) if k not in SOC_KEYS)
+        allowed = LATER_FIELDS.get(base_type(seq[i]), METHOD_FIELDS)
+        hf = str(answers.get("functional") or "").upper() in _hf_names()
+        bad = sorted(set(answers) - set(allowed)) + (["the settings file"] if body.get("json_text") else []) \
+            + sorted(k for k in (body.get("patches") or {}) if k not in SOC_KEYS) \
+            + (["a Hartree-Fock method (set on the first step)"] if hf else [])
         if bad:
-            raise BuildError(f"{seq[i]} inherits its parent's settings for each structure; only the functional "
-                             f"and dispersion can change here (not {', '.join(bad)})")
+            raise BuildError(f"{seq[i]} inherits its parent's settings for each structure; only the functional, "
+                             f"dispersion, basis set, DFT grid, SCF settings and k-point mesh"
+                             f"{' (and the optimization settings)' if base_type(seq[i]) == 'OPT' else ''}"
+                             f"{' (and the frequency settings)' if base_type(seq[i]) == 'FREQ' else ''} "
+                             f"can change here (not {', '.join(bad)})")
+        if KMESH in answers:
+            kmesh_answer(f"{seq[i]}_{i + 1}", answers[KMESH])
 
 
 class Builder:
@@ -629,6 +826,118 @@ class Builder:
         s = (self.draft.get("steps") or {}).get(f"{self.seq[0]}_1") or {}
         return self.cif_overrides(s.get("answers") or {}, {**(s.get("patches") or {}), **soc_patches(s)}) or None
 
+    # ---- a later SCF step's answers and what they change
+    def step_answers(self, key: str) -> Dict[str, Any]:
+        """A later SCF step's answers for Calculation Setup: the form's, with the functional and
+        dispersion of its method (the draft keeps both), limited to what that step type can change."""
+        s = (self.draft.get("steps") or {}).get(key) or {}
+        base = base_type(key.rsplit("_", 1)[0])
+        allowed = LATER_FIELDS.get(base, METHOD_FIELDS)
+        ans = {k: v for k, v in (s.get("answers") or {}).items() if k in allowed}
+        if soc_patches(s):
+            ans.pop("spin", None)        # a two-component step treats spin itself
+        if ans.get("basis_set") in (None, "", "Keep the parent's basis set"):
+            ans.pop("basis_set", None)
+        m = s.get("method") or {}
+        if m.get("functional"):
+            ans["functional"] = re.sub(r"-D3$", "", str(m["functional"]), flags=re.I)
+            if m.get("dispersion") is not None:
+                ans["dispersion"] = "Yes" if m.get("dispersion") else "No"
+        return ans
+
+    def later_overrides(self) -> Dict[str, Dict[str, Any]]:
+        """{step key: overrides} for the later SCF steps whose form changed more than the method: the
+        spec keys the engine reads (basis_modifications, tolerance_modifications, optimization_settings,
+        frequency_settings), worked out from the CLI's own saved settings for the answers (Setup run on a
+        stand-in parent, as for the first step) and never written by the GUI."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for i in range(1, len(self.seq)):
+            if calc_kind(self.seq[i]) != "d12":
+                continue
+            why = self.soc_basis_problem(i)
+            if why:
+                raise BuildError(why)
+            key = f"{self.seq[i]}_{i + 1}"
+            ans, kp = split_kmesh(self.step_answers(key))
+            ov = {"kpoint_modifications": {"new_k_points": kmesh_answer(key, kp[KMESH])}} if kp else {}
+            if set(ans) - set(METHOD_FIELDS):
+                ov.update(self._derive_overrides(i, key, ans))
+            if ov:
+                out[key] = ov
+        return out
+
+    def _derive_overrides(self, i: int, key: str, ans: Dict[str, Any]) -> Dict[str, Any]:
+        pkey = parent_key(self.seq, i)
+        pdeck = self.parent_deck(int(pkey.rsplit("_", 1)[1]) - 1)
+        out_path = stand_in(self.work / f"ovstandin_{i}", self.inp.materials[0], pdeck)
+        res = self.setup({"answers": ans, "form": False, "preview": False}, "opt2d12", base_type(self.seq[i]),
+                         f"ov{i}", out_path, f"projected/{out_path.name}",
+                         ("wf-standin", hashlib.sha256(pdeck.encode()).hexdigest(), "opt2d12"), schema=False)
+        if not res.get("json_text"):
+            raise BuildError(f"{key}: the CLI wrote no settings for these answers: " + refusal_line(res))
+        data = json.loads(res["json_text"])
+        ov: Dict[str, Any] = {}
+        if "basis_set" in ans:
+            ov["basis_modifications"] = basis_modifications(key, data)
+        if "tolerance" in ans and isinstance(data.get("tolerances"), dict):
+            tol = {k: data["tolerances"][k] for k in ("TOLINTEG", "TOLDEE") if k in data["tolerances"]}
+            if tol:
+                ov["tolerance_modifications"] = {"custom_tolerances": tol}
+        if "dft_grid" in ans and data.get("dft_grid"):
+            ov["grid_modifications"] = {"new_grid": data["dft_grid"]}
+        scf = scf_modifications(ans, data)
+        if scf:
+            ov["scf_modifications"] = scf
+        if {"opt_type", "opt_convergence"} & set(ans):
+            if data.get("optimization_type"):
+                ov["optimization_type"] = data["optimization_type"]
+            if isinstance(data.get("optimization_settings"), dict):
+                ov["optimization_settings"] = data["optimization_settings"]
+        if {"freq_template", "numderiv", "ir"} & set(ans) and isinstance(data.get("freq_settings"), dict):
+            ov["frequency_settings"] = data["freq_settings"]
+        return ov
+
+    def step_basis(self, i: int) -> Tuple[Optional[str], Optional[str]]:
+        """(INTERNAL | EXTERNAL, the set's name or library) of step ``i``'s deck for the first structure: its
+        own Basis set answer, else its parent's (a CIF start's conversion settings, a deck start's deck)."""
+        key = f"{self.seq[i]}_{i + 1}"
+        if i > 0 and calc_kind(self.seq[i]) == "d12":
+            ans = ((self.draft.get("steps") or {}).get(key) or {}).get("answers") or {}
+            b = ans.get("basis_set")
+            if b not in (None, "", "Keep the parent's basis set"):
+                from . import setup as gui_setup
+                _, BL, _ = _soc_tables()
+                fam = {v: k for k, v in BL.FAMILY_LABELS.items()}.get(str(b))
+                if fam or str(b) in gui_setup.external_basis_labels() or "/" in str(b):
+                    return "EXTERNAL", fam or str(b)
+                return "INTERNAL", str(b)
+        if i == 0 or calc_kind(self.seq[i]) != "d12":
+            if i == 0 and self.inp.kind == "cif":
+                cfg = self.cif_effective()
+                kind = "EXTERNAL" if str(cfg.get("basis_set_type") or "").upper() == "EXTERNAL" else "INTERNAL"
+                return kind, cfg.get("basis_set_path") if kind == "EXTERNAL" and cfg.get("basis_set_path") \
+                    else cfg.get("basis_set")
+            if i == 0:
+                m = re.search(r"^BASISSET\s*\n\s*(\S+)", self.inp.files[0].read_text(errors="replace"), re.M)
+                return ("INTERNAL", m.group(1)) if m else ("EXTERNAL", None)
+        pkey = parent_key(self.seq, i)
+        return self.step_basis(int(pkey.rsplit("_", 1)[1]) - 1) if pkey else (None, None)
+
+    def soc_basis_problem(self, i: int) -> Optional[str]:
+        """Why step ``i``'s SOC deck cannot be written with its basis set (an internal set), with the external
+        library to pick; None when SOC is off or the basis is external."""
+        key = f"{self.seq[i]}_{i + 1}"
+        s = (self.draft.get("steps") or {}).get(key) or {}
+        if not soc_patches(s) or i == 0:
+            return None
+        kind, name = self.step_basis(i)
+        if kind != "INTERNAL":
+            return None
+        d = soc_basis_default(self.inp, kind, name)
+        return (f"{key}: a spin-orbit (SOC) deck needs an external basis set (explicit basis input for its "
+                f"spin-orbit ECPs), and {name} is an internal one; pick {d['basis_set']} (or another external "
+                f"set) in Basis set")
+
     def cif_effective(self) -> Dict[str, Any]:
         from mace.workflow.spec import _merge
         cfg = self.cif_base()
@@ -655,19 +964,59 @@ class Builder:
             pkey = parent_key(seq, i)
             pdeck = self.parent_deck(int(pkey.rsplit("_", 1)[1]) - 1)
             out_path = stand_in(self.work / f"pstandin_{i}", self.inp.materials[0], pdeck)
-            m = s.get("method") or {}
-            answers = {}
-            if m.get("functional"):
-                answers["functional"] = re.sub(r"-D3$", "", str(m["functional"]), flags=re.I)
-                if m.get("dispersion") is not None:
-                    answers["dispersion"] = "Yes" if m.get("dispersion") else "No"
-            res = self.setup({"answers": answers, "patches": soc_patches(s), "form": False, "preview": True},
+            answers, kp = split_kmesh(self.step_answers(key) if calc_kind(seq[i]) == "d12" else {})
+            res = self.setup({"answers": answers, "patches": {**soc_patches(s), **kp}, "form": False, "preview": True},
                              "opt2d12", base_type(seq[i]),
                              f"p{i}", out_path, f"projected/{out_path.name}",
                              ("wf-standin", hashlib.sha256(pdeck.encode()).hexdigest(), "opt2d12"), schema=False)
         if not res.get("deck"):
             raise BuildError(f"No {key} deck to build the next step's form from: " + refusal_line(res))
         return res["deck"]
+
+
+def basis_modifications(key: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """The spec's basis_modifications for the basis set the CLI saved (its settings file ``data``): an internal
+    set by name, or an external library (MACE's bundled family name, else its directory), either way whatever
+    the parent step had."""
+    if data.get("basis_set_type") == "EXTERNAL":
+        lib = data.get("basis_set_path") or data.get("basis_set")
+        if not lib or str(lib).startswith("EXTERNAL (from"):
+            raise BuildError(f"{key}: the CLI named no external basis library for this choice")
+        try:
+            from mace.workflow.spec import _d12_constants
+            _d12_constants()
+            import basis_library
+            lib = basis_library.portable_path(str(lib))
+        except ImportError:                                                  # pragma: no cover
+            pass
+        return {"new_basis": str(lib), "basis_set_type": "EXTERNAL"}
+    if not data.get("basis_set"):
+        raise BuildError(f"{key}: the CLI named no basis set for this choice")
+    return {"new_basis": data["basis_set"]}
+
+
+def scf_modifications(ans: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+    """The spec's scf_modifications for a later step's answered SCF fields: the values the CLI saved for
+    them (its settings file ``data``), as the keys CRYSTALOptToD12 reads (d12_constants.SCF_MODIFICATION_KEYS)."""
+    scf = data.get("scf_settings") if isinstance(data.get("scf_settings"), dict) else {}
+    out: Dict[str, Any] = {}
+    if "maxcycle" in ans and scf.get("maxcycle") is not None:
+        out["MAXCYCLE"] = int(scf["maxcycle"])
+    if "fmixing" in ans and scf.get("fmixing") is not None:
+        out["FMIXING"] = int(scf["fmixing"])
+    if "scf_method" in ans and scf.get("method"):
+        out["METHOD"] = str(scf["method"]).upper()
+    if {"levshift", "levshift_values"} & set(ans):
+        lv = scf.get("levshift")
+        out["LEVSHIFT"] = [int(lv[0]), int(lv[1])] if isinstance(lv, (list, tuple)) and len(lv) >= 2 else None
+    if {"smearing", "smear_width"} & set(ans):
+        width = data.get("smearing_width")
+        out["SMEAR"] = float(width) if data.get("use_smearing") and width else None
+    if "spin" in ans:
+        out["SPIN"] = bool(data.get("spin_polarized", data.get("is_spin_polarized")))
+    if "spinlock" in ans and out.get("SPIN") is not False:
+        out["SPINLOCK"] = int(data.get("spinlock") or 0)
+    return out
 
 
 def refusal_line(res: Dict[str, Any]) -> str:
@@ -682,6 +1031,8 @@ def refusal_line(res: Dict[str, Any]) -> str:
     return words[-1] if words else "the CLI wrote none"
 
 
+STAND_IN_KPATH_NOISE = re.compile(r"no computed geometry block found|seekpath library failed|"
+                                  r"Shrink factor \d+ cannot represent the k-path points exactly")
 # fields of a CIF start's first step that are not changed here (the structure's own; the chain's)
 STEP1_FIXED = ("calc_type", "dimensionality")
 
@@ -696,8 +1047,9 @@ def step_form(st, inp: Inputs, draft: Dict[str, Any], seq: List[str], i: int, bo
       the plan's cif_conversion_config), with the answers' changes merged in;
       ``base_values`` are the values with nothing changed;
     * a later SCF step: opt2d12 on a stand-in parent made from its parent
-      step's deck; only the method can change (each structure keeps its own
-      parent's settings);
+      step's deck; the method, basis set, DFT grid and SCF settings (and OPT's
+      or FREQ's own) can change, everything else is each structure's parent's
+      (``editable``; an unanswered field shows the parent step's value);
     * a properties step: opt2d3 on a stand-in parent, every field.
     """
     from . import setup as gui_setup
@@ -733,14 +1085,250 @@ def step_form(st, inp: Inputs, draft: Dict[str, Any], seq: List[str], i: int, bo
         return res
     pkey = parent_key(seq, i)
     pdeck = b.parent_deck(int(pkey.rsplit("_", 1)[1]) - 1)
+    if calc == "TAU":
+        return tau_form(inp, draft, seq, i, pkey, pdeck)
+    if calc in MODULE_STEP_TYPES:
+        return module_form(inp, draft, seq, i, pkey, pdeck, work, ctx, cache_get, cache_put)
     out_path = stand_in(work / f"standin_{i}", inp.materials[0], pdeck)
     mode = "opt2d3" if calc_kind(seq[i]) == "d3" else "opt2d12"
-    res = b.setup({"answers": body.get("answers") or {}, "patches": body.get("patches") or {},
-                   "json_text": body.get("json_text"), "preview": preview_deck}, mode, calc, f"s{i}", out_path,
+    # a stand-in output has no real structure for SeeK-path: its BAND form shows the static table path
+    answers, kp = split_kmesh(body.get("answers") or {}) if mode == "opt2d12" else (body.get("answers") or {}, {})
+    res = b.setup({"answers": answers, "patches": {**(body.get("patches") or {}), **kp},
+                   "json_text": body.get("json_text"), "preview": preview_deck, "stand_in_kpath": mode == "opt2d3"},
+                  mode, calc, f"s{i}", out_path,
                   f"projected/{out_path.name}", ("wf-standin", hashlib.sha256(pdeck.encode()).hexdigest(), mode))
+    if mode == "opt2d3" and calc == "TRANSPORT":
+        res["stand_in_fermi_note"] = STAND_IN_FERMI_NOTE.format(STAND_IN_FERMI_AU * HARTREE_TO_EV)
+    if mode == "opt2d3" and calc == "BAND":
+        # what the CLI says about the stand-in's missing structure is the stand-in's, not the user's to act on
+        res["problems"] = [p for p in res.get("problems") or []
+                           if not STAND_IN_KPATH_NOISE.search(str(p.get("message")))]
+        res["static_kpath_note"] = ("The path in this deck is the static table path of the space group: the real step "
+                                    "computes SeeK-path's path (the default) from the finished output.")
     res.update(step=key, parent=pkey, material_id=inp.materials[0], standin=True,
-               editable=list(METHOD_FIELDS) if mode == "opt2d12" else None, soc_group=soc_group(inp, seq, i))
+               editable=list(LATER_FIELDS.get(calc, METHOD_FIELDS)) if mode == "opt2d12" else None,
+               soc_group=soc_group(inp, seq, i))
+    if mode == "opt2d12":
+        maxcycle_hint(res, calc)
+        spin_hint(res, (body.get("patches") or {}).get("soc") is True)
+        kmesh_hint(res, pdeck)
+        g = res.get("soc_group") or {}
+        if g.get("applies"):
+            # inherited basis (the parent's) and what a SOC deck of this step is written with by default
+            g["basis"] = soc_basis_default(inp, *b.step_basis(int(pkey.rsplit("_", 1)[1]) - 1))
+            g["functionals"] = soc_functionals()
+            if (body.get("patches") or {}).get("soc") is True:
+                # this form's answers and SOC choices, over the draft's
+                d2 = copy.deepcopy(draft)
+                st2 = d2.setdefault("steps", {}).setdefault(key, {})
+                st2["answers"] = dict(body.get("answers") or {})
+                st2["soc"] = {k: v for k, v in (body.get("patches") or {}).items() if k in SOC_KEYS}
+                soc_problems(res, Builder(st, inp, d2, work, ctx, cache_get, cache_put), i)
+    if calc == "TRANSPORT":
+        from mace.workflow.tau_step import tau_before
+        tau = tau_before(seq, seq[i])
+        rt = ((draft.get("steps") or {}).get(key) or {}).get("relaxation_time")
+        res["relaxation"] = {"value": "auto" if tau else (rt if rt not in (None, "") else "default"),
+                             "tau_step": f"{tau}_{seq.index(tau) + 1}" if tau else None, "default_fs": 10}
     return res
+
+
+def soc_problems(res: Dict[str, Any], b: "Builder", i: int) -> None:
+    """A SOC step's form: the CLI's refusal of an internal basis or of a functional the 2c-SCF does not take,
+    said in the form's words (the row to change) instead of the settings-file keys the CLI names."""
+    probs = [p for p in res.get("problems") or []
+             if not (p.get("field") == "soc" and "internal basis-set library (BASISSET)" in str(p.get("message")))]
+    why = b.soc_basis_problem(i)
+    if why:
+        probs.insert(0, {"severity": "error", "source": "Workflow", "field": "soc", "message": why.split(": ", 1)[1]})
+    fn = next((f for f in res.get("form") or [] if f.get("id") == "functional"), None)
+    name = re.sub(r"-D3$", "", str((fn or {}).get("value") or ""), flags=re.I)
+    if name and name.upper() not in {x.upper() for x in soc_functionals()}:
+        probs.insert(0, {"severity": "error", "source": "Workflow", "field": "soc",
+                         "message": f"{name} has no two-component form in CRYSTAL23 (manual ch. 6): pick one of "
+                                    f"{', '.join(soc_functionals())} in Functional (the -D3 forms of BLYP, PBE, "
+                                    f"B3LYP, PBE0 and PW1PW too)"})
+    res["problems"] = probs
+
+
+def maxcycle_hint(res: Dict[str, Any], calc: str) -> None:
+    """A FREQ step's SCF max cycles row says what the deck gets when it is left inherited (the parent's value,
+    at least the floor; d12_constants.tight_scf_maxcycle) and that a value set here is written as given."""
+    from mace.workflow.spec import _d12_constants
+    C = _d12_constants()
+    if calc not in C.TIGHT_SCF_CALC_TYPES:
+        return
+    for f in res.get("form") or []:
+        if f.get("id") == "maxcycle":
+            f["hint"] = (f"inherited: the parent's value, at least {C.TIGHT_SCF_MIN_MAXCYCLE} for {calc}'s tighter "
+                         f"TOLDEE; a value set here is written as given")
+            try:
+                n = int(str(f.get("value")))
+            except (TypeError, ValueError):
+                n = None
+            if f.get("answered") and n is not None and n < C.TIGHT_SCF_MIN_MAXCYCLE:
+                f["note"] = (f"{n} is below the {C.TIGHT_SCF_MIN_MAXCYCLE} {C.a_calc(calc)} deck otherwise gets: "
+                             f"its tighter TOLDEE may need more cycles")
+
+
+def spin_hint(res: Dict[str, Any], soc: bool) -> None:
+    """A later step's Spin polarized row: inherited from the step before, and a change starts the step from a
+    fresh SCF guess (CRYSTAL cannot restart across a spin change: d12_constants.SPIN_CHANGE_GUESS). A SOC
+    step treats spin itself: the row stays its parent's."""
+    for f in res.get("form") or []:
+        if f.get("id") != "spin":
+            continue
+        if soc:
+            res["editable"] = [e for e in res.get("editable") or [] if e != "spin"]
+            f["hint"] = "a two-component (SOC) step treats spin itself; set it on the step it starts from"
+            return
+        f["hint"] = ("inherited from the step before; a change starts this step from a fresh SCF guess, since "
+                     "CRYSTAL cannot restart from a wavefunction of the other spin treatment")
+        parent = str(f.get("default")) == "Yes"
+        now = str(f.get("value")) == "Yes"
+        if f.get("answered") and now != parent:
+            f["note"] = ("starts from a fresh guess: the parent's wavefunction has no spin" if now else
+                         "starts from a fresh guess: the parent's wavefunction is spin-polarized")
+
+
+def _mesh_factors(text: Optional[str]) -> Optional[Tuple[int, ...]]:
+    """The shrinking factors of a SHRINK record as Setup shows it ("8 16", "0 16 / 8 8 1") or of a mesh answer
+    ("8 16", "8 8 4"): one-line IS ISP is IS along every direction."""
+    if not text:
+        return None
+    nums = re.findall(r"\d+", str(text).split("/")[-1])
+    if "/" not in str(text) and len(nums) == 2:
+        nums = nums[:1] * 3
+    return tuple(int(n) for n in nums) if len(nums) == 3 else None
+
+
+def kmesh_hint(res: Dict[str, Any], pdeck: str) -> None:
+    """A later step's k-point mesh row: the parent step's SHRINK record as inherited (``default_label``, the
+    deck's own record; ``default`` and an unchanged row's value in the form an answer takes), "auto" offered
+    beside it, and what the step's own deck gets when that is not what was typed (auto; a mesh whose
+    symmetry-equivalent directions differ, raised to agree, d12_constants.symmetric_k_points). The SCF still
+    restarts from the parent's density matrix: GUESSP is kept across a k-point change."""
+    from . import setup as gui_setup
+    for f in res.get("form") or []:
+        if f.get("id") != KMESH:
+            continue
+        lines = pdeck.splitlines()
+        dim = lines[1].strip().upper() if len(lines) > 1 else "CRYSTAL"
+        shrink = gui_setup._shrink_of(pdeck)
+        f["label"] = "k-point mesh (SHRINK)"
+        if not shrink or dim == "MOLECULE":
+            res["editable"] = [e for e in res.get("editable") or [] if e != KMESH]
+            f["hint"] = "a molecule has no k points"
+            return
+        short = shrink.split(" / ", 1)[1] if " / " in shrink else shrink
+        f.update(default=short, default_label=f"SHRINK {shrink}", suggestions=["auto", short])
+        if not f.get("answered"):
+            f["value"] = short
+        f["hint"] = ("inherited from the step before. IS ISP (8 16), per axis IS1 IS2 IS3 (8 8 4; a slab's third "
+                     "factor is 1, a polymer's second and third), or auto: MACE's mesh from each structure's cell. "
+                     "The SCF still restarts from the parent's density matrix (GUESSP)")
+        written = gui_setup._shrink_of(res.get("deck") or "")
+        if not f.get("answered") or not written:
+            return
+        typed = str(f.get("value") or "").strip()
+        n = {"SLAB": 2, "POLYMER": 1}.get(dim, 3)
+        want, got = _mesh_factors(typed), _mesh_factors(written)
+        if typed.lower() == "auto":
+            f["note"] = f"auto: SHRINK {written} for {res.get('material_id')}, from its cell; each structure gets its own"
+        elif want and got and want[:n] != got[:n]:
+            f["note"] = (f"written as SHRINK {written}: directions the symmetry makes equivalent need the same "
+                         f"factor (CRYSTAL stops on SHRINK BREAKS SYMMETRY)")
+
+
+def tau_form(inp: Inputs, draft: Dict[str, Any], seq: List[str], i: int, pkey: str, pdeck: str) -> Dict[str, Any]:
+    """A TAU step's settings: its options (the defaults filled in) and how many
+    strained single points each structure gets, from the parent deck's symmetry."""
+    from mace.workflow import tau_step as T
+    key = f"{seq[i]}_{i + 1}"
+    raw = ((draft.get("steps") or {}).get(key) or {}).get("tau") or {}
+    try:
+        opts = T.check_options(raw, key)
+    except T.TauOptionError as e:
+        raise BuildError(str(e))
+    out = {"mode": "tau", "step": key, "calc_type": seq[i], "parent": pkey, "material_id": inp.materials[0],
+           "options": opts, "defaults": T.check_options({}), "form": [], "soc_group": None,
+           "masses": [s for s in seq if base_type(s) in ("BAND", "DOSS")],
+           "transport": next((f"{s}_{j + 1}" for j, s in enumerate(seq)
+                              if base_type(s) == "TRANSPORT" and T.tau_before(seq, s) == seq[i]), None)}
+    try:
+        dim, axes, why = T.symmetry_axes(pdeck)
+        if opts["axes"] != "auto":
+            axes, why = list(opts["axes"]), "the axes chosen here"
+        out.update(dimensionality=dim, axes=axes, axes_reason=why, n_runs=T.member_count(axes, opts["strains"]))
+    except ValueError as e:
+        out["refusal"] = f"No strained decks for {inp.materials[0]}: {e}. TRANSPORT then runs with " \
+                         f"{opts['fallback_fs']:g} fs."
+    return out
+
+
+def check_module_settings(draft: Dict[str, Any], seq: List[str], i: int) -> None:
+    """An ELASTIC/EOS/QHA/CPHF step's module block, checked as the CLI checks
+    a spec's elastic_settings (before its form is run)."""
+    key = f"{seq[i]}_{i + 1}"
+    raw = ((draft.get("steps") or {}).get(key) or {}).get("module")
+    if not raw:
+        return
+    if base_type(seq[i]) not in MODULE_STEP_TYPES:
+        raise BuildError(f"{key}: these are an ELASTIC, EOS, QHA or CPHF step's settings")
+    from mace.workflow.spec import module_settings_problem
+    why = module_settings_problem(seq[i], raw)
+    if why:
+        raise BuildError(f"{key}: {why}")
+
+
+def module_form(inp: Inputs, draft: Dict[str, Any], seq: List[str], i: int, pkey: str, pdeck: str, work: Path,
+                ctx, cache_get, cache_put) -> Dict[str, Any]:
+    """An ELASTIC, EOS, QHA or CPHF step's settings: its module block (the
+    draft's ``module``: mace opt2d12's --elastic-settings, Calculation
+    Setup's module fields), the modules it can be (mace/gui/mechanics_routes.py)
+    and the deck mace opt2d12 writes with it from a stand-in of the parent
+    (or the CLI's reason for writing none)."""
+    from mace.workflow.spec import _elastic
+    from . import mechanics_routes
+    E = _elastic()
+    key = f"{seq[i]}_{i + 1}"
+    calc = base_type(seq[i])
+    check_module_settings(draft, seq, i)
+    raw = ((draft.get("steps") or {}).get(key) or {}).get("module") or {}
+    meta = mechanics_routes.modes()
+    own = calc in E.OWN_TYPES
+    modes = [m for m in meta["modes"] if (m["mode"] == calc if own else m["mode"] in E.ELASTIC_MODES)]
+    norm = E.normalize(raw, calc)
+    out = {"mode": "module", "step": key, "calc_type": seq[i], "parent": pkey, "material_id": inp.materials[0],
+           "settings": raw, "module": norm["mode"], "describe": E.describe(norm), "modes": modes,
+           "defaults": meta["defaults"], "toldee": E.QHA_TOLDEE if calc == "QHA" else E.MODULE_TOLDEE,
+           "form": [], "soc_group": None}
+    ck = ("wf-module", hashlib.sha256(pdeck.encode()).hexdigest(), calc, json.dumps(raw, sort_keys=True),
+          clirun.cli_hash())
+    hit = cache_get(ck)
+    if hit is None:
+        out_path = stand_in(work / f"mstandin_{i}", inp.materials[0], pdeck)
+        dest = out_path.parent / "deck"
+        dest.mkdir(exist_ok=True)
+        # as the engine writes the step's deck: the step's config file (its type and module
+        # block), so the stand-in parent is not checked as the run a deck asked for directly is
+        step_cfg = out_path.parent / "module_step.json"
+        step_cfg.write_text(json.dumps({"calculation_type": calc, **({"elastic_settings": raw} if raw else {})}))
+        argv = clirun.mace_argv("--no-banner", "opt2d12", "--out-file", str(out_path), "--config-file",
+                                str(step_cfg), "--non-interactive", "--output-dir", str(dest))
+        r = clirun.run(argv, out_path.parent, ctx, timeout=180)
+        decks = sorted(dest.glob("*.d12"))
+        refusal = None
+        if r.returncode != 0 or not decks:
+            m = NOT_WRITING_MODULE.search(r.log)
+            refusal = m.group(1).strip() if m else refusal_line({"refused": r.log})
+        hit = {"deck": decks[0].read_text(errors="replace") if decks and r.returncode == 0 else None,
+               "refusal": refusal}
+        cache_put(ck, hit, len(json.dumps(hit)))
+    out.update(deck=hit["deck"], standin=True)
+    if hit["refusal"]:
+        out["refusal"] = f"No {calc} deck for {inp.materials[0]}: {hit['refusal']}"
+    return out
 
 
 def _d3_calc_types(text: str) -> set:
@@ -755,6 +1343,11 @@ def _d3_calc_types(text: str) -> set:
     return {t for t in (data.get("calculation_type"), conf.get("calculation_type")) if isinstance(t, str)}
 
 
+STAND_IN_FERMI_NOTE = ("The chemical potentials and the transport distribution range in this deck are placed around a "
+                       "stand-in Fermi level ({:.2f} eV): the real step places them around its parent's E_F (the SCF's, "
+                       "else a BAND or DOSS run of it), and refuses the deck without one.")
+
+
 def stand_in(d: Path, material: str, deck_text: str) -> Path:
     """A stand-in parent: the deck, an output DummyFileCreator makes from it
     and an empty-ish wavefunction (as a finished job leaves them)."""
@@ -765,14 +1358,18 @@ def stand_in(d: Path, material: str, deck_text: str) -> Path:
     out = d / f"{material}.out"
     c = DummyFileCreator()
     c.create_dummy_out(out, c.extract_d12_settings(deck))
+    # a stand-in Fermi level: a TRANSPORT step's E_F-relative ranges (and a DOSS window) need one to be
+    # written at all; the real step places them around its parent's (STAND_IN_FERMI_NOTE)
+    from mace.workflow.dummy_file_creator import append_stand_in_fermi
+    append_stand_in_fermi(out)
     c.create_dummy_f9(d / f"{material}.f9")
     return out
 
 
 # ------------------------------------------------------------------ fingerprint
 def active_rows(folder: Path, inp: Inputs) -> List[Dict[str, Any]]:
-    """Unfinished steps (submitted, queued, running; pending with a job id)
-    of these structures in this folder's databases."""
+    """Unfinished steps (submitted, queued, running, held; pending with a
+    job id) of these structures in this folder's databases."""
     import sqlite3
     mats = set(inp.materials)
     decks = {str(f) for f in inp.files} | {str(f.resolve()) for f in inp.files}
@@ -784,7 +1381,8 @@ def active_rows(folder: Path, inp: Inputs) -> List[Dict[str, Any]]:
             continue
         try:
             rows = con.execute("SELECT calc_id, material_id, calc_type, status, slurm_job_id, input_file "
-                               "FROM calculations WHERE lower(status) IN (?, ?, ?, ?)", sub.QUEUED_STATES).fetchall()
+                               f"FROM calculations WHERE lower(status) IN ({', '.join('?' * len(sub.QUEUED_STATES))})",
+                               sub.QUEUED_STATES).fetchall()
         except sqlite3.Error:
             rows = []
         finally:
@@ -802,8 +1400,7 @@ def fingerprint(root_gen: Any, inp: Inputs, files: Dict[str, str], env: Dict[str
     stamps = [sub._stamp(f) for f in inp.files]
     if inp.kind == "d12":
         for f in inp.files:
-            sh = f.with_suffix(".sh")
-            stamps.append(sub._stamp(sh) if sh.exists() else [str(sh), "absent"])
+            # a finished output is not run again (its job script is never read: the decks run in step folders)
             out = f.with_suffix(".out")
             stamps.append([str(out), sub.out_bucket(out)] if out.exists() else [str(out), "absent"])
     blocked = sorted(json.dumps(r, sort_keys=True) for r in active_rows(inp.folder, inp))
@@ -868,9 +1465,10 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
     folder_rel = sub._rel(root, folder)
     spec_name = spec_folder_name(draft)
     spec_rel = f"{SPEC_DIR}/{spec_name}"
-    ov = Builder(st, inp, draft, work / "forms", ctx, cache_get or (lambda k: None),
-                 cache_put or (lambda k, v, n: None)).step1_overrides()
-    files = spec_files(inp, draft, folder / spec_rel, ov)
+    builder = Builder(st, inp, draft, work / "forms", ctx, cache_get or (lambda k: None),
+                      cache_put or (lambda k, v, n: None))
+    ov = builder.step1_overrides()
+    files = spec_files(inp, draft, folder / spec_rel, ov, builder.later_overrides())
     if ui_draft:                      # the builder's own draft, for Clone (the CLI never reads it)
         files[UI_DRAFT_NAME] = ui_draft
     fp = fingerprint(root_gen, inp, files, env)
@@ -886,6 +1484,17 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
     mirror.mkdir(parents=True, exist_ok=True)
     sel = sub.Selection(folder, ["."], list(inp.files), True)
     staged = sub.stage(sel, root, mirror)
+    # a deck whose own output finished is not run again: the CLI reads that output, so the copy has it
+    finished: List[Dict[str, str]] = []
+    if inp.kind == "d12":
+        from mace.workflow.manual_progress import finished_output
+        for f in inp.files:
+            out = finished_output(f, sub.deck_calc_type(f))
+            if out is not None:
+                finished.append({"deck": f.name, "out_rel": sub._rel(root, out)})
+                (mirror / sub._rel(root, out)).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(out, mirror / sub._rel(root, out))
+                staged += out.stat().st_size
     (mirror / MIRROR_MARKER).write_text("a MACE GUI workflow preview copy\n")
     mfolder = mirror / folder_rel if folder_rel else mirror
     write_files(mfolder / spec_rel, files)
@@ -936,6 +1545,9 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
         r2 = clirun.run(clirun.mace_argv(*launch[1:]), mfolder, ctx, timeout=sub.PREVIEW_TIMEOUT_S, env=penv)
         logs.append(r2.log)
         code = r2.returncode
+        if code != 0:
+            why = next((ln.strip() for ln in (r2.log or "").splitlines() if re.search(r"\bError:", ln)), "")
+            result["refused"] = re.sub(r"^\W*(\[?ERROR\]?\W*)?(Error:\s*)?", "", why) or None
     after = sub.listing(mirror)
     calls = [json.loads(l) for l in log_file.read_text().splitlines() if l.strip()] if log_file.exists() else []
     if any(c.get("no_slurm") for c in calls) and "No SLURM here: the preview uses default cluster limits" not in warnings:
@@ -979,7 +1591,8 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
                 rel = sp.name
             scripts[rel] = normalize_script(stext, mirror, root)
             result["first_step"].append({
-                "material_id": job, "script_rel": rel, "script_text": _unmirror(stext, mirror, root),
+                "material_id": job, "script_rel": rel,
+                "calc_type": sub.deck_calc_type(deck) if deck.exists() else None, "script_text": _unmirror(stext, mirror, root),
                 "deck_rel": sub._rel(mirror, deck) if deck.exists() else None, "deck_name": deck.name,
                 "deck_text": deck.read_text(errors="replace") if deck.exists() else None,
                 "resources": sub._resources(stext), "array": bool(res.get("array")), "wrapper": srel})
@@ -1007,8 +1620,18 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
                     "script_text": _unmirror(sh.read_text(), mirror, root) if sh and sh.is_file() else None,
                     "resources": sub._resources(sh.read_text()) if sh and sh.is_file() else {}})
             result["not_projected"] = pj.get("not_projected") or []
+            if any(base_type(str(x.get("calc_type"))) == "BAND" for x in result["projected"]):
+                result["projected_notes"] = ["The BAND k-path shown is the static table path of the deck's space group: "
+                                             "the real step computes SeeK-path's path from the finished output."]
+            if any(base_type(str(x.get("calc_type"))) == "TAU" for x in result["projected"]):
+                result.setdefault("projected_notes", []).append(
+                    "The TAU step's strained decks are written from a stand-in SP. Stand-in outputs give no relaxation "
+                    "time, so the TRANSPORT deck shown has CRYSTAL's 10 fs: the real step runs with τ from the finished "
+                    "strained runs (or 10 fs, with the reason, when τ cannot be computed).")
             # a step the engine's deck writer refused (a SOC deck it cannot write): its reason, in its words
             for why in dict.fromkeys(m.group(1).strip() for m in NOT_WRITING.finditer(pr.stderr or "")):
+                warnings.append(f"Projection: a later step's deck was not written: {why}")
+            for why in dict.fromkeys(m.group(1).strip() for m in NOT_WRITING_MODULE.finditer(pr.stderr or "")):
                 warnings.append(f"Projection: a later step's deck was not written: {why}")
             if pj.get("problems"):
                 warnings.extend(f"Projection: {p}" for p in pj["problems"])
@@ -1026,13 +1649,11 @@ def preview(st, root: Path, root_gen: Any, inp: Inputs, draft: Dict[str, Any], w
         if wline not in warnings:
             warnings.append(wline)
     result["n_jobs"] = len(result["first_step"])
-    needs: Dict[str, bool] = {}
-    if inp.kind == "d12":
-        conf = sub.conflicts(root, sel, list(inp.files), None)
-        result["conflicts"] = conf
-        needs["overwrite"] = bool(conf["finished"] or conf["wavefunction"])
+    # decks start in the workflow's own step folders (workflow_outputs/<id>/step_NNN_<TYPE>/<material>/), so
+    # nothing of the folder is overwritten; a deck whose own output finished is not run again
+    result["finished"] = finished
     p = WfPreview(id="", created=time.time(), folder=folder, inputs=inp, spec_rel=spec_rel, files=files, fp=fp,
-                  result=result, launch_shape=_shape(result["launch"] or []), scripts=scripts, needs=needs)
+                  result=result, launch_shape=_shape(result["launch"] or []), scripts=scripts, needs={})
     return p, result
 
 
@@ -1063,8 +1684,6 @@ def check_run(store: sub.Store, pid: str, root: Path, root_gen: Any, ticks: Dict
         raise sub.SubmitConflict("The CRYSTAL module MACE would load changed since the preview; preview again")
     if now["blocked"] != p.fp["blocked"]:
         raise sub.SubmitConflict("The queue changed since the preview; preview again")
-    if p.needs.get("overwrite") and not ticks.get("confirm_overwrite"):
-        raise sub.SubmitConflict("Tick “Overwrite finished results” to start from these decks", need="overwrite")
     if p.result.get("code"):
         raise sub.SubmitConflict("The preview failed; nothing can be submitted (see its log)")
     return p
@@ -1129,13 +1748,8 @@ class LaunchLock:
                 return age > LOCK_STALE_S
             if pid <= 0:
                 return True
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                return True
-            except OSError:
-                return False            # alive, another user's
-            return False
+            from .registry import pid_alive      # os.kill(pid, 0) would end the process on Windows
+            return not pid_alive(pid)            # another user's live process counts as alive
         return age > LOCK_STALE_S
 
     def __exit__(self, *a):

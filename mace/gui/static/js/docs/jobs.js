@@ -56,12 +56,13 @@ export function createJobsPanel(host, h) {
       <td class="mono">${esc(j.id)}${own ? ' <span class="jobs-badge" title="The job MACE GUI runs in">MACE GUI</span>' : ""}</td>
       <td class="name" title="${esc(j.name)}">${esc(j.name)}</td>
       <td class="mono">${j.deck_rel ? esc(j.deck_rel.split("/").pop()) : '<span class="muted">—</span>'}</td>
-      <td class="st-${esc(j.state)}">${esc(j.state)}</td><td class="mono">${elapsed}</td><td class="mono">${esc(j.cpus || "")}</td>
+      <td class="st-${esc(j.state)}">${esc(j.state)}${j.held ? ` <span class="jobs-badge held" style="color:var(--warning);background:transparent;border:1px solid var(--warning)" title="${j.held === "user" ? "Held by you (JobHeldUser): release it to let it start" : "Held by an administrator (JobHeldAdmin): only they can release it"}">Held</span>` : ""}</td><td class="mono">${elapsed}</td><td class="mono">${esc(j.cpus || "")}</td>
       <td>${esc(j.state === "PENDING" ? j.reason : j.node)}</td><td>${tracked}</td>
       <td><span class="jobs-acts">
         <button type="button" class="tb-btn-text sm" data-act="details" data-id="${esc(j.id)}" aria-label="Details of job ${esc(j.id)}">Details</button>
         <button type="button" class="tb-btn-text sm" data-act="output" data-id="${esc(j.id)}"${j.out_rel ? "" : " disabled"}>Open Output</button>
         <button type="button" class="tb-btn-text sm" data-act="log" data-id="${esc(j.id)}"${j.log_rel ? "" : " disabled"}>Show Log</button>
+        ${j.held === "user" && !own ? `<button type="button" class="tb-btn-text sm" data-act="release" data-id="${esc(j.id)}">Release</button>` : ""}
         ${own ? "" : `<button type="button" class="tb-btn-text sm" data-act="cancel" data-id="${esc(j.id)}">Cancel</button>`}</span></td></tr>`;
   }
   function render() {
@@ -134,6 +135,18 @@ export function createJobsPanel(host, h) {
     } catch (e) { toast(e.message, "error"); }
     load(true);
   }
+  async function release(id) {
+    const j = jobById(id);
+    const ok = await h.confirm({ title: "Release Job?", body: `Release ${id}${j ? ` (${j.name})` : ""}? It leaves the hold and can start when resources are free. This runs: scontrol release ${id}`,
+      yes: "Release Job", no: "Keep Held", defaultNo: false });
+    if (!ok) return;
+    try {
+      const r = await api("jobs/release", { body: { ids: [id] } });
+      if (r.released.length) toast(`Released ${r.released.join(", ")}`, "success");
+      for (const x of r.refused) toast(`${x.id}: ${x.reason}`, "warning");
+    } catch (e) { toast(e.message, "error"); }
+    load(true);
+  }
   async function recover(body) {
     if (recovering) return;
     recovering = true;
@@ -155,6 +168,7 @@ export function createJobsPanel(host, h) {
     if (b.dataset.act === "refresh") load(true);
     else if (b.dataset.act === "cancel-selected") cancel([...selected]);
     else if (b.dataset.act === "cancel") cancel([id]);
+    else if (b.dataset.act === "release") release(id);
     else if (b.dataset.act === "recover") recover({ ids: [id] });
     else if (b.dataset.act === "recover-all") recover({ all: true });
     else if (b.dataset.act === "output") { const j = jobById(id); if (j && j.out_rel) h.openOutput(j.out_rel, j.state === "RUNNING"); }

@@ -6,21 +6,57 @@
  * module, and the main thread calls the same functions for small structures. */
 export { fracToCart, cartToFrac, parseTriple } from "../rank.js";
 
-/* Element data: ase.data.covalent_radii (Cordero et al. 2008; 0.2 Å for
- * Z = 0 and above Cm, as ase has it) and the symbols, by atomic number. */
+/* Element data: the symbols to Og (118) and covalent radii by atomic number: ase.data.covalent_radii
+ * (Cordero et al. 2008) to Cm, then Pyykkö & Atsumi's single-bond radii (Chem. Eur. J. 15, 186, 2009)
+ * from Bk to Og, where ase has its 0.2 Å placeholder (1.1.6: those elements drew no bonds). */
 export const SYMBOLS = ("X H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge " +
   "As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm " +
-  "Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr").split(" ");
+  "Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr " +
+  "Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og").split(" ");
 export const COVALENT = Float32Array.from([0.2, 0.31, 0.28, 1.28, 0.96, 0.84, 0.76, 0.71, 0.66, 0.57, 0.58, 1.66, 1.41,
   1.21, 1.11, 1.07, 1.05, 1.02, 1.06, 2.03, 1.76, 1.7, 1.6, 1.53, 1.39, 1.39, 1.32, 1.26, 1.24, 1.32, 1.22, 1.22, 1.2,
   1.19, 1.2, 1.2, 1.16, 2.2, 1.95, 1.9, 1.75, 1.64, 1.54, 1.47, 1.46, 1.42, 1.39, 1.45, 1.44, 1.42, 1.39, 1.39, 1.38,
   1.39, 1.4, 2.44, 2.15, 2.07, 2.04, 2.03, 2.01, 1.99, 1.98, 1.98, 1.96, 1.94, 1.92, 1.92, 1.89, 1.9, 1.87, 1.87,
   1.75, 1.7, 1.62, 1.51, 1.44, 1.41, 1.36, 1.36, 1.32, 1.45, 1.46, 1.48, 1.4, 1.5, 1.5, 2.6, 2.21, 2.15, 2.06, 2,
-  1.96, 1.9, 1.87, 1.8, 1.69, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+  1.96, 1.9, 1.87, 1.8, 1.69, 1.68, 1.68, 1.65, 1.67, 1.73, 1.76, 1.61,
+  1.57, 1.49, 1.43, 1.41, 1.34, 1.29, 1.28, 1.21, 1.22, 1.36, 1.43, 1.62, 1.75, 1.65, 1.57]);
+/* Bond radii (1.1.6, heavy-element bonds): the covalent radius, except for the heavy cations whose
+ * ionic bonds are much longer than their covalent radius says (Ag-Cl 2.89 Å in AgCl, Pb-O 2.8 Å in
+ * PbTiO3, Tl-Cl 3.3 Å: 1.17-1.35 × the covalent sum, so no bond was drawn). Theirs is Shannon's
+ * six-coordinate ionic radius + 0.785 Å, the mean of (Shannon − Cordero) over the common anions
+ * (N3− O2− F− S2− Cl− Se2− Br− Te2− I−: 0.74-0.83 Å), so a cation-anion pair reaches the ionic sum.
+ * Each value has a third decimal (Cordero's have two), so the bond search can tell it apart and uses
+ * the covalent radius between two metals ("Bonds between metals": Ag-Ag stays at Ag's 1.45 Å). The
+ * server's structures.BOND_EXTRA holds the same values. */
+export const BOND_EXTRA = { Pd: 1.645, Ag: 1.935, Cd: 1.735, In: 1.585, Pt: 1.586, Au: 1.635, Hg: 1.805, Tl: 2.285,
+  Pb: 1.975, Bi: 1.815 };
+const BOND_Z = new Float32Array(COVALENT);
+const METAL_COV = new Map();          // a bond radius -> the covalent radius metal-metal pairs use
+for (const [sym, r] of Object.entries(BOND_EXTRA)) {
+  const z = SYMBOLS.indexOf(sym);
+  BOND_Z[z] = r;
+  METAL_COV.set(r, COVALENT[z]);
+  METAL_COV.set(Math.fround(r), COVALENT[z]);
+}
+/** The bond radius of atomic number z (above 118: CRYSTAL's 2xx ECP numbers, Z = z mod 100). */
+export const bondRadius = (z) => { const zz = z > 118 ? z % 100 || z : z; return BOND_Z[zz] || 0.2; };
+/** The radius a metal-metal pair uses: the covalent radius behind a heavy cation's bond radius. */
+export const metalRadius = (r) => METAL_COV.get(r) ?? r;
 /* Everything not in this set counts as a metal for drawing bonds (the
  * server's structures._NONMETALS): metal-metal pairs get none, as VESTA. */
 const NONMETALS = new Set([1, 2, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18, 32, 33, 34, 35, 36, 51, 52, 53, 54, 85, 86]);
 export const isMetal = (z) => !NONMETALS.has(z);
+/** Whether metal-metal pairs are bonded in structure s: Settings' "Bonds between metals" (setting), or a
+ * structure of metals only (an alloy, an intermetallic), which has no ionic solid's cations to keep apart.
+ * mace analyze bonds and topology count them the same way (analysis/topology.py bonds). Without this the
+ * viewer drew no bond at all in 139 of 300 JARVIS-DFT cells (1.1.6). */
+export function metalMetalBonds(s, setting = false) {
+  if (setting === true) return true;
+  const m = s && s.metal;
+  if (!m || !m.length) return false;
+  for (let i = 0; i < m.length; i++) if (!m[i]) return false;
+  return true;
+}
 const Z_OF = new Map(SYMBOLS.map((s, z) => [s.toLowerCase(), z]));
 /** "fe", "Fe" -> 26; anything else -> 0. */
 export function zOf(sym) {
@@ -39,7 +75,7 @@ export function fromPayload(s) {
     for (let k = 0; k < 3; k++) { t.frac[3 * i + k] = s.frac[i][k]; t.cart[3 * i + k] = s.cart[i][k]; }
     const z = s.numbers[i] % 100 || s.numbers[i];
     t.z[i] = z;
-    t.radii[i] = s.radii ? s.radii[i] : COVALENT[z] || 0.2;
+    t.radii[i] = s.radii ? s.radii[i] : bondRadius(z);
     t.metal[i] = s.metal ? (s.metal[i] ? 1 : 0) : (isMetal(z) ? 1 : 0);
   }
   return t;
@@ -72,7 +108,7 @@ export function decodePacked(p) {
       : [f[0] * cell[0][0] + f[1] * cell[1][0] + f[2] * cell[2][0], f[0] * cell[0][1] + f[1] * cell[1][1] + f[2] * cell[2][1],
         f[0] * cell[0][2] + f[1] * cell[1][2] + f[2] * cell[2][2]];
     symbols[i] = SYMBOLS[zz] || "X";
-    radii[i] = COVALENT[zz] || 0.2;
+    radii[i] = bondRadius(zz);
     metal[i] = isMetal(zz);
   }
   const out = { ...p, cell, numbers, frac, cart, symbols, radii, metal };
@@ -87,7 +123,7 @@ export function payloadFrom(cell, frac, numbers, base = {}) {
   const cart = frac.map((f) => [0, 1, 2].map((k) => f[0] * C[0][k] + f[1] * C[1][k] + f[2] * C[2][k]));
   const zs = numbers.map((z) => z % 100 || z);
   return { ...base, cell: C, frac: frac.map((f) => f.slice()), cart, numbers: numbers.slice(),
-    symbols: zs.map((z) => SYMBOLS[z] || "X"), radii: zs.map((z) => COVALENT[z] || 0.2),
+    symbols: zs.map((z) => SYMBOLS[z] || "X"), radii: zs.map((z) => bondRadius(z)),
     metal: zs.map((z) => isMetal(z)), lattice: latticeOf(C) };
 }
 
@@ -141,12 +177,15 @@ export function cellFromParams(a, b, c, al, be, ga) {
 /** The shortest Cartesian vector between two fractional positions, with the
  * lattice translation that gives it (checked over the 27 neighbors of the
  * rounded difference, so it is exact for skewed cells too). */
-export function minImage(cell, fa, fb) {
+export function minImage(cell, fa, fb, pbc = null) {
   const C = rows(cell);
   const d = [fb[0] - fa[0], fb[1] - fa[1], fb[2] - fa[2]];
-  const r = d.map(Math.round);
+  // a non-periodic axis (pbc, 1.1.6) has no images: the atom where it is
+  const per = [0, 1, 2].map((k) => !pbc || !!pbc[k]);
+  const r = d.map((x, k) => (per[k] ? Math.round(x) : 0));
+  const span = (k) => (per[k] ? 1 : 0);
   let best = null, bestImg = null, bestLen = Infinity;
-  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+  for (let i = -span(0); i <= span(0); i++) for (let j = -span(1); j <= span(1); j++) for (let k = -span(2); k <= span(2); k++) {
     const img = [-r[0] + i, -r[1] + j, -r[2] + k];
     const v = cartOf(C, [d[0] + img[0], d[1] + img[1], d[2] + img[2]]);
     const L = dot3(v, v);
@@ -190,13 +229,81 @@ function cutoffOf(radii) {
   for (let i = 0; i < radii.length; i++) if (radii[i] > r) r = radii[i];
   return 2 * r;
 }
-/** Bonds between drawn atoms (Cartesian, no periodicity): pairs i<j with
- * 0.1 < d < tol·(ri+rj), no metal–metal pair unless allowed, as the old
- * O(N²) bondsFor. Returns Uint32Array [i0, j0, i1, j1, ...]. */
-export function cellListBonds(cart, radii, metal, tol, metalMetal = false) {
+
+/* ---------------------------------------------------------------- the bond rule (1.1.6, Calculate Bonds) */
+/* One rule for every bond the browser finds: the drawn bonds (main thread and worker), Bonded atoms outside,
+ * the editor's neighbor and fragment selection, coordination and the polyhedra. Two atoms are bonded when
+ * min < d < tol × (r_i + r_j) (bondRadius; two metals take their covalent radii and need "Bonds between
+ * metals" or a structure of metals only, metalMetalBonds). A pair rule (Calculate Bonds…, Settings key
+ * bondPairs: {"O-Si": {min, max} | {never: true}}) replaces that for one pair of elements: never bonded,
+ * or bonded from its min (else the rule's) to its max (else the formula, metal pairs excepted as above).
+ * `rule` (bondRule) is {min, pairs: Map pairKey -> {min, max, never}, z: the atomic number of each atom of
+ * the search}; without one (or with no pairs) every search gives what it gave before 1.1.6's rule. */
+export const BOND_MIN = 0.1;
+export const BOND_TOL = { min: 0.8, max: 1.6, default: 1.15 };
+export const PAIR_MAX = 10;                 // Å: the longest pair rule (the search grid grows with it)
+export const pairKey = (za, zb) => (za < zb ? za * 1000 + zb : zb * 1000 + za);
+/** "si-O " -> "O-Si" (the stored key: the two symbols sorted), or "" when either is not an element. */
+export function pairName(a, b = null) {
+  const [x, y] = b === null ? String(a).split("-") : [a, b];
+  const za = zOf(x), zb = zOf(y);
+  return za && zb ? [SYMBOLS[za], SYMBOLS[zb]].sort().join("-") : "";
+}
+/** Settings' pair rules as a Map pairKey -> {min, max, never} (a malformed entry is skipped). */
+export function pairRules(obj) {
+  const out = new Map();
+  if (!obj || typeof obj !== "object") return out;
+  for (const [name, r] of Object.entries(obj)) {
+    const [a, b] = name.split("-"), za = zOf(a), zb = zOf(b);
+    if (!za || !zb || !r || typeof r !== "object") continue;
+    const num = (x) => (typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= PAIR_MAX ? x : undefined);
+    const e = { never: r.never === true, min: num(r.min), max: num(r.max) };
+    if (e.max === 0) e.max = undefined;
+    if (e.never || e.min !== undefined || e.max !== undefined) out.set(pairKey(za, zb), e);
+  }
+  return out;
+}
+/** The atomic number of each atom of s (CRYSTAL's 2xx ECP numbers folded, as bondRadius reads them). */
+export function zOfAtoms(s) {
+  if (s.numbers) return Uint8Array.from(s.numbers, (z) => (z > 118 ? z % 100 || z : z));
+  return Uint8Array.from(s.symbols || [], (x) => zOf(x));
+}
+/** Structure s's bond rule under the settings get(k) reads (a document's effective values): {tol, metalMetal,
+ * min, pairs, z} (z: per atom of s; a search over drawn copies maps it through their base atoms, ruleFor). */
+export function bondRule(s, get) {
+  const t = Number(get("bondTolerance")), m = get("bondMin");
+  return { tol: t > 0 ? t : (s && s.bond_scale) || BOND_TOL.default, metalMetal: metalMetalBonds(s, get("bondMetalMetal")),
+    min: typeof m === "number" && m >= 0 ? m : BOND_MIN, pairs: pairRules(get("bondPairs")), z: s ? zOfAtoms(s) : new Uint8Array(0) };
+}
+/** The rule for a search over a list of atoms (drawn copies: base[k] is atom k's atom of the structure). */
+export function ruleFor(rule, base = null) {
+  if (!rule) return null;
+  const z = base ? Uint8Array.from(base, (b) => rule.z[b]) : rule.z;
+  return { min: rule.min, pairs: rule.pairs, z };
+}
+function ruleReach(rule) {
+  let r = 0;
+  if (rule && rule.pairs) for (const e of rule.pairs.values()) if (!e.never && e.max > r) r = e.max;
+  return r;
+}
+/** The rule for one pair: atoms i and j at squared distance d2 are bonded (radii, metal: per atom). */
+export function bondedPair(d2, i, j, radii, metal, tol, metalMetal, rule) {
+  const pr = rule && rule.pairs && rule.pairs.size ? rule.pairs.get(pairKey(rule.z[i], rule.z[j])) : undefined;
+  if (pr && pr.never) return false;
+  const mm = metal[i] && metal[j], fixed = !!pr && pr.max > 0;
+  if (!fixed && !metalMetal && mm) return false;
+  const lo = pr && pr.min !== undefined ? pr.min : rule && rule.min >= 0 ? rule.min : BOND_MIN;
+  const hi = fixed ? pr.max : tol * (mm ? metalRadius(radii[i]) + metalRadius(radii[j]) : radii[i] + radii[j]);
+  return d2 > lo * lo && d2 < hi * hi;
+}
+
+/** Bonds between drawn atoms (Cartesian, no periodicity): pairs i<j bonded under the rule (bondedPair:
+ * min < d < tol·(ri+rj), no metal–metal pair unless allowed, the pair rules), as the old O(N²) bondsFor.
+ * Returns Uint32Array [i0, j0, i1, j1, ...]. */
+export function cellListBonds(cart, radii, metal, tol, metalMetal = false, rule = null) {
   const n = radii.length;
   if (!n) return new Uint32Array(0);
-  const cut = tol * cutoffOf(radii) || 1;
+  const cut = Math.max(tol * cutoffOf(radii), ruleReach(rule)) || 1;
   let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
     const v = cart[3 * i + k];
@@ -223,7 +330,7 @@ export function cellListBonds(cart, radii, metal, tol, metalMetal = false) {
   let out = new Uint32Array(Math.max(64, 8 * n)), m = 0;
   for (let i = 0; i < n; i++) {
     const id = cellOf[i], a = Math.floor(id / (g[1] * g[2])), b = Math.floor(id / g[2]) % g[1], c = id % g[2];
-    const xi = cart[3 * i], yi = cart[3 * i + 1], zi = cart[3 * i + 2], ri = radii[i], mi = metal[i];
+    const xi = cart[3 * i], yi = cart[3 * i + 1], zi = cart[3 * i + 2];
     for (let da = -1; da <= 1; da++) {
       const A = a + da; if (A < 0 || A >= g[0]) continue;
       for (let db = -1; db <= 1; db++) {
@@ -234,10 +341,8 @@ export function cellListBonds(cart, radii, metal, tol, metalMetal = false) {
           for (let p = count[cell2]; p < count[cell2 + 1]; p++) {
             const j = order[p];
             if (j <= i) continue;
-            if (!metalMetal && mi && metal[j]) continue;
             const dx = cart[3 * j] - xi, dy = cart[3 * j + 1] - yi, dz = cart[3 * j + 2] - zi;
-            const d2 = dx * dx + dy * dy + dz * dz, lim = tol * (ri + radii[j]);
-            if (d2 > 0.01 && d2 < lim * lim) {
+            if (bondedPair(dx * dx + dy * dy + dz * dz, i, j, radii, metal, tol, metalMetal, rule)) {
               if (m + 2 > out.length) { const o = new Uint32Array(out.length * 2); o.set(out); out = o; }
               out[m++] = i; out[m++] = j;
             }
@@ -250,20 +355,38 @@ export function cellListBonds(cart, radii, metal, tol, metalMetal = false) {
 }
 /** Bonds of the periodic structure (the bond graph for fragments, neighbors
  * and Add Atom): {i, j, img} with atom j at image img bonded to atom i, each
- * bond once. Buckets in fractional space, wrapped at the cell faces. */
-export function periodicBonds(cell, frac, radii, metal, tol, metalMetal = false) {
+ * bond once. Buckets in fractional space, wrapped at the cell faces. `pbc`
+ * (1.1.6): along a non-periodic axis (a slab's c, a molecule's box) nothing
+ * wraps and img stays 0, so the atoms at the two faces of a slab are not
+ * bonded through its vacuum. */
+export function periodicBonds(cell, frac, radii, metal, tol, metalMetal = false, pbc = null, rule = null) {
   const C = rows(cell), R = reciprocal(C), n = radii.length;
   const I = [], J = [], IMG = [];
   if (!n || !R) return { i: new Uint32Array(0), j: new Uint32Array(0), img: new Int8Array(0) };
-  const cut = tol * cutoffOf(radii) || 1;
+  const per = [0, 1, 2].map((k) => !pbc || !!pbc[k]);
+  const cut = Math.max(tol * cutoffOf(radii), ruleReach(rule)) || 1;
   const h = R.map((r) => 1 / norm3(r));                     // plane spacings
-  const g = h.map((hk) => Math.max(1, Math.min(64, Math.floor(hk / cut))));
-  const reach = h.map((hk, k) => Math.ceil(cut / (hk / g[k])));
+  // a non-periodic axis: buckets over the atoms' own range, at least the cutoff wide (in fractions)
+  const flo = [0, 0, 0], fspan = [1, 1, 1];
+  for (let k = 0; k < 3; k++) {
+    if (per[k]) continue;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) { const f = frac[3 * i + k]; if (f < lo) lo = f; if (f > hi) hi = f; }
+    flo[k] = lo; fspan[k] = Math.max(hi - lo, 1e-9);
+  }
+  const g = h.map((hk, k) => (per[k] ? Math.max(1, Math.min(64, Math.floor(hk / cut)))
+    : Math.max(1, Math.min(64, Math.floor((fspan[k] * hk) / cut)))));
+  const reach = h.map((hk, k) => (per[k] ? Math.ceil(cut / (hk / g[k])) : 1));
   const nb = g[0] * g[1] * g[2];
   const w = new Float64Array(3 * n), cellOf = new Int32Array(n), count = new Int32Array(nb + 1);
   for (let i = 0; i < n; i++) {
     const idx = [0, 0, 0];
     for (let k = 0; k < 3; k++) {
+      if (!per[k]) {
+        w[3 * i + k] = frac[3 * i + k];
+        idx[k] = Math.min(g[k] - 1, Math.max(0, Math.floor(((frac[3 * i + k] - flo[k]) / fspan[k]) * g[k])));
+        continue;
+      }
       let f = frac[3 * i + k] - Math.floor(frac[3 * i + k]);
       if (f >= 1) f = 0;
       w[3 * i + k] = f;
@@ -282,16 +405,16 @@ export function periodicBonds(cell, frac, radii, metal, tol, metalMetal = false)
     const si = shiftOf(i);
     for (let da = -reach[0]; da <= reach[0]; da++) for (let db = -reach[1]; db <= reach[1]; db++) for (let dc = -reach[2]; dc <= reach[2]; dc++) {
       const t = [a[0] + da, a[1] + db, a[2] + dc];
-      const img = t.map((x, k) => Math.floor(x / g[k]));
+      if ([0, 1, 2].some((k) => !per[k] && (t[k] < 0 || t[k] >= g[k]))) continue;
+      const img = t.map((x, k) => (per[k] ? Math.floor(x / g[k]) : 0));
       const cid = ((t[0] - img[0] * g[0]) * g[1] + (t[1] - img[1] * g[1])) * g[2] + (t[2] - img[2] * g[2]);
       for (let p = count[cid]; p < count[cid + 1]; p++) {
         const j = order[p];
         // each bond once: j > i, or the atom's own image on the positive side
         if (j < i || (j === i && !(img[0] > 0 || (img[0] === 0 && (img[1] > 0 || (img[1] === 0 && img[2] > 0)))))) continue;
-        if (!metalMetal && metal[i] && metal[j]) continue;
         const df = [w[3 * j] + img[0] - fi[0], w[3 * j + 1] + img[1] - fi[1], w[3 * j + 2] + img[2] - fi[2]];
-        const v = cartOf(C, df), d2 = dot3(v, v), lim = tol * (radii[i] + radii[j]);
-        if (d2 > 0.01 && d2 < lim * lim) {
+        const v = cartOf(C, df);
+        if (bondedPair(dot3(v, v), i, j, radii, metal, tol, metalMetal, rule)) {
           // the image in terms of the unwrapped positions the caller gave
           const sj = shiftOf(j);
           I.push(i); J.push(j); IMG.push(img[0] + sj[0] - si[0], img[1] + sj[1] - si[1], img[2] + sj[2] - si[2]);
@@ -332,9 +455,9 @@ export function fragmentOf(adj, start) {
  * pairs searched too; an atom with any metal/non-metal bond keeps only those (so
  * Mg in MgO has its six O, not its twelve Mg), an all-metal one keeps its metal
  * shell (Cu: twelve). Self-image bonds count in both directions. */
-export function bondedShells(cell, frac, radii, metal, tol) {
+export function bondedShells(cell, frac, radii, metal, tol, pbc = null, rule = null) {
   const C = rows(cell), n = radii.length;
-  const b = periodicBonds(C, frac, radii, metal, tol, true);
+  const b = periodicBonds(C, frac, radii, metal, tol, true, pbc, rule);
   const adj = Array.from({ length: n }, () => []);
   const f = (i) => [frac[3 * i], frac[3 * i + 1], frac[3 * i + 2]];
   for (let k = 0; k < b.i.length; k++) {
@@ -369,9 +492,10 @@ export function econ(lengths) {
 /** Coordination of the atoms `sites`: CN by the bond rule, shells (element and
  * distance, 0.005 Å bins) of every neighbor within 1.25 × the nearest bond, and ECoN
  * over those. z: atomic numbers. */
-export function coordination(cell, frac, z, radii, metal, tol, sites, adj = null) {
+export function coordination(cell, frac, z, radii, metal, tol, sites, adj = null, pbc = null, rule = null) {
   const C = rows(cell);
-  adj = adj || bondedShells(C, frac, radii, metal, tol);
+  adj = adj || bondedShells(C, frac, radii, metal, tol, pbc, rule);
+  const per = [0, 1, 2].map((k) => !pbc || !!pbc[k]);
   const n = radii.length, R = reciprocal(C);
   const f = (i) => [frac[3 * i], frac[3 * i + 1], frac[3 * i + 2]];
   return sites.map((i) => {
@@ -380,10 +504,10 @@ export function coordination(cell, frac, z, radii, metal, tol, sites, adj = null
     const shells = [], lens = [];
     if (dmin > 0 && R) {
       const rc = dmin * 1.25;
-      const reach = R.map((r) => Math.ceil(rc * norm3(r)) + 1);
+      const reach = R.map((r, k) => (per[k] ? Math.ceil(rc * norm3(r)) + 1 : 0));
       const fi = f(i);
       for (let j = 0; j < n; j++) {
-        const d0 = sub3(f(j), fi).map((x) => x - Math.round(x));
+        const d0 = sub3(f(j), fi).map((x, k) => (per[k] ? x - Math.round(x) : x));
         for (let a = -reach[0]; a <= reach[0]; a++) for (let b = -reach[1]; b <= reach[1]; b++) for (let c = -reach[2]; c <= reach[2]; c++) {
           const d = norm3(cartOf(C, [d0[0] + a, d0[1] + b, d0[2] + c]));
           if (d < 0.1 || d > rc) continue;
@@ -451,57 +575,160 @@ export const PAULING = [0,
   0.79, 0.89, 1.1, 1.12, 1.13, 1.14, 1.13, 1.17, 1.2, 1.2, 1.1, 1.22, 1.23, 1.24, 1.25, 1.1, 1.27,
   1.3, 1.5, 2.36, 1.9, 2.2, 2.2, 2.28, 2.54, 2, 1.62, 2.33, 2.02, 2, 2.2, 2.2,
   0.7, 0.9, 1.1, 1.3, 1.5, 1.38, 1.36, 1.28, 1.3, 1.3];
-/** Coordination polyhedra (plan B9; the Polyhedral style, 1.1.7): for each drawn atom whose base atom
- * is a center (CN 4-12, every bonded neighbor more electronegative: Ti and Pb in TiPbO3, Mg in MgO,
- * S in a sulfonyl group; never Si in Si or C in graphene), its neighbors' hull, translated to where
- * the atom is drawn. One mesh per center element: flat-shaded triangles
- * (positions and normals, three vertices each) and the edges as pairs. */
-export function polyhedra(cell, frac, z, radii, metal, tol, dispCart, dispBase, only = null) {
-  const C = rows(cell), n = radii.length;
-  const adj = bondedShells(C, frac, radii, metal, tol);
-  let center = new Uint8Array(n);
-  const en = (zz) => PAULING[zz] || 0;
+/* Standard atomic masses (u) by atomic number, as ase.data.atomic_masses (0, "X": 1.0): the Rotate tool's
+ * center of mass (1.1.6; mace/structure_transform.py reads ase's own table). */
+export const ATOMIC_MASS = [1.0,
+  1.008, 4.002602, 6.94, 9.012183, 10.81, 12.011, 14.007, 15.999, 18.998403, 20.1797, 22.989769, 24.305, 26.981538, 28.085,
+  30.973762, 32.06, 35.45, 39.948, 39.0983, 40.078, 44.955908, 47.867, 50.9415, 51.9961, 54.938044, 55.845, 58.933194, 58.6934,
+  63.546, 65.38, 69.723, 72.63, 74.921595, 78.971, 79.904, 83.798, 85.4678, 87.62, 88.90584, 91.224, 92.90637, 95.95, 97.90721,
+  101.07, 102.9055, 106.42, 107.8682, 112.414, 114.818, 118.71, 121.76, 127.6, 126.90447, 131.293, 132.905452, 137.327,
+  138.90547, 140.116, 140.90766, 144.242, 144.91276, 150.36, 151.964, 157.25, 158.92535, 162.5, 164.93033, 167.259, 168.93422,
+  173.054, 174.9668, 178.49, 180.94788, 183.84, 186.207, 190.23, 192.217, 195.084, 196.966569, 200.592, 204.38, 207.2, 208.9804,
+  208.98243, 209.98715, 222.01758, 223.01974, 226.02541, 227.02775, 232.0377, 231.03588, 238.02891, 237.04817, 244.06421,
+  243.06138, 247.07035, 247.07031, 251.07959, 252.083, 257.09511, 258.09843, 259.101, 262.11, 267.122, 268.126, 271.134,
+  270.133, 269.1338, 278.156, 281.165, 281.166, 285.177, 286.182, 289.19, 289.194, 293.204, 293.208, 294.214];
+/** Which atoms are polyhedron centers: the single rule every polyhedron view uses (the Polyhedral style
+ * here, the server's structures.polyhedron_centers for analyses), as VESTA and CrystalMaker draw them.
+ * A candidate is a cation coordinated by anions: an atom with a Pauling electronegativity and 4 to 12
+ * ligands, its bonded neighbors (bondedShells) more electronegative than itself that are anions, with no
+ * neighbor more electronegative than they are (Ti in BaTiO3, Mg and Si in an olivine, Zn in ZnS, Si in
+ * quartz and in SiC, S in a sulfate, the metal nodes of a MOF). Any other neighbor is a cation-cation
+ * contact (the Si 2.7 Å from an olivine's Mg), never a vertex. Never an anion,
+ * an atom bonded only to its own element (Si in Si, C in graphene) or a C-H carbon.
+ * By default (`only` null) two kinds of candidates are left out: carbon, and the large cations whose
+ * polyhedra share faces with a smaller polyhedron of another element (the A site of a perovskite: SrO12
+ * around TiO6, Cs around PbI6), which VESTA draws as plain spheres. `only`: the center elements to draw,
+ * from the candidates (the Inspector's Centers; an empty list draws none). Until 1.1.6 every candidate
+ * was a center, and before that the rule was "4-12 neighbors of other elements". */
+const ENEG = (zz) => PAULING[zz] || 0;
+/** An anion: a nonmetal ligand (H, C, N, O, F, P, S, Cl, As, Se, Br, Te, I) with no bonded neighbor more
+ * electronegative (so never the Pb around Ti in an intermetallic, nor an O bonded to F). */
+export const ANION_Z = new Set([1, 6, 7, 8, 9, 15, 16, 17, 33, 34, 35, 52, 53]);
+const isAnion = (z, adj, j) => ANION_Z.has(z[j]) && adj[j].every((y) => ENEG(z[y.j]) <= ENEG(z[j]));
+/** A candidate center's ligands: its bonded neighbors that are anions more electronegative than itself. */
+export function ligandsOf(z, adj, i) {
+  const e = ENEG(z[i]);
+  return e > 0 ? adj[i].filter((x) => ENEG(z[x.j]) > e && isAnion(z, adj, x.j)) : [];
+}
+export function polyhedronCandidates(z, adj) {
+  const n = adj.length, cand = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const nb = adj[i];
-    if (nb.length >= 4 && nb.length <= 12 && en(z[i]) > 0 && nb.every((x) => en(z[x.j]) > en(z[i]))) center[i] = 1;
+    const m = ligandsOf(z, adj, i).length;
+    if (m >= 4 && m <= 12) cand[i] = 1;
   }
-  if (only && only.length) { const set = new Set(only); for (let i = 0; i < n; i++) center[i] = center[i] && set.has(z[i]) ? 1 : 0; }
+  return cand;
+}
+/** The candidate elements that are spacers, not centers, by default: an atom whose ligands include three
+ * (a face) of a candidate of another element with fewer ligands (the A site of a perovskite). */
+export function polyhedronSpacers(z, adj, cand = polyhedronCandidates(z, adj)) {
+  const n = adj.length, lig = adj.map((_, i) => (cand[i] ? ligandsOf(z, adj, i) : []));
+  // each anion's candidate cations, with the cation's image seen from the anion
+  const around = Array.from({ length: n }, () => []);
+  for (let i = 0; i < n; i++) for (const x of lig[i]) around[x.j].push({ i, img: x.img.map((t) => -t) });
+  const out = new Set();
+  for (let i = 0; i < n; i++) {
+    if (!cand[i] || out.has(z[i])) continue;
+    const shared = new Map();
+    for (const x of lig[i]) for (const c of around[x.j]) {
+      if (z[c.i] === z[i] || lig[c.i].length >= lig[i].length) continue;
+      const key = `${c.i}:${x.img[0] + c.img[0]},${x.img[1] + c.img[1]},${x.img[2] + c.img[2]}`;
+      shared.set(key, (shared.get(key) || 0) + 1);
+    }
+    for (const m of shared.values()) if (m >= 3) { out.add(z[i]); break; }
+  }
+  return out;
+}
+export function polyhedronCenters(z, adj, only = null) {
+  const n = adj.length, cand = polyhedronCandidates(z, adj), center = new Uint8Array(n);
+  if (only) {
+    const set = new Set(only);
+    for (let i = 0; i < n; i++) center[i] = cand[i] && set.has(z[i]) ? 1 : 0;
+    return center;
+  }
+  const spacers = polyhedronSpacers(z, adj, cand);
+  for (let i = 0; i < n; i++) center[i] = cand[i] && z[i] !== 6 && !spacers.has(z[i]) ? 1 : 0;
+  return center;
+}
+/** Coordination polyhedra (plan B9; the Polyhedral style, 1.1.7): for each drawn atom whose base atom
+ * is a center, the hull of its ligands, translated to where the atom is drawn. One mesh per center
+ * element: flat-shaded triangles (positions and normals, three vertices each), the edges as pairs, and
+ * each face as a polygon (rings, ringLen, ringNrm: the SVG export). `range` ({shift, lo, hi}: the drawn
+ * atoms' cell offsets and the drawn cells, 1.1.6) draws a polyhedron only around a center inside the
+ * cells, lo <= x < hi, so the copy of a corner atom on the far faces draws none. Also returned: the
+ * drawn polyhedra's vertices (verts, vertZ: one each), the atoms that are any center's vertex (ligandBase),
+ * the center, spacer and ligand elements, and the candidates and default centers (the Inspector's Centers). */
+export function polyhedra(cell, frac, z, radii, metal, tol, dispCart, dispBase, only = null, pbc = null, range = null, rule = null) {
+  const C = rows(cell), n = radii.length;
+  const adj = bondedShells(C, frac, radii, metal, tol, pbc, rule);
+  const cand = polyhedronCandidates(z, adj), spacers = polyhedronSpacers(z, adj, cand);
+  const center = polyhedronCenters(z, adj, only);
+  const per = pbc || [true, true, true];
+  const inside = (k, i) => {
+    if (!range || !range.shift) return true;
+    for (let a = 0; a < 3; a++) {
+      if (!per[a]) continue;
+      const g = frac[3 * i + a] + range.shift[3 * k + a];
+      // the interval the display draws without boundary atoms (displayRange): a center at 0.99995 keeps its own
+      if (g < range.lo[a] - 1e-9 || g >= range.hi[a] - 1e-9) return false;
+    }
+    return true;
+  };
   const hulls = new Map();
   const hullOf = (i) => {
     if (!hulls.has(i)) {
-      const pts = adj[i].map((x) => x.vec);
+      const lig = ligandsOf(z, adj, i), pts = lig.map((x) => x.vec);
       const h = convexHull(pts);
       const edges = new Set();
       for (const fct of h.facets) for (let k = 0; k < fct.ring.length; k++) {
         const a = fct.ring[k], b = fct.ring[(k + 1) % fct.ring.length];
         edges.add(a < b ? `${a},${b}` : `${b},${a}`);
       }
-      hulls.set(i, { pts, h, edges: [...edges].map((e) => e.split(",").map(Number)) });
+      hulls.set(i, { pts, h, vz: lig.map((x) => z[x.j]), edges: [...edges].map((e) => e.split(",").map(Number)) });
     }
     return hulls.get(i);
   };
-  const byZ = new Map();
+  const byZ = new Map(), drawn = [], verts = new Map(), ligandZ = new Set();
   let count = 0;
   for (let k = 0; k < dispBase.length; k++) {
     const i = dispBase[k];
-    if (!center[i]) continue;
-    const { pts, h, edges } = hullOf(i);
+    if (!center[i] || !inside(k, i)) continue;
+    const { pts, h, edges, vz } = hullOf(i);
     if (!h.triangles.length) continue;
     const o = [dispCart[3 * k], dispCart[3 * k + 1], dispCart[3 * k + 2]];
-    if (!byZ.has(z[i])) byZ.set(z[i], { z: z[i], pos: [], nrm: [], edge: [], n: 0 });
+    if (!byZ.has(z[i])) byZ.set(z[i], { z: z[i], pos: [], nrm: [], edge: [], rings: [], ringLen: [], ringNrm: [], n: 0 });
     const m = byZ.get(z[i]);
-    for (const fct of h.facets) for (let t = 1; t + 1 < fct.ring.length; t++) {
-      for (const v of [fct.ring[0], fct.ring[t], fct.ring[t + 1]]) {
-        m.pos.push(o[0] + pts[v][0], o[1] + pts[v][1], o[2] + pts[v][2]);
-        m.nrm.push(fct.normal[0], fct.normal[1], fct.normal[2]);
+    for (const fct of h.facets) {
+      for (let t = 1; t + 1 < fct.ring.length; t++) {
+        for (const v of [fct.ring[0], fct.ring[t], fct.ring[t + 1]]) {
+          m.pos.push(o[0] + pts[v][0], o[1] + pts[v][1], o[2] + pts[v][2]);
+          m.nrm.push(fct.normal[0], fct.normal[1], fct.normal[2]);
+        }
       }
+      for (const v of fct.ring) m.rings.push(o[0] + pts[v][0], o[1] + pts[v][1], o[2] + pts[v][2]);
+      m.ringLen.push(fct.ring.length);
+      m.ringNrm.push(fct.normal[0], fct.normal[1], fct.normal[2]);
     }
     for (const [a, b] of edges) m.edge.push(o[0] + pts[a][0], o[1] + pts[a][1], o[2] + pts[a][2], o[0] + pts[b][0], o[1] + pts[b][1], o[2] + pts[b][2]);
+    pts.forEach((p, v) => {
+      const q = [o[0] + p[0], o[1] + p[1], o[2] + p[2]];
+      verts.set(q.map((x) => Math.round(x * 100)).join(","), { q, z: vz[v] });
+      ligandZ.add(vz[v]);
+    });
     m.n++; count++;
+    drawn.push(k);
   }
-  const meshes = [...byZ.values()].map((m) => ({ z: m.z, n: m.n, pos: Float32Array.from(m.pos), nrm: Float32Array.from(m.nrm), edge: Float32Array.from(m.edge) }));
+  const meshes = [...byZ.values()].map((m) => ({ z: m.z, n: m.n, pos: Float32Array.from(m.pos), nrm: Float32Array.from(m.nrm), edge: Float32Array.from(m.edge),
+    rings: Float32Array.from(m.rings), ringLen: Uint8Array.from(m.ringLen), ringNrm: Float32Array.from(m.ringNrm) }));
   const faces = [...hulls.entries()].filter(([i]) => center[i]).map(([i, x]) => ({ i, cn: x.pts.length, faces: x.h.facets.length }));
-  return { meshes, count, faces };
+  const zs = (pred) => [...new Set(Array.from(z).filter((zz, i) => pred(i)))].sort((a, b) => a - b);
+  const vlist = [...verts.values()];
+  // the atoms that are a vertex of some center (drawn or not): an anion copy at no drawn corner is left out
+  const ligandBase = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (center[i]) for (const x of ligandsOf(z, adj, i)) ligandBase[x.j] = 1;
+  return { meshes, count, faces, drawn: Uint32Array.from(drawn), ligandBase,
+    verts: Float32Array.from(vlist.flatMap((v) => v.q)), vertZ: Uint8Array.from(vlist.map((v) => v.z)),
+    centers: zs((i) => center[i]), candidates: zs((i) => cand[i]), auto: zs((i) => cand[i] && z[i] !== 6 && !spacers.has(z[i])),
+    spacers: [...spacers].sort((a, b) => a - b), ligands: [...ligandZ].sort((a, b) => a - b) };
 }
 
 /* ---------------------------------------------------------------- symmetry */
@@ -851,36 +1078,78 @@ export function displayList(s, range = [1, 1, 1], boundary = true, tol = 0.02) {
     cart: Float64Array.from(cart), n: base.length };
 }
 
-/* ---------------------------------------------------------------- repeats along non-periodic axes (display only) */
-/** The cart offsets that repeat what is drawn along the non-periodic axes the range asks more than one cell of
- * (a slab's c, a polymer's b and c, a molecule's x, y, z), and the display vector of each such axis. vac.mode:
- * "cell" (own[k], the cell's own extent, when given; else the atoms' height + 10 Å; a molecule's + vac.gap),
- * "gap" (the atoms' height + vac.gap) or "crystal" (500 Å). cart: the drawn atoms, flat. */
+/* ---------------------------------------------------------------- vacuum along non-periodic axes (1.1.6) */
+/* A slab's c, a polymer's b and c, a molecule's x, y and z have no period: what the viewer draws there is a
+ * choice (Inspector › Display › Vacuum, viewport/vacuum.js), one of five modes:
+ *   bbox    a small fake cell: the atoms' extent + BBOX_PAD on each side (the default, as drawn before 1.1.6)
+ *   open    no walls at all: the cell outline lies in the atoms' mid-plane and nothing repeats (infinite)
+ *   cell    the file's own vacuum: its vector there (a CRYSTAL output's formal 500 Å c, an extended XYZ's
+ *           or a cube's box); a file without one keeps the cell it has, else the atoms + 10 Å
+ *   crystal CRYSTAL's 500 Å convention
+ *   gap     a custom vacuum: the atoms' extent + gap Å
+ * The same vector draws the box (boxCorners) and spaces the copies a display range or a supercell asks for
+ * along that axis (vacuumOffsets, vacuumVectors): the box is one period, centered on the atoms. */
+export const VACUUM_MODES = ["bbox", "open", "cell", "crystal", "gap"];
+export const BBOX_PAD = 1.0, CRYSTAL_VACUUM = 500;
+function axisFrame(cell) {
+  const C = cell ? rows(cell) : null;
+  return C && reciprocal(C) ? C : [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+}
+const flatCart = (cart) => (cart && cart.length && typeof cart[0] !== "number" ? cart.flat() : cart || []);
+/** Non-periodic axis k under a vacuum mode: {u (the axis), nu (its normal), cos, lo, hi, h (the atoms' extent
+ * along nu), vec (one period along u, Å; null in open mode), center (the period centered on the atoms, else
+ * from the cell origin: a file's own box), source}. vac: {mode, gap, file: [3 vectors or null]}. */
+export function vacuumAxis(cell, cart, k, vac = {}, own = null) {
+  const C = axisFrame(cell), R = reciprocal(C), xs = flatCart(cart);
+  const u = unit3(C[k]), nu = unit3(R[k]), cos = dot3(u, nu) || 1;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i + 2 < xs.length; i += 3) { const p = nu[0] * xs[i] + nu[1] * xs[i + 1] + nu[2] * xs[i + 2]; if (p < lo) lo = p; if (p > hi) hi = p; }
+  if (!(hi >= lo)) { lo = 0; hi = 0; }
+  const h = hi - lo, mode = VACUUM_MODES.includes(vac.mode) ? vac.mode : "bbox";
+  const gap = Number.isFinite(+vac.gap) && +vac.gap >= 0 ? +vac.gap : 10;
+  const along = (L) => scale3(u, L / cos);
+  const out = { u, nu, cos, lo, hi, h, mode, vec: null, center: true, source: mode };
+  if (mode === "open") return out;
+  if (mode === "bbox") out.vec = along(h + 2 * BBOX_PAD);
+  else if (mode === "crystal") out.vec = scale3(u, CRYSTAL_VACUUM);
+  else if (mode === "gap") out.vec = along(h + gap);
+  else {
+    const f = vac.file && vac.file[k];
+    if (own && own[k]) { out.vec = own[k].slice(); out.center = false; out.source = "own"; }
+    // the file's vector when it holds the atoms (structures.py vacuum_vector: a stale one, shorter than a
+    // repeated structure, would put the copies on top of each other)
+    else if (f && norm3(f) > 1e-6 && dot3(f, nu) > h + 1e-6) {
+      out.vec = f.slice(); out.source = "file";
+      out.center = !(cell && norm3(sub3(f, rows(cell)[k])) < 1e-6);   // the file's own box keeps its origin
+    } else {
+      // a structure's own vector there (a slab built with its vacuum) when it holds the atoms and is not CRYSTAL's 500 Å
+      const ch = cell ? norm3(C[k]) * cos : 0;
+      if (cell && ch > h + 1e-6 && ch < 499) { out.vec = C[k].slice(); out.center = false; out.source = "cell"; }
+      else { out.vec = along(h + 10); out.source = "fallback"; }
+    }
+  }
+  return out;
+}
+/** The spacing vector of each non-periodic axis under a vacuum mode (null: periodic, or open). */
+export function vacuumVectors(s, vac = {}) {
+  const pbc = s.pbc || [true, true, true];
+  return [0, 1, 2].map((k) => (pbc[k] ? null : vacuumAxis(s.cell, s.cart, k, { file: s.vacuum_vectors, ...vac }).vec));
+}
+/** The cart offsets that repeat what is drawn along the non-periodic axes the range asks more than one cell of,
+ * at each axis' vacuum vector (vacuumAxis; open mode never repeats), and those vectors. cart: the drawn atoms,
+ * flat; own: a cube's box vectors (its "file-defined" vacuum). */
 export function vacuumOffsets(cell, pbc, cart, range, vac = {}, own = null) {
   pbc = pbc || [true, true, true];
-  const cnt = [0, 1, 2].map((k) => (pbc[k] ? 1 : Math.max(1, Math.min(10, Array.isArray(range) ? range[k] | 0 : Math.round(range.hi[k] - range.lo[k])))));
-  if (cnt.every((x) => x === 1)) return { offsets: [[0, 0, 0]], vecs: [null, null, null], cnt };
-  const C = cell && pbc.some(Boolean) ? rows(cell) : null, R = C ? reciprocal(C) : null, gap = Number.isFinite(+vac.gap) ? +vac.gap : 10;
-  const vecs = [0, 1, 2].map((k) => {
-    if (cnt[k] === 1) return null;
-    const dir = R ? C[k] : [0, 1, 2].map((j) => +(j === k)), nr = R ? R[k] : dir;
-    const u = dir.map((x) => x / norm3(dir)), nu = nr.map((x) => x / norm3(nr)), cos = Math.abs(dot3(u, nu)) || 1;
-    if (vac.mode === "crystal") return u.map((x) => x * 500);
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i + 2 < cart.length; i += 3) { const p = nu[0] * cart[i] + nu[1] * cart[i + 1] + nu[2] * cart[i + 2]; lo = Math.min(lo, p); hi = Math.max(hi, p); }
-    const h = hi > lo ? hi - lo : 0;
-    if (vac.mode !== "gap" && own && own[k]) return own[k].slice();
-    // a structure's own c (a slab built with its vacuum) when it holds the atoms and is not CRYSTAL's formal 500 Å
-    const ch = R ? norm3(C[k]) * cos : 0;
-    if (vac.mode !== "gap" && !own && ch > h && ch < 499) return C[k].slice();
-    return u.map((x) => (x * (h + (vac.mode === "gap" || !R ? gap : 10))) / cos);
-  });
+  const asked = [0, 1, 2].map((k) => (pbc[k] ? 1 : Math.max(1, Math.min(10, Array.isArray(range) ? range[k] | 0 : Math.round(range.hi[k] - range.lo[k])))));
+  const vecs = [0, 1, 2].map((k) => (asked[k] === 1 ? null : vacuumAxis(cell, cart, k, vac, own).vec));
+  const cnt = asked.map((c, k) => (vecs[k] ? c : 1));
+  if (cnt.every((x) => x === 1)) return { offsets: [[0, 0, 0]], vecs: [null, null, null], cnt, asked };
   const offsets = [];
   for (let a = 0; a < cnt[0]; a++) for (let b = 0; b < cnt[1]; b++) for (let c = 0; c < cnt[2]; c++) {
     const i = [a, b, c];
     offsets.push([0, 1, 2].map((j) => i.reduce((t, x, k) => t + (x && vecs[k] ? x * vecs[k][j] : 0), 0)));
   }
-  return { offsets, vecs, cnt };
+  return { offsets, vecs, cnt, asked };
 }
 /** A display list repeated by cart offsets (the first [0, 0, 0]): the copies are images. */
 export function repeatList(list, offsets) {
@@ -940,11 +1209,30 @@ function displayRange(s, range, boundary, tol) {
   return { base: Int32Array.from(base), shift: Int16Array.from(shift), image: Uint8Array.from(img),
     cart: Float64Array.from(cart), n: base.length };
 }
-/** The 8 corners of the cell box from box.lo to box.hi (whole cells; non-periodic axes one cell), plus the origin. */
-export function boxCorners(s, box) {
+/** The 8 corners of the cell box from box.lo to box.hi (whole cells; non-periodic axes one cell), plus the origin.
+ * With box.vacuum (1.1.6, {mode, gap, file}) a non-periodic axis spans its vacuum period (vacuumAxis), centered
+ * on the atoms, box.hi of them; open mode lays the outline in the atoms' mid-plane. purpose "fit" (the camera's
+ * framing) keeps a long vacuum (CRYSTAL's 500 Å) to the atoms' bounding box. */
+export function boxCorners(s, box, purpose = "draw") {
   const C = rows(s.cell), pbc = s.pbc || [true, true, true], o = s.origin || [0, 0, 0];
   const lo = [0, 1, 2].map((k) => (pbc[k] ? box.lo[k] : 0)), hi = [0, 1, 2].map((k) => (pbc[k] ? box.hi[k] : 1));
-  const at = (f) => [0, 1, 2].map((j) => o[j] + f[0] * C[0][j] + f[1] * C[1][j] + f[2] * C[2][j]);
+  const V = C.map((r) => r.slice());
+  let O = o.slice();
+  if (box && box.vacuum && !pbc.every(Boolean)) {
+    const vac = { file: s.vacuum_vectors, ...box.vacuum };
+    for (let k = 0; k < 3; k++) {
+      if (pbc[k]) continue;
+      const ax = vacuumAxis(s.cell, s.cart, k, vac);
+      let vec = ax.vec, center = ax.center;
+      if (vec && purpose === "fit" && Math.abs(dot3(vec, ax.nu)) > ax.h + 20) { vec = scale3(ax.u, (ax.h + 2 * BBOX_PAD) / ax.cos); center = true; }
+      const mid = (ax.lo + ax.hi) / 2, L = vec ? dot3(vec, ax.nu) : 0;
+      // move the origin along the axis only (u_k is perpendicular to every other normal)
+      if (!vec || center) O = add3(O, scale3(ax.u, (mid - L / 2 - dot3(O, ax.nu)) / ax.cos));
+      V[k] = vec || [0, 0, 0];
+      hi[k] = vec ? Math.max(1, Math.round(box.hi[k] - box.lo[k])) : 1;
+    }
+  }
+  const at = (f) => [0, 1, 2].map((j) => O[j] + f[0] * V[0][j] + f[1] * V[1][j] + f[2] * V[2][j]);
   // the order the cell outline's edges index: 0, a, b, c, ab, ac, bc, abc
   return [[lo[0], lo[1], lo[2]], [hi[0], lo[1], lo[2]], [lo[0], hi[1], lo[2]], [lo[0], lo[1], hi[2]], [hi[0], hi[1], lo[2]],
     [hi[0], lo[1], hi[2]], [lo[0], hi[1], hi[2]], [hi[0], hi[1], hi[2]]].map(at);
@@ -1013,12 +1301,12 @@ function rank3(vecs) {
  * set, whose rank is its dimension (0 molecule, 1 chain, 2 layer, 3 network).
  * Returns {comp: Int32Array (component of each atom), offset: Int32Array
  * (3 per atom), dims: [dim per component], axes: [names], adj}. */
-export function components(s, tol = 1.15, metalMetal = false) {
+export function components(s, tol = 1.15, metalMetal = false, rule = null) {
   const n = s.frac.length, pbc = s.pbc || [true, true, true];
-  const radii = s.radii ? Float32Array.from(s.radii) : Float32Array.from(s.numbers.map((z) => COVALENT[z % 100 || z] || 0.2));
+  const radii = s.radii ? Float32Array.from(s.radii) : Float32Array.from(s.numbers.map((z) => bondRadius(z)));
   const metal = s.metal ? Uint8Array.from(s.metal.map(Number)) : Uint8Array.from(s.numbers.map((z) => (isMetal(z % 100 || z) ? 1 : 0)));
   const frac = Float64Array.from(s.frac.flat());
-  const b = periodicBonds(s.cell, frac, radii, metal, tol, metalMetal);
+  const b = periodicBonds(s.cell, frac, radii, metal, tol, metalMetal, pbc, rule);
   const adj = Array.from({ length: n }, () => []);
   for (let k = 0; k < b.i.length; k++) {
     const img = [b.img[3 * k], b.img[3 * k + 1], b.img[3 * k + 2]];

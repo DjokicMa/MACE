@@ -33,6 +33,16 @@ EVENT_QUEUE = 64
 STATES = ("queued", "running", "done", "failed", "canceled")
 
 
+class TaskFailed(Exception):
+    """A failure the route reports as it is (HTTP 422, no traceback): a
+    calculation that ran and failed, not a server bug."""
+
+    def __init__(self, message: str, hint: str = "", kind: str = "failed"):
+        super().__init__(message)
+        self.hint = hint
+        self.kind = kind
+
+
 class Task:
     _ids = itertools.count(1)
 
@@ -53,6 +63,7 @@ class Task:
         self.error: Optional[str] = None
         self.traceback: Optional[str] = None
         self.refused = False                  # it failed on a path the server refuses (PermissionError): 403
+        self.failure: Optional[Dict[str, str]] = None   # a TaskFailed: its message, hint and kind (422)
         self.slot: Optional[int] = None
         self.future = None
         self.cancel_requested = False
@@ -349,6 +360,9 @@ class TaskManager:
             tb = tb or getattr(cause, "tb", None) or "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
             line = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
             t.refused = isinstance(exc, PermissionError)
+            if isinstance(exc, TaskFailed):
+                t.failure = {"error": str(exc).strip() or line, "hint": exc.hint, "kind": exc.kind}
+                tb = None
             self._set_state(t, "failed", error=line, traceback=tb, log=line, message="failed")
         finally:
             if release is not None:
@@ -438,6 +452,8 @@ def answer(handler, manager: TaskManager, t: Task, wait_s: float = WAIT_S):
             return handler._json({"canceled": True, "task": t.record()}, 409)
         if t.refused:                        # a file outside the served folder (a symlink), found by the worker
             return handler._json({"error": t.error or "outside the served directory"}, 403)
+        if t.failure is not None:            # the calculation failed (a message, not a server error)
+            return handler._json({**t.failure, "task": t.record()}, 422)
         return handler._json({"error": t.error or "the task failed", "task": t.record(),
                               "traceback": t.traceback}, 500)
     return handler._json({"detached": True, "task": t.record()}, 202)

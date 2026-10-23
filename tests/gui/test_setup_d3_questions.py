@@ -48,7 +48,9 @@ def test_transport_lists_its_questions_before_any_answer(tmp_path, parent):
     assert rows["Minimum temperature (K) [100]"]["value"] == "100", sorted(rows)
     assert rows["Relaxation time (fs) [10]"]["kind"] == "value"
     assert not any(f["changed"] for f in r["form"])
-    assert all(f["section"] == "Other questions" for f in r["form"])
+    # every question but the k mesh (TRANSPORT's one field, Crystal_d3/d3_config.transport_mesh)
+    assert all(f["section"] == "Other questions" for f in r["form"] if not f["id"].startswith("transport_"))
+    assert rows["k-point mesh"]["section"] == "TRANSPORT" and rows["k-point mesh"]["value"] == "Standard"
     # a menu is named by its heading and shows its options' names; a yes/no shows Yes or No
     mu = rows["Chemical potential options"]
     assert mu["kind"] == "menu" and mu["value"] == mu["default"] == "Relative to Fermi energy (automatic)"

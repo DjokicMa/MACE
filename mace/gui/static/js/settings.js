@@ -40,16 +40,25 @@ export const DEFAULTS = Object.freeze({
   // for a spin-polarized run, one-sided for a closed-shell one)
   "plots.dosColors": "auto", "plots.dosTotal": true, "plots.dosSmooth": 0, "plots.spinColors": "auto", "plots.spinUp": "", "plots.spinDown": "", "plots.bandColor": "", "plots.bandStyle": "auto", "plots.spinDownDash": "dash", "plots.spinDos": "auto",
   // VESTA, as the classic views have always drawn (open decision D1: the spec's table says Jmol)
-  colorScheme: "vesta", radiusSet: "atomic", atomScale: 0.4, bondRadius: 0.12, bondTolerance: 1.15,
+  // bondMin and bondPairs (1.1.6): the rest of the bond rule (geom/core.js bondRule), set in Build › Calculate Bonds…
+  colorScheme: "vesta", radiusSet: "atomic", atomScale: 0.4, bondRadius: 0.12, bondTolerance: 1.15, bondMin: 0.1, bondPairs: {},
   bondMetalMetal: false, bondColoring: "split", background: "theme", backgroundColor: "", labels: "off", labelSize: 12,
   projection: "orthographic", "viewport.defaultView": "standard", quality: "auto", antialias: true, showAxes: true, showCell: true,
   showBoundary: true, showPolyhedra: false, depthCue: 0.15, invertWheelZoom: false,
+  // 1.1.6: the coordination polyhedra (each document can change them: Inspector › Rendering › Polyhedra): the center
+  // elements ("auto": the cations, without a perovskite's A site; else symbols "Ti,Si"), face opacity, edges, center atom
+  polyCenters: "auto", polyOpacity: 0.5, polyEdges: true, polyCenterAtom: "small",
   // 1.1.7: how a drag turns the 3D views (free trackball or a turntable) and its angle snap (off or degrees)
   "viewport.rotation": "free", "viewport.angleSnap": "off",
+  // 1.1.6: Angle snap "custom" snaps by this angle (°); also the step Ctrl snaps by while the snap is off
+  "viewport.snapStep": 15,
+  // 1.1.6: the Rotate tool's pivot (each document keeps its own, "atom:N" a picked atom): ROTATE_PIVOT
+  "viewport.rotatePivot": "centroid",
   // ... and where the wheel zooms: toward the view center (the rotation center) or the mouse pointer
   "viewport.zoomToward": "center",
   // repeats along a non-periodic axis (a slab's c): the cell's extent, the atoms' + a gap (Å), or CRYSTAL's 500 Å
-  "viewport.vacuumMode": "cell", "viewport.vacuumGap": 10,
+  "viewport.vacuumMode": "bbox", "viewport.vacuumGap": 10,
+  "viewport.printPatterns": "off",
   // polish A3/A6: the defaults of every document's Range & boundary and Rendering groups
   displayLo: [0, 0, 0], displayHi: [1, 1, 1], bondedOutside: "off", lightStrength: 1, lightDirection: "front", ambient: 0,
   outline: false, outlineWidth: 0.1, outlineColor: "", ambientOcclusion: 0, renderPreset: "default", renderCustom: null, shininess: 0,
@@ -69,6 +78,8 @@ export const DEFAULTS = Object.freeze({
   // Plots and run analysis (PLAN_analysis C3): defaults for newly opened plots; a plot's own choices are kept per document
   "plots.relTo": "final", "plots.segments": "continuous", "plots.logDeltaE": false, "plots.per": "cell", "plots.lineWidth": 1.5, "plots.background": "theme", "plots.backgroundColor": "", "plots.exportScale": 2,
   "analysis.imagNoiseCm": 20,
+  // 1.1.6: Analyze Structures… runs this many files at once (1 to 4: never the whole machine)
+  "analysis.batchJobs": 2,
   // Live files and databases (C17, C18) and File History (C20)
   "database.refreshSeconds": 30, "files.liveMinutes": 10,
   "files.historyKeep": 20, "files.historyDays": 30, "files.historyMaxMB": 500, "files.historyOutputsMaxMB": 1000,
@@ -81,12 +92,24 @@ export const DEFAULTS = Object.freeze({
   // plan E (CLI parity): what a FREQ output opens as, notification timing, volumes, spectra, molecules, export units
   "files.openFreqAs": "modes", "notifications.infoSeconds": 6, "volume.quality": "medium", "volume.mepColors": "chemistry",
   "spectra.lineShape": "lorentzian", "structure.vacuumGap": 8,
+  // 1.1.6: Analysis › Porosity's surfaces in the 3D view: which are drawn, how opaque, solid or wireframe,
+  // and the closed pockets in one color or each its own
+  "pores.accessible": true, "pores.inaccessible": true, "pores.opacity": 0.5, "pores.style": "solid", "pores.colorPockets": false,
+  // 1.1.6: the pores' shading and sides, a drag without their faint near walls (off), and every 3D surface's mesh quality
+  "pores.shading": "smooth", "pores.sides": "auto", "pores.dropNearWhileDragging": false, "mesh.quality": "standard",
   // export (plan E9; PLAN_viewer P6 owns these keys at the merge): PNG resolution, physical units, SVG shading
   "export.dpi": 150, "export.units": "in", "export.vectorShading": "flat",
   // Submit (PLAN_submit): remember the Submit dialog's options (cluster.pollSeconds, above, also sets how often Jobs asks SLURM)
   "submit.rememberLast": true,
   // 1.1.6: band/DOS defaults (a folder's [plots] sets them for the CLI too) and the Database view's columns
   "plots.energyWindow": [-6, 6], "plots.fermiShift": 0,
+  // 1.1.6: the Inspector's Basic / Advanced choice per view kind ({structure: "advanced", ...}; unset = Basic),
+  // and how a FREQ mode is scaled (its zero-point classical amplitude, or the largest atom at 0.5 Å)
+  "inspector.tier": {}, "freq.amplitudeScale": "physical",
+  // 1.1.6: Inspector detail: that table ("remember"), or every view in Basic or in Advanced
+  "inspector.detail": "remember",
+  // 1.1.6: the activity bar's order and hidden views (command ids), and the bar itself (View › Activity Bar)
+  "activity.order": [], "activity.hidden": [], "activity.visible": true,
   "database.columns": ["material_id", "formula", "space_group", "dimensionality", "n_calcs", "n_completed", "status", "updated_at"],
 });
 
@@ -100,9 +123,29 @@ const CHOICES = {
   "plots.bandStyle": ["auto", "single", "overlay", "ink"],
   // 1.1.6's "cli" (red = positive, then the default, so stored with everything else) reads as the new default
   "volume.mepColors": ["chemistry", "physics"],
-  "viewport.rotation": ["free", "axes"], "viewport.angleSnap": ["off", "15", "30", "45", "90"],
+  "viewport.rotation": ["free", "axes"], "viewport.angleSnap": ["off", "15", "30", "45", "90", "custom"],
   "viewport.zoomToward": ["center", "pointer"],
+  "freq.amplitudeScale": ["physical", "normalized"],
+  "inspector.detail": ["remember", "basic", "advanced"],
+  "viewport.printPatterns": ["off", "auto", "all"],
+  polyCenterAtom: ["small", "hidden", "full"],
+  // 1.1.6: the pore surfaces' look and every 3D surface's mesh quality (viewport/mesh_quality.js)
+  "pores.style": ["solid", "wireframe", "edges", "points"], "pores.shading": ["smooth", "flat"], "pores.sides": ["auto", "single", "double"],
+  "mesh.quality": ["draft", "standard", "high", "publication"],
 };
+/* polyCenters (settings.py check): "auto", "" (none) or element symbols separated by commas */
+export const POLY_CENTERS = /^(auto|([A-Z][a-z]?(,[A-Z][a-z]?)*)?)$/;
+/* bondPairs (settings.py _bond_pairs_problem): {"O-Si": {min, max} | {never: true}}, at most 200 pairs, 0 to 10 Å */
+export function bondPairsOk(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length > 200) return false;
+  const len = (x) => x === undefined || (typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 10);
+  return Object.entries(v).every(([k, r]) => /^[A-Z][a-z]?-[A-Z][a-z]?$/.test(k) && r && typeof r === "object" && !Array.isArray(r)
+    && Object.keys(r).length > 0 && Object.keys(r).every((f) => ["min", "max", "never"].includes(f))
+    && (r.never === undefined || typeof r.never === "boolean") && len(r.min) && len(r.max)
+    && !(typeof r.min === "number" && typeof r.max === "number" && r.max <= r.min));
+}
+/* viewport.rotatePivot (settings.py ROTATE_PIVOT, viewport/gizmo_math.js PIVOT_RE): centroid, com, cell, origin or atom:N */
+export const ROTATE_PIVOT = /^(centroid|com|cell|origin|atom:[1-9][0-9]{0,6})$/;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const listeners = new Set();
 let values = { ...DEFAULTS };            // the user's own layer (localStorage, gui.json)
@@ -126,6 +169,12 @@ export function migrate(obj) {
   // fixed choices (settings.py _CHOICES): an unknown value (a hand-edited file, a newer version's) is dropped
   for (const [k, ok] of Object.entries(CHOICES)) if (k in out && !ok.includes(out[k])) delete out[k];
   for (const k of ["plots.spinUp", "plots.spinDown", "plots.bandColor"]) if (k in out && out[k] !== "" && !/^#[0-9a-f]{6}$/i.test(out[k])) delete out[k];
+  if ("polyCenters" in out && !POLY_CENTERS.test(out.polyCenters)) delete out.polyCenters;
+  if ("viewport.rotatePivot" in out && !ROTATE_PIVOT.test(String(out["viewport.rotatePivot"]))) delete out["viewport.rotatePivot"];
+  if ("polyOpacity" in out && !(out.polyOpacity >= 0.1 && out.polyOpacity <= 1)) delete out.polyOpacity;
+  if ("bondTolerance" in out && !(out.bondTolerance >= 0.8 && out.bondTolerance <= 1.6)) delete out.bondTolerance;
+  if ("bondMin" in out && !(out.bondMin >= 0 && out.bondMin <= 3)) delete out.bondMin;
+  if ("bondPairs" in out && !bondPairsOk(out.bondPairs)) delete out.bondPairs;
   // the 1.1.6 preview's Publication theme is Light with Plot style Publication (as settings.py and boot.js read it)
   if (out.theme === "publication") {
     out.theme = "light";

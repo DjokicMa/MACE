@@ -15,6 +15,7 @@ after Phase 4 is missing from P5_ROUTES.
 import json
 import os
 import re
+import time
 import urllib.parse
 
 import pytest
@@ -35,6 +36,11 @@ P5_ROUTES = [
     ("GET", "plot", {"path": "structures/MgO.cif", "detach": "1"}, ["path"], False),
     # the k-path editor's Brillouin zone view (1.1.6)
     ("GET", "bz", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # the Inspector's Brillouin zone section of a band plot (1.1.6): the run's k-path
+    ("GET", "kpath", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # a band + DOS pair from two folders (1.1.6): the check, and Publication Figure's other half
+    ("GET", "bandos-pair", {"band": "outputs/Si_sp.out", "dos": "outputs/Si_sp.out"}, ["band", "dos"], False),
+    ("GET", "plot", {"path": "outputs/Si_sp.out", "kind": "bandos", "partner": "outputs/Si_sp.out", "detach": "1"}, ["partner"], False),
     # the panel context (1.1.6): the run a plot, volume or log came from
     ("GET", "related", {"path": "outputs/Si_sp.out"}, ["path"], False),
     # the Plot Gallery (1.1.6): its gallery/* routes
@@ -125,7 +131,7 @@ P5_ROUTES = [
     ("GET", "fileinfo", {"path": "outputs/Si_sp.d12"}, ["path"], False),
     ("GET", "props", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "joblog/link", {"path": "outputs/Si_sp.out"}, ["path"], False),
-    ("GET", "transport", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("GET", "transport", {"path": "outputs/Si_sp.out", "quantity": "zt", "kappa_l": "1.5"}, ["path", "kappa_l"], False),
     ("GET", "transport-zt", {"path": "outputs/Si_sp.out", "kappa_l": "1.5"}, ["path", "kappa_l"], False),
     ("GET", "convergence", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "map", {"path": "outputs/Si_sp.out"}, ["path"], False),
@@ -141,6 +147,59 @@ P5_ROUTES = [
     ("GET", "orbitals", {"path": "outputs/Si_sp.out"}, ["path"], False),
     ("GET", "orbitals/grid", {"path": "outputs/Si_sp.out", "k": "1", "mo": "1"}, ["path"], False),
     ("POST", "orbitals/save", {"path": "outputs/Si_sp.out", "k": 1, "mos": [1]}, ["path"], True),
+    # Analysis › Structure Analysis (1.1.6): mace analyze in the GUI
+    ("GET", "analysis/info", {}, [], False),
+    ("POST", "analysis/run", {"tool": "pxrd", "source": {"path": "structures/MgO.cif"}, "params": {}, "wait": 0,
+                              "pattern_path": "outputs/Si_sp.out"}, ["source.path", "pattern_path"], False),
+    ("POST", "analysis/rcsr/import", {"path": "structures/MgO.cif"}, ["path"], False),
+    # 1.1.6: a porosity result's surfaces at another mesh quality (reads the structure, writes nothing)
+    ("POST", "analysis/remesh", {"source": {"path": "structures/MgO.cif"}, "params": {}, "mesh": {"quality": "draft"}, "wait": 0},
+     ["source.path"], False),
+    # the Magnetic style's Mulliken spins (1.1.6): reads the output (or the one beside a structure), writes nothing
+    ("GET", "spins", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # a cube's plane (1.1.6, mace slice in the GUI): a read-only pool task, as volume/slice
+    ("GET", "volume/plane", {"path": "outputs/Si_sp.out", "mode": "hkl"}, ["path"], False),
+    # File › Export Animation (1.1.6): frames and the encoded file live in the server's cache, never the folder
+    ("GET", "anim/caps", {}, [], False),
+    ("GET", "anim/result", {"key": "x"}, [], False),
+    ("POST", "anim/start", {}, [], False),
+    ("POST", "anim/frame", {"key": "x", "index": 0, "data": "data:image/png;base64,"}, [], False),
+    ("POST", "anim/encode", {"key": "x", "format": "gif"}, [], False),
+    ("POST", "anim/render", {"path": "outputs/Si_sp.out", "format": "gif"}, ["path"], False),
+    ("POST", "anim/cancel", {"key": "x"}, [], False),
+    # Settings › ML potentials (1.1.6, mace mlip install in the GUI): status only here; plan/install/record/fetch
+    # start real installs, so their POST-only, token and loopback checks are in test_mlip_routes_api.py
+    ("GET", "mlip/status", {}, [], False),
+    # the Calculators panel (1.1.6, mace calc in the GUI): Save writes beside the document or into save_dir
+    ("GET", "calc/backends", {}, [], False),
+    ("POST", "calc/backends/recheck", {}, [], False),
+    ("POST", "calc/run", {"backend": "uff", "task": "sp", "source": {"path": "structures/MgO.cif"}, "save": True,
+                          "save_dir": "outputs"}, ["source.path", "save_dir"], True),
+    # 1.1.6: the Phonopy, Mechanical Properties and Relaxation Time dialogs
+    ("GET", "phonopy/status", {"dir": "outputs"}, ["dir"], False),
+    ("GET", "phonopy/data", {"dir": "outputs"}, ["dir"], False),
+    ("POST", "phonopy/generate", {"parent": "outputs/Si_sp.out", "dim": "2 2 2", "wait": 0}, ["parent"], True),
+    ("POST", "phonopy/collect", {"dir": "outputs", "check": True, "wait": 0}, ["dir"], True),
+    ("GET", "elastic/analyze", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    # the results document of an ELASTIC, EOS, QHA or CPHF output (1.1.6, js/docs/mech.js)
+    ("GET", "elastic/document", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("GET", "elastic/figure", {"path": "outputs/Si_sp.out", "view": "youngs"}, ["path"], False),
+    # the enthalpy plot's other phases (1.1.6 mechmore: mace analyze elastic --compare)
+    ("GET", "elastic/figure", {"path": "outputs/Si_sp.out", "view": "enthalpy", "compare": "outputs/Si_sp.out"}, ["path", "compare"], False),
+    ("POST", "elastic/generate", {"parent": "outputs/Si_sp.out", "settings": {"mode": "ELASTCON"}, "wait": 0},
+     ["parent"], True),
+    ("GET", "tau/series", {"dir": "outputs"}, ["dir"], False),
+    ("POST", "tau/strain", {"parent": "outputs/Si_sp.d12", "axis": "x"}, ["parent"], True),
+    ("POST", "tau/fit", {"outputs": ["outputs/Si_sp.out"] * 3, "carrier": "electron", "m_star": 0.3}, [], False),
+    # the Properties tab (1.1.6)
+    ("GET", "properties/run", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("GET", "properties/compute", {"path": "outputs/Si_sp.out", "wait": 0}, ["path"], False),
+    ("GET", "properties/value", {"db": "materials.db", "calc": "none", "name": "total_energy_au"}, ["db"], False),
+    ("POST", "properties/extract", {"path": "outputs/Si_sp.out", "db": "materials.db", "wait": 0}, ["path", "db"], True),
+    # the Properties tab's Add Reference… (reference energies): the picker's data, and the extraction with --reference
+    ("GET", "properties/references", {"path": "outputs/Si_sp.out"}, ["path"], False),
+    ("POST", "properties/references", {"path": "outputs/Si_sp.out", "db": "materials.db", "property": "reaction_energy",
+                                       "references": {"reactants": ["none"]}, "wait": 0}, ["path", "db"], True),
 ]
 # routes that only exist with MACE_GUI_TEST_HOOKS=1
 TEST_ONLY = {"test/cli"}
@@ -334,6 +393,33 @@ def test_an_orbital_run_whose_out_leads_outside_is_refused_with_403(evil):
     assert "traceback" not in r and str(outside) not in json.dumps(r), r
 
 
+def test_properties_and_kpath_answer_without_absolute_paths_or_500s(served):
+    """1.1.6 review: the Properties tab's computed values name the run relative to the folder (never its
+    absolute path); a file that is not a database is a 400; a BAND.DAT header point over 0 ("/0") is no 500;
+    a job log named like an output is no run."""
+    base, root, outside = served
+    st, _, r = U.req(base, "api/properties/compute?path=outputs/Si_sp.out&wait=30")
+    if st == 202:
+        tid = r["task"]["id"]
+        for _ in range(600):
+            st, _, r = U.req(base, f"api/tasks/{tid}/result")
+            if st != 409:
+                break
+            time.sleep(0.2)
+    assert st == 200, (st, r)
+    text = json.dumps(r)
+    assert str(root) not in text and r["calc"]["output_file"] == "outputs/Si_sp.out", r["calc"]
+    (root / "notes.db").write_text("not a database")
+    st, _, r = U.req(base, "api/properties/value?db=notes.db&calc=x&name=total_energy_au")
+    assert st == 400 and "not a MACE materials database" in r["error"], (st, r)
+    (root / "outputs" / "Bad.BAND.DAT").write_text("# NKPT 2 NBND 1 NSPIN 1\n# 1 (0,0,0)/0\n# 2 (1,0,0)/0\n0.0 1.0\n")
+    st, _, r = U.req(base, "api/kpath?path=outputs/Bad.BAND.DAT")
+    assert st == 200 and r["found"] and r["iss"] is None and r["segments"] == [], (st, r)
+    (root / "outputs" / "slurm-77.out").write_text("SLURM_JOB_ID=77\n")
+    st, _, r = U.req(base, "api/properties/run?path=outputs/slurm-77.out")
+    assert st == 200 and r["state"] == "no-run", (st, r)
+
+
 def test_a_rejected_post_never_leaves_its_body_as_the_next_request(served):
     """A POST refused before its body is read (no token: 403) ends the keep-alive connection, so the
     body is never parsed as a second request on it."""
@@ -357,3 +443,126 @@ def test_a_rejected_post_never_leaves_its_body_as_the_next_request(served):
     assert data.count(b"HTTP/1.") == 1, data[:600]
     assert data.startswith(b"HTTP/1.0 403") or data.startswith(b"HTTP/1.1 403"), data[:200]
     assert b"connection: close" in data.lower()
+
+
+def test_saving_a_held_structure_outside_the_folder_is_refused_before_it_is_built(tmp_path):
+    """structure/save with a {held} source checks the path before it builds the structure, which
+    needs ase: without ase an escaping path got a 503 for the missing package, not a refusal."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = H.examples_copy(tmp_path)
+    os.symlink(outside, root / "linkdir")
+    proc, base, _ = H.start_server(root, tmp_path / "xdg", MACE_GUI_NO_WARMUP="1", MACE_GUI_TEST_HOOKS="1")
+    try:
+        # building a held structure needs ase; an unknown id is refused for its path before the
+        # held store is read (404 for the id), so the order shows without ase too
+        st, _, r = U.post(base, "api/test/held/put", {"atoms": 8})
+        held = ["no-such-id"] + ([r["held"]] if st == 200 else [])
+        for hid in held:
+            for esc in ("../outside/x.cif", f"{outside}/x.cif", "linkdir/x.cif", "x.cif\x00.txt", "%2e%2e/outside/x.cif"):
+                st, _, r = U.post(base, "api/structure/save", {"source": {"held": hid}, "path": esc, "format": "cif"})
+                assert st in (400, 403), (hid, esc, st, r)
+        assert not list(outside.iterdir())
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+
+
+def test_calc_skf_folder_outside_is_refused_on_the_network(tmp_path, monkeypatch):
+    """calc/run's DFTB+ Slater-Koster folder outside the served folder: a loopback GUI accepts an
+    absolute folder (the user's own set), a network-exposed one (--insecure-network) refuses it
+    before anything runs."""
+    import subprocess
+    import sys
+    import time
+    pytest.importorskip("ase")
+    for k in ("MACE_DFTB_SKF", "DFTB_PREFIX"):
+        monkeypatch.delenv(k, raising=False)
+    outside = tmp_path / "skf"
+    outside.mkdir()
+    exe = tmp_path / "bin" / "dftb+"                   # a stand-in dftb+: installed, so skf needs only the folder
+    exe.parent.mkdir()
+    exe.write_text("#!/bin/sh\necho '|  DFTB+ release 24.1'\n")
+    exe.chmod(0o755)
+    root = H.examples_copy(tmp_path)
+    extra = dict(MACE_GUI_NO_WARMUP="1", MACE_DFTB=str(exe))
+    body = {"source": {"path": "structures/Si.cif"}, "backend": "dftb", "method": "skf", "task": "sp",
+            "options": {"skf_dir": str(outside)}}
+
+    def ready(base):
+        end = time.time() + 60
+        while time.time() < end and U.req(base, "api/calc/backends")[2].get("checking"):
+            time.sleep(0.2)
+
+    proc, base, _ = H.start_server(root, tmp_path / "xdg", **extra)
+    try:
+        ready(base)
+        st, _, r = U.post(base, "api/calc/run", body)
+        assert st in (200, 202) and "on the network" not in json.dumps(r), (st, r)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+    env = H.env(tmp_path / "xdg2", **extra)
+    p = H.ServerProcess([sys.executable, str(H.MACE_CLI), "--no-banner", "gui", "--dir", str(root), "--port", "0",
+                         "--host", "127.0.0.2", "--insecure-network", "--token", H.TOKEN],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                        env=env, start_new_session=True, preexec_fn=H.die_with_pytest)
+    try:
+        m = None
+        for _ in range(40):
+            m = re.search(r"(http://127\.0\.0\.2:\d+/s/[^/\s]+/)", p.stdout.readline())
+            if m:
+                break
+        assert m, "the network server printed no URL"
+        nbase = m.group(1)
+        ready(nbase)
+        st, _, r = U.post(nbase, "api/calc/run", body)
+        assert st == 400 and "inside the served folder" in r.get("error", ""), (st, r)
+    finally:
+        p.kill()
+        p.wait(5)
+
+
+def test_write_routes_never_write_through_a_link_out_of_the_folder(tmp_path):
+    """The output folders of tau/strain, phonopy/generate and elastic/generate and the file tau/fit
+    saves are resolved before anything is written: a symlinked folder (or file) inside --dir that
+    leads out is refused, and nothing appears outside."""
+    import shutil
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "victim.json").write_text("ORIGINAL\n")
+    (outside / "victim.d12").write_text("ORIGINAL\n")
+    root = H.examples_copy(tmp_path)
+    os.symlink(outside, root / "linkdir")
+    strain = root / "strain"
+    shutil.copytree(H.REPO_ROOT / "tests" / "data" / "hpcc_116" / "strain", strain)
+    os.symlink(outside / "victim.json", strain / "tau_hole_x.json")
+    os.symlink(outside / "victim.d12", root / "outputs" / "Si_sp_dp_y_p1pct.d12")
+    proc, base, _ = H.start_server(root, tmp_path / "xdg", MACE_GUI_NO_WARMUP="1")
+    try:
+        gen = U.req(base, "api/info")[2].get("root_gen", 0)
+        cases = []
+        for od in ("../linkdir/x", "../linkdir", f"{outside}/x", "../../outside/x"):
+            cases += [("tau/strain", {"parent": "outputs/Si_sp.d12", "axis": "x", "output_dir": od}),
+                      ("phonopy/generate", {"parent": "outputs/Si_sp.out", "dim": "2 2 2", "output_dir": od, "wait": 0}),
+                      ("elastic/generate", {"parent": "outputs/Si_sp.out", "settings": {"mode": "ELASTCON"},
+                                            "output_dir": od, "wait": 0})]
+        # a deck of the set that is a symlink out (with force), and the saved tau through a symlink
+        cases.append(("tau/strain", {"parent": "outputs/Si_sp.d12", "axis": "y", "force": True}))
+        outs = U.req(base, "api/tau/series?dir=strain")[2]["series"][0]["outputs"]
+        cases.append(("tau/fit", {"outputs": outs, "carrier": "hole", "m_star": 0.3, "save": True}))
+        for route, body in cases:
+            st, _, r = U.post(base, f"api/{route}", {**body, "root_gen": gen})
+            assert st in (400, 403), (route, body, st, r)
+        assert sorted(p.name for p in outside.iterdir()) == ["victim.d12", "victim.json"]
+        assert (outside / "victim.json").read_text() == "ORIGINAL\n"
+        assert (outside / "victim.d12").read_text() == "ORIGINAL\n"
+        # the refused set wrote nothing
+        assert [p.name for p in (root / "outputs").glob("Si_sp_dp_y_*.d12")] == ["Si_sp_dp_y_p1pct.d12"]
+        # inside the folder the same routes still write
+        st, _, r = U.post(base, "api/tau/strain", {"parent": "outputs/Si_sp.d12", "axis": "x", "output_dir": "strained",
+                                                    "root_gen": gen})
+        assert st == 200 and len(r["written"]) == 5 and all(w.startswith("outputs/strained/") for w in r["written"]), r
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)

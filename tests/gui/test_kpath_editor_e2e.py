@@ -274,6 +274,12 @@ def open_band_setup(drv):
     open_setup(drv, "outputs/Si_sp.out")
     drv.execute_script("document.querySelector(`#inspector .su-calc [data-calc='BAND']`).click()")
     H.wait(drv, "const s = window.__mace.setup.state(); return s.calc === 'BAND' && s.result && !s.busy && s.result.kpath", 120)
+    # SeeK-path is the default path; these tests edit the high-symmetry label path (path format 1)
+    drv.execute_script("""const sel = document.querySelector('#inspector [data-field=band_format] select, #su-f-band_format');
+      sel.value = [...sel.options].find((o) => /High-symmetry labels/.test(o.textContent)).value;
+      sel.dispatchEvent(new Event('change', {bubbles: true}));""")
+    H.wait(drv, "const s = window.__mace.setup.state(); return !s.busy && !s.pendingRun && s.result && s.result.kpath && "
+                "s.result.kpath.computed[0].from === 'X'", 120)
     H.wait(drv, "return !!document.querySelector('#inspector .su-kpath .kp-strip')", 20)
 
 
@@ -346,7 +352,7 @@ def test_cli_prompt_writes_the_same_key(tmp_path):
     d = tmp_path / "p"
     shutil.copytree(H.REPO_ROOT / "examples" / "gui" / "outputs", d / "in")
     (d / "in" / "Si_sp.f9").touch()
-    answers = [("Select method", ""), ("Select format", ""), ("Total number of k-points", ""), ("Select option", ""),
+    answers = [("Select method", ""), ("Select format", "1"), ("Total number of k-points", ""), ("Select option", ""),
                ("Print eigenvalues", ""), ("Edit the band k-path", "y"), ("k-path edit", "r 1"),
                ("k-path edit", "p L"), ("k-path edit", "a P 0.25 0.25 0.25"), ("k-path edit", "")]
     R.run_cli_manual(["opt2d3", "-i", "in/Si_sp.out", "-t", "BAND", "--edit-kpath", "--save-config", "--options-file", "cfg.json",
@@ -372,31 +378,31 @@ def test_continuous_only_says_and_shows_what_it_keeps(fresh):
     U.no_errors(drv)
 
 
-BZ = "const e = document.querySelector('.po-kpath .kp-bz'); return e && e.__bz"
+BZ = "const e = document.querySelector('.po-bz .kp-bz'); return e && e.__bz"
 
 
-def bz_state(drv, sel=".po-kpath .kp-bz"):
+def bz_state(drv, sel=".po-bz .kp-bz"):
     return drv.execute_script(f"const e = document.querySelector('{sel}'); return e && e.__bz.state()")
 
 
 def test_brillouin_zone_view_is_linked_to_the_strip(fresh):
     drv = fresh[0]
     open_plot(drv, "gr/g_band.BAND.DAT")
-    H.wait(drv, "const e = document.querySelector('.po-kpath .kp-bz'); return e && e.__bz.state().loaded && e.__bz.state().viewer", 60)
+    H.wait(drv, "const e = document.querySelector('.po-bz .kp-bz'); return e && e.__bz.state().loaded && e.__bz.state().viewer", 60)
     st = bz_state(drv)
     assert set(st["points"]) == {"GAMMA", "M", "K", "A", "L", "H"} and st["segments"] == 9 and not st["failed"]
-    assert drv.find_element("css selector", ".po-kpath .kp-bz canvas")
+    assert drv.find_element("css selector", ".po-bz .kp-bz canvas")
     # a chip under the pointer is marked in the zone view
     ActionChains(drv).move_to_element(see(drv, seg(drv, "M → K"))).perform()
-    H.wait(drv, "const h = document.querySelector('.po-kpath .kp-bz').__bz.state().hl; return h && h.indices[0] === 1 && h.kind === 'hover'", 5)
+    H.wait(drv, "const h = document.querySelector('.po-bz .kp-bz').__bz.state().hl; return h && h.indices[0] === 1 && h.kind === 'hover'", 5)
     # a segment under the pointer in the zone view is marked in the strip and on the plot
     ActionChains(drv).move_to_element(see(drv, drv.find_element("css selector", ".po-kpath .kp-help"))).perform()
-    drv.execute_script("document.querySelector('.po-kpath .kp-bz').__bz.hoverSegment(4)")
+    drv.execute_script("document.querySelector('.po-bz .kp-bz').__bz.hoverSegment(4)")
     H.wait(drv, "return document.querySelector('.po-kpath .kp-seg[data-i=\"4\"]').classList.contains('kp-hl')", 5)
     H.wait(drv, "return document.querySelector('#plot-host .pv-plot').layout.shapes.some((s) => s.name === 'kp-hover')", 5)
-    drv.execute_script("document.querySelector('.po-kpath .kp-bz').__bz.hoverSegment(null)")
+    drv.execute_script("document.querySelector('.po-bz .kp-bz').__bz.hoverSegment(null)")
     # a click on a segment there selects its chip; the edits redraw the zone view's path
-    drv.execute_script("document.querySelector('.po-kpath .kp-bz').__bz.selectSegment(2)")
+    drv.execute_script("document.querySelector('.po-bz .kp-bz').__bz.selectSegment(2)")
     H.wait(drv, "return document.activeElement && document.activeElement.matches('.po-kpath .kp-seg[data-i=\"2\"]')", 5)
     drv.switch_to.active_element.send_keys("h")
     wait_kpath(drv, "k && k[2].hidden")
@@ -416,7 +422,7 @@ def test_closed_zone_views_stop_following_the_theme(fresh):
     n0 = drv.execute_async_script(BZ_LIVE)
     for _ in range(3):
         open_plot(drv, "gr/g_band.BAND.DAT")
-        H.wait(drv, "const e = document.querySelector('.po-kpath .kp-bz'); return e && e.__bz.state().loaded", 60)
+        H.wait(drv, "const e = document.querySelector('.po-bz .kp-bz'); return e && e.__bz.state().loaded", 60)
         assert drv.execute_async_script(BZ_LIVE) == n0 + 1
         drv.execute_script("window.__mace.closeAll()")
         time.sleep(0.3)

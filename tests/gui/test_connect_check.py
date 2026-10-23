@@ -196,7 +196,7 @@ def test_permissions(home):
 
 
 def test_windows_checks(home):
-    fake = Fake(g={"hpcc": GW_G.replace("controlmaster false", "controlmaster auto")}, ps="Stopped Disabled",
+    fake = FakeKeys(False, g={"hpcc": GW_G.replace("controlmaster false", "controlmaster auto")}, ps="Stopped Disabled",
                 version="OpenSSH_for_Windows_7.7p1, LibreSSL 2.6.5")
     out = []
     ck = K.Checker(dict(PROF), "p", no_net=True, runner=fake, which=lambda _: r"C:\Program Files\Git\usr\bin\ssh.exe",
@@ -699,3 +699,55 @@ def test_agent_fix_names_the_same_key_as_the_other_fixes(home):
 def test_scripts_name_the_same_fallback_key():
     for text in (SH.read_text(), PS1.read_text()):
         assert '"~/.ssh/id_ed25519" }' not in text and "key:-~/.ssh/id_ed25519}" not in text
+
+
+# ---- Windows: a disabled ssh-agent service is a WARN when ssh does not need it; no ssh client exits 2
+
+class FakeKeys(Fake):
+    """ssh-keygen -y succeeds only for a key without a passphrase."""
+
+    def __init__(self, plain, **kw):
+        super().__init__(**kw)
+        self.plain = plain
+
+    def __call__(self, argv, **kw):
+        if argv[:2] == ["ssh-keygen", "-y"]:
+            self.calls.append(list(argv))
+            return CP(argv, 0 if self.plain else 1, "ssh-ed25519 AAAA\n" if self.plain else "", "" if self.plain
+                      else "Load key: incorrect passphrase supplied to decrypt private key\n")
+        return super().__call__(argv, **kw)
+
+
+def _win(home, fake, **kw):
+    return _check(home, fake, system="windows", env={}, **kw)
+
+
+def test_disabled_agent_is_a_warning_for_a_key_without_a_passphrase(home):
+    code, out, _ = _win(home, FakeKeys(True, ps="Stopped Disabled"))
+    assert "WARN  the OpenSSH Authentication Agent service (ssh-agent) is disabled" in out
+    assert "FAIL" not in out and code == 0
+
+
+def test_disabled_agent_with_a_passphrase_key_is_a_warning_when_the_logins_work(home):
+    code, out, _ = _win(home, FakeKeys(False, ps="Stopped Disabled"))
+    assert "WARN  the OpenSSH Authentication Agent service (ssh-agent) is disabled" in out
+    assert "FAIL" not in out and code == 0
+
+
+def test_disabled_agent_with_a_passphrase_key_fails_when_the_logins_fail(home):
+    code, out, _ = _win(home, FakeKeys(False, ps="Stopped Disabled",
+                                      probes={"gateway": (255, "netid@login.example.edu: Permission denied "
+                                                              "(publickey).\n")}))
+    assert "FAIL  the OpenSSH Authentication Agent service (ssh-agent) is disabled" in out and code == 1
+
+
+def test_disabled_agent_with_a_passphrase_key_and_no_probes_stays_a_failure(home):
+    code, out, _ = _win(home, FakeKeys(False, ps="Stopped Disabled"), no_net=True)
+    assert "FAIL  the OpenSSH Authentication Agent service (ssh-agent) is disabled" in out and code == 1
+
+
+def test_no_ssh_client_exits_2_as_a_real_connect_does():
+    out = []
+    ck = K.Checker(dict(PROF), "p", no_net=True, runner=Fake(), which=lambda _: None, system="linux",
+                   out=out.append)
+    assert ck.run_all() == 2 and any("no ssh command on PATH" in ln for ln in out)

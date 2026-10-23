@@ -92,3 +92,57 @@
 .hist-row.redo { color: var(--text-2); font-style: italic; }
 .hist-t, .hist-n { color: var(--text-2); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 .hist-row.redo .hist-t, .hist-row.redo .hist-n { color: var(--text-2); }
+/* the Rotate and Move gizmos (1.1.6, js/viewport/gizmo_*.js): their canvas over the viewer, under the chips,
+ * and the panel of numeric fields along the viewer's bottom, right of the axis triad */
+.vp-gizmo { position: absolute; pointer-events: none; z-index: 2; display: none; }
+.vp-gizmo.on { display: block; }
+.viewer-wrap.vp-owned[data-tool="rotate"] .viewer { cursor: crosshair; }
+.viewer-wrap.vp-owned[data-tool="rotate"][data-gizmo="ring"] .viewer { cursor: grab; }
+.viewer-wrap.vp-owned[data-tool="rotate"][data-gizmo="pick"] .viewer { cursor: crosshair; }
+.viewer-wrap.vp-owned[data-tool="move"][data-gizmo="handle"] .viewer { cursor: grab; }
+.viewer-wrap.vp-owned[data-tool="move"][data-gizmo="center"] .viewer { cursor: move; }
+.vp-gz-panel { position: absolute; right: var(--s-3); bottom: var(--s-3); z-index: 3; width: 252px; max-width: calc(100% - 2 * var(--s-3));
+  max-height: calc(100% - 52px); overflow: auto; display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md); background: var(--chip-bg); color: var(--text); border: 1px solid var(--border); box-shadow: var(--e1);
+  font: 500 var(--fs-sm) var(--font-sans); }
+.vp-gz-panel .gz-head { display: flex; align-items: center; gap: var(--s-2); }
+.vp-gz-panel .gz-head .gz-sum { flex: 1; }
+.vp-gz-panel .gz-collapse { margin-left: auto; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-2); cursor: pointer; }
+.vp-gz-panel .gz-collapse:hover { background: var(--surface-3); color: var(--text); }
+.vp-gz-panel.collapsed { width: auto; }
+.vp-gz-panel.collapsed .gz-body, .vp-gz-panel.collapsed .gz-help { display: none; }
+.vp-gz-panel .gz-body { display: flex; flex-direction: column; gap: var(--s-2); }
+.vp-gz-panel .gz-help summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-xs); }
+.vp-gz-panel[hidden] { display: none; }
+.vp-gz-panel .gz-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3); }
+.vp-gz-panel .gz-f { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--text-2); white-space: nowrap; }
+.vp-gz-panel input:not([type]), .vp-gz-panel .gz-d, .vp-gz-panel .gz-angle, .vp-gz-panel .gz-step, .vp-gz-panel .gz-uvw {
+  width: 5.5em; height: 24px; padding: 0 var(--s-2); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: var(--fs-sm) var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.vp-gz-panel .gz-step, .vp-gz-panel .gz-angle { width: 4em; }
+.vp-gz-panel .gz-uvw { width: 6.5em; text-align: left; }
+.vp-gz-panel input[aria-invalid="true"] { border-color: var(--danger); }
+.vp-gz-panel select { height: 24px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text); font: inherit; }
+.vp-gz-panel .gz-check { color: var(--text); }
+.vp-gz-panel .gz-u { color: var(--text-2); }
+.vp-gz-panel .gz-btn { height: 24px; padding: 0 var(--s-3); border-radius: var(--r-sm); border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+.vp-gz-panel .gz-btn:hover { background: var(--surface-3); }
+.vp-gz-panel .gz-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.vp-gz-panel .gz-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.vp-gz-panel .gz-pivot-hint[hidden] { display: none; }
+.vp-gz-panel .segment button { min-height: 24px; }
+.vp-gz-panel .segment button:disabled { color: var(--text-3); cursor: not-allowed; }
+.vp-gz-panel .gz-err { color: var(--danger); }
+.vp-gz-panel .gz-err:empty { display: none; }
+.vp-gz-panel .gz-hint, .vp-gz-panel .gz-k { color: var(--text-2); font-weight: 400; font-size: var(--fs-xs); }
+.vp-gz-panel .gz-dials { display: flex; flex-direction: column; gap: var(--s-1); font-variant-numeric: tabular-nums; }
+.vp-gz-panel .gz-dials[hidden] { display: none; }
+.vp-gz-panel .gz-dial { display: inline-flex; align-items: center; gap: var(--s-2); }
+.gz-compass { width: 26px; height: 26px; flex: none; }
+.gz-compass circle { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.gz-compass .gz-sec { fill: var(--accent); opacity: .3; }
+.gz-compass .gz-ref { stroke: var(--text-2); stroke-width: 2; }
+.gz-compass .gz-needle { stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; }

@@ -1,0 +1,49 @@
+/* Analysis › Structure Analysis (js/lazy/analysis_panel.js) */
+/* about a third of the window (the Inspector and a strip of the view at 1280 px, 600 px from
+ * 1875 px); its left edge makes it wider */
+dialog.dlg-panel.an-panel { width: clamp(min(380px, calc(100vw - 2 * var(--s-4))), 32vw, 600px); max-width: calc(100vw - 2 * var(--s-4)); max-height: min(72vh, calc(100vh - var(--h-menubar) - var(--h-toolbar) - 3 * var(--s-4))); display: flex; flex-direction: column; }
+/* display: flex would keep a closed panel drawn (it replaces the browser's dialog:not([open]) display: none) */
+dialog.dlg-panel.an-panel:not([open]) { display: none; }
+dialog.dlg-panel.an-panel .dlg-body { overflow: auto; }
+.an-tabs { display: flex; flex-wrap: wrap; gap: var(--s-1); border-bottom: 1px solid var(--border); padding-bottom: var(--s-2); margin-bottom: var(--s-2); }
+.an-tab { border: 1px solid transparent; background: none; color: var(--text-2); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); font-size: var(--fs-sm); cursor: pointer; }
+.an-tab:hover { background: var(--surface-2); color: var(--text); }
+.an-tab.on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+.an-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.an-doc { margin-bottom: var(--s-2); overflow-wrap: anywhere; }
+.an-form { display: flex; flex-direction: column; gap: var(--s-2); }
+.an-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.an-row label { color: var(--text-2); font-size: var(--fs-sm); }
+#analysis-panel .an-row input[type="number"] { width: 6.5em; flex: 0 0 auto; }
+/* a placeholder that is a phrase ("from the adsorbate") shows whole */
+#analysis-panel .an-row input[data-p="probe_radius"] { width: 13em; flex: 0 1 auto; min-width: 6.5em; }
+#analysis-panel .an-row input[type="text"] { width: auto; flex: 0 1 14em; min-width: 6em; }
+#analysis-panel .an-row select { width: auto; flex: 0 1 auto; max-width: 100%; }
+.an-actions { margin-top: var(--s-1); }
+.an-adv > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.an-adv[open] > summary { margin-bottom: var(--s-2); }
+.an-status { font-size: var(--fs-sm); color: var(--text-2); }
+.an-status.busy { color: var(--info); }
+.an-status.err { color: var(--danger); }
+.an-out { margin-top: var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
+.an-sub { font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+.an-cli { margin-right: auto; font-family: var(--font-mono); }
+.an-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.an-table th, .an-table td { border-bottom: 1px solid var(--border); padding: 2px var(--s-2); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.an-table th { color: var(--text-2); font-weight: 600; background: var(--surface-2); position: sticky; top: 0; }
+.an-table.num td { font-variant-numeric: tabular-nums; }
+.an-chart { width: 100%; height: auto; background: var(--plot-bg, var(--surface)); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.an-chart .an-axis { stroke: var(--text-3); stroke-width: 1; }
+.an-chart .an-tick { fill: var(--text-2); font-size: 11px; }
+.an-chart .an-line { stroke: var(--plot-1); stroke-width: 1.2; }
+.an-chart .an-line.obs { stroke: var(--plot-ink, var(--text)); stroke-width: 1; }
+.an-chart .an-line.calc { stroke: var(--plot-2); }
+.an-chart .an-line.diff { stroke: var(--plot-3); stroke-width: 0.8; }
+.an-chart .an-line.bg { stroke: var(--text-3); stroke-dasharray: 4 3; }
+.an-chart .an-stick { stroke: var(--plot-4); stroke-width: 1.2; }
+.an-chart .an-refl { stroke: var(--plot-5); stroke-width: 1; }
+.an-chart .an-bar { fill: var(--plot-1); opacity: 0.85; }
+.an-legend { padding: var(--s-1) 0; }
+.an-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); }
+.an-swatch.acc { background: var(--pore-acc); }
+.an-swatch.nac { background: var(--pore-nac); }

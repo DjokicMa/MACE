@@ -166,12 +166,13 @@ def test_supercell_moves_every_image_as_its_atom(drv):
     d = drv.execute_script(f"""const f = {FV}.getModel().frames, a = f[6], b = f[0];
       return a.map((x, k) => [x.x - b[k].x, x.y - b[k].y, x.z - b[k].z]);""")
     d = np.array(d)
-    assert np.abs(d).max() > 0.05                                        # the mode moves atoms
+    # the mode moves atoms (1.1.6: by its physical zero-point amplitude, a few hundredths of an angstrom)
+    assert np.abs(d).max() > 0.005
     # the view lists each atom's 8 images together (boundary atoms off): all 8 move as one
     for i in range(n):
         assert np.allclose(d[8 * i:8 * i + 8], d[8 * i], atol=1e-4), (i, d[8 * i:8 * i + 8])
-    # the inspector's 2x2x2 box mirrors the range, and 1x1x1 is back to one cell
-    assert drv.execute_script("const b = document.getElementById('fo-super'); return b && b.checked")
+    # the inspector's N x M x L picker (1.1.6, it replaced the 2x2x2 box) mirrors the range, and 1x1x1 is back to one cell
+    assert drv.execute_script("return [0, 1, 2].map((k) => document.getElementById('fo-cells-' + k).value)") == ["2", "2", "2"]
     run(drv, "view.range1")
     assert st(drv)["display"]["atoms"] == n
     assert not H.errors(drv), H.errors(drv)
@@ -185,7 +186,7 @@ def test_off_gamma_mode_keeps_one_cell_and_says_why(drv):
         assert "not at Γ" in reason(drv, cmd), (cmd, reason(drv, cmd))
     n = drv.execute_script("return window.__mace.freqView.doc().structure.numbers.length")
     assert st(drv)["display"]["atoms"] == n
-    assert drv.execute_script("return !document.getElementById('fo-super')")
+    assert drv.execute_script("return !document.getElementById('fo-cells-0')")
     drv.execute_script("window.__mace.freqView.doc().gamma = true")
     assert not H.errors(drv), H.errors(drv)
 
@@ -204,6 +205,7 @@ def test_comparison_follows_cell_and_bonds(drv):
     run(drv, "view.bonds")
     assert drv.execute_script(f"return {VB}.getModelList().every((m) => m.selectedAtoms({{}}).every((a) => !(a.style && a.style.stick)))")
     run(drv, "view.bonds")
-    # what the comparison cannot draw says why
-    assert reason(drv, "view.range2").startswith("The comparison draws the run's own cell")
+    # 1.1.6: the comparison repeats whole cells (Display Range); a fractional range says why not
+    assert not reason(drv, "view.range2")
+    assert reason(drv, "view.rangeCustom").startswith("The optimization view repeats whole cells")
     assert not H.errors(drv), H.errors(drv)

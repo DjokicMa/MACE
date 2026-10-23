@@ -11,6 +11,8 @@ export const CM_PER_THZ = 33.35640952;
 export const ENERGY_UNITS = { eV: 1, meV: 1000, Ha: 1 / HARTREE_EV, "kJ/mol": AVOGADRO_EV_KJMOL, "kcal/mol": EV_KCALMOL };
 /** value in the unit = value in cm⁻¹ × factor */
 export const WAVENUMBER_UNITS = { "cm-1": 1, meV: 1 / CM_PER_MEV, THz: 1 / CM_PER_THZ };
+/** phonon frequencies (a phonon fort.25's band and DOS plots): value in the unit = value in eV × factor */
+export const PHONON_UNITS = { "cm-1": 1000 * CM_PER_MEV, THz: (1000 * CM_PER_MEV) / CM_PER_THZ, meV: 1000 };
 export const UNIT_LABEL = { eV: "eV", meV: "meV", Ha: "Ha", "kJ/mol": "kJ/mol", "kcal/mol": "kcal/mol", "cm-1": "cm⁻¹", THz: "THz" };
 export const PER_LABEL = { cell: "", atom: "/atom", fu: "/f.u." };
 

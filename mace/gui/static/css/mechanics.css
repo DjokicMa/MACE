@@ -1,0 +1,77 @@
+/* The Phonopy, Mechanical Properties Results and Relaxation Time dialogs
+ * (js/lazy/phonopy_dialog.js, elastic_dialog.js, tau_dialog.js). Tokens only:
+ * both themes follow. */
+/* a non-modal dialog (show()): fixed over the window, so opening it never makes the page itself scroll */
+.mx-dlg { position: fixed; inset: 0; margin: auto; height: fit-content; z-index: var(--z-float);
+  width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+/* display: flex would keep a closed dialog drawn (it replaces the browser's dialog:not([open]) display: none) */
+.mx-dlg:not([open]) { display: none; }
+.mx-dlg .dlg-body { overflow: auto; display: grid; gap: var(--s-3); }
+.mx-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border); }
+.mx-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: var(--s-2) var(--s-3);
+  color: var(--text-2); font: inherit; cursor: pointer; }
+.mx-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.mx-grid { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-3); align-items: center; }
+.mx-grid > label { color: var(--text-2); font-size: var(--fs-sm); }
+.mx-grid .field { width: 100%; min-width: 0; }
+.mx-inline { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.mx-inline .field { width: auto; }
+.mx-inline input[type="number"].field { width: 90px; }
+.mx-check { display: inline-flex; gap: var(--s-1); align-items: center; font-size: var(--fs-sm); }
+.mx-pre { margin: 0; max-height: 260px; overflow: auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg); color: var(--text); font: var(--fs-sm)/1.4 var(--font-mono); white-space: pre-wrap; }
+.mx-cmd { font: var(--fs-sm) var(--font-mono); color: var(--text-2); word-break: break-all; }
+.mx-table { border-collapse: collapse; font-size: var(--fs-sm); }
+.mx-table th, .mx-table td { border: 1px solid var(--border); padding: 2px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+.mx-table th { color: var(--text-2); font-weight: 500; }
+.mx-table td.l, .mx-table th.l { text-align: left; }
+.mx-badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: var(--fs-sm); border: 1px solid var(--border); }
+.mx-badge.ok { color: var(--good); border-color: var(--good); }
+.mx-badge.bad { color: var(--danger); border-color: var(--danger); }
+.mx-badge.run { color: var(--accent); border-color: var(--accent); }
+.mx-plot { width: 100%; height: 320px; }
+.mx-plots { display: grid; grid-template-columns: 3fr 1fr; gap: var(--s-2); }
+.mx-section { display: grid; gap: var(--s-2); }
+.mx-section > h3 { margin: 0; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
+.mx-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; align-items: center; }
+/* where the decks are written now: Calculation Setup (a line with its Open Setup button) */
+.mx-pointer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); margin: 0; }
+@media (max-width: 640px) {
+  .mx-grid { grid-template-columns: 1fr; }
+  .mx-plots { grid-template-columns: 1fr; }
+}
+/* 1.1.6: the results document of an ELASTIC, EOS, QHA or CPHF output (js/docs/mech.js), in the plot area */
+.mv-body { flex: 1; min-height: 0; overflow: auto; display: grid; align-content: start; grid-auto-rows: max-content; gap: var(--s-4); padding: 0 var(--s-1) var(--s-3) 0; outline: none; }
+.mv-body[hidden], .mv-plot[hidden] { display: none; }
+.mv-body:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+#mech-host .pv-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s-2); }
+.mv-tile { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); background: var(--surface); min-width: 0; }
+.mv-tile-l { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-tile-v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-u { font-size: var(--fs-xs); color: var(--text-2); font-weight: 400; }
+.mv-small { font-size: 14px; }
+.mv-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: var(--s-4); align-items: start; }
+.mv-sec { display: grid; gap: var(--s-2); align-content: start; min-width: 0; overflow-x: auto; }
+.mv-sec > h3 { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); align-items: baseline; }
+.mv-sec .note { margin: 0; font-size: var(--fs-xs); color: var(--text-2); }
+.mv-sec .mx-table { width: max-content; max-width: 100%; }
+.mv-kv th { font-weight: 400; }
+.mv-ok { color: var(--good); text-align: center !important; }
+.mv-bad { color: var(--danger); text-align: center !important; }
+.mv-warn { margin: 0 0 var(--s-2); padding: var(--s-2) var(--s-3); border-left: 3px solid var(--danger); color: var(--danger); font-size: var(--fs-sm); }
+.mv-sec .note.mv-bad-note { color: var(--danger); }
+.mv-hl td { background: var(--accent-soft); }
+.mv-empty { display: grid; gap: var(--s-3); max-width: 640px; color: var(--text-2); }
+.mv-settings .rc-kv td:last-child { white-space: normal; overflow-wrap: anywhere; }
+/* the permittivity of the piezoelectric coupling k² (mace analyze elastic --epsilon) */
+.mv-eps { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; font-size: var(--fs-sm); }
+.mv-eps label { display: flex; gap: var(--s-2); align-items: center; }
+.mv-eps input { width: 14ch; }
+/* the enthalpy tab: the phases compared (mace analyze elastic --compare) and Add phase… */
+.mv-phases, .mv-addphase { display: inline-flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); align-items: center; }
+.mv-addphase[hidden] { display: none; }
+.mv-phase { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: var(--fs-xs); }
+.mv-phase-x { border: 0; background: none; color: var(--text-2); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1; }
+.mv-phase-x:hover { color: var(--danger); }
+.mv-phase-in { width: 24ch; }

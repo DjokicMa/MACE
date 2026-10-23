@@ -365,6 +365,10 @@ export const MODAL_LAYERS = {
     ["0–9  .  -", "Type the offset in Å along the locked axis"], ["Backspace", "Edit the typed offset"],
     ["Tab", "Type along the next axis"], ["G", "Start again from where the atoms were"],
     ["Enter", "Apply (also a left click)"], ["Esc", "Cancel (also a right click)"], ["Ctrl (held)", "Snap to 0.05 of a cell axis"]] },
+  rotateActive: { title: "While rotating (Rotate tool)", rows: [
+    ["Ctrl (held)", "Invert the angle snap: snap a free turn, free a snapping one"], ["Shift (held)", "Snap every angle (≈88°, ≈43° → 90°, 45°)"],
+    ["Alt (held)", "Keep one axis only, snapped (→ 90°, 0°)"], ["Alt again, or Tab", "Keep the other axis (→ 0°, 45°)"],
+    ["Shift+Alt (held)", "In-plane only: turn about the line of sight"], ["Enter", "Apply (also letting go)"], ["Esc", "Cancel (also a right click)"]] },
   elementEntry: { title: "Add Atom element", rows: [["Enter", "Use this element and go back to the viewport"],
     ["Esc", "Keep the element it had"], ["E", "Edit the element (in the Add Atom tool)"]] },
 };

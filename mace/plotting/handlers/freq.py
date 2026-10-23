@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 from .. import detect, outcome
 from ..prompts import (
     get_float_input,
+    get_string_input,
     select_option,
     yes_no_prompt,
 )
@@ -38,6 +39,7 @@ _RENDER_EXTS = {".html", ".gif"}
 
 def _engine():
     try:
+        import plotly.graph_objects  # noqa: F401  (the engine imports without it; the drawing needs it)
         from ..engines import vibmode_viewer as vib
     except ImportError as e:
         # see cube.py: clear message instead of a raw traceback on
@@ -83,6 +85,7 @@ def configure_freq_plot(interactive: bool = True) -> Dict[str, Any]:
         "gif_fps": 20,
         "static": False,
         "normalize": False,
+        "supercell": [1, 1, 1],     # 1.1.6: cells drawn along a, b, c (periodic, modes at Gamma)
         "formats": ["html"],
     }
 
@@ -132,11 +135,17 @@ def configure_freq_plot(interactive: bool = True) -> Dict[str, Any]:
             config["static"] = True
 
     if yes_no_prompt("Configure advanced options?", "no"):
-        config["amplitude"] = get_float_input("  Displacement amplitude (visual exaggeration)", 1.0)
-        config["normalize"] = yes_no_prompt("  Normalize displacements for visibility?", "no")
+        # 1.1.6: CRYSTAL prints each mode at its zero-point classical amplitude sqrt(hbar/(omega mu)),
+        # so 1 is the true size (0.01 to 0.2 A); more exaggerates it
+        config["amplitude"] = get_float_input("  Displacement amplitude (1 = the physical zero-point amplitude; more exaggerates it)", 1.0)
+        config["normalize"] = yes_no_prompt("  Normalize displacements for visibility (largest atom moves 1 A x amplitude)?", "no")
         if config["gif"]:
             config["gif_fps"] = int(get_float_input("  GIF frames per second", 20))
         config["frames"] = int(get_float_input("  Animation frame count", 30))
+        # 1.1.6, asked last so piped answers for the questions above keep their order
+        cells = get_string_input("  Cells drawn along a b c for a periodic structure", "1 1 1").split()
+        if len(cells) == 3 and all(c.isdigit() and int(c) >= 1 for c in cells):
+            config["supercell"] = [int(c) for c in cells]
 
     return config
 
@@ -152,6 +161,9 @@ def _freq_config_from_args(args) -> Dict[str, Any]:
     cfg["gif_fps"] = getattr(args, "gif_fps", cfg["gif_fps"])
     cfg["static"] = bool(getattr(args, "static", False))
     cfg["normalize"] = bool(getattr(args, "normalize", False))
+    sc = getattr(args, "freq_supercell", None)
+    if sc:
+        cfg["supercell"] = [max(1, int(x)) for x in sc]
     frames = getattr(args, "frames", None)
     if frames:
         cfg["frames"] = int(frames)
@@ -209,6 +221,8 @@ def plot_freq(files: List[str], config: Dict[str, Any], output_dir: str = ".") -
             argv.append("--normalize")
         if config.get("static"):
             argv.append("--static")
+        if list(config.get("supercell") or [1, 1, 1]) != [1, 1, 1]:
+            argv += ["--supercell", *[str(int(n)) for n in config["supercell"]]]
 
         if config.get("all_modes"):
             print(f"\n  Rendering all modes: {name}")

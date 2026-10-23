@@ -34,7 +34,10 @@ def env(xdg: Path, **extra):
     # File History (XDG_STATE_HOME) too: a test's saves never reach ~/.local/state
     e.pop("MACE_GUI_HISTORY_DIR", None)
     e.update(PYTHONDONTWRITEBYTECODE="1", XDG_CONFIG_HOME=str(xdg), XDG_CACHE_HOME=str(Path(xdg) / "cache"),
-             XDG_STATE_HOME=str(Path(xdg) / "state"), MACE_GUI_PRINT_TOKEN="1", **extra)
+             XDG_STATE_HOME=str(Path(xdg) / "state"), MACE_GUI_PRINT_TOKEN="1",
+             # 1.1.6: every Inspector control shows (Advanced) unless a test picks Basic itself
+             MACE_GUI_INSPECTOR_TIER="advanced")
+    e.update(extra)
     return e
 
 

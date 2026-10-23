@@ -15,7 +15,7 @@ POST workflow/defaults   {draft}            -> task: ``mace workflow --spec SPEC
 POST workflow/step-form  {draft, step, answers, patches, json_text}
                                             -> task: the step's Calculation Setup form
 POST workflow/preview    {root_gen, draft}  -> task: the CLI's commands in a staged copy
-POST workflow/run        {root_gen, preview_id, confirm_overwrite?}
+POST workflow/run        {root_gen, preview_id}
                                             -> task: the same commands, for real
 
 The Workflows view's actions (workflow_actions.py; each one a CLI command
@@ -181,8 +181,9 @@ def post(handler, route: str, body):
         get_, put_ = _cache(st)
 
         def check(work, ctx):
-            ov = wb.Builder(st, inp, draft, work / "forms", ctx, get_, put_).step1_overrides()
-            return wb.check_spec(st.root, inp, draft, work, ctx, ov)
+            b = wb.Builder(st, inp, draft, work / "forms", ctx, get_, put_)
+            ov = b.step1_overrides()
+            return wb.check_spec(st.root, inp, draft, work, ctx, ov, b.later_overrides())
         job = _job_in_scratch(st, "wfcheck", check)
         t = cli_task(st, "workflow-check", "Workflow: resources and settings (mace workflow --spec)", job,
                      doc=doc, client=client, supersede=("workflow-check", doc))
@@ -192,6 +193,7 @@ def post(handler, route: str, body):
         inp = _inputs(st, draft)
         seq, i = wb.step_request(draft, body.get("step"))
         wb.check_form_answers(inp, seq, i, body)
+        wb.check_module_settings(draft, seq, i)
         get_, put_ = _cache(st)
         step = f"{seq[i]}_{i + 1}"
         job = _job_in_scratch(st, "wfform", lambda work, ctx: wb.step_form(st, inp, draft, seq, i, body, work, ctx,
@@ -226,7 +228,7 @@ def post(handler, route: str, body):
         pid = str(body.get("preview_id") or "")
         if not pid.startswith("wf-"):
             raise sub.SubmitConflict("No such preview; preview again")
-        p = wb.check_run(st.wf_previews, pid, st.root, gen, {"confirm_overwrite": bool(body.get("confirm_overwrite"))})
+        p = wb.check_run(st.wf_previews, pid, st.root, gen, {})
         holder = {}
 
         def run_job(ctx):

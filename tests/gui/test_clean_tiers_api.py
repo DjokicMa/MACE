@@ -127,13 +127,17 @@ def test_springs_route_is_unchanged(served, name):
     assert r["time_limit"] == 120                             # the springs clamp is still 120 s
 
 
-def test_metal_nothing_to_clean_only_for_springs(served):
+def test_nothing_to_clean_only_for_springs(served):
     base = served["base"]
-    s = session_of(base, F.copper(), "cu_t")
+    s = session_of(base, F.lone_atom(), "ar_t")
     st, r = clean(base, s["session"], s["rev"])
     assert r["nothing_to_clean"]
     st, r = clean(base, s["session"], s["rev"], method="mlip:chgnet-0.3.0", time_limit=60)
-    assert st == 200 and r["method_ran"] == "mlip:chgnet-0.3.0", r      # all-metal Cu reaches the ML tier
+    assert st == 200 and r["method_ran"] == "mlip:chgnet-0.3.0", r      # a lone atom reaches the ML tier
+    # copper: its metal bonds are drawn (a structure of metals only), so the springs hold them (1.1.6)
+    s = session_of(base, F.copper(), "cu_t")
+    st, r = clean(base, s["session"], s["rev"])
+    assert st == 200 and not r.get("nothing_to_clean"), r
 
 
 # --- A2: methods, hints, recheck -----------------------------------------------------------
@@ -489,7 +493,7 @@ def test_ml_host_lease_survives_a_worker_start_that_raises(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("no private temp directory")
     monkeypatch.setattr(mlip_client, "WorkerProcess", boom)
-    monkeypatch.setattr(detect, "configured_python", lambda: sys.executable)
+    monkeypatch.setattr(detect, "configured_python", lambda model=None: sys.executable)
     monkeypatch.setattr(detect, "weights_status", lambda m: {"status": "bundled", "path": None})
     monkeypatch.setattr(proc, "mem_available_gb", lambda: 16.0)
     h = mlip_host.MlipHost()

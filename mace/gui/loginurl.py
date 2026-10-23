@@ -22,7 +22,6 @@ import socket
 import sys
 import urllib.error
 import urllib.request
-import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,11 +41,8 @@ def state_files() -> List[Path]:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    from .registry import pid_alive          # os.kill(pid, 0) would end the process on Windows
+    return pid_alive(pid)
 
 
 def servers() -> List[Dict[str, Any]]:
@@ -107,7 +103,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
     print(link)
     if args.open:
-        webbrowser.open(link)
+        from .appwindow import open_url
+        open_url(link)
     return 0
 
 

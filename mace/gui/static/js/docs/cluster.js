@@ -141,7 +141,7 @@ export function createClusterView(host, H) {
       <p class="small">Usable partitions: ${esc((r.usable_partitions || []).join(", ") || "(unknown)")} · nodes ${num(t.nodes)} (${num(t.idle)} idle, ${num(t.mixed)} mixed, ${num(t.allocated)} allocated, ${num(t.down_drain)} down or drained) · free cores ${num(t.cpus_free)} of ${num(t.cpus_total)}</p>
       ${(r.quota_warnings || []).map((w) => `<div class="clv-warn">${icon("triangle-alert")}${esc(w)}</div>`).join("")}
       <h3>Your jobs</h3>${jobs.length ? `<table class="data clv-table"><thead><tr><th>Job</th><th>Name</th><th>State</th><th>Elapsed</th><th>Limit</th><th>Cores</th><th></th></tr></thead><tbody>${jobs.map((j) =>
-        `<tr><td class="mono">${esc(j.id)}</td><td>${esc(j.name)}</td><td>${esc(j.state)}${j.state === "PENDING" && j.reason && j.reason !== "None" ? ` (${esc(j.reason)})` : ""}</td><td>${esc(j.elapsed)}</td><td>${esc(j.time_limit)}</td><td class="num">${esc(j.cpus)}</td>
+        `<tr><td class="mono">${esc(j.id)}</td><td>${esc(j.name)}</td><td>${esc(j.state)}${j.state === "PENDING" && /^JobHeld/.test(j.reason || "") ? ' <span class="chip" title="Held: release it from the Jobs panel (held by you) or ask an administrator">Held</span>' : ""}${j.state === "PENDING" && j.reason && j.reason !== "None" ? ` (${esc(j.reason)})` : ""}</td><td>${esc(j.elapsed)}</td><td>${esc(j.time_limit)}</td><td class="num">${esc(j.cpus)}</td>
         <td><button type="button" class="tb-btn-text" data-job="${esc(j.id)}" aria-label="Details of job ${esc(j.id)}">Details</button></td></tr>`).join("")}</tbody></table>` : `<p class="muted">No jobs of yours in the queue.</p>`}`;
   }
   function renderNodes(r) {
@@ -215,17 +215,28 @@ export function createClusterView(host, H) {
     return `<span class="clv-bar ${level || ""}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct === null || pct === undefined ? 0 : pct}"><i style="width:${w}%"></i></span>`;
   }
   const lvl = (v, r) => (v === null || v === undefined ? "" : v >= r.critical_percent ? "critical" : v >= r.warn_percent ? "warning" : "");
+  const SPACE_TITLE = { home: "Home", scratch: "Scratch", research: "Research spaces", "": "Other" };
+  const pctText = (v) => (v === null || v === undefined ? "–" : v + " %");
+  function spaceCard(x, r) {
+    const info = x.level === "info";
+    const sl = info ? "" : lvl(x.space_pct, r), fl = info ? "" : lvl(x.files_pct, r);
+    const open = x.path && x.space === "research" ? `<button type="button" class="tb-btn-text" data-open="${esc(x.path)}" title="Open this folder">${icon("folder-open")}<span>Open</span></button>` : "";
+    return `<div class="clv-space ${x.level}"><div class="clv-space-head"><b>${esc(x.label)}</b><span class="chip">${esc(x.source)}</span>${x.path ? `<span class="mono small muted">${esc(H.abbrev ? H.abbrev(x.path) : x.path)}</span>` : ""}${open}</div>
+        <div class="clv-space-row"><span class="lbl">Quota</span>${bar(x.space_pct, sl)}<span class="small">${bytes(x.space_used_b)} of ${bytes(x.space_limit_b)} · ${pctText(x.space_pct)}</span></div>
+        <div class="clv-space-row"><span class="lbl">Files</span>${bar(x.files_pct, fl)}<span class="small">${num(x.files_used)} of ${num(x.files_limit)} · ${pctText(x.files_pct)}</span></div></div>`;
+  }
   function renderStorage(r) {
-    const rows = (r.rows || []).map((x) => {
-      const info = x.level === "info";
-      const sl = info ? "" : lvl(x.space_pct, r), fl = info ? "" : lvl(x.files_pct, r);
-      return `<div class="clv-space ${x.level}"><div class="clv-space-head"><b>${esc(x.label)}</b><span class="chip">${esc(x.source)}</span>${x.path ? `<span class="mono small muted">${esc(H.abbrev ? H.abbrev(x.path) : x.path)}</span>` : ""}</div>
-        <div class="clv-space-row"><span class="lbl">Space</span>${bar(x.space_pct, sl)}<span class="small">${bytes(x.space_used_b)} of ${bytes(x.space_limit_b)} · ${x.space_pct === null || x.space_pct === undefined ? "–" : x.space_pct + " %"}</span></div>
-        <div class="clv-space-row"><span class="lbl">Files</span>${bar(x.files_pct, fl)}<span class="small">${num(x.files_used)} of ${num(x.files_limit)} · ${x.files_pct === null || x.files_pct === undefined ? "–" : x.files_pct + " %"}</span></div></div>`;
-    }).join("");
-    pane.innerHTML = `${(r.warnings || []).map((w) => `<div class="clv-warn">${icon("triangle-alert")}${esc(w)}</div>`).join("")}${rows || '<p class="muted">No storage information.</p>'}
+    const groups = {};
+    (r.rows || []).forEach((x) => { (groups[x.space || ""] = groups[x.space || ""] || []).push(x); });
+    const rows = ["home", "scratch", "research", ""].filter((k) => groups[k]).map((k) =>
+      `<h3 class="clv-h">${SPACE_TITLE[k]}</h3>${groups[k].map((x) => spaceCard(x, r)).join("")}`).join("");
+    const quiet = (r.research || []).filter((x) => !x.has_quota);
+    const quietHtml = quiet.length ? `<h3 class="clv-h">Research spaces without a quota row</h3>${quiet.map((x) =>
+      `<div class="clv-space"><div class="clv-space-head"><b>${esc(x.name)}</b><span class="mono small muted">${esc(H.abbrev ? H.abbrev(x.path) : x.path)}</span><button type="button" class="tb-btn-text" data-open="${esc(x.path)}" title="Open this folder">${icon("folder-open")}<span>Open</span></button></div><p class="small muted">You can use this folder; the site's quota tool lists no limits for it.</p></div>`).join("")}` : "";
+    pane.innerHTML = `${(r.warnings || []).map((w) => `<div class="clv-warn">${icon("triangle-alert")}${esc(w)}</div>`).join("")}${rows + quietHtml || '<p class="muted">No storage information.</p>'}
       <p class="small muted">Warning from ${r.warn_percent} %, critical from ${r.critical_percent} % ([quota] in ~/.config/mace/site.toml; <code>mace cluster quota</code> shows them).</p>
       <p><button type="button" class="tb-btn-text" data-act="scan">${icon("search")}<span>Find What Uses My Files…</span></button></p><div class="clv-scan" aria-live="polite"></div>`;
+    pane.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => H.openFolderAt ? H.openFolderAt(b.dataset.open) : H.run && H.run("file.openFolder")));
     pane.querySelector("[data-act=scan]").addEventListener("click", () => scanDialog(true));
     if (scanForm && !(scanTask && ["queued", "running"].includes((scanTask.record || {}).state))) scanDialog(false);
     else renderScan();

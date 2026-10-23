@@ -16,6 +16,7 @@ real CRYSTAL23 output), copied into the served demo folder.
 With MACE_GUI_SHOTS=<dir> each case saves a screenshot there.
 """
 import hashlib
+import lzma
 import shutil
 import time
 from pathlib import Path
@@ -33,6 +34,7 @@ from selenium.webdriver.common.by import By  # noqa: E402
 from selenium.webdriver.common.keys import Keys  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "orbitals"
+SUITE_DIAMOND = Path(__file__).resolve().parents[2] / "examples" / "suite" / "2-dense-3d" / "diamond" / "ORBITALS"
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +42,11 @@ def app(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("orbitals_e2e")
     root = H.examples_copy(tmp)
     shutil.copytree(DATA, root / "orb")
+    # the example suite's diamond (spin-polarized, alpha = beta), its .molden decompressed as CRYSTAL wrote it
+    (root / "orb" / "diamond").mkdir()
+    for f in SUITE_DIAMOND.iterdir():
+        dst = root / "orb" / "diamond" / f.name.removesuffix(".xz")
+        dst.write_bytes(lzma.decompress(f.read_bytes()) if f.name.endswith(".xz") else f.read_bytes())
     a = U.start_app(tmp, root=root, MACE_GUI_MAX_WORKERS="2")
     try:
         yield a
@@ -129,7 +136,10 @@ def test_h2o_homo_lumo_views_and_keys(fresh):
     # the diagram: HOMO on MO 5, LUMO on MO 6, closed-shell occupations as "2 e", empty levels as "empty"
     homo, lumo = level_row(drv, 5), level_row(drv, 6)
     assert "HOMO" in homo.text and "LUMO" in lumo.text
-    assert "2 e (closed shell)" in homo.text and "empty" in lumo.text
+    # 1.1.6: the row shows the short form ("2 e", it clipped); its title keeps the whole text
+    assert homo.text.endswith("2 e") and "empty" in lumo.text
+    occ = homo.find_element(By.CSS_SELECTOR, ".orb-occ")
+    assert occ.get_attribute("title") == "2 e (closed shell)"
     assert homo.get_attribute("aria-selected") == "true" and "HOMO" in homo.get_attribute("aria-label")
     # the Im view is disabled for a molecule (real orbitals)
     im = drv.find_element(By.CSS_SELECTOR, "#volume-host [data-part='im']")
@@ -255,6 +265,48 @@ def test_open_shell_spin_tabs_and_dark_theme(fresh):
     time.sleep(0.6)
     snap(drv, "orbitals_o2_beta_dark")
     drv.execute_script("window.__mace.settings.set('theme', 'light')")
+    no_errors(drv)
+
+
+def test_spin_polarized_diamond_draws_beta_and_rotate_is_grayed(fresh):
+    """The suite's diamond ORBITALS (spin-polarized, SPINLOCK): CRYSTAL23 wrote no valid β coefficients, the
+    run has α = β, so the β tab draws the α orbitals and says so (it said "β failed: not drawn"). The Rotate
+    tool, whose wheels belong to the structure view, is grayed out here with its reason, and pressing R
+    leaves the tool as it was."""
+    drv = fresh[0]
+    path = "orb/diamond/diamond_orbitals_orb_00001_K000_real.molden"
+    st = open_orbitals(drv, path)
+    check = drv.find_element(By.CSS_SELECTOR, "#volume-host .orb-check")
+    assert check.text == "Self-check passed" and check.get_attribute("data-check") == "ok", check.text
+    note = drv.find_element(By.CSS_SELECTOR, "#volume-host [data-k='spin-note']").text
+    assert note.startswith("β = α: CRYSTAL wrote no valid β coefficients"), note
+    tabs = drv.find_elements(By.CSS_SELECTOR, "#volume-host .orb-spins [role='tab']")
+    assert [t.get_attribute("data-spin") for t in tabs] == ["ALPHA", "BETA"]
+    alpha = st["orbital"]["mos"]
+    click(drv, tabs[1])
+    st = wait_orbital(drv, path, "s.orbital.spin === 'BETA'")
+    assert st["orbital"]["mos"] == alpha and st["surfaces"] > 0
+    assert drv.find_element(By.CSS_SELECTOR, "#volume-host .orb-spins [data-spin='BETA']").get_attribute("aria-selected") == "true"
+    # Rotate: grayed with its reason; R does nothing here
+    why = "Rotate works in a structure document; drag to turn this view, or use View › Rotate 90° (Alt+arrows)"
+    assert drv.execute_script("return window.__mace.menuReason('tool.rotate')") == why
+    btn = drv.find_element(By.CSS_SELECTOR, "#toolbar [data-cmd='tool.rotate']")
+    assert btn.get_attribute("aria-disabled") == "true" and btn.get_attribute("data-reason") == why
+    drv.execute_script("document.querySelector('#viewer-volume canvas').focus()")
+    ActionChains(drv).send_keys("r").perform()
+    time.sleep(0.3)
+    assert drv.execute_script("return window.__mace.viewState().tool") == "select"
+    no_errors(drv)
+
+
+def test_rotate_left_on_goes_back_to_select_in_an_orbital_view(fresh):
+    """A Rotate tool picked in a structure goes back to Select when an orbital document opens."""
+    drv = fresh[0]
+    U.open_doc(drv, "structures/MgO.cif")
+    drv.execute_script("window.__mace.run('tool.rotate')")
+    assert drv.execute_script("return window.__mace.viewState().tool") == "rotate"
+    open_orbitals(drv, "orb/h2o/h2o_c.molden")
+    assert drv.execute_script("return window.__mace.viewState().tool") == "select"
     no_errors(drv)
 
 

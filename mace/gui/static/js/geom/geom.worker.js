@@ -35,22 +35,22 @@ function pump() {
 
 function run(kind, a) {
   if (kind === "bonds") {
-    const pairs = G.cellListBonds(a.cart, a.radii, a.metal, a.tol, a.metalMetal);
+    const pairs = G.cellListBonds(a.cart, a.radii, a.metal, a.tol, a.metalMetal, a.rule || null);
     return { result: { pairs }, transfer: [pairs.buffer] };
   }
   if (kind === "periodicBonds" || kind === "neighbors" || kind === "fragment") {
-    const b = G.periodicBonds(a.cell, a.frac, a.radii, a.metal, a.tol, a.metalMetal);
+    const b = G.periodicBonds(a.cell, a.frac, a.radii, a.metal, a.tol, a.metalMetal, a.pbc || null, a.rule || null);
     if (kind === "periodicBonds") return { result: b, transfer: [b.i.buffer, b.j.buffer, b.img.buffer] };
     const adj = G.adjacency(b, a.radii.length), sel = new Set(a.selection);
     const out = Uint32Array.from(kind === "neighbors" ? G.neighborsOf(adj, sel) : G.fragmentOf(adj, sel));
     return { result: { indices: out }, transfer: [out.buffer] };
   }
   if (kind === "coordination") {
-    const rows = G.coordination(a.cell, a.frac, a.z, a.radii, a.metal, a.tol, a.sites);
+    const rows = G.coordination(a.cell, a.frac, a.z, a.radii, a.metal, a.tol, a.sites, null, a.pbc || null, a.rule || null);
     return { result: { rows }, transfer: [] };
   }
   if (kind === "polyhedra") {
-    const r = G.polyhedra(a.cell, a.frac, a.z, a.radii, a.metal, a.tol, a.dispCart, a.dispBase, a.only);
+    const r = G.polyhedra(a.cell, a.frac, a.z, a.radii, a.metal, a.tol, a.dispCart, a.dispBase, a.only, a.pbc || null, a.range || null, a.rule || null);
     return { result: r, transfer: r.meshes.flatMap((m) => [m.pos.buffer, m.nrm.buffer, m.edge.buffer]) };
   }
   if (kind === "boxSelect" || kind === "lassoSelect") {
@@ -78,7 +78,7 @@ function run(kind, a) {
     let centers = a.selection.map(fr);
     if (a.centroid && centers.length) centers = [centers.reduce((s, f) => G.add3(s, f), [0, 0, 0]).map((x) => x / centers.length)];
     for (const c of centers) for (let j = 0; j < n; j++) {
-      const d = a.periodic ? G.minImage(C, c, fr(j)).length : G.norm3(G.cartOf(C, G.sub3(fr(j), c)));
+      const d = a.periodic ? G.minImage(C, c, fr(j), a.pbc || null).length : G.norm3(G.cartOf(C, G.sub3(fr(j), c)));
       if (d <= a.r) out.add(j);
     }
     const indices = Uint32Array.from(out);

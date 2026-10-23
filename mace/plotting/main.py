@@ -163,7 +163,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='mace plotting',
         description='Plot CRYSTAL calculation outputs (bands, DOS, structures, '
-                    'cube volumetrics, FREQ vibrational modes, IR/Raman spectra)',
+                    'cube volumetrics, FREQ vibrational modes, IR/Raman spectra, BOLTZTRA transport)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -171,6 +171,8 @@ Examples:
   mace plotting --band                   # Plot all band structures with defaults
   mace plotting --dos                    # Plot all DOS with defaults
   mace plotting --band-dos               # Each band structure with its DOS, one figure (as the GUI)
+  mace plotting --phonon-band-dos x_phonon_band.f25 --partner ../PHONON_DOS/x_phonon_dos.f25
+                                         # A phonon dispersion with its phonon DOS, one frequency axis
   mace plotting --band --backend matplotlib   # the figures of MACE 1.1.5 and earlier
   mace plotting --structure              # Visualize all CIF files
   mace plotting --all                    # Plot everything discovered with defaults
@@ -190,6 +192,11 @@ Examples:
   mace plotting --ir                     # plot every *IRSPEC.DAT
   mace plotting --raman --raman-mode all # Raman incl. single-crystal directions
   mace plotting --spectra --average      # IR + Raman, conf configs averaged
+
+  mace plotting --transport run.SEEBECK.dat                    # the file's own quantity
+  mace plotting --transport run.SIGMA.dat --quantity zt --kappa-lattice 1.5 --temperature 300
+  mace plotting --transport run.KAPPA.dat --quantity lorenz --component all
+  mace plotting --transport run.SEEBECK.dat --quantity pf --x-axis carriers
 
   mace plotting --legend MgO.cif         # element legend SVG in the GUI's palette
   mace plotting --legend runs/ --format png --dpi 600 --legend-layout grid
@@ -222,6 +229,14 @@ Examples:
         action='store_true',
         help="Plot each band structure with its run's DOS in one figure on a shared energy axis "
              "(mace gui's band + DOS view): FILE is a BAND or a DOSS file, its partner sits beside it"
+    )
+    mode_group.add_argument(
+        '--phonon-band-dos',
+        dest='phonon_band_dos',
+        action='store_true',
+        help="Plot a phonon dispersion with its phonon DOS in one figure on a shared frequency axis "
+             "(<material>.PHONON_BAND_DOS.<format>; mace gui's Add Phonon DOS… and Add Phonon Bands…): FILE is "
+             "a phonon run's band or DOS fort.25, the other half beside it or --partner; --units cm-1, THz or meV"
     )
     mode_group.add_argument(
         '--structure',
@@ -259,6 +274,12 @@ Examples:
         '--spectra',
         action='store_true',
         help='Plot both IR and Raman spectra (umbrella)'
+    )
+    mode_group.add_argument(
+        '--transport',
+        action='store_true',
+        help='Plot BOLTZTRA transport data: any of a run\'s .SEEBECK/.SIGMA/.SIGMAS/.KAPPA/.TDF.dat files, '
+             'and with --quantity what the run\'s files beside it give (ZT, power factor, Lorenz number, ...)'
     )
     mode_group.add_argument(
         '--bz',
@@ -307,7 +328,7 @@ Examples:
     parser.add_argument(
         '-o', '--output',
         default='.',
-        help='Output directory for generated plots (band/DOS: beside the data when not given)'
+        help='Output directory for generated plots (band, DOS and transport: beside the data when not given)'
     )
 
     # Plot styles (1.1.6, mace/plotting/presets.py STYLE_OPTIONS: the same names as the GUI's Style controls
@@ -342,7 +363,7 @@ Examples:
     style_group.add_argument('--band-style', choices=list(BAND_STYLES), default=None,
                              help="Band/DOS: a closed-shell run's bands: single (one line in the color pair's first "
                                   "color), overlay (the second color dashed on top), ink (the neutral ink color, the "
-                                  "1.1.6 preview's look); auto (default): single with a gap at E_F, overlay for a metal. "
+                                  "plot's text color); auto (default): single with a gap at E_F, overlay for a metal. "
                                   "A spin-polarized run always draws spin up solid, spin down dashed. Plotly backend "
                                   "only: --backend matplotlib ignores it")
     style_group.add_argument('--spin-down-style', '--spin-style', dest='spin_style',
@@ -363,8 +384,10 @@ Examples:
     style_group.add_argument('--dos-smooth', dest='dos_smooth', metavar='EV', type=_dos_smooth_ev, default=None,
                              help=f'DOS: Gaussian smoothing of the drawn curves (display only, labeled in the plot), '
                                   f'sigma in eV, e.g. {DOS_SMOOTH_SIGMA:g}; 0: off (default: off)')
-    style_group.add_argument('--units', choices=['eV', 'meV', 'Ha', 'kJ/mol', 'kcal/mol'], default=None,
-                             help='Band/DOS energy unit (plotly backend; default: eV)')
+    style_group.add_argument('--units', choices=['eV', 'meV', 'Ha', 'kJ/mol', 'kcal/mol', 'cm-1', 'THz'], default=None,
+                             help='Band/DOS energy unit (plotly backend; default: eV). cm-1 and THz are for the frequencies of a '
+                                  'phonon fort.25 (default there: cm-1; a phonon plot takes cm-1, THz or meV; an electronic '
+                                  'plot given cm-1 or THz is drawn in eV)')
     style_group.add_argument('--width', type=float, default=None, metavar='IN',
                              help='Band/DOS/band + DOS figure width in inches (default: plotly the GUI pane\'s size, '
                                   'band and band + DOS 7.9 x 4.4 in, DOS 5.4 x 5.4 in; matplotlib 3.5 x 5 in, a band '
@@ -385,7 +408,9 @@ Examples:
     gallery_group.add_argument('--caption-csv', metavar='PATH',
                                help='Gallery: also write the caption table (material, formula, gap, energy) as CSV')
     gallery_group.add_argument('--max', type=int, default=None,
-                               help='Gallery: at most this many panes (default: 200)')
+                               help='Gallery: panes per page (default: 200; --page picks the page)')
+    gallery_group.add_argument('--page', type=int, default=None, metavar='N',
+                               help='Gallery: a set larger than --max panes is paged; draw page N (1-based, default 1)')
     gallery_group.add_argument('--db', metavar='PATH',
                                help='Gallery: the materials.db for the captions (default: the one beside the files)')
 
@@ -411,6 +436,27 @@ Examples:
              '(<material>_POTC.POTC.DAT and _POTC.out) are beside the data, else the Fermi level; '
              'fermi: E - E_F even then; vacuum: the vacuum scale (needs the POTC files)'
     )
+    band_group.add_argument('--no-fermi-line', action='store_true',
+                            help='Band/DOS: leave out the dotted Fermi level line (plotly backend; the GUI\'s Reference menu)')
+    band_group.add_argument('--no-k-labels', action='store_true',
+                            help='Band: leave out the k-point labels under the bands (plotly backend; the GUI\'s Labels menu)')
+    band_group.add_argument('--no-spin-labels', action='store_true',
+                            help='DOS: leave out the "up" and "down" words over a mirrored DOS (plotly backend; the GUI\'s Labels menu)')
+    band_group.add_argument(
+        '--f25-domain',
+        choices=['auto', 'electronic', 'phonon'],
+        default='auto',
+        help='A fort.25 (*.f25) of bands or DOS: electronic (energies, hartree) or phonon (frequencies, cm-1); '
+             "auto reads it from the run's output beside it and the file name (default)"
+    )
+    band_group.add_argument(
+        '--f25-run',
+        type=int,
+        default=None,
+        metavar='N',
+        help='A fort.25 that holds several runs (CRYSTAL appends to it): the Nth, counted from 1 '
+             '(default: the last, the one the BAND.DAT/DOSS.DAT beside it holds)'
+    )
     band_group.add_argument(
         '--fermi-shift',
         type=float,
@@ -435,6 +481,15 @@ Examples:
         metavar='FILE',
         help='Plot along an edited k-path: a JSON band_path (as mace gui and opt2d3 write it)'
     )
+    band_group.add_argument(
+        '--partner',
+        metavar='FILE',
+        help="--band-dos: the run's other half from another folder (the DOS of a band FILE, the band "
+             "structure of a DOS FILE), as mace gui's Add DOS… and Add Band…; checked to be the same system, "
+             "and the DOS drawn on the band run's Fermi level when the two differ. --phonon-band-dos: the phonon "
+             "DOS of a phonon dispersion FILE (or the reverse), as Add Phonon DOS… and Add Phonon Bands…; checked "
+             "to be the same system and supercell"
+    )
 
     # DOS options
     dos_group = parser.add_argument_group('DOS options')
@@ -448,6 +503,13 @@ Examples:
         '--no-composition',
         action='store_true',
         help='Disable VB/CB composition labels'
+    )
+    dos_group.add_argument(
+        '--log-dos',
+        dest='log_dos',
+        action='store_true',
+        help="A logarithmic DOS axis (|DOS|), as mace gui's Log Y on a DOS plot and Log DOS on a band + DOS "
+             "plot: --dos and --band-dos (the band energies stay linear; --backend plotly)"
     )
 
     # Structure options
@@ -575,8 +637,31 @@ Examples:
                             help='FREQ: normalize displacements for visibility')
     freq_group.add_argument('--frames', type=int,
                             help='FREQ: animation frame count (default: 30)')
+    freq_group.add_argument('--freq-supercell', type=int, nargs=3, metavar=('N1', 'N2', 'N3'),
+                            help='FREQ: cells drawn along a, b, c (modes at Gamma; default: 1 1 1)')
 
     # Spectra (IR / Raman) options
+    from mace.utils.transport_plot import CLI_NAMES, COMPONENTS, X_AXES
+    tr_group = parser.add_argument_group('transport options (--transport FILE: the run\'s other files are found beside it)')
+    tr_group.add_argument('--quantity', choices=list(CLI_NAMES), default=None,
+                          help='What to draw (default: the file\'s own): seebeck, sigma, sigmas, kappa (κ₀) and tdf, '
+                               'the files; pf (S²σ), kappa-e (κₑ = κ₀ − TσS²), zt (S²σT/(κₑ + κ_L); without '
+                               '--kappa-lattice ZTₑ with κ_L = 0, an upper bound), lorenz (κₑ/(σT), with the '
+                               'Sommerfeld L₀), sigma-tau (σ/τ) and pf-tau (PF/τ), at the run\'s RELAXTIM')
+    tr_group.add_argument('--component', choices=list(COMPONENTS), default=None,
+                          help='Tensor component: avg (default, the average of the diagonal), xx, yy, zz, or all three')
+    tr_group.add_argument('--temperature', metavar='K|all', default=None,
+                          help='The temperature drawn (default: the run\'s first), or all (one curve each)')
+    tr_group.add_argument('--x-axis', dest='x_axis', choices=list(X_AXES), default=None,
+                          help='Against the chemical potential (mu, default) or the carrier concentration '
+                               '(carriers: |n| in cm⁻³ on a log axis, p- and n-type apart)')
+    tr_group.add_argument('--kappa-lattice', dest='kappa_lattice', metavar='VALUE|FILE', default=None,
+                          help='--quantity zt: the lattice thermal conductivity κ_L in W/(m·K), or a CSV of '
+                               'T,kappa_L rows (as mace analyze --kappa-lattice)')
+    tr_group.add_argument('--tau-fs', dest='tau_fs', metavar='FS', default=None,
+                          help='pf, kappa-e, zt: the relaxation time (fs) to rescale σ and κ₀ to (default: the run\'s '
+                               'RELAXTIM from its .out or .d3)')
+
     spectra_group = parser.add_argument_group('spectra (IR / Raman) options')
     spectra_group.add_argument('--raman-mode', choices=['total', 'par_perp', 'all'],
                                help="Raman intensities: total / par_perp / all (default: all)")
@@ -622,11 +707,24 @@ def _main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     # -o given: band/DOS figures go there (B8); without it they go beside the data, as before
     args.output_given = _fs._given(argv, '-o', '--output') or any(a.startswith('-o') and len(a) > 2 for a in argv)
+    # --phonon-band-dos is the band + DOS figure of a phonon run (its plotter, refusing electronic data)
+    if getattr(args, 'phonon_band_dos', False):
+        args.band_dos = True
     if getattr(args, 'band', False) or getattr(args, 'dos', False) or getattr(args, 'band_dos', False):
         # the energy window runs from a lower to a higher energy, as the GUI requires
         # (equal limits drew a zero-height plot; inverted ones were swapped silently)
         if not args.e_lower < args.e_upper:
             parser.error(f"--e-lower ({args.e_lower:g}) must be below --e-upper ({args.e_upper:g})")
+        if getattr(args, 'partner', None):
+            if not getattr(args, 'band_dos', False):
+                parser.error("--partner is for --band-dos and --phonon-band-dos: the other half of a band + DOS figure")
+            if len(list(getattr(args, 'files', []) or [])) != 1:
+                parser.error("--partner pairs one file: give --band-dos (or --phonon-band-dos) exactly one FILE")
+            if not Path(args.partner).is_file():
+                parser.error(f"--partner {args.partner}: no such file")
+        # a log axis is the DOS's: band energies are signed (mace gui has no Log Y on a band plot alone)
+        if getattr(args, 'log_dos', False) and getattr(args, 'band', False):
+            parser.error("--log-dos is for --dos and --band-dos: band energies are signed, their axis stays linear")
         # -o is the folder the figures go in (named <material>.BANDS.<format>, ...): a figure
         # file name made a folder of that name
         out = Path(args.output or '.')
@@ -698,6 +796,8 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 config['e_upper'] = args.e_upper
                 config['fermi_shift'] = args.fermi_shift
                 config['energy_reference'] = args.energy_reference
+                config['f25_domain'] = args.f25_domain
+                config['f25_run'] = args.f25_run
                 from .handlers.legacy import _size_config, _style_config
                 config.update(_style_config(args))
                 config.update(_size_config(args))
@@ -716,7 +816,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
 
 def _output_for(entry, args):
     """The handler's output directory: band and DOS figures go beside the data unless -o is given."""
-    if entry.kind in (PlotKind.BAND, PlotKind.DOS) and not getattr(args, 'output_given', True):
+    if entry.kind in (PlotKind.BAND, PlotKind.DOS, PlotKind.TRANSPORT) and not getattr(args, 'output_given', True):
         return None
     return args.output
 
@@ -766,6 +866,13 @@ def _dispatch_pinned(entry, args, files_pos: List[str]) -> int:
         files = detect.discover(args.directory).get(entry.kind, [])
         if entry.kind == PlotKind.CUBE:
             files = _filter_cube_subtype(files, args)
+        if getattr(args, 'phonon_band_dos', False):
+            # a phonon run's band + DOS files only (the electronic ones are --band-dos's)
+            from mace.gui import results
+            files = [f for f in files if results.half_domain(Path(f)) == "phonon"]
+            if not files:
+                print("  No phonon dispersion with its phonon DOS beside it found.")
+                return 1
 
     if not files:
         print(entry.not_found_msg)
@@ -808,7 +915,7 @@ def _dispatch_positional(args, files_pos: List[str]) -> int:
         kind = detect.classify_file(f)
         if kind is None:
             print(f"  Skipping unrecognized file: {Path(f).name} "
-                  f"(force with --cube/--freq/--band/--dos)")
+                  f"(force with --cube/--freq/--band/--dos/--transport)")
             continue
         groups.setdefault(kind, []).append(f)
 

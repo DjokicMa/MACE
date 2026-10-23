@@ -119,10 +119,10 @@ def test_kind_chips_and_every_kind_opens(fresh):
     chips = drv.execute_script("return Object.fromEntries([...document.querySelectorAll('#file-list .file')]"
                                ".filter((b) => b.dataset.path.startsWith('mixed/')).map((b) => [b.dataset.path, b.querySelector('.kb').textContent]))")
     assert chips["mixed/mol_freq.out"] == "FREQ" and chips["mixed/dia_freq.out"] == "FREQ"
-    assert chips["mixed/mol_opt.out"] == "OPT" and chips["mixed/dia_doss.out"] == "DOSS"
+    assert chips["mixed/mol_opt.out"] == "OPT" and chips["mixed/dia_doss.out"] == "out"
     assert chips["mixed/mol_freq_temp-1035400.o"] == "log" and chips["mixed/bands_2151873.out"] == "log"
     assert chips["mixed/bands_2151873.err"] == "log" and chips["mixed/dia_doss.f9"] == "wf"
-    assert chips["mixed/dia_doss.sh"] == "sh" and chips["mixed/dia_doss.f25"] == "f25"
+    assert chips["mixed/dia_doss.sh"] == "sh" and chips["mixed/dia_doss.f25"] == "DOS"
     # the Logs & data filter holds the logs (by content), not Structures
     drv.execute_script("window.MACE.state.filter = 'logs'; window.MACE.renderFiles()")
     logs = drv.execute_script("return [...document.querySelectorAll('#file-list .file')].map((b) => b.dataset.path)")
@@ -175,7 +175,8 @@ def test_freq_opens_as_modes_and_arrows_toggle_while_playing(fresh):
     drv = fresh[0]
     click_file(drv, "mixed/dia_freq.out")
     H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'freq'", 30)
-    H.wait(drv, "const s = window.__mace.freqView.state(); return s && s.mode", 60)
+    # the Modes view loads with the first FREQ document (null until then)
+    H.wait(drv, "const s = window.__mace.freqView && window.__mace.freqView.state(); return s && s.mode", 60)
     H.wait(drv, "return window.__mace.freqView.playing()", 10)
     box = drv.find_element(By.ID, "fo-arrows")
     assert drv.execute_script("return document.querySelector('label:has(#fo-arrows)').textContent.trim()") == "Arrows"
@@ -320,15 +321,22 @@ def test_spectrum_broadened_from_the_modes(fresh):
     no_errors(drv)
 
 
-def test_fort25_names_its_run_and_opens_the_dat_plot(fresh):
+def test_fort25_of_bands_and_dos_plots_directly(fresh):
+    """A fort.25 of BAND or DOSS blocks is plot data: it opens as the plot (1.1.6), the same figure as the
+    BAND.DAT/DOSS.DAT of its run, and the explorer's chip says BAND or DOS, outlined as plot data (1.1.6: no
+    longer "BAND plot", which did not fit the chip)."""
+    pytest.importorskip("plotly")
     drv = fresh[0]
-    for path, word, button, dat in (("mixed/dia_band.f25", "a BAND run", "Open Band Structure", "mixed/dia_band.BAND.DAT"),
-                                    ("mixed/dia_doss.f25", "a DOSS run", "Open Density of States", "mixed/dia_doss.DOSS.DAT")):
+    chips = drv.execute_script("return Object.fromEntries([...document.querySelectorAll('#file-list .file')].map((b) => [b.dataset.path, b.querySelector('.kb').textContent]))")
+    assert chips["mixed/dia_band.f25"] == "BAND" and chips["mixed/dia_band.BAND.DAT"] == "BAND"
+    assert chips["mixed/dia_doss.DOSS.DAT"] == "DOS"
+    plot_data = drv.execute_script("return [...document.querySelectorAll('#file-list .file')].filter((b) => /dia_(band|doss)\\.(f25|BAND\\.DAT|DOSS\\.DAT)$/.test(b.dataset.path)).map((b) => b.querySelector('.kb').classList.contains('plot-data'))")
+    assert plot_data and all(plot_data), plot_data
+    for path, key in (("mixed/dia_band.f25", "band"), ("mixed/dia_doss.f25", "dos")):
         click_file(drv, path)
-        H.wait(drv, "return document.querySelector('#text-info h3') && document.querySelector('#text-info h3').textContent.includes(arguments[0])", 20, word)
-        btn = drv.find_element(By.XPATH, f"//div[@id='text-info']//button[.//span[text()='{button}']]")
-        click(drv, btn)
-        H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'plot' && d.path === arguments[0]", 30, dat)
+        H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'plot' && d.path === arguments[0]", 30, path)
+        H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.drawn", 60)
+        assert drv.execute_script("return window.__mace.activeDoc().plot.kind") == key
     no_errors(drv)
 
 
@@ -338,9 +346,9 @@ def test_transport_plot_and_temperatures(fresh):
     click_file(drv, "spectra/run.SEEBECK.dat")
     H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.kind === 'transport' && s.drawn", 60)
     fig = drv.execute_script("return window.__mace.plotView.figure()")
-    assert fig["layout"]["yaxis"]["title"]["text"] == "Seebeck coefficient (µV/K)"
+    assert fig["layout"]["yaxis"]["title"]["text"] == "Seebeck coefficient S (µV K<sup>−1</sup>)"
     on = drv.execute_script("return document.querySelector('.po-tq [aria-checked=true]').textContent")
-    assert on == "Seebeck"
+    assert on == "S"
     y0 = drv.execute_script("return window.__mace.plotView.el().data[0].y.slice(0, 50)")
     temp = drv.find_element(By.ID, "po-temp")
     from selenium.webdriver.support.ui import Select
@@ -349,7 +357,7 @@ def test_transport_plot_and_temperatures(fresh):
     Select(temp).select_by_value(opts[1])
     H.wait(drv, "return JSON.stringify(window.__mace.plotView.el().data[0].y.slice(0, 50)) !== arguments[0]", 10, __import__("json").dumps(y0))
     U.shot(drv, "parity_transport")
-    # another quantity of the same run, from its tab
+    # another quantity of the same run, in the same document (1.1.6: its Quantity choice)
     click(drv, drv.find_element(By.XPATH, "//span[contains(@class,'po-tq')]/button[text()='σ']"))
-    H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.path === 'spectra/run.SIGMA.dat' && window.__mace.plotView.state().drawn", 30)
+    H.wait(drv, "const d = window.__mace.activeDoc(); const s = window.__mace.plotView.state(); return d && d.path === 'spectra/run.SEEBECK.dat' && s.drawn && s.transport.quantity === 'SIGMA'", 30)
     no_errors(drv)

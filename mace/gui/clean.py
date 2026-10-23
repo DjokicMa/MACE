@@ -7,10 +7,15 @@ result as a starting geometry, never as a relaxed structure.
 
 The model (ase calculator ``SpringModel``):
 
-* bonded pairs: the pairs closer than ``structures.BOND_SCALE`` x the sum of
-  their covalent radii in the starting structure (metal-metal pairs excepted,
-  as the viewer draws them). The topology is fixed for the run; each bond is
-  a harmonic spring toward the sum of the covalent radii;
+* bonded pairs: the bonds the viewer draws in the starting structure
+  (``structures.bond_pairs``, the twin of geom/core.js's bond rule: 1.15 x the
+  sum of the bond radii, metal-metal pairs only in a structure of metals only,
+  or the document's own rule from Build › Calculate Bonds…). ``bonds_held``
+  (Clean › Bonds held) picks them: "shown" (that rule, the default), "lenient"
+  (1.2 x the sum of the bond radii, metal-metal pairs in a structure of metals
+  only: it also holds bonds stretched a little past what the view draws) or
+  "none" (no springs, the repulsion only). The topology is fixed for the run;
+  each bond is a harmonic spring toward the sum of the covalent radii;
 * every other pair closer than ``rep_scale`` x the sum of the radii pushes
   apart with a soft harmonic repulsion. Bond springs alone leave zero-energy
   motions (6 in conventional Si, 9 in conventional MgO or NaCl, from a rank
@@ -22,6 +27,13 @@ The model (ase calculator ``SpringModel``):
   to stiffen the atom positions; its pressure would blow the cell up).
   Covalent radii underestimate ionic bonds (Na-Cl 2.68 A against
   2.82 A measured), so relaxing the cell shrinks an ionic crystal by ~5 %.
+
+Slabs, polymers and molecules (1.1.6): the atoms keep their ``pbc``, so no
+bond or repulsion reaches across a non-periodic direction (its cell vector is
+only the drawing box). There is no space group to keep (FixSymmetry is off and
+the report says so), and ``relax_cell`` relaxes the periodic directions only
+(a strain mask), when they lie along Cartesian axes the way CRYSTAL orients a
+SLAB (a, b in the xy plane) or a POLYMER (a along x); a molecule has no cell.
 
 Adapter hooks: a better pre-relaxation is any ase calculator with forces,
 and ``ADAPTERS`` maps a method name to a factory ``factory(atoms, **opts) ->
@@ -47,24 +59,44 @@ REP_SCALE = 1.8     # repulsion range, x the sum of the covalent radii
 ADAPTERS: Dict[str, Callable[..., Any]] = {}   # name -> factory(atoms, **opts); see module doc
 
 
+NOTHING = ("nothing to clean: no bonded pairs (a lone atom, or atoms the bond rule leaves unbonded; "
+           "Build › Calculate Bonds… sets the rule)")
+
+
 class NothingToClean(ValueError):
-    """No bonded pairs: an all-metal cell or a lone atom."""
+    """No bonded pairs: a lone atom, or atoms the bond rule leaves unbonded."""
 
 
-def bonded_pairs(atoms, scale: float = S.BOND_SCALE) -> List[Tuple[int, int, Tuple[int, int, int]]]:
-    """(i, j, image) for each bond, each pair once, as the viewer draws them."""
-    from ase.neighborlist import neighbor_list
-    rad = S._covalent(atoms.numbers)
-    metal = S._is_metal(atoms.numbers)
-    ii, jj, SS = neighbor_list("ijS", atoms, list(scale * rad))
-    out = []
-    for i, j, sh in zip(ii, jj, SS):
-        if metal[i] and metal[j]:
-            continue
-        key = (int(i), int(j), tuple(int(x) for x in sh))
-        if (key[0], key[1], key[2]) < (key[1], key[0], tuple(-x for x in key[2])):
-            out.append(key)
-    return out
+def bonded_pairs(atoms, rule: Optional[Dict[str, Any]] = None) -> List[Tuple[int, int, Tuple[int, int, int]]]:
+    """(i, j, image) for each bond, each pair once, as the viewer draws them: ``rule`` is
+    ``structures.bond_rule`` of the document's settings (None: the defaults)."""
+    return S.bond_pairs(atoms.cell.array, atoms.positions, atoms.numbers, atoms.pbc, **(rule or {}))
+
+
+# Clean › Bonds held (mace preopt --bonds): the bonds the springs hold
+BONDS_HELD = ("shown", "lenient", "none")
+LENIENT_TOLERANCE = S.BOND_SCALE      # 1.2: Clean's tolerance before 1.1.6, the bond table's
+
+
+def check_bonds_held(value: Any) -> str:
+    """``value`` as a Bonds held mode ("shown" for None or ""); a ValueError names the modes."""
+    v = "shown" if value in (None, "") else str(value)
+    if v not in BONDS_HELD:
+        raise ValueError(f"bonds held is one of {', '.join(BONDS_HELD)} (not {value!r})")
+    return v
+
+
+def held_bonds(atoms, bonds_held: str = "shown",
+               rule: Optional[Dict[str, Any]] = None) -> List[Tuple[int, int, Tuple[int, int, int]]]:
+    """The bonds the springs hold under Bonds held: "shown" the view's (``rule``: the document's
+    criteria), "lenient" the same rule at 1.2 x the sum of the bond radii with the default
+    criteria, "none" no bond."""
+    mode = check_bonds_held(bonds_held)
+    if mode == "none":
+        return []
+    if mode == "lenient":
+        return S.bond_pairs(atoms.cell.array, atoms.positions, atoms.numbers, atoms.pbc, tolerance=LENIENT_TOLERANCE)
+    return bonded_pairs(atoms, rule)
 
 
 def _calculator_base():
@@ -166,16 +198,43 @@ def floppy_modes(atoms, bonds=None, with_repulsion=True, rep_scale=REP_SCALE) ->
     return 3 * n - rank - 3
 
 
-def _cell_filter(atoms):
+def periodic_mask(atoms) -> Optional[np.ndarray]:
+    """The 3x3 strain mask that relaxes only the periodic directions of a slab or
+    polymer, or None when they do not lie along Cartesian axes (or there are none).
+    A 3D cell: all ones."""
+    pbc = [bool(x) for x in atoms.pbc]
+    if all(pbc):
+        return np.ones((3, 3))
+    if not any(pbc):
+        return None
+    cell = atoms.cell.array
+    axes = set()
+    for k in range(3):
+        if pbc[k]:
+            axes |= {j for j in range(3) if abs(cell[k][j]) > 1e-6}
+    if len(axes) != sum(pbc):
+        return None
+    # the non-periodic vectors must not lean into the periodic plane's axes beyond what their own carry
+    for k in range(3):
+        if not pbc[k] and any(abs(cell[k][j]) > 1e-6 for j in axes):
+            return None
+    m = np.zeros((3, 3))
+    for i in axes:
+        for j in axes:
+            m[i, j] = 1.0
+    return m
+
+
+def _cell_filter(atoms, mask=None):
     try:
         from ase.filters import FrechetCellFilter
-        return FrechetCellFilter(atoms)
+        return FrechetCellFilter(atoms, mask=mask)
     except ImportError:   # ase < 3.23
         try:
             from ase.filters import ExpCellFilter
         except ImportError:
             from ase.constraints import ExpCellFilter
-        return ExpCellFilter(atoms)
+        return ExpCellFilter(atoms, mask=mask)
 
 
 def clean(atoms, keep_symmetry: bool = True, relax_cell: bool = False,
@@ -183,8 +242,12 @@ def clean(atoms, keep_symmetry: bool = True, relax_cell: bool = False,
           time_limit: float = 10.0, method: str = "springs",
           should_stop: Optional[Callable[[], bool]] = None,
           calc_opts: Optional[Dict[str, Any]] = None,
-          factory: Optional[Callable[..., Any]] = None) -> Dict[str, Any]:
+          factory: Optional[Callable[..., Any]] = None,
+          bond_rule: Optional[Dict[str, Any]] = None, bonds_held: str = "shown") -> Dict[str, Any]:
     """Pre-relax a copy of ``atoms``; returns the new atoms and a report.
+    ``bond_rule`` (``structures.bond_rule``): the bonds the springs hold, as the
+    document's viewer draws them (None: the default rule); ``bonds_held``
+    (held_bonds) picks that rule, the lenient one or none.
     ``should_stop`` (the GUI's cancel check) is called once per FIRE step.
     ``calc_opts`` go to an adapter's factory (never to the spring model).
     ``factory`` is the calculator factory of this one run (mace.preopt passes
@@ -194,21 +257,36 @@ def clean(atoms, keep_symmetry: bool = True, relax_cell: bool = False,
 
     if len(atoms) == 0:
         raise NothingToClean("the structure has no atoms")
-    bonds = bonded_pairs(atoms)
+    notes: List[str] = []
+    mask = None
+    if not all(atoms.pbc):
+        dim = S._DIM_NAMES[int(sum(bool(x) for x in atoms.pbc))].lower()
+        if keep_symmetry:
+            keep_symmetry = False
+            notes.append(f"a {dim} has no space group to keep: symmetry was not constrained")
+        if relax_cell:
+            mask = periodic_mask(atoms)
+            if mask is None:
+                relax_cell = False
+                notes.append(f"the cell was kept: a {dim} has no periodic directions along Cartesian axes to relax"
+                             if any(atoms.pbc) else "the cell was kept: a molecule has no cell")
+            else:
+                notes.append(f"only the periodic directions of the {dim} were relaxed")
+    bonds_held = check_bonds_held(bonds_held)
+    bonds = held_bonds(atoms, bonds_held, bond_rule)
     if method != "springs":
         factory = factory or ADAPTERS.get(method)
         if factory is None:
             raise ValueError(f"no clean method {method!r} here (only the spring model)")
-    elif not bonds:
-        raise NothingToClean("nothing to clean: no bonded pairs (an all-metal cell or a lone "
-                             "atom; the spring model draws no metal-metal bonds)")
+    elif not bonds and bonds_held != "none":         # None: the repulsion alone, asked for
+        raise NothingToClean(NOTHING)
     work = atoms.copy()
     work.calc = (SpringModel(bonds) if method == "springs" else factory(work, **(calc_opts or {})))
     try:
         if keep_symmetry:
             from ase.constraints import FixSymmetry
             work.set_constraint(FixSymmetry(work, symprec=symprec))
-        target = _cell_filter(work) if relax_cell else work
+        target = _cell_filter(work, mask if mask is not None and not np.all(mask) else None) if relax_cell else work
         opt = FIRE(target, logfile=None)
         start = time.monotonic()
         steps = 0
@@ -226,7 +304,8 @@ def clean(atoms, keep_symmetry: bool = True, relax_cell: bool = False,
         return {"atoms": out, "converged": bool(converged), "steps": steps,
                 "energy_before": e0, "energy_after": float(work.get_potential_energy()),
                 "timed_out": (not converged) and time.monotonic() - start > time_limit,
-                "n_bonds": len(bonds), "method": method}
+                "n_bonds": len(bonds), "bonds_held": bonds_held, "method": method,
+                **({"notes": notes} if notes else {})}
     finally:
         close = getattr(work.calc, "close", None)
         if callable(close):

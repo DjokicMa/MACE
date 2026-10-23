@@ -8,6 +8,10 @@
 .gal-f select, .gal-f input { height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
   color: var(--text); padding: 0 var(--s-2); min-width: 0; }
 .gal-cols { width: 4.2em; }
+.gal-pager { gap: var(--s-1); }
+.gal-pager[hidden] { display: none; }
+.gal-page { width: 4.2em; }
+.gal-page-n { display: inline-flex; align-items: center; gap: var(--s-1); }
 .gal-emin, .gal-emax { width: 5em; }
 .gal-set { max-width: 22em; }
 .gal-seg, .gal-acts { display: inline-flex; gap: var(--s-1); }

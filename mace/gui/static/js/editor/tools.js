@@ -13,9 +13,18 @@
  *     to it, away from its neighbors, at the sum of the covalent radii.
  *   Replace (E): a click replaces the atom (its orbit in Sym); a drag paints,
  *     one history entry.
- *   Bond (B): click two atoms to add or remove a bond, for display only. */
+ *   Bond (B): click two atoms to add or remove a bond, for display only.
+ *   Rotate (R; 1.1.6, viewport/gizmo_rotate.js): AutoCAD-style compass wheels
+ *     turn the selection (an edit) or the view, by drag or by a typed angle.
+ *   The Move tool also shows an AutoCAD-style 3D Move gizmo at the selection
+ *     (viewport/gizmo_move.js): arrows and plane squares constrain the grab,
+ *     and its panel takes an exact Δx Δy Δz (or Δa Δb Δc). */
 import * as G from "../geom/core.js";
 import * as profile from "../profile.js";
+import { createGizmoOverlay } from "../viewport/gizmo_overlay.js";
+import { createRotateTool } from "../viewport/gizmo_rotate.js";
+import { createMoveGizmo } from "../viewport/gizmo_move.js";
+import { bothWays } from "../viewport/gizmo_math.js";
 
 const SNAP = 0.05;
 
@@ -52,7 +61,7 @@ export function createTools(E, S, V) {
         headers: { "X-Requested-With": "mace-gui", "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const r = await res.json();
       pv.log.push({ t0, t1: performance.now(), timing: res.headers.get("Server-Timing") });
-      if (res.ok && !r.superseded && grab) { pv.result = r; S.toolChip(); if (S.statusChanged) S.statusChanged(); }
+      if (res.ok && !r.superseded && (grab || rotate.active)) { pv.result = r; S.toolChip(); if (S.statusChanged) S.statusChanged(); }
     } catch (err) { /* a preview only */ }
     finally {
       pv.inflight = false;
@@ -68,7 +77,7 @@ export function createTools(E, S, V) {
     if (!e || !e.selection.size || e.editBlock()) return false;
     const sel = [...e.selection].sort((a, b) => a - b);
     grab = { e, sel, x0: x, y0: y, x, y, viaButton, keysUsed: false, axis: null, typed: "", snap: false, choice: null,
-      leaving: false, frame: 0 };
+      leaving: false, frame: 0, handle: null, ho: null, vec: null };
     pv.result = null;
     S.setLayer({ name: "grabActive", onKey });
     update();
@@ -80,7 +89,11 @@ export function createTools(E, S, V) {
   function delta() {
     const g = grab, e = g.e, c = V.cam().calibrate();
     let d;
+    // the gizmo panel's exact displacement (Å, or fractions of the cell axes)
+    if (g.vec) return g.vec.frame === "cell" ? G.cartOf(e.structure.cell, g.vec.vec) : g.vec.vec.slice();
     const typed = g.typed && g.typed !== "-" && g.typed !== "." ? Number(g.typed) : NaN;
+    // a gizmo arrow or plane: exactly along it (its own snap); a typed offset or an axis key takes over
+    if (g.handle && !g.axis && !Number.isFinite(typed)) return moveGizmo.dragDelta(g.handle, e, g.ho, g.x0, g.y0, g.x, g.y, g.snap) || [0, 0, 0];
     if (Number.isFinite(typed)) d = G.scale3(axisUnit(e, g.axis || "x"), typed);
     else {
       d = G.add3(G.scale3(c.right, (g.x - g.x0) / c.s), G.scale3(c.up, -(g.y - g.y0) / c.s));
@@ -95,19 +108,28 @@ export function createTools(E, S, V) {
   }
   /** Where every moving atom goes (Sym: whole orbits by the session's operations). */
   function previewPositions(d) {
-    const e = grab.e, s = e.structure, df = G.fracOf(s.cell, d), out = new Map();
+    const e = grab.e, s = e.structure, df = G.fracOf(s.cell, d);
     const tol = Math.max(2 * e.symprec, 1e-3);
-    grab.leaving = false;
+    const r = orbitPreview(e, grab.sel, (i, f0) => (grab.choice === "keep" ? G.projectOntoSite(e.ops, f0, df, s.cell, tol) : df));
+    grab.leaving = r.leaving;
+    return r.out;
+  }
+  /** Where the atoms go when each picked atom i moves by dfOf(i, f0) (fractional): in Sym mode its whole orbit
+   *  follows by the session's operations (as the server's move does). {out: Map(i -> frac), leaving}. */
+  function orbitPreview(e, sel, dfOf) {
+    const s = e.structure, out = new Map();
+    const tol = Math.max(2 * e.symprec, 1e-3);
+    let leaving = false;
     if (e.symMode === "sym" && e.ops) {
       const done = new Set();
-      for (const i of grab.sel) {
+      for (const i of sel) {
         if (done.has(i)) continue;
         const orbit = e.orbitOf(i);
         orbit.forEach((j) => done.add(j));
         const f0 = s.frac[i];
-        const use = grab.choice === "keep" ? G.projectOntoSite(e.ops, f0, df, s.cell, tol) : df;
+        const use = dfOf(i, f0);
         const f1 = f0.map((x, k) => x + use[k]);
-        if (G.orbitApply(e.ops, f1, s.cell, tol).length !== orbit.length) grab.leaving = true;
+        if (G.orbitApply(e.ops, f1, s.cell, tol).length !== orbit.length) leaving = true;
         for (let k = 0; k < e.ops.rotations.length; k++) {
           const R = e.ops.rotations[k], t = e.ops.translations[k];
           const img = [0, 1, 2].map((r) => R[r][0] * f0[0] + R[r][1] * f0[1] + R[r][2] * f0[2] + t[r]);
@@ -117,32 +139,34 @@ export function createTools(E, S, V) {
           out.set(j, p);
         }
       }
-    } else for (const i of grab.sel) out.set(i, s.frac[i].map((x, k) => x + df[k]));
-    return out;
+    } else for (const i of sel) { const use = dfOf(i, s.frac[i]); out.set(i, s.frac[i].map((x, k) => x + use[k])); }
+    return { out, leaving };
+  }
+  /** The drawn copies of each moving atom follow it (boundary images too); the structure as previewed (frac). */
+  function drawMoved(e, moved) {
+    const s = e.structure, disp = V.scene().display, cart = new Map();
+    for (const [i, f] of moved) cart.set(i, G.cartOf(s.cell, f));
+    const drawn = new Map();
+    if (disp) for (let k = 0; k < disp.n; k++) {
+      const i = disp.base[k];
+      if (!cart.has(i)) continue;
+      const sh = [disp.shift[3 * k], disp.shift[3 * k + 1], disp.shift[3 * k + 2]];
+      drawn.set(`${i}:${k}`, [i, G.add3(cart.get(i), G.cartOf(s.cell, sh))]);
+    }
+    V.scene().setDrag([...drawn.values()]);
+    return s.frac.map((f, i) => (moved.has(i) ? moved.get(i) : f));
   }
   function update() {
     if (!grab || grab.frame) return;
     grab.frame = requestAnimationFrame(() => {
       if (!grab) return;
       grab.frame = 0;
-      const e = grab.e, s = e.structure, d = delta();
+      const e = grab.e, d = delta();
       grab.d = d;
-      const moved = previewPositions(d);
-      // the drawn copies of each moving atom follow it (boundary images too)
-      const disp = V.scene().display, cart = new Map();
-      for (const [i, f] of moved) cart.set(i, G.cartOf(s.cell, f));
-      const drawn = new Map();
-      if (disp) for (let k = 0; k < disp.n; k++) {
-        const i = disp.base[k];
-        if (!cart.has(i)) continue;
-        const sh = [disp.shift[3 * k], disp.shift[3 * k + 1], disp.shift[3 * k + 2]];
-        const p = G.add3(cart.get(i), G.cartOf(s.cell, sh));
-        drawn.set(`${i}:${k}`, [i, p]);
-      }
-      V.scene().setDrag([...drawn.values()]);
-      const frac = s.frac.map((f, i) => (moved.has(i) ? moved.get(i) : f));
+      const frac = drawMoved(e, previewPositions(d));
       previewSymmetry(e, frac);
       S.toolChip();
+      syncGizmos();
     });
   }
   function endGrab() {
@@ -156,11 +180,13 @@ export function createTools(E, S, V) {
     V.scene().setDrag(null);
     S.toolChip();
     if (pv.result) { pv.result = null; if (S.statusChanged) S.statusChanged(); }
+    syncGizmos();
   }
   function commit() {
     const g = grab;
     if (!g) return;
-    const d = g.d || delta();
+    // where the pointer is now (the last preview frame may not have caught its final move)
+    const d = delta();
     endGrab();
     if (G.norm3(d) < 1e-9) return;
     const args = { indices: g.sel, delta: d };
@@ -171,6 +197,8 @@ export function createTools(E, S, V) {
   function onKey(ev) {
     const g = grab;
     if (!g) return "pass";
+    // typing in the gizmo panel's fields: theirs (they apply and cancel themselves)
+    if (ev.target && ev.target.closest && ev.target.closest(".vp-gz-panel")) return "pass";
     const k = ev.key, code = ev.code || "";
     if (["Control", "Meta", "Shift", "Alt", "AltGraph"].includes(k)) {
       g.snap = ev.ctrlKey || ev.metaKey;
@@ -181,6 +209,7 @@ export function createTools(E, S, V) {
     if (/^Key[XYZ]$/.test(code) && !mod && !ev.altKey) {
       const n = "XYZ".indexOf(code[3]);
       g.axis = ev.shiftKey ? "abc"[n] : "xyz"[n];
+      g.vec = null;
       g.keysUsed = true; update(); return "consume";
     }
     if (!mod && !ev.altKey && (/^(Digit|Numpad)\d$/.test(code) || k === "." || k === "-" || code === "NumpadDecimal" || code === "NumpadSubtract")) {
@@ -195,7 +224,7 @@ export function createTools(E, S, V) {
       g.axis = order[(order.indexOf(g.axis || order[2]) + 1) % 3];
       g.keysUsed = true; update(); return "consume";
     }
-    if (code === "KeyG" && !mod && !ev.altKey) { g.x0 = g.x; g.y0 = g.y; g.typed = ""; g.axis = null; g.choice = null; g.keysUsed = true; update(); return "consume"; }
+    if (code === "KeyG" && !mod && !ev.altKey) { g.x0 = g.x; g.y0 = g.y; g.typed = ""; g.axis = null; g.choice = null; g.handle = null; g.vec = null; g.keysUsed = true; update(); return "consume"; }
     if (k === "Enter" || code === "NumpadEnter") { commit(); return "consume"; }
     if (k === "Escape") { endGrab(); return "consume"; }
     return "swallow";
@@ -203,17 +232,39 @@ export function createTools(E, S, V) {
   const move = {
     down(ev, x, y) {
       if (grab) { if (ev.button === 0) { commit(); return true; } return false; }
+      // a gizmo handle: the grab constrained to its axis or plane (the center ring: the plain screen-plane grab)
+      const ge = ed();
+      if (ev.button === 0 && ge && ge.selection.size && !ge.editBlock()) {
+        const h = moveGizmo.handles(ge), hit = moveGizmo.hit(h, x, y);
+        if (hit && startGrab(x, y, true)) {
+          grab.handle = hit.kind === "free" ? null : hit;
+          grab.hk = hit.key;
+          grab.ho = h.origin;
+          moveGizmo.setHover(null);
+          update();
+          return true;
+        }
+      }
       const k = V.scene().pickAt(x, y), e = ed();
       if (k < 0 || !e || !e.selection.has(V.scene().display.base[k])) return false;
       startGrab(x, y, true);
       return true;
     },
     move(ev, x, y) { if (grab) { grab.x = x; grab.y = y; grab.snap = ev.ctrlKey || ev.metaKey; update(); } },
-    hover(ev, x, y) { if (grab) { grab.x = x; grab.y = y; grab.snap = ev.ctrlKey || ev.metaKey; update(); } },
-    up() {
+    hover(ev, x, y) {
+      if (grab) { grab.x = x; grab.y = y; grab.snap = ev.ctrlKey || ev.metaKey; update(); return; }
+      const e = ed();
+      const hit = e && e.selection.size && !e.editBlock() ? moveGizmo.hit(moveGizmo.handles(e), x, y) : null;
+      if (moveGizmo.setHover(hit)) {
+        const w = document.getElementById("viewer-main").closest(".viewer-wrap");
+        w.dataset.gizmo = hit ? (hit.kind === "axis" || hit.kind === "plane" ? "handle" : "center") : "";
+        gizmoSchedule();
+      }
+    },
+    up(ev, x, y) {
       if (!grab) return;
-      // a plain drag applies on release; a key used during it keeps the grab going
-      if (grab.viaButton && !grab.keysUsed) commit();
+      // a plain drag applies on release (where the button came up); a key used during it keeps the grab going
+      if (grab.viaButton && !grab.keysUsed) { if (Number.isFinite(x)) { grab.x = x; grab.y = y; } commit(); }
       else if (grab) grab.viaButton = false;
     },
     right() { if (grab) { endGrab(); return true; } return false; },
@@ -231,7 +282,7 @@ export function createTools(E, S, V) {
     const e = ed(), s = e.structure, disp = V.scene().display, i = disp.base[k];
     const p = [disp.cart[3 * k], disp.cart[3 * k + 1], disp.cart[3 * k + 2]];
     const tol = Number(S.setting("bondTolerance")) || 1.15;
-    const b = G.periodicBonds(s.cell, Float64Array.from(s.frac.flat()), Float32Array.from(s.radii), Uint8Array.from(s.metal.map(Number)), tol, true);
+    const b = G.periodicBonds(s.cell, Float64Array.from(s.frac.flat()), Float32Array.from(s.radii), Uint8Array.from(s.metal.map(Number)), tol, true, s.pbc);
     const adj = G.adjacency(b, e.n)[i] || [];
     const sh = [disp.shift[3 * k], disp.shift[3 * k + 1], disp.shift[3 * k + 2]];
     let dir;
@@ -342,7 +393,15 @@ export function createTools(E, S, V) {
     return wrap;
   }
   function chip(tool, e) {
+    syncGizmos();
     const pre = e && e.waiting ? "Applying… · " : "";
+    // an orbit drag under way (any tool but Rotate, which reads out its own): the turn since it began
+    const orb = !grab && tool !== "rotate" && V.cam() ? V.cam().orbitReadout() : null;
+    if (orb) {
+      const parts = orb.parts ? orb.parts.map((x) => `${x.name} ${bothWays(x.deg).join(" / ")}`)
+        : [`turned ${bothWays(orb.total).join(" / ")}`];
+      return `${pre}Orbit · ${parts.join(" · ")}${orb.step ? ` · snap ${+orb.step.toFixed(3)}°` : ""}`;
+    }
     if (grab) {
       const g = grab, d = g.d || [0, 0, 0], ax = g.axis || (g.typed ? "x" : "");
       const amount = ax ? `${ax} ${G.fmtNum(G.dot3(d, axisUnit(g.e, ax)), 3)} Å` : `${G.fmtNum(G.norm3(d), 3)} Å`;
@@ -372,13 +431,93 @@ export function createTools(E, S, V) {
       w.insertAdjacentHTML("beforeend", `<span class="k">click or drag over atoms</span>`);
       return w;
     }
-    if (tool === "move") return `${pre}Move · drag the selection, or press G · X Y Z lock an axis`;
+    if (tool === "move") return `${pre}Move · drag the selection, an arrow or a square, or press G · X Y Z lock an axis`;
+    if (tool === "rotate") return `${pre}${rotate.chip()}`;
     if (tool === "bond") return `${pre}Bond · ${first === null ? "click two atoms to add or remove a bond (display only)" : "click the second atom"}`;
     return pre ? "Applying…" : null;
   }
 
+  /* ---------------------------------------------------------------- the gizmos (1.1.6) */
+  let overlay = null;
+  const viewerEl = () => document.getElementById("viewer-main");
+  /** The overlay, once the structure viewer is the pointer controller's (main.js ensureViewer). */
+  function gizmoOverlay() {
+    const el = viewerEl();
+    if (overlay || !el || !el.closest(".viewer-wrap") || !el.closest(".viewer-wrap").classList.contains("vp-owned")) return overlay;
+    overlay = createGizmoOverlay(el, paintGizmo);
+    // a new tool (the shell sets data-tool on the viewer before the chip): its gizmo, the others' gone
+    new MutationObserver(() => syncGizmos()).observe(overlay.wrap, { attributes: true, attributeFilter: ["data-tool"] });
+    return overlay;
+  }
+  const gizmoSchedule = () => { const o = gizmoOverlay(); if (o) o.schedule(); };
+  const movable = (e) => !!(e && e.selection.size && !e.editBlock());
+  function paintGizmo(g) {
+    const t = S.tool(), sc = V.scene();
+    if (!sc || !sc.doc || !sc.display) return false;
+    if (t === "rotate") return rotate.draw(g);
+    if (t === "move") {
+      const e = grab ? grab.e : ed();
+      if (!movable(e) && !grab) return false;
+      return moveGizmo.draw(g, e, grab ? { d: grab.d || [0, 0, 0], active: grab.handle || (grab.hk === "free" ? { key: "free" } : null) } : {});
+    }
+    return false;
+  }
+  /** The gizmo of the active tool drawn, its panel shown; the others hidden. */
+  function syncGizmos() {
+    const o = gizmoOverlay();
+    if (!o) return;
+    const t = S.tool(), sc = V.scene(), e = grab ? grab.e : ed();
+    const on = !!(sc && sc.doc && sc.display);
+    if (t !== "rotate" && rotate.active) rotate.cancel();
+    if (on && (t === "rotate" || t === "move")) o.schedule(); else o.hide();
+    if (on && t === "rotate") { rotate.renderPanel(); rotate.showPanel(); } else rotate.hidePanel();
+    const mp = moveGizmo.panel;
+    if (on && t === "move" && (movable(e) || grab)) {
+      moveGizmo.renderPanel(e, grab ? { d: grab.d, typed: !!grab.vec } : {});
+      moveGizmo.panel.hidden = false;
+    } else if (mp) mp.hidden = true;
+    if (t !== "rotate" && t !== "move") o.wrap.dataset.gizmo = "";
+  }
+  let selVersion = 0;
+  const gctx = { E, S, V, schedule: gizmoSchedule, panelHost: () => (gizmoOverlay() ? overlay.wrap : null), selVersion: () => selVersion };
+  const rotate = createRotateTool({ ...gctx,
+    preview(e, sel, dfOf) { const r = orbitPreview(e, sel, dfOf); previewSymmetry(e, drawMoved(e, r.out)); },
+    clearPreview() {
+      V.scene().setDrag(null);
+      clearTimeout(pv.timer); pv.timer = 0; pv.want = null;
+      if (pv.result) { pv.result = null; if (S.statusChanged) S.statusChanged(); }
+    },
+    groupText: () => groupText(pv.result) });
+  const moveGizmo = createMoveGizmo({ ...gctx, refresh: () => syncGizmos(),
+    /** The panel's typed displacement ({vec, frame}) previews through a grab; null ends that preview. */
+    typed(t) {
+      if (!t) { if (grab && grab.vec) endGrab(); return; }
+      if (!grab) {
+        const e = ed(), h = e ? moveGizmo.handles(e) : null;
+        if (!h || !startGrab(h.ps[0], h.ps[1], false)) return;
+      }
+      grab.vec = t; grab.axis = null; grab.typed = ""; grab.keysUsed = true;
+      update();
+    },
+    apply() { if (grab && grab.vec) { commit(); moveGizmo.clear(); } } });
+  document.addEventListener("mace-selection", () => { selVersion++; syncGizmos(); });
+  // a new theme, palette or viewer background: the wheels and arrows in its colors
+  for (const ev of ["mace-theme", "mace-colors"]) document.addEventListener(ev, () => gizmoSchedule());
+  new MutationObserver(() => gizmoSchedule()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-vp-surface", "data-theme", "class"] });
+  // the orbit readout in the chip: live while a drag turns the view, gone when it ends
+  let orbitShown = false;
+  document.addEventListener("mace-camera", () => {
+    const c = V.cam();
+    if (c && c.orbitReadout && c.orbitReadout()) { orbitShown = true; S.toolChip(); }
+  });
+  const orbitEnd = () => { if (orbitShown) { orbitShown = false; requestAnimationFrame(() => S.toolChip()); } };
+  addEventListener("pointerup", orbitEnd, true);
+  addEventListener("pointercancel", orbitEnd, true);
+  document.addEventListener("mace-camera", () => gizmoSchedule());
+
   return {
     move, add, replace, bond, chip, startGrab, endGrab, commit, addHere,
+    rotate: rotate.tool, rotateTool: rotate, moveGizmo, syncGizmos,
     get grabbing() { return !!grab; }, get grabState() { return grab ? { axis: grab.axis, typed: grab.typed, d: grab.d, choice: grab.choice, leaving: grab.leaving } : null; },
     get element() { return element; }, setElement, focusElement: () => { const i = document.querySelector(".vp-chip .vp-el"); if (i) { i.focus(); i.select(); return true; } return false; },
     preview: pv,

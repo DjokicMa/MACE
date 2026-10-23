@@ -7,25 +7,29 @@ import * as G from "../geom/core.js";
 import * as W from "../geom/client.js";
 
 const SYNC = 2000;
-const cache = new WeakMap();          // structure -> {tol, adj}
+const cache = new WeakMap();          // structure -> {key, adj}
+/* the bond rule (geom/core.js bondRule) beyond its tolerance: its minimum and pair rules */
+/** The document's bond rule (the shell passes its effective settings), as the viewer draws the bonds. */
+export const ruleOf = (s, get) => G.bondRule(s, get);
+const ruleKey = (tol, rule) => `${tol}|${rule ? `${rule.min}|${JSON.stringify([...rule.pairs])}` : ""}`;
 
 function inputs(s) {
   return { z: Uint8Array.from(s.symbols.map((x) => G.zOf(x))), frac: Float64Array.from(s.frac.flat()),
     radii: Float32Array.from(s.radii), metal: Uint8Array.from(s.metal.map(Number)) };
 }
 /** Rows for `sites` (atom indices), synchronously; null above 2000 atoms. */
-export function rowsSync(s, sites, tol) {
+export function rowsSync(s, sites, tol, rule = null) {
   if (!s || !s.radii || s.frac.length > SYNC) return null;
   let c = cache.get(s);
-  const inp = inputs(s);
-  if (!c || c.tol !== tol) { c = { tol, adj: G.bondedShells(s.cell, inp.frac, inp.radii, inp.metal, tol) }; cache.set(s, c); }
-  return G.coordination(s.cell, inp.frac, inp.z, inp.radii, inp.metal, tol, sites, c.adj);
+  const inp = inputs(s), key = ruleKey(tol, rule);
+  if (!c || c.key !== key) { c = { key, adj: G.bondedShells(s.cell, inp.frac, inp.radii, inp.metal, tol, s.pbc, G.ruleFor(rule)) }; cache.set(s, c); }
+  return G.coordination(s.cell, inp.frac, inp.z, inp.radii, inp.metal, tol, sites, c.adj, s.pbc);
 }
-export async function rows(s, sites, tol) {
-  const r = rowsSync(s, sites, tol);
+export async function rows(s, sites, tol, rule = null) {
+  const r = rowsSync(s, sites, tol, rule);
   if (r) return r;
   const inp = inputs(s);
-  const res = await W.job("coordination", { cell: s.cell, ...inp, tol, sites });
+  const res = await W.job("coordination", { cell: s.cell, ...inp, tol, sites, pbc: s.pbc, rule: G.ruleFor(rule) });
   return res.superseded ? null : res.rows;
 }
 const sym = (z) => G.SYMBOLS[z] || "X";
@@ -63,10 +67,10 @@ export function createCoordPanel(host, deps) {
   async function render(ed) {
     const s = ed && ed.structure;
     if (!s) { empty.hidden = false; head.hidden = true; table.hidden = true; shown = { rows: [], s: null, key: "" }; return; }
-    const sites = sitesOf(s, ed.selection), tol = deps.tol(s);
-    const key = `${sites.join(",")}|${tol}`;
+    const sites = sitesOf(s, ed.selection), rule = deps.rule ? deps.rule(s) : null, tol = rule ? rule.tol : deps.tol(s);
+    const key = `${sites.join(",")}|${ruleKey(tol, rule)}`;
     if (shown.s === s && shown.key === key) return;
-    const r = await rows(s, sites, tol);
+    const r = await rows(s, sites, tol, rule);
     if (!r) return;
     shown = { rows: r, s, key };
     empty.hidden = true; head.hidden = false; table.hidden = false;

@@ -11,8 +11,10 @@ finding and, under each problem, one exact line that fixes it.
    password (the node gets none of the gateway's key files and the agent
    lacks them);
 4. the agent: ``ssh-add -l`` (fingerprints only), the gateway's key files
-   matched by their ``.pub`` fingerprints (``ssh-keygen -lf``; the private
-   half is never opened); Windows: the ssh-agent service;
+   matched by their ``.pub`` fingerprints (``ssh-keygen -lf``); Windows: the
+   ssh-agent service (when it is disabled, ``ssh-keygen -y -P ""`` asks
+   whether each key has a passphrase: it opens the private key, and only its
+   exit code is kept);
 5. permissions of ~/.ssh, its config and the key files (Windows: a hint);
 6. live probes, skipped with ``--no-net``: ``ssh -o BatchMode=yes <gateway>
    true``, then the jump hop and the nested hop, each running only ``true``
@@ -40,6 +42,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import connect as C
+from . import sshfind
 
 PROBE_TIMEOUT_S = 45
 PROBE_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
@@ -57,6 +60,12 @@ MESSAGES: Dict[str, Tuple[str, str]] = {
     "ssh-missing-fix": ("posix", "install the OpenSSH client (the openssh-client or openssh package)"),
     "ssh-missing-fix-win": ("win", "Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 (in an "
                                    "administrator PowerShell)"),
+    "ssh-off-path": ("win", "ssh is not on your PATH, but {path} exists ({source}); this check and mace gui connect "
+                            "use it"),
+    "ssh-off-path-fix": ("win", "add {folder} to your user PATH (Settings > System > About > Advanced system "
+                                "settings > Environment Variables), then open a new terminal"),
+    "ssh-missing-where": ("win", "looked in System32 OpenSSH, Program Files OpenSSH, Git for Windows (usr bin) and "
+                                 "VS Code's remote.SSH.path"),
     "ssh-old": ("win", "Windows OpenSSH {version} is older than 8.1, whose -J (the jump hop) is unreliable"),
     "ssh-old-fix": ("win", "update the Windows OpenSSH client, or use the nested hop"),
     "ssh-not-system": ("win", "this ssh is {path}, not Windows' own OpenSSH ({system}): it may use another agent "
@@ -109,7 +118,7 @@ MESSAGES: Dict[str, Tuple[str, str]] = {
                                 "every hop, and a connection may have no terminal to ask on"),
     "key-not-in-agent-fix": ("all", "ssh-add {file}"),
     "key-no-pub": ("all", "{file}.pub is missing, so the check cannot compare {file} with the agent"),
-    "key-no-pub-fix": ("all", "ssh-keygen -y -f {file} > {file}.pub"),
+    "key-no-pub-fix": ("all", "ssh-keygen -y -f {file} > {pub}"),
     "perm-ok": ("posix", "permissions: ~/.ssh, its config and your key files are private"),
     "perm-dir": ("posix", "~/.ssh is mode {mode}; ssh wants 700"),
     "perm-dir-fix": ("posix", "chmod 700 ~/.ssh"),
@@ -118,9 +127,27 @@ MESSAGES: Dict[str, Tuple[str, str]] = {
     "perm-win": ("win", "if ssh says UNPROTECTED PRIVATE KEY FILE or Bad permissions, make each key yours alone"),
     "perm-win-fix": ("win", 'icacls <key file> /inheritance:r /grant:r "$($env:USERNAME):(R)"'),
     "probe-skip": ("all", "live probes skipped: no ssh login was tried"),
+    # mace gui connect itself (connect.py), and the scripts' connections
+    "behind-jump": ("all", "{what} did not answer through {via}: it may be down or not accept logins (try another "
+                           "node, or {check}). Or the login took too long: ssh waited {wait}, and that includes "
+                           "logging in to {via} (ssh calls the node UNKNOWN port 65535 then). If typing the "
+                           "passphrase or approving 2FA took longer, load your key into the agent once with ssh-add "
+                           "{key}, so that ssh asks for the passphrase once instead of on each hop, or allow more "
+                           "time with {opt}."),
+    # node_probe (connect.py and the bash script; the PowerShell script has no probe)
+    "node-down": ("posix", "the node {node} did not answer through the gateway {gateway}: it may be down or not accept "
+                         "logins (its ssh sent nothing within {probe} s when the gateway tried it). Try another node, "
+                         "or {check}."),
+    "waiting-node": ("all", "(waiting for {node} through the gateway {gateway}, up to {wait}; if {node} is down, "
+                            "press Ctrl+C and pick another node)"),
+    "passphrase-hops": ("all", "{key} has a passphrase and no ssh agent holds it, so ssh asks for it {times}. To "
+                               "type it once per session, first run: {cmd}"),
     "cm-live": ("posix", "a shared connection to {host} is open: the probes reuse it"),
     "probe-ok": ("all", "ssh {host} true: logged in without a prompt"),
     "unreachable": ("all", "cannot reach host {host} ({why})"),
+    "node-silent": ("all", "{node} did not answer through the gateway {gateway} in time (ssh calls it UNKNOWN port "
+                           "65535): it may be down or not accept logins"),
+    "node-silent-fix": ("all", "pick another node ({flag}), then check again"),
     "unreachable-fix": ("all", "check the name, and your network or VPN (ssh -v {host} true shows where it "
                                "stops)"),
     "hostkey": ("all", "ssh does not know the host key of {host} yet, or it changed"),
@@ -157,6 +184,19 @@ MESSAGES: Dict[str, Tuple[str, str]] = {
     "fixcfg-nokey": ("all", "# No key file exists yet: make one first, ssh-keygen -t ed25519 -f {key}"),
     "fixcfg-then": ("all", "# Then connect with: {cmd}"),
 }
+
+
+_PLAIN = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")
+
+
+def shell_path(path: str, windows: bool) -> str:
+    """A path as one argument of a fix line's shell: PowerShell's single quotes on Windows, POSIX sh's
+    elsewhere (a key under C:\\Users\\Jane Doe, or ~/my keys/id). A leading ~/ stays outside the quotes."""
+    p = str(path)
+    head, rest = (p[:2], p[2:]) if p.startswith(("~/", "~\\")) else ("", p)
+    if not rest or _PLAIN.fullmatch(rest.replace("\\", "/") if windows else rest):
+        return head + rest
+    return head + ("'" + rest.replace("'", "''") + "'" if windows else shlex.quote(rest))
 
 
 def msg(_key: str, **kw: Any) -> str:
@@ -237,6 +277,7 @@ class Checker:
         self.hop = str(profile.get("hop") or "auto")
         self.jump = str(profile.get("jump") or "")
         self._g: Dict[str, Dict[str, List[str]]] = {}
+        self.agent_deferred: Optional[Tuple[str, str]] = None
         self._agent: Optional[List[str]] = None
         self._fp: Dict[str, Optional[str]] = {}
 
@@ -295,8 +336,17 @@ class Checker:
     # ---------------------------------------------------------------- the checks
     def check_ssh(self) -> bool:
         path = self.which("ssh")
+        if not path and self.win:
+            found = sshfind.find_ssh(self.env, which=self.which, windows=True)
+            if found:
+                path = found.path
+                self.r.add("WARN", msg("ssh-off-path", path=found.path, source=found.source),
+                           msg("ssh-off-path-fix", folder=found.folder))
+                sshfind.prepend_to_path(found.folder)
         if not path:
             self.r.add("FAIL", msg("ssh-missing"), msg("ssh-missing-fix-win" if self.win else "ssh-missing-fix"))
+            if self.win:
+                self.r.add("INFO", msg("ssh-missing-where"))
             return False
         v = self.run(["ssh", "-V"])
         version = ((v.stderr or "") + (v.stdout or "")).strip().splitlines()
@@ -372,7 +422,7 @@ class Checker:
             self.r.add("OK", msg("node-ok", node=self.node, how=f"the agent holds {held[0]}"))
             return
         self.r.add("WARN", msg("node-prompt", gateway=self.gateway, node=self.node, files=", ".join(missing)),
-                   msg("node-prompt-fix", file=missing[0]))
+                   msg("node-prompt-fix", file=shell_path(missing[0], self.win)))
 
     def agent_env(self) -> Dict[str, str]:
         env = dict(self.env)
@@ -395,6 +445,15 @@ class Checker:
                 self._agent_lines = []
         return self._agent if self._agent_rc in (0, 1) else None
 
+    def keys_unencrypted(self, keys: List[str]) -> bool:
+        """Every key file ssh offers exists and has no passphrase (ssh-keygen -y with an empty one succeeds;
+        it prints only the public key)."""
+        found = [f for f in keys if _expand(f, self.home).is_file()]
+        if not found:
+            return False
+        return all(self.run(["ssh-keygen", "-y", "-P", "", "-f", str(_expand(f, self.home))]).returncode == 0
+                   for f in found)
+
     def check_agent(self) -> None:
         keys = self.gateway_keys()
         key = keys[0] if keys else "~/.ssh/id_ed25519_cluster"      # as the other fix lines name it
@@ -408,7 +467,16 @@ class Checker:
                 return
             status, start = words[0], (words[1] if len(words) > 1 else "?")
             if start.lower() == "disabled":
-                self.r.add("FAIL", msg("agent-disabled"), msg("agent-disabled-fix"))
+                # ssh needs no agent for a key without a passphrase, and none when a live probe logs in: then
+                # this is only a WARN. A passphrase key whose probes cannot run (--no-net) stays a FAIL; with
+                # probes it is a WARN now and a FAIL after them if no login worked (agent_deferred).
+                if self.keys_unencrypted(keys):
+                    self.r.add("WARN", msg("agent-disabled"), msg("agent-disabled-fix"))
+                elif self.no_net:
+                    self.r.add("FAIL", msg("agent-disabled"), msg("agent-disabled-fix"))
+                else:
+                    self.agent_deferred = (msg("agent-disabled"), msg("agent-disabled-fix"))
+                    self.r.add("WARN", msg("agent-disabled"), msg("agent-disabled-fix"))
                 return
             if status.lower() != "running":
                 self.r.add("WARN", msg("agent-stopped", status=status, start=start), msg("agent-stopped-fix"))
@@ -420,20 +488,21 @@ class Checker:
             if not self.win and not env.get("SSH_AUTH_SOCK"):
                 why = "SSH_AUTH_SOCK is not set in this terminal"
             self.r.add("WARN", msg("agent-none", why=why),
-                       msg("agent-none-fix-win" if self.win else "agent-none-fix", key=key))
+                       msg("agent-none-fix-win" if self.win else "agent-none-fix", key=shell_path(key, self.win)))
             return
         if not fps:
-            self.r.add("WARN", msg("agent-empty"), msg("agent-empty-fix", key=key))
+            self.r.add("WARN", msg("agent-empty"), msg("agent-empty-fix", key=shell_path(key, self.win)))
         else:
             self.r.add("OK", msg("agent-ok", count=len(fps), fps=", ".join(self._agent_lines)))
         for f in keys:
             fp = self.fingerprint(f)
             if fp is None:
-                self.r.add("INFO", msg("key-no-pub", file=f), msg("key-no-pub-fix", file=f))
+                self.r.add("INFO", msg("key-no-pub", file=f), msg("key-no-pub-fix", file=shell_path(f, self.win),
+                                                                           pub=shell_path(f + ".pub", self.win)))
             elif fp in fps:
                 self.r.add("OK", msg("key-in-agent", file=f, fp=fp))
             else:
-                self.r.add("WARN", msg("key-not-in-agent", file=f, fp=fp), msg("key-not-in-agent-fix", file=f))
+                self.r.add("WARN", msg("key-not-in-agent", file=f, fp=fp), msg("key-not-in-agent-fix", file=shell_path(f, self.win)))
 
     def check_permissions(self) -> None:
         if self.win:
@@ -457,7 +526,7 @@ class Checker:
             m = p.stat().st_mode & 0o777
             if m & 0o077:
                 self.r.add("FAIL" if f != "~/.ssh/config" or m & 0o022 else "WARN",
-                           msg("perm-file", file=f, mode=f"{m:o}"), msg("perm-file-fix", file=f))
+                           msg("perm-file", file=f, mode=f"{m:o}"), msg("perm-file-fix", file=shell_path(f, self.win)))
                 found = True
         if not found:
             self.r.add("OK", msg("perm-ok"))
@@ -468,6 +537,8 @@ class Checker:
         gateway, "jump" for the node through it)."""
         lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
         gone = C.unreachable(lines, self.node if hop else "")
+        if gone and hop and gone[0] in ("UNKNOWN", "the host"):
+            return "FAIL", msg("node-silent", node=self.node, gateway=self.gateway), msg("node-silent-fix", flag="--node")
         if gone:
             return "FAIL", msg("unreachable", host=gone[0], why=gone[1]), msg("unreachable-fix", host=gone[0])
         if any("Host key verification failed" in ln or "IDENTIFICATION HAS CHANGED" in ln for ln in lines):
@@ -560,13 +631,20 @@ class Checker:
         what = (f"{self.name}: " if self.name else "") + (
             f"{self.gateway} -> {self.node}" if self.node and self.gateway else self.first)
         self.out(msg("header", what=what))
-        if not self.check_ssh() or not self.check_gateway():
+        if not self.check_ssh():            # no ssh client: exit 2, as a connect without one does
+            self.out(msg("verdict-fail"))
+            return 2
+        if not self.check_gateway():
             self.out(msg("verdict-fail"))
             return 1
         self.check_node()
         self.check_agent()
         self.check_permissions()
-        return self.verdict(self.probes())
+        res = self.probes()
+        if self.agent_deferred and not (res.get("jump") or res.get("nested")
+                                        or (not (self.node and self.gateway) and res.get("gateway"))):
+            self.r.add("FAIL", *self.agent_deferred)      # the logins failed, and no agent can hold the key
+        return self.verdict(res)
 
     # ---------------------------------------------------------------- --fix-config
     def fix_config(self) -> List[str]:
@@ -621,6 +699,42 @@ def suggest_alias(hostname: str) -> str:
     if labels[0] in ("login", "ssh", "gateway", "gw", "bastion") and len(labels) > 2:
         return labels[1]
     return labels[0] if not labels[0].replace("-", "").isdigit() else "cluster"
+
+
+def unloaded_key(profile: Dict[str, Any], **kw: Any) -> Optional[Tuple[str, bool]]:
+    """(key file, an agent answers) when a key file ssh offers the first host
+    has a passphrase and the agent holds none of the keys offered there: ssh
+    then asks for the passphrase on every hop (twice with the jump hop: the
+    gateway's ssh and the node's each open the key). None when no key file
+    exists, the agent holds one, or none has a passphrase. No network: ssh -G,
+    ssh-add -l, ssh-keygen -lf, and ssh-keygen -y -P "" (its exit code only)."""
+    ck = Checker(profile, no_net=True, out=lambda _t: None, **kw)
+    if not ck.first:
+        return None
+    keys = ck.gateway_keys()
+    if not keys:
+        return None
+    fps = ck.agent_fps()
+    if fps and any(ck.fingerprint(f) in fps for f in keys if ck.fingerprint(f)):
+        return None
+    for f in keys:
+        if not ck.keys_unencrypted([f]):
+            return f, fps is not None
+    return None
+
+
+def passphrase_hint(key: str, agent: bool, twice: bool = False, windows: Optional[bool] = None) -> str:
+    """The line that suggests ssh-add for unloaded_key's key, before connecting."""
+    win = (system_name() == "windows") if windows is None else windows
+    arg = shell_path(key, win)            # one argument of the shell shown (a space in a Windows user folder)
+    if agent:
+        cmd = f"ssh-add {arg}"
+    elif win:
+        cmd = f"Start-Service ssh-agent, then ssh-add {arg}"
+    else:
+        cmd = f'eval "$(ssh-agent)" && ssh-add {arg}'
+    return msg("passphrase-hops", key=key, times="for the gateway and again for the node" if twice
+               else "on each connection", cmd=cmd)
 
 
 def main(profile: Dict[str, Any], name: Optional[str], *, check: bool, no_net: bool, fix_config: bool,

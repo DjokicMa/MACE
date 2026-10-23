@@ -181,16 +181,17 @@ def test_properties_rows(fresh, tmp_path, calc):
     st = state(drv)
     assert st["mode"] == "opt2d3" and st["deckName"] == f"Si_{calc.lower()}.d3"
     if calc == "BAND":
-        assert "4 0 1000 1 100 1 0" in st["deck"]
+        assert "6 8 1000 1 100 1 0" in st["deck"] and "SeeKPath" in st["deck"]      # SeeK-path is the default k-path
     probs = drv.execute_script("return window.__mace.problems().map((p) => p.message)")
     assert any("empty stand-in for Si_sp.f9" in p for p in probs), probs
     # opt2d3's fields start from its own defaults (not the parent's), and every type reads whole:
-    # rows of three under SP / OPT / FREQ (ORBITALS, the seventh properties type, on a row of its own),
-    # no TRANSP… or POTENT…
+    # rows of three under SP / OPT / FREQ and opt2d12's 4-7 with Phonopy (ORBITALS, the seventh
+    # properties type, on a row of its own), no TRANSP… or POTENT…
     badges = drv.execute_script("return [...document.querySelectorAll('#inspector .su-row .su-badge')].map((b) => b.textContent)")
     assert badges and all(b == "default" for b in badges), badges
     rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-calc-row')].map((r) => [...r.children].map((b) => [b.textContent, b.scrollWidth <= b.clientWidth]))")
-    assert [[t for t, _ in r] for r in rows] == [["SP", "OPT", "FREQ"], ["BAND", "DOSS", "TRANSPORT"], ["CHARGE", "POTENTIAL", "CHG+POT"], ["ORBITALS"]]
+    assert [[t for t, _ in r] for r in rows] == [["SP", "OPT", "FREQ"], ["ELASTIC", "EOS", "QHA"], ["CPHF", "Phonopy"],
+                                                 ["BAND", "DOSS", "TRANSPORT"], ["CHARGE", "POTENTIAL", "CHG+POT"], ["ORBITALS"]]
     assert all(fits for r in rows for _, fits in r), rows
     d = tmp_path / "m"
     shutil.copytree(root / "outputs", d / "in")

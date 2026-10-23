@@ -15,6 +15,7 @@ const KINDS = [["band", "Band structure"], ["dos", "Density of states"], ["bando
   ["structure", "Structure"]];
 const ENERGY_KINDS = new Set(["band", "dos", "bandos"]);
 const MAX_COLS = 8, LOADS = 3, MARGIN = "300px";
+const PAGE_SIZES = [25, 50, 100, 200, 500], DEFAULT_PAGE_SIZE = 200;
 
 /** A DOS panel's DOS-axis range (mace/plotting/gallery.py dos_axis, plotly_bands dos_range's rule): the
  *  largest |DOS| drawn (`shared`: the grid's, with shared axes) plus 8%, symmetric about 0 when the spins
@@ -32,6 +33,12 @@ export function createGallery(host, H) {
   const styled = (f, kind) => { if (H.styleFigure) H.styleFigure(f.traces, f.layout, famOf(kind)); return f; };
   const setting = (k, d) => { const v = H.setting ? H.setting(k) : undefined; return v === undefined || v === null || v === "" ? d : v; };
   const dosColors = () => setting("plots.dosColors", "auto");
+  // panes per page: this gallery's choice, else Settings › Plots (the CLI's --max); a page is a request of its own
+  const pageSizeSetting = () => {
+    let v = Number(setting("plots.galleryPageSize", 0));
+    if (!v) { try { v = Number(localStorage.getItem("mace.gui.gallery.pageSize")); } catch (e) { v = 0; } }     // the last choice, per browser
+    return PAGE_SIZES.includes(v) ? v : DEFAULT_PAGE_SIZE;
+  };
   // Settings › Plots › DOS smoothing (mace plotting --dos-smooth): the Gaussian sigma in eV, 0 off
   // Settings › Plots › Fermi shift (the folder file's fermi_shift shows there): the grid, Export and Copy CLI
   // Command all draw with it
@@ -42,7 +49,7 @@ export function createGallery(host, H) {
   const hex = (v) => (/^#[0-9a-fA-F]{6}$/.test(v || "") ? v.toLowerCase() : null);
   const spinLook = () => ({ spin_colors: setting("plots.spinColors", "auto"), spin_up_color: hex(setting("plots.spinUp", "")),
     spin_down_color: hex(setting("plots.spinDown", "")), spin_down_style: setting("plots.spinDownDash", "dash"),
-    band_color: hex(setting("plots.bandColor", "")) });
+    band_color: hex(setting("plots.bandColor", "")), band_style: setting("plots.bandStyle", "auto") });
   const { api, q, esc, icon, toast, cssVar, loadPlotly, apiTask, download } = H;
   host.innerHTML = `<div class="gal" tabindex="-1">
     <div class="gal-bar" role="toolbar" aria-label="Gallery">
@@ -50,6 +57,13 @@ export function createGallery(host, H) {
       <label class="gal-f"><span>Plot</span><select class="gal-kind" aria-label="Plot kind">${KINDS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></label>
       <label class="gal-f"><span>Columns</span><input class="gal-cols" type="number" min="1" max="${MAX_COLS}" step="1" aria-label="Columns"></label>
       <label class="gal-f"><span>Axes</span><select class="gal-axes" aria-label="Axes"><option value="shared">Shared</option><option value="independent">Independent</option></select></label>
+      <label class="gal-f" data-tier="advanced"><span>Panes per page</span><select class="gal-psize" aria-label="Panes per page">${PAGE_SIZES.map((n) => `<option value="${n}">${n}</option>`).join("")}</select></label>
+      <span class="gal-pager gal-f" role="group" aria-label="Page" hidden>
+        <button class="tb-btn" data-act="page-first" aria-label="First page" title="First page">«</button>
+        <button class="tb-btn" data-act="page-prev" aria-label="Previous page" title="Previous page">${icon("chevron-left")}</button>
+        <span class="gal-page-n"><input class="gal-page" type="number" min="1" step="1" aria-label="Page"><span class="muted gal-pages"></span></span>
+        <button class="tb-btn" data-act="page-next" aria-label="Next page" title="Next page">${icon("chevron-right")}</button>
+        <button class="tb-btn" data-act="page-last" aria-label="Last page" title="Last page">»</button></span>
       <span class="gal-f gal-ewin"><span>Energy</span><input class="gal-emin" type="number" step="0.5" aria-label="Energy window from (eV)">
         <span class="muted">to</span><input class="gal-emax" type="number" step="0.5" aria-label="Energy window to (eV)"><span class="muted">eV</span></span>
       <span class="gal-seg" role="group" aria-label="View">
@@ -93,9 +107,11 @@ export function createGallery(host, H) {
     note(`Collecting the ${label(g().kind).toLowerCase()} files…`);
     renderBar();
     try {
-      const r = await api("gallery/collect", { body: { kind: g().kind, source: g().source, db: g().db || undefined } });
+      const r = await api("gallery/collect", { body: { kind: g().kind, source: g().source, db: g().db || undefined,
+        page: g().page || 1, page_size: g().pageSize || pageSizeSetting() } });
       if (my !== gen) return;
       set = r;
+      g().page = r.page;                                    // a page past the end comes back as the last
       g().index = Math.min(g().index || 0, Math.max(0, r.items.length - 1));
       renderAll();
     } catch (e) {
@@ -112,11 +128,13 @@ export function createGallery(host, H) {
   function renderNote() {
     if (!set) return;
     const parts = [];
-    parts.push(`${set.items.length} ${set.items.length === 1 ? "pane" : "panes"} · ${set.source_label}.`);
+    parts.push(set.pages > 1
+      ? `${set.items.length} ${set.items.length === 1 ? "pane" : "panes"} (${set.offset + 1}–${set.offset + set.items.length} of ${set.total}, page ${set.page} of ${set.pages}) · ${set.source_label}.`
+      : `${set.items.length} ${set.items.length === 1 ? "pane" : "panes"} · ${set.source_label}.`);
     if (set.message) parts.push(set.message);
     const dbs = set.captions.databases || [];
     parts.push(dbs.length ? `Captions from ${dbs.join(", ")}.` : "No materials.db with these materials: the captions name the material only.");
-    note(parts.join(" "), set.capped ? "warn" : "");
+    note(parts.join(" "), set.capped && set.pages <= 1 ? "warn" : "");
   }
 
   /* ------------------------------------------------------------ the toolbar */
@@ -127,6 +145,13 @@ export function createGallery(host, H) {
     $(".gal-axes").value = s.shared ? "shared" : "independent";
     $(".gal-emin").value = s.emin; $(".gal-emax").value = s.emax;
     $(".gal-ewin").hidden = !ENERGY_KINDS.has(s.kind);
+    $(".gal-psize").value = String(s.pageSize || pageSizeSetting());
+    const pg = $(".gal-pager"), pages = set ? set.pages || 1 : 1, page = set ? set.page || 1 : 1;
+    pg.hidden = pages <= 1;
+    $(".gal-page").value = page; $(".gal-page").max = pages;
+    $(".gal-pages").textContent = `of ${pages}`;
+    pg.querySelectorAll("[data-act=page-first], [data-act=page-prev]").forEach((b) => { b.disabled = page <= 1; });
+    pg.querySelectorAll("[data-act=page-next], [data-act=page-last]").forEach((b) => { b.disabled = page >= pages; });
     host.querySelectorAll(".gal-seg [data-act]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.act === s.mode)));
     const sets = (H.sets ? H.sets(doc) : []).slice();
     if (!sets.some((x) => same(x.source, s.source))) sets.unshift({ label: s.sourceLabel || "This set", source: s.source });
@@ -139,11 +164,28 @@ export function createGallery(host, H) {
   }
   const same = (a, b) => JSON.stringify(a || {}) === JSON.stringify(b || {});
 
-  $(".gal-kind").addEventListener("change", (e) => { g().kind = e.target.value; g().index = 0; collect(); });
+  $(".gal-kind").addEventListener("change", (e) => { g().kind = e.target.value; g().index = 0; g().page = 1; collect(); });
+  function goPage(n) {
+    const pages = set ? set.pages || 1 : 1, p = Math.max(1, Math.min(pages, Math.round(Number(n) || 1)));
+    if (!set || p === (set.page || 1)) { renderBar(); return; }
+    g().page = p; g().index = 0;
+    scroller.scrollTop = 0;
+    collect();
+  }
+  $(".gal-page").addEventListener("change", (e) => goPage(e.target.value));
+  $(".gal-psize").addEventListener("change", (e) => {
+    const n = Number(e.target.value);
+    if (!PAGE_SIZES.includes(n)) return;
+    // the same first pane stays on the page it falls on
+    const first = set ? set.offset || 0 : 0;
+    g().pageSize = n; g().page = Math.floor(first / n) + 1; g().index = 0;
+    try { localStorage.setItem("mace.gui.gallery.pageSize", String(n)); } catch (e) { /* private window */ }
+    collect();
+  });
   $(".gal-set").addEventListener("change", (e) => {
     const x = e.target._sets[Number(e.target.value)];
     if (!x) return;
-    g().source = x.source; g().sourceLabel = x.label; g().db = x.db || g().db; g().index = 0;
+    g().source = x.source; g().sourceLabel = x.label; g().db = x.db || g().db; g().index = 0; g().page = 1;
     doc.title = `Gallery: ${x.label}`;
     if (H.retitle) H.retitle(doc);
     collect();
@@ -174,6 +216,10 @@ export function createGallery(host, H) {
     if (!b || b.disabled || !host.contains(b)) return;
     const a = b.dataset.act;
     if (a === "grid" || a === "cycle") setMode(a);
+    else if (a === "page-first") goPage(1);
+    else if (a === "page-prev") goPage((set.page || 1) - 1);
+    else if (a === "page-next") goPage((set.page || 1) + 1);
+    else if (a === "page-last") goPage(set.pages || 1);
     else if (a === "prev") go(g().index - 1);
     else if (a === "next") go(g().index + 1);
     else if (a === "export-svg" || a === "export-png") exportFigure(a.slice(7));
@@ -193,6 +239,8 @@ export function createGallery(host, H) {
     const s = g(), inputs = (set && set.cli_inputs) || [];
     const quote = (x) => (/^[A-Za-z0-9_./=+-]+$/.test(x) ? x : `'${String(x).replace(/'/g, "'\\''")}'`);
     const a = ["mace", "plotting", "--gallery", s.kind, ...inputs.map(quote), "--cols", String(s.cols), "-o", `gallery_${s.kind}.svg`];
+    if ((set && set.page_size) && set.page_size !== DEFAULT_PAGE_SIZE) a.push("--max", String(set.page_size));
+    if (set && set.page > 1) a.push("--page", String(set.page));
     if (!s.shared) a.push("--independent-axes");
     // always the window: the line draws the same figure in any folder, whatever its mace-folder.toml says
     if (ENERGY_KINDS.has(s.kind)) a.push(`--e-lower=${s.emin}`, `--e-upper=${s.emax}`);
@@ -239,7 +287,7 @@ export function createGallery(host, H) {
     grid.style.setProperty("--cols", g().cols);
     const items = set.items;
     grid.innerHTML = items.length ? items.map((it, i) => `<figure class="gal-pane" data-i="${i}">
-      <figcaption title="${esc(it.path)}"><span class="gal-n">${i + 1}.</span> ${esc(it.title)}</figcaption>
+      <figcaption title="${esc(it.path)}"><span class="gal-n">${(set.offset || 0) + i + 1}.</span> ${esc(it.title)}</figcaption>
       <div class="gal-plot" data-state="idle"></div></figure>`).join("")
       : `<p class="muted gal-empty">${esc(set.message || "Nothing to show.")}</p>`;
     const o = observer();
@@ -358,9 +406,17 @@ export function createGallery(host, H) {
     }
     // the DOS totals (the 1.1.6 DOS layout, bandfig.js): filled in the spin pair, or a closed-shell run's neutral fill under its line
     const ink = role.total, tone = PP && PP.luminance(bgHex) < 0.4 ? "dark" : "light";
-    const bands = PP ? PP.bandColor(preset, "band", tone, spinLook().band_color, ink) : ink;
+    // a run that is not spin-polarized: its one set of bands in the Band style's color (bandfig.js lookParts):
+    // single the pair's first color (or the Band color), overlay the first color with the second dashed on top,
+    // ink the preset's neutral one; Auto is overlay for a metal, else single
+    const bandsOf = (pl) => {
+      const st = PP ? PP.bandStyle(spinLook().band_style, pl && pl.metal ? { fermi: 0, up: [[-1, 1]] } : null) : "ink", custom = spinLook().band_color;
+      const c = st === "ink" || !PP ? (PP ? PP.bandColor(preset, "band", tone, null, ink) : ink) : st === "single" && custom ? custom : spin.up;
+      return { style: st, color: c };
+    };
+    let bands = ink, bandStyleNow = "ink";
     const fills = PP ? PP.spinFills(spin, preset) : { up: "rgba(0,0,0,0.1)", down: "rgba(0,0,0,0.1)" };
-    const nfill = PP ? PP.neutralFill(bands, preset) : "rgba(0,0,0,0.08)";
+    let nfill = PP ? PP.neutralFill(bands, preset) : "rgba(0,0,0,0.08)";
     const fs = big ? 11 : 8, annotations = [];
     const layout = { margin: big ? { l: 60, r: 16, t: 8, b: 44 } : { l: 40, r: 6, t: 4, b: 26 }, showlegend: false,
       paper_bgcolor: bg, plot_bgcolor: bg, font: { size: big ? 12 : 9, color: text }, shapes: [] };
@@ -368,6 +424,9 @@ export function createGallery(host, H) {
     const traces = [];
     let x0 = 0;
     panels.forEach((pl, k) => {
+      const bo = bandsOf(pl);
+      bands = bo.color; bandStyleNow = bo.style;
+      nfill = PP ? PP.neutralFill(bands, preset) : "rgba(0,0,0,0.08)";
       const ax = k ? String(k + 1) : "", w = (pl.width || 1) / total;
       const xa = { domain: [x0, Math.min(1, x0 + w - (k < panels.length - 1 ? 0.015 : 0))], anchor: "y" + ax, gridcolor: grid2, zeroline: false,
         title: { text: pl.xlabel || "", standoff: 2 }, type: pl.xlog ? "log" : "linear", automargin: true };
@@ -438,6 +497,9 @@ export function createGallery(host, H) {
         traces.push({ type: "scatter", x: sr.x, y: sr.y, name: sr.name, xaxis: "x" + ax, yaxis: "y" + ax, connectgaps: false, ...fill,
           mode: sr.markers ? "lines+markers" : "lines", line: { color, dash, width: sr.role === "up" || sr.role === "down" ? 1 : 1.3 },
           marker: { size: big ? 6 : 4, color }, hoverinfo: big ? "x+y+name" : "skip" });
+        if (sr.role === "up" && pl.closed && bandStyleNow === "overlay")
+          traces.push({ type: "scatter", x: sr.x, y: sr.y, name: sr.name, xaxis: "x" + ax, yaxis: "y" + ax, connectgaps: false, mode: "lines",
+            line: { color: spin.down, dash: spin.dash === "solid" ? "dash" : spin.dash, width: 1 }, hoverinfo: "skip", showlegend: false });
       }
     });
     if (annotations.length) layout.annotations = annotations;
@@ -519,8 +581,8 @@ export function createGallery(host, H) {
   async function showCycle() {
     if (!set || !set.items.length) return;
     const i = g().index, it = set.items[i], my = gen;
-    $(".gal-big figcaption").innerHTML = `<span class="gal-n">${i + 1}.</span> ${esc(it.title)} <span class="muted small">${esc(it.path)}</span>`;
-    $(".gal-count").textContent = `${i + 1} / ${set.items.length}`;
+    $(".gal-big figcaption").innerHTML = `<span class="gal-n">${(set.offset || 0) + i + 1}.</span> ${esc(it.title)} <span class="muted small">${esc(it.path)}</span>`;
+    $(".gal-count").textContent = `${(set.offset || 0) + i + 1} / ${set.total}`;
     const el = $(".gal-big .gal-plot");
     el.dataset.state = "loading";
     el.dataset.i = String(i);
@@ -579,7 +641,7 @@ export function createGallery(host, H) {
   async function exportCsv() {
     if (!set || !set.items.length) return;
     try {
-      const r = await api("gallery/csv", { body: { paths: set.items.map((x) => x.path), db: g().db || undefined }, blob: true });
+      const r = await api("gallery/csv", { body: { paths: set.items.map((x) => x.path), db: g().db || undefined, offset: set.offset || 0 }, blob: true });
       download(r.blob, `gallery_${g().kind}_captions.csv`);
     } catch (e) { toast(`Captions CSV: ${e.message}`, "error"); }
   }
@@ -598,7 +660,7 @@ export function createGallery(host, H) {
     go, setMode,
     /* for the tests: what is on screen */
     state: () => ({ kind: doc && g().kind, mode: doc && g().mode, index: doc && g().index, cols: doc && g().cols, shared: doc && g().shared,
-      items: set ? set.items.length : 0, total: set ? set.total : 0, capped: !!(set && set.capped), message: set ? set.message : null,
+      items: set ? set.items.length : 0, total: set ? set.total : 0, page: set ? set.page : 1, pages: set ? set.pages : 1, capped: !!(set && set.capped), message: set ? set.message : null,
       drawn: drawnCount(), maxDrawn: stats.maxDrawn, fetched: stats.fetched, loading: active + queue.length,
       cycleDrawn: $(".gal-big .gal-plot").dataset.state === "drawn", note: $(".gal-note").textContent }),
     figure: (i) => { const el = i === "big" ? $(".gal-big .gal-plot") : grid.querySelector(`.gal-pane[data-i="${i}"] .gal-plot`);

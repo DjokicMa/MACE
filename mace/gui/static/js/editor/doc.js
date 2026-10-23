@@ -60,16 +60,14 @@ export class EditorDoc {
   get canRedo() { return this.pos < this.rows.length - 1; }
   get history() { return this.rows; }
   get position() { return this.pos; }
-  /** Editing needs a 3D cell and at most 5000 atoms; the reason, or "". */
+  /** Editing needs at most 5000 atoms; the reason, or "". Slabs, polymers and molecules edit too
+   * (1.1.6; P1 only: the server keeps their non-periodic directions unwrapped). */
   editBlock() {
     const s = this.structure;
     if (this.lost) return "Lost the connection to the MACE server";
     if (this.previewing) return "Accept or discard the preview first";
     if (this.doc.held) return `Editing is limited to ${MAX_EDIT_ATOMS} atoms; this built structure is view-only`;
-    if (!s.pbc || !s.pbc.every(Boolean)) {
-      const dim = String(s.dimensionality || "").toLowerCase();
-      return `Editing needs a 3D periodic cell (this is ${dim === "slab" ? "a slab" : dim === "polymer" ? "a polymer" : dim === "molecule" ? "a molecule" : "not 3D"})`;
-    }
+    if (!s.pbc || !s.cell) return "Editing needs a structure with a cell or a box";
     if (this.n > MAX_EDIT_ATOMS) return `Editing is limited to ${MAX_EDIT_ATOMS} atoms`;
     return "";
   }
@@ -135,7 +133,7 @@ export class EditorDoc {
     let best = -1, bestD = t;
     for (let j = 0; j < this.n; j++) {
       if (number !== null && s.numbers[j] !== number) continue;
-      const d = G.minImage(s.cell, s.frac[j], f).length;
+      const d = G.minImage(s.cell, s.frac[j], f, s.pbc).length;
       if (d < bestD) { bestD = d; best = j; }
     }
     return best;

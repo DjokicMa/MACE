@@ -27,8 +27,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-BOHR = 0.529177210903
-HARTREE_EV = 27.211386245988
+from mace.constants import BOHR_TO_ANGSTROM as BOHR, HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 # the grid's point budget per quality: the reader widens the spacing until the grid fits,
 # which also caps a supercell (preview/normal/fine are the reader's spacings, 0.40/0.25/0.15 bohr)
 QUALITY_POINTS = {"preview": 300_000, "normal": 1_000_000, "fine": 2_000_000}
@@ -104,6 +103,17 @@ def _occ_text(occ: float, max_occ: float, closed: bool, metallic: bool = False) 
     return f"partly filled ({occ:.3f})"
 
 
+def _occ_short(occ: float, max_occ: float, closed: bool, metallic: bool = False) -> str:
+    """The occupation as the level list's narrow column shows it (the words are its tooltip)."""
+    if metallic and occ > 0.02 * max_occ:
+        return f"{occ:.3f} e"
+    if occ >= 0.98 * max_occ:
+        return "2 e" if closed else "1 e"
+    if occ <= 0.02 * max_occ:
+        return "empty"
+    return f"{occ:.3f} e"
+
+
 def _spin_extras(info: Dict[str, Any], kd) -> None:
     """Per spin: the energy reference (HOMO, or E_F for a metal), eV relative to it, and the occupation's words."""
     efermi = info.get("efermi")
@@ -125,6 +135,7 @@ def _spin_extras(info: Dict[str, Any], kd) -> None:
             l["rel_ev"] = l["e_ev"] - ref
             l["occupied"] = l["occ"] > 0.5 * kd.max_occ
             l["occ_text"] = _occ_text(l["occ"], kd.max_occ, closed, s["metallic"])
+            l["occ_short"] = _occ_short(l["occ"], kd.max_occ, closed, s["metallic"])
             l["degenerate"] = sizes[l["group"]]
         if s["metallic"] and ref_kind == "E_F":
             below = [l for l in lv if l["e_ev"] <= ref]

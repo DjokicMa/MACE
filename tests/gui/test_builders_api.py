@@ -174,15 +174,11 @@ def test_supercell_of_the_graphene_slab_output(served):
     s = U.req(base, "api/structure?path=outputs/graphene_slab_sp.out")[2]
     st, _, r = build(base, "supercell", {"n": [2, 2, 1]}, source={"path": "outputs/graphene_slab_sp.out"}, open_as={"name": "gr_2x2"})
     r = result_of(base, st, r)
-    got = r["structure"]                 # held, view-only (editing needs a 3D cell)
-    import base64
-    zn = np.frombuffer(base64.b64decode(got["zn"]), np.uint8)
-    frac = np.frombuffer(base64.b64decode(got["frac"]), "<f8").reshape(-1, 3)
-    assert len(zn) == 4 * len(s["numbers"]), r
+    got = r["session"]                   # 1.1.6: a slab is an editable session (P1), no longer held view-only
+    assert len(got["numbers"]) == 4 * len(s["numbers"]), r
     assert got["pbc"] == [True, True, False] and got["dimensionality"] == "SLAB"
-    z_new = sorted(set(np.round((frac @ np.asarray(got["cell"], float).reshape(3, 3))[:, 2], 4)))
+    z_new = sorted(set(np.round(np.asarray(got["cart"])[:, 2], 4)))
     assert z_new == sorted(set(np.round(np.asarray(s["cart"])[:, 2], 4)))
-    U.post(base, "api/held/release", {"ids": [r["held"]]})
 
 
 def test_supercell_over_5000_view_only_reason(served):
@@ -619,13 +615,37 @@ def test_clean_stale_base_rev_409(served):
     assert st == 409 and a["conflict"] == "rev"
 
 
-def test_clean_on_metal_nothing_to_clean(served):
+def test_clean_holds_the_drawn_bonds_and_the_documents_rule(served):
+    """Copper's metal bonds are drawn (a structure of metals only), so Clean holds them (1.1.6: it had
+    nothing to clean); with the document's rule (Build › Calculate Bonds…) bonding no pair it has none."""
     from ase.build import bulk
     base = served[0]
     s = session_of(base, bulk("Cu", "fcc", a=3.61, cubic=True), "cu")
     st, _, r = U.post(base, "api/clean", {"session": s["session"], "base_rev": s["rev"]})
+    assert st in (200, 202) and not r.get("nothing_to_clean"), r
+    st, _, r = U.post(base, "api/clean", {"session": s["session"], "base_rev": s["rev"],
+                                          "bonds": {"bondPairs": {"Cu-Cu": {"never": True}}}})
     assert st == 200 and r["nothing_to_clean"] and r["message"].startswith("nothing to clean: no bonded pairs"), r
     assert U.req(base, f"api/edit/state?session={s['session']}")[2]["rev"] == s["rev"]
+
+
+def test_clean_bonds_held(served):
+    """Clean › Bonds held (bonds_held): None runs the repulsion alone where As shown and Lenient have nothing
+    to clean, Lenient ignores the document's criteria, and anything else is refused with the modes."""
+    from ase.build import bulk
+    base = served[0]
+    s = session_of(base, bulk("Cu", "fcc", a=3.61, cubic=True), "cu_held")
+    never = {"bondPairs": {"Cu-Cu": {"never": True}}}
+    st, _, r = U.post(base, "api/clean", {"session": s["session"], "base_rev": s["rev"], "bonds": never})
+    assert st == 200 and r["nothing_to_clean"], r
+    for held in ("none", "lenient"):
+        st, _, r = U.post(base, "api/clean", {"session": s["session"], "base_rev": s["rev"], "bonds": never, "bonds_held": held})
+        r = result_of(base, st, r)
+        assert not r.get("nothing_to_clean") and r["report"]["bonds_held"] == held, (held, r)
+        assert r["report"]["n_bonds"] == (0 if held == "none" else 24), r["report"]
+        U.post(base, "api/edit/clean_discard", {"session": s["session"], "proposal_id": r["proposal_id"]})
+    st, _, r = U.post(base, "api/clean", {"session": s["session"], "base_rev": s["rev"], "bonds_held": "all"})
+    assert st == 400 and "bonds held is one of shown, lenient, none" in r["error"], r
 
 
 def test_clean_time_limit_reported(served):

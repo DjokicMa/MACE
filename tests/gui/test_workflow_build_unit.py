@@ -183,6 +183,25 @@ def test_unfinished_steps_of_the_same_structures(tmp_path):
     assert [(r["material_id"], r["job_id"]) for r in rows] == [("A", "5001")]
 
 
+def test_a_held_step_blocks_a_second_workflow_of_the_same_structures(tmp_path):
+    """A held step (recorded, waiting for a queue slot; no job id yet) is
+    unfinished: New Workflow on the same structures is blocked, and so is
+    Submit of the same deck."""
+    from mace.database.materials import MaterialDatabase
+    inp = _inputs(tmp_path)
+    ctx = inp.folder / ".mace_context_workflow_20261015_100000_ab12"
+    ctx.mkdir()
+    MaterialDatabase(str(ctx / "materials.db"))
+    deck = inp.folder / "B_sp.d12"
+    with sqlite3.connect(ctx / "materials.db") as con:
+        con.execute("INSERT INTO calculations (calc_id, material_id, calc_type, status, slurm_job_id, input_file, "
+                    "created_at) VALUES (?,?,?,?,?,?,?)",
+                    ("b1", "B", "SP", "held", None, str(deck), "2026-10-15T10:00:00"))
+    rows = wb.active_rows(inp.folder, inp)
+    assert [(r["material_id"], r["status"]) for r in rows] == [("B", "held")]
+    assert [r["calc_id"] for r in sub.queued_rows([ctx / "materials.db"], [deck])] == ["b1"]
+
+
 def test_a_method_without_dispersion_keeps_the_parents_d3_in_the_spec(tmp_path):
     """E-M5: the CLI spec path and the GUI builder agree. A spec step whose
     new_functional names no use_dispersion keeps its parent's D3 (engine and

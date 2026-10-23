@@ -126,7 +126,7 @@ export function init(S) {
   const FIT_FILL = 0.88;
   function fitDrawn(s, disp, opts) {
     const pbc = s.pbc || [true, true, true];
-    const corners = G.boxCorners(s, opts.box || { lo: [0, 0, 0], hi: opts.range });
+    const corners = G.boxCorners(s, opts.box || { lo: [0, 0, 0], hi: opts.range }, "fit");   // a 500 Å vacuum frames the atoms
     // 3Dmol's zoomTo on a sample sets its clipping planes and a first zoom
     const pts = corners.slice(), step = Math.max(1, Math.floor(disp.n / 4000));
     for (let k = 0; k < disp.n; k += step) pts.push([disp.cart[3 * k], disp.cart[3 * k + 1], disp.cart[3 * k + 2]]);
@@ -307,24 +307,24 @@ export function init(S) {
   }
   async function fragment(d, start) {
     const s = d.structure;
-    const tol = Number(S.setting("bondTolerance")) || 1.15, mm = S.setting("bondMetalMetal") === true;
+    const rule = G.bondRule(s, S.setting), tol = rule.tol, mm = rule.metalMetal;
     const frac = Float64Array.from(s.frac.flat()), radii = Float32Array.from(s.radii), metal = Uint8Array.from(s.metal.map(Number));
     if (d.n <= 2000) {
-      const adj = G.adjacency(G.periodicBonds(s.cell, frac, radii, metal, tol, mm), d.n);
+      const adj = G.adjacency(G.periodicBonds(s.cell, frac, radii, metal, tol, mm, s.pbc, rule), d.n);
       return [...G.fragmentOf(adj, new Set(start))];
     }
-    const r = await W.job("fragment", { cell: s.cell, frac, radii, metal, tol, metalMetal: mm, selection: start });
+    const r = await W.job("fragment", { cell: s.cell, frac, radii, metal, tol, metalMetal: mm, selection: start, pbc: s.pbc, rule: G.ruleFor(rule) });
     return r.superseded ? [] : [...r.indices];
   }
   async function neighbors(d, start) {
     const s = d.structure;
-    const tol = Number(S.setting("bondTolerance")) || 1.15, mm = S.setting("bondMetalMetal") === true;
+    const rule = G.bondRule(s, S.setting), tol = rule.tol, mm = rule.metalMetal;
     const frac = Float64Array.from(s.frac.flat()), radii = Float32Array.from(s.radii), metal = Uint8Array.from(s.metal.map(Number));
     if (d.n <= 2000) {
-      const adj = G.adjacency(G.periodicBonds(s.cell, frac, radii, metal, tol, mm), d.n);
+      const adj = G.adjacency(G.periodicBonds(s.cell, frac, radii, metal, tol, mm, s.pbc, rule), d.n);
       return [...G.neighborsOf(adj, new Set(start))];
     }
-    const r = await W.job("neighbors", { cell: s.cell, frac, radii, metal, tol, metalMetal: mm, selection: start });
+    const r = await W.job("neighbors", { cell: s.cell, frac, radii, metal, tol, metalMetal: mm, selection: start, pbc: s.pbc, rule: G.ruleFor(rule) });
     return r.superseded ? [] : [...r.indices];
   }
 
@@ -341,7 +341,7 @@ export function init(S) {
   /** Select Within Distance: atoms within r of each selected atom (or of their centroid). */
   async function selectWithin(d, r, centroid, periodic) {
     const s = d.structure;
-    const args = { cell: s.cell, frac: Float64Array.from(s.frac.flat()), selection: [...d.selection], r, centroid, periodic };
+    const args = { cell: s.cell, frac: Float64Array.from(s.frac.flat()), selection: [...d.selection], r, centroid, periodic, pbc: s.pbc };
     let out;
     if (d.n <= 2000) {
       const fr = (i) => s.frac[i];
@@ -349,7 +349,7 @@ export function init(S) {
       if (centroid && centers.length) centers = [centers.reduce((t, f) => G.add3(t, f), [0, 0, 0]).map((x) => x / centers.length)];
       out = new Set();
       for (const c of centers) for (let j = 0; j < d.n; j++) {
-        const dist = periodic ? G.minImage(s.cell, c, fr(j)).length : G.norm3(G.cartOf(s.cell, G.sub3(fr(j), c)));
+        const dist = periodic ? G.minImage(s.cell, c, fr(j), s.pbc).length : G.norm3(G.cartOf(s.cell, G.sub3(fr(j), c)));
         if (dist <= r) out.add(j);
       }
       out = [...out];
@@ -475,7 +475,7 @@ export function init(S) {
   const tools = createTools(api, S, { ed: () => (scene && scene.doc && !scene.doc.viewOnly ? scene.doc : null),
     cam: () => cam, scene: () => scene, focusViewport: () => { const w = document.getElementById("viewer-main").closest(".viewer-wrap"); w.focus({ preventScroll: true }); } });
   const measure = createMeasure(api, S, { ed: () => (scene && scene.doc && !scene.doc.viewOnly ? scene.doc : null), scene: () => scene });
-  Object.assign(S.tools, { move: tools.move, add: tools.add, replace: tools.replace, bond: tools.bond, measure: measure.tool });
+  Object.assign(S.tools, { move: tools.move, add: tools.add, replace: tools.replace, bond: tools.bond, measure: measure.tool, rotate: tools.rotate });
   api.redrawMeasurements = (d) => { if (scene && scene.doc === d) scene.drawMeasurements(d); };
   api.measure = measure;
   const atomsTable = createAtomsTable(api, S), history = createHistoryPanel(api, S);
@@ -527,7 +527,7 @@ export function init(S) {
       const s = doc.structure, radii = new Float32Array(d.n), metal = new Uint8Array(d.n);
       for (let k = 0; k < d.n; k++) { radii[k] = s.radii[d.base[k]]; metal[k] = s.metal && s.metal[d.base[k]] ? 1 : 0; }
       return { cart: d.cart.slice(), radii, metal, tol: Number(S.setting("bondTolerance")) || s.bond_scale || 1.2,
-        metalMetal: S.setting("bondMetalMetal") === true };
+        metalMetal: G.metalMetalBonds(s, S.setting("bondMetalMetal")) };
     },
     /** Worker round trips (post -> result) for the bonds of the displayed atoms. */
     async bonds(reps = 5) {

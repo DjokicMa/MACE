@@ -50,6 +50,7 @@ _FORMAT_FLAG = {
 def _engine_main():
     """Import the cube engine lazily (plotly/numpy only needed at render time)."""
     try:
+        import plotly.graph_objects  # noqa: F401  (the engine imports without it; the drawing needs it)
         from ..engines import crystal_cubeviz_plotly as ccp
     except ImportError as e:
         # A bare ModuleNotFoundError traceback on plotly-less pythons (HPC

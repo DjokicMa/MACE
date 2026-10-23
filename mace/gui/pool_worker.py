@@ -218,6 +218,12 @@ def _out_meta(ctx: Ctx, **kw):
     return runinfo.meta_job(ctx=ctx, **kw)
 
 
+def _props_compute(ctx: Ctx, **kw):
+    """The Properties tab's values of a run not in a database (properties_routes.compute_job)."""
+    from . import properties_routes
+    return properties_routes.compute_job(ctx=ctx, **kw)
+
+
 def _out_track(ctx: Ctx, path: str = "", measurement=None, **_):
     """A measurement along every frame of a run (runinfo.track), frame by frame."""
     from pathlib import Path
@@ -244,7 +250,7 @@ def _burn(ctx: Ctx, seconds: float = 1.0, **_):
 
 
 JOBS: Dict[str, Callable] = {"sleep": _sleep, "probe": _probe, "freq.parse": _freq, "out.meta": _out_meta,
-                             "out.track": _out_track}
+                             "out.track": _out_track, "properties.compute": _props_compute}
 if os.environ.get("MACE_GUI_TEST_HOOKS") == "1":
     JOBS["test.burn"] = _burn
 # jobs that must never run twice: never resubmitted after a broken pool (all pure today)
@@ -265,6 +271,8 @@ def run(kind: str, payload: Dict[str, Any], slot: int):
             fn = _volume(kind.split(".", 1)[1])
         elif kind.startswith("orbitals.") and kind.split(".", 1)[1] in ("index", "grid", "save"):
             fn = _orbitals(kind.split(".", 1)[1])
+        elif kind == "calc.run":                       # the Calculators panel (mace calc)
+            from .calc_routes import run_job as fn
         else:
             raise ValueError(f"unknown pool job {kind!r}")
     _LAST.pop(slot, None)

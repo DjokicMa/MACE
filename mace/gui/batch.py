@@ -50,7 +50,8 @@ FOLLOWUPS = ("SP", "OPT", "FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENT
 D3_TYPES = ("BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "ORBITALS")
 BUCKET_TYPE = {"complete": "OPT", "completesp": "SP", "completefreq": "FREQ", "completeband": "BAND",
                "completedoss": "DOSS", "completetransport": "TRANSPORT", "completecharge_potential": "CHARGE+POTENTIAL",
-               "completeorbitals": "ORBITALS", "completeproperties": "PROPERTIES"}
+               "completeorbitals": "ORBITALS", "completeproperties": "PROPERTIES", "completeelastic": "ELASTIC",
+               "completeeos": "EOS", "completeqha": "QHA", "completecphf": "CPHF"}
 ERROR_BUCKETS = ("too_many_scf", "memory", "quota", "time", "geometry_small_dist", "shrink_error", "linear_basis",
                  "scratch", "opt_unconverged", "stopped", "potential", "orbitals_no_files", "cube_empty", "unknown",
                  "ongoing")
@@ -268,7 +269,8 @@ def scan(root: Path, folder: Path, filt: str, followup: Optional[str], recursive
             if not why:
                 for ct, stt in children.get(os.path.realpath(str(p)), []):
                     if (ct or "").upper().rstrip("0123456789") == calc and (stt or "").lower() != "failed":
-                        why = f"The database has a {calc} of this material ({stt})"
+                        from mace.workflow.spec import _a
+                        why = f"The database has {_a(calc)} of this material ({stt})"
                         break
             if not why:
                 w = nxt.get(p.stem)

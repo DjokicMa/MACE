@@ -5,6 +5,7 @@
  * tab ("MgO_2x2x2", a session up to 5000 atoms, view-only above) or the
  * change in place (one undo step "Supercell 2×2×2"). */
 import { openBuilder, fmtN, stemOf, EDIT_MAX } from "./builder_util.js";
+import * as VAC from "../viewport/vacuum.js";
 
 const R45 = [[1, -1, 0], [1, 1, 0], [0, 0, 1]], R30 = [[2, 1, 0], [-1, 1, 0], [0, 0, 1]];
 const det3 = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
@@ -24,15 +25,20 @@ function periodic(s) {
   return s && Array.isArray(s.pbc) ? [0, 1, 2].map((i) => !!s.pbc[i]) : [true, true, true];
 }
 
-/** The server's rule (builders.check_periodic): M leaves each non-periodic vector as it is. */
-function alongNonPeriodic(m, per) {
-  if (!per.some(Boolean)) return "A molecule has no periodic direction to repeat";
+/** The server's rule (builders.check_supercell): M leaves each non-periodic vector as it is, except a
+ * diagonal multiple there (1.1.6), which repeats the structure at the document's vacuum spacing; the Open
+ * vacuum repeats nothing. */
+function alongNonPeriodic(m, per, vac) {
   const along = [0, 1, 2].filter((i) => per[i]).map((i) => "abc"[i]).join(" and ");
+  const free = VAC.repeats(vac);
   for (let i = 0; i < 3; i++) {
     if (per[i]) continue;
-    if (m[i][i] !== 1) return `This structure is periodic along ${along} only: n${i + 1} must be 1`;
-    if ([0, 1, 2].some((j) => j !== i && (m[i][j] || m[j][i]))) return `This structure is periodic along ${along} only: the matrix must leave ${"abc"[i]} as it is`;
+    if ([0, 1, 2].some((j) => j !== i && (m[i][j] || m[j][i])))
+      return `${along ? `This structure is periodic along ${along} only` : "A molecule has no periodic direction"}: the matrix must leave ${"abc"[i]} as it is (a whole number on the diagonal repeats it at the vacuum spacing)`;
+    if (m[i][i] !== 1 && !free) return `The Open vacuum repeats nothing along ${"abc"[i]}: n${i + 1} must be 1 (pick another Vacuum mode in Inspector › Display to repeat it)`;
+    if (m[i][i] < 1) return `n${i + 1} must be at least 1`;
   }
+  if (!per.some(Boolean) && [0, 1, 2].every((i) => m[i][i] === 1)) return "A molecule repeats only at a vacuum spacing: ask for more than 1 along x, y or z";
   return "";
 }
 
@@ -41,7 +47,7 @@ export function open(H, preset = null) {
   return openBuilder(H, {
     id: "supercell", title: "Supercell", route: "build/supercell", defaultResult: "new", primary: "Create",
     render(host, api) {
-      const s = api.structure(), hex = hexagonal(s), per = periodic(s);
+      const s = api.structure(), hex = hexagonal(s), per = periodic(s), vac = VAC.of(api.d, s);
       host.innerHTML = `<div class="bld-tabs" role="tablist" aria-label="Supercell kind">
           <button role="tab" data-tab="diag" aria-selected="true">Diagonal</button><button role="tab" data-tab="matrix" aria-selected="false">Matrix</button></div>
         <div data-pane="diag" class="bld-row"><span>n1 × n2 × n3</span><span class="bld-inline">
@@ -65,19 +71,25 @@ export function open(H, preset = null) {
         showTab(b.dataset.tab); presetName = null; api.changed();
       }));
       host.querySelector('[data-k="link"]').addEventListener("change", (e) => { linked = e.target.checked; });
-      // a slab or polymer repeats along its periodic directions only: n is 1 along the others
+      // a slab, polymer or molecule: 1 along a non-periodic direction unless asked for more there (1.1.6), which
+      // repeats it at the document's vacuum spacing (Inspector › Display › Vacuum); "Same in all three" leaves it
       host.querySelectorAll("[data-n]").forEach((inp) => {
-        if (per[Number(inp.dataset.n)]) return;
-        inp.value = "1"; inp.disabled = true; inp.title = `Not periodic along ${"abc"[Number(inp.dataset.n)]}`;
+        const k = Number(inp.dataset.n);
+        if (per[k]) return;
+        inp.value = "1"; inp.dataset.np = "1";
+        inp.disabled = !VAC.repeats(vac);
+        inp.title = VAC.repeats(vac) ? `Not periodic along ${"abc"[k]}: 1 keeps one copy; more repeats it at the ${VAC.text(vac)} vacuum spacing`
+          : `Not periodic along ${"abc"[k]}, and the Open vacuum repeats nothing (pick another Vacuum mode in Inspector › Display)`;
       });
+      if (!per.some(Boolean)) { linked = false; host.querySelector('[data-k="link"]').checked = false; }
       host.querySelectorAll("[data-n]").forEach((inp) => inp.addEventListener("input", () => {
         presetName = null;
-        if (linked) host.querySelectorAll("[data-n]").forEach((o) => { if (o !== inp && !o.disabled) o.value = inp.value; });
+        if (linked && !inp.dataset.np) host.querySelectorAll("[data-n]").forEach((o) => { if (o !== inp && !o.disabled && !o.dataset.np) o.value = inp.value; });
       }));
       host.querySelectorAll("[data-m]").forEach((inp) => inp.addEventListener("input", () => { presetName = null; }));
       host.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => {
         const p = b.dataset.preset;
-        if (p === "222") { showTab("diag"); host.querySelectorAll("[data-n]").forEach((o) => { o.value = o.disabled ? "1" : "2"; }); presetName = null; }
+        if (p === "222") { showTab("diag"); host.querySelectorAll("[data-n]").forEach((o) => { o.value = o.disabled || o.dataset.np ? "1" : "2"; }); presetName = null; }
         else { showTab("matrix"); setMatrix(host, p === "r45" ? R45 : R30); presetName = p; }
         api.changed();
       }));
@@ -115,17 +127,22 @@ export function open(H, preset = null) {
         else if (diag) { name = `${stem}_${m[0][0]}x${m[1][1]}x${m[2][2]}`; what = `${m[0][0]}×${m[1][1]}×${m[2][2]}`; }
         else { name = `${stem}_sc${det}`; what = `det ${det}`; }
       }
-      const bad = alongNonPeriodic(m, periodic(s));
+      const per = periodic(s), vac = VAC.of(d, s);
+      const bad = alongNonPeriodic(m, per, vac);
       if (bad) return { error: bad, name };
       const det = det3(m), n = det * (s ? s.numbers.length : 0);
       if (n > 250000) return { error: `This makes ${fmtN(n)} atoms; builds stop at 250,000`, name };
-      const C = mul(m, s.cell), L = C.map(len);
+      // along a non-periodic axis asked for more than 1: the copies' spacing vector (the document's vacuum mode)
+      const reps = [0, 1, 2].filter((k) => !per[k] && m[k][k] > 1), vv = reps.length ? VAC.vectors(d, s) : null;
+      const vacuum = vv ? [0, 1, 2].map((k) => (reps.includes(k) ? vv[k] : null)) : null;
+      const C = mul(m, s.cell).map((r, k) => (vacuum && vacuum[k] ? s.cell[k].map((x, j) => x + (m[k][k] - 1) * vacuum[k][j]) : r)), L = C.map(len);
       const warn = [];
+      if (vacuum) warn.push(`<p class="insp-hint">${reps.map((k) => "abc"[k]).join(", ")} repeated ${reps.map((k) => `${m[k][k]}×`).join(", ")} at the ${VAC.text(vac)} vacuum spacing (${reps.map((k) => `${len(vacuum[k]).toFixed(2)} Å`).join(", ")}); it stays non-periodic there</p>`);
       if (n > 500) warn.push(`<p class="warn">CRYSTAL cost grows about as N³ (${fmtN(n)} atoms)</p>`);
       if (n > EDIT_MAX) warn.push(`<p class="warn">Opens view-only (editing stops at ${fmtN(EDIT_MAX)} atoms)</p>`);
       const readout = `<p><b>${fmtN(n)}</b> atoms · a <b>${L[0].toFixed(3)}</b> b <b>${L[1].toFixed(3)}</b> c <b>${L[2].toFixed(3)}</b> Å</p>${warn.join("")}`;
-      return { params: { matrix: m, label: what }, n, name, readout, label: `Supercell ${what} of ${d.title}`,
-        inPlace: { op: "supercell", args: { matrix: m }, label: `Supercell ${what}` } };
+      return { params: { matrix: m, label: what, ...(vacuum ? { vacuum } : {}) }, n, name, readout, label: `Supercell ${what} of ${d.title}`,
+        inPlace: { op: "supercell", args: { matrix: m, ...(vacuum ? { vacuum } : {}) }, label: `Supercell ${what}` } };
     },
   });
 }

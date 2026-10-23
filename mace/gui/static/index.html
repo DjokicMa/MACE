@@ -7,6 +7,13 @@
 <link rel="icon" href="static/@V@/brand/icon.svg" type="image/svg+xml">
 <link rel="icon" href="static/@V@/brand/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="static/@V@/brand/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="icon" href="static/@V@/brand/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="static/@V@/brand/apple-touch-icon.png">
+<link rel="manifest" href="static/@V@/manifest.webmanifest" crossorigin="use-credentials">
+<meta name="application-name" content="MACE">
+<meta name="apple-mobile-web-app-title" content="MACE">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16191f" media="(prefers-color-scheme: dark)">
 <script src="static/@V@/js/boot.js"></script>
 <link rel="stylesheet" href="static/@V@/css/tokens.css">
 <link rel="stylesheet" href="static/@V@/app.css">
@@ -72,7 +79,15 @@
               <label class="tog"><input type="checkbox" id="opt-bonds" checked><span>Bonds</span></label>
               <label class="tog"><input type="checkbox" id="opt-labels"><span>Labels</span></label>
               <label class="tog"><input type="checkbox" id="opt-super"><span>2×2×2</span></label>
-              <label class="tog" title="Pad the non-periodic direction of a slab, rod or molecule with 4 Å of vacuum on each side"><input type="checkbox" id="opt-vacuum"><span>Vacuum</span></label>
+              <span class="vac-ctl" id="opt-vacuum" title="How a slab, polymer or molecule is drawn along its non-periodic directions, and how far apart a display range or a supercell repeats it there"><span>Vacuum</span>
+                <select id="opt-vacuum-mode" aria-label="Vacuum along non-periodic directions">
+                  <option value="bbox">Bounding box</option>
+                  <option value="open">Open (infinite)</option>
+                  <option value="cell">File-defined</option>
+                  <option value="crystal">CRYSTAL 500 Å</option>
+                  <option value="gap">Custom</option>
+                </select>
+                <input type="number" id="opt-vacuum-gap" min="0" max="1000" step="0.5" value="10" aria-label="Custom vacuum (Å)" hidden><span class="muted small" id="opt-vacuum-unit" hidden>Å</span></span>
             </span>
             <span class="tb-group">
               <select id="opt-style" aria-label="Atom style">
@@ -362,6 +377,7 @@ O 0.5 0.5 0.5</textarea>
     <section class="panel" id="tab-results" aria-label="Plot">
       <div class="plot-host" id="plot-host"></div>
       <div class="plot-host" id="runplot-host" hidden></div>
+      <div class="plot-host" id="mech-host" hidden></div>
       <div class="plot-opts" id="plot-opts"></div>
     </section>
 

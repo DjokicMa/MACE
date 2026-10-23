@@ -55,6 +55,26 @@ mpl.rcParams.update(
     }
 )
 
+def _labels():
+    """mace/utils/plot_labels.py (the plot labels shared with mace gui and the plotly figures)."""
+    try:
+        from mace.utils import plot_labels
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.utils import plot_labels
+    return plot_labels
+
+
+def _fermi_level():
+    """mace/utils/fermi_level.py (the Fermi level every reader of band energies takes)."""
+    try:
+        from mace.utils import fermi_level
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.utils import fermi_level
+    return fermi_level
+
+
 def _presets():
     """mace/plotting/presets.py (the plot styles shared with mace gui)."""
     try:
@@ -218,45 +238,52 @@ def parse_kpoint_path_and_segments(d3_file):
             next(f)
             path_line = next(f).strip()
             rows = [ln for ln in (next(f, "") for _ in range(60)) if ln.strip()]
-
-            parts = path_line.split(" - ")
-            if len(parts) > 0:
-                kpoint_sequence = parts[-1].strip()
-
-                segments_raw = kpoint_sequence.split("|")
-                raw = [[s.strip() for s in segment.split("-") if s.strip()] for segment in segments_raw]
-                raw = [labels for labels in raw if labels]
-                gamma = _bare_g_is_gamma(raw, rows)
-                segments_labels = []
-
-                for labels in raw:
-                    labels = [greekify_label("GAMMA" if gamma and l == "G" else l) for l in labels]
-                    segments_labels.append(labels)
-
-                all_labels = []
-                clean_labels = []
-
-                for i, seg_labels in enumerate(segments_labels):
-                    if i == 0:
-                        all_labels.extend(seg_labels)
-                        clean_labels.extend(seg_labels)
-                    else:
-                        if all_labels and all_labels[-1] == seg_labels[0]:
-                            # Continuous: previous segment ends where this one starts
-                            all_labels.extend(seg_labels[1:])
-                        elif all_labels:
-                            all_labels[-1] = f"{all_labels[-1]}|{seg_labels[0]}"
-                            all_labels.extend(seg_labels[1:])
-                        else:
-                            all_labels.extend(seg_labels)
-                        clean_labels.extend(seg_labels)
-
-                return all_labels, segments_labels, clean_labels
-            else:
-                return None, None, None
+            return kpoint_path_labels(path_line, rows)
 
     except Exception as e:
         print(f"Error reading k-point path from {d3_file}: {str(e)}")
+        return None, None, None
+
+
+def kpoint_path_labels(path_line, rows=()):
+    """(all labels, labels per segment, every label) of the path a deck's title names after its
+    last " - " (opt2d3's BAND title, and opt2d12's phonon band title), "|" between disconnected
+    segments: a tick shared by two segments that do not meet reads "A|B". ``rows``: the deck's
+    lines after the title (a bare G is Γ only where they put it at 0 0 0)."""
+    parts = path_line.split(" - ")
+    if len(parts) > 0:
+        kpoint_sequence = parts[-1].strip()
+
+        segments_raw = kpoint_sequence.split("|")
+        raw = [[s.strip() for s in segment.split("-") if s.strip()] for segment in segments_raw]
+        raw = [labels for labels in raw if labels]
+        gamma = _bare_g_is_gamma(raw, list(rows))
+        segments_labels = []
+
+        for labels in raw:
+            labels = [greekify_label("GAMMA" if gamma and l == "G" else l) for l in labels]
+            segments_labels.append(labels)
+
+        all_labels = []
+        clean_labels = []
+
+        for i, seg_labels in enumerate(segments_labels):
+            if i == 0:
+                all_labels.extend(seg_labels)
+                clean_labels.extend(seg_labels)
+            else:
+                if all_labels and all_labels[-1] == seg_labels[0]:
+                    # Continuous: previous segment ends where this one starts
+                    all_labels.extend(seg_labels[1:])
+                elif all_labels:
+                    all_labels[-1] = f"{all_labels[-1]}|{seg_labels[0]}"
+                    all_labels.extend(seg_labels[1:])
+                else:
+                    all_labels.extend(seg_labels)
+                clean_labels.extend(seg_labels)
+
+        return all_labels, segments_labels, clean_labels
+    else:
         return None, None, None
 
 
@@ -449,8 +476,12 @@ def _next_fields(fb, band_file, N, nspin):
 
 
 def read_band_data(band_file, potc_dat=None, potc_out=None):
-    """Read band structure data from CRYSTAL output files."""
+    """Read band structure data from CRYSTAL output files. The energies are E - E_F with the Fermi
+    level mace.utils.fermi_level gives (CRYSTAL's "no Fermi level" -1.0 replaced by the top of the
+    occupied bands, which the vacuum scale then uses as well)."""
     maxV = 0
+    fl = _fermi_level().band_fermi(band_file)
+    shift_ev = fl.shift_au * 27.2114
     if potc_dat and potc_out and os.path.exists(potc_dat) and os.path.exists(potc_out):
         z = []
         V = []
@@ -459,6 +490,8 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
             for line in f5:
                 if "FERMI ENERGY" in line:
                     EF = float(line.split()[-1])
+        if _fermi_level().is_placeholder(EF) and fl.known:
+            EF = fl.value_au
         with open(potc_dat) as f:
             for line in f:
                 if line.startswith("#") or line.startswith("@"):
@@ -525,7 +558,7 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
                     data = np.concatenate([data, _next_fields(fb, band_file, N, nspin)])
                 E[i] = float(data[0])
                 for j in range(0, M):
-                    BANDS[i, j] = (float(data[j + 1]) * 27.2114) + maxV
+                    BANDS[i, j] = (float(data[j + 1]) * 27.2114) + shift_ev + maxV
                 i = i + 1
             if alpha_beta_counter == 1:
                 data = line.split()
@@ -536,7 +569,7 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
                     data = np.concatenate([data, _next_fields(fb, band_file, N, nspin)])
                 Ebeta[ib] = float(data[0])
                 for j in range(0, M):
-                    BANDSbeta[ib, j] = (float(data[j + 1]) * 27.2114) + maxV
+                    BANDSbeta[ib, j] = (float(data[j + 1]) * 27.2114) + shift_ev + maxV
                 ib = ib + 1
             if alpha_beta_counter == 2:
                 break
@@ -594,16 +627,16 @@ def apply_fermi_shift(BANDS, BANDSbeta, shift):
 
 
 def energy_axis_label(vacuum, shift=0.0):
-    """The energy axis title: E - E_F, the vacuum scale, or either with a Fermi shift."""
-    if not shift:
-        return r"$E - E_{vac}$ (eV)" if vacuum else r"$E - E_F$ (eV)"
-    ref = r"E_{vac}" if vacuum else r"E_F"
-    return rf"$E - ({ref}{shift:+g})$ (eV)"
+    """The energy axis title, as the plotly figures' and the GUI's (plot_labels.energy_title) in
+    mathtext: E − E_F (eV), the vacuum scale, or either with a Fermi shift, E − (E_F + 0.50 eV) (eV)."""
+    L = _labels()
+    return L.mathtext(L.with_unit(L.energy_title("vacuum" if vacuum else "fermi", shift), "eV"))
 
 
 def fermi_legend_label(shift=0.0):
-    """The dotted Fermi line's legend entry: E_F, or E_F with the Fermi shift."""
-    return r"$E_F$" if not shift else rf"$E_F{shift:+g}$ eV"
+    """The dotted Fermi line's legend entry: E_F, or E_F + 0.50 eV with the Fermi shift (plot_labels.fermi_key)."""
+    L = _labels()
+    return L.mathtext(L.fermi_key(shift))
 
 
 def spin_state(BANDS, BANDSbeta, tol=SPIN_IDENTICAL_EV):
@@ -926,6 +959,7 @@ def plot_bands_with_gaps(
     style="default",
     spin_dash=None,
     band_color=None,
+    band_style=None,
 ):
     """Plot band structure with visual gaps at discontinuities and transparency support.
     ``fermi_shift``: the bands are already moved by it (apply_fermi_shift); it
@@ -957,12 +991,23 @@ def plot_bands_with_gaps(
         plot_alpha = 1.0
 
     spin, spin_diff = spin_state(BANDS, BANDSbeta)
+    overlay = False
     if spin == "identical":
         print(f"  Spin up and down agree within {spin_diff * 1000:.1f} meV (non-magnetic): one set drawn")
     if spin != "polarized":
-        # not spin-polarized: one set of bands in a neutral color (--band-color, the style's, else ink)
-        neutral = P.band_color(style, "band", "light", band_color, "#000000")
+        # not spin-polarized: one set of bands in the Band style's color, as the GUI draws it (plotly_bands.look_parts):
+        # single the pair's first color (or --band-color), overlay the first color with the second dashed on top,
+        # ink the style's neutral color; auto is overlay for a metal, else single
+        fermi_at = maxV - fermi_shift          # E_F on the plotted scale (apply_fermi_shift moved the bands by -shift)
+        bstyle = P.band_style(band_style, {"fermi": fermi_at, "up": [list(BANDS[:, j]) for j in range(BANDS.shape[1])]})
+        if bstyle == "ink":
+            neutral = P.band_color(style, "band", "light", None, "#000000")
+        elif bstyle == "single" and band_color and P._HEXCOLOR.match(band_color):
+            neutral = band_color.lower()
+        else:
+            neutral = spin_up_color
         plot_up_color = adjust_color_for_alpha(neutral, alpha) if alpha < 0.95 else neutral
+        overlay = bstyle == "overlay"
 
     if all_segments is None:
         all_segments = segments
@@ -1066,6 +1111,9 @@ def plot_bands_with_gaps(
             # one set when beta repeats alpha: dashed copies of degenerate
             # bands, out of phase, read as one solid line over spin up
             if spin != "polarized":
+                if overlay:             # Band style overlay: the same bands again, dashed, in the pair's second color
+                    ax.plot(shifted_E, seg_BANDS[:, j], linewidth=lw, linestyle="--" if down_dash in ("-", "solid") else down_dash,
+                            color=spin_down_color, alpha=plot_alpha, zorder=3)
                 continue
             ax.plot(
                 shifted_Ebeta,
@@ -1317,6 +1365,9 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
     E, BANDS, Ebeta, BANDSbeta, x_labels, maxV, kpoint_indices, n_panels = (
         read_band_data(band_file, file4, file5)
     )
+    _fl = _fermi_level().band_fermi(band_file)
+    if _fl.note:
+        print(f"  {os.path.basename(band_file)}: {_fl.note}")
     BANDS, BANDSbeta = apply_fermi_shift(BANDS, BANDSbeta, fermi_shift)
 
     print(f"  Data shape: {E.shape[0]} k-points, {BANDS.shape[1]} bands")
@@ -1344,7 +1395,7 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
                              use_gaps=not args.no_gaps, all_segments=segments, fixed_width=args.fixed_width,
                              fixed_height=args.fixed_height, kpoint_indices=None, alpha=args.alpha,
                              spin_up_color=args.spin_up_color, spin_down_color=args.spin_down_color,
-                             band_color=getattr(args, "band_color", None),
+                             band_color=getattr(args, "band_color", None), band_style=getattr(args, "band_style", None),
                              auto_width=args.auto_width, formats=args.formats, fermi_shift=fermi_shift,
                              style=getattr(args, "style", "default"), spin_dash=getattr(args, "spin_style", None))
         return
@@ -1401,6 +1452,7 @@ def ipBANDS(band_file, material, associated_files, args, output_dir):
         spin_up_color=args.spin_up_color,
         spin_down_color=args.spin_down_color,
         band_color=getattr(args, "band_color", None),
+        band_style=getattr(args, "band_style", None),
         auto_width=args.auto_width,
         formats=args.formats,
         fermi_shift=fermi_shift,
@@ -1444,6 +1496,8 @@ Examples:
     parser.add_argument("--fixed-width", type=float, default=DEFAULT_FIG_WIDTH)
     parser.add_argument("--fixed-height", type=float, default=DEFAULT_FIG_HEIGHT)
     parser.add_argument("--dpi", type=int, default=600, help="PNG resolution (default: 600)")
+    parser.add_argument("--band-style", choices=list(_presets().BAND_STYLES), default=None,
+                        help="A run that is not spin-polarized: single, overlay, ink or auto (the GUI's Band style)")
     parser.add_argument("--band-color", default=None, metavar="HEX",
                         help="The bands of a run that is not spin-polarized (default: the style's, else black)")
     parser.add_argument(

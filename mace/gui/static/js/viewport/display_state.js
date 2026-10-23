@@ -13,13 +13,22 @@ import { LIGHTING, STYLES, LIGHTING_KEYS, STYLE_KEYS } from "./presets.js";
 
 /* range: Range & boundary; render: the lighting (its preset is renderPreset, the
  * name it had when it was the only preset, so saved documents keep theirs); style:
- * how atoms are drawn and colored (stylePreset). */
+ * how atoms are drawn and colored (stylePreset); vacuum (1.1.6): a slab's, polymer's
+ * or molecule's vacuum mode and custom gap (viewport/vacuum.js). */
+/* bonds (1.1.6): the bond rule (geom/core.js bondRule), set per document by Build › Calculate Bonds… (Recalculate). */
+/* rotate (1.1.6): the Rotate tool's pivot (viewport/gizmo_rotate.js; "atom:N" a picked atom of this document). */
+/* POLY_KEYS (1.1.6): the polyhedra's centers, face opacity, edges and center atom, in the Style group (its Reset
+ * and Save as Default) but set by no style preset, so changing one never makes the style Custom. */
+export const POLY_KEYS = ["polyCenters", "polyOpacity", "polyEdges", "polyCenterAtom"];
 export const GROUPS = {
   range: ["displayLo", "displayHi", "showBoundary", "bondedOutside"],
   render: ["renderPreset", ...LIGHTING_KEYS],
-  style: ["stylePreset", ...STYLE_KEYS],
+  style: ["stylePreset", ...STYLE_KEYS, ...POLY_KEYS],
+  vacuum: ["viewport.vacuumMode", "viewport.vacuumGap"],
+  rotate: ["viewport.rotatePivot"],
+  bonds: ["bondTolerance", "bondMin", "bondMetalMetal", "bondPairs"],
 };
-export const KEYS = new Set([...GROUPS.range, ...GROUPS.render, ...GROUPS.style]);
+export const KEYS = new Set([...GROUPS.range, ...GROUPS.render, ...GROUPS.style, ...GROUPS.vacuum, ...GROUPS.rotate, ...GROUPS.bonds]);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /* The presets of each dropdown ({id: values}, viewport/presets.js): Default lighting is
@@ -37,11 +46,20 @@ export function defaults() {
 export function of(doc) {
   const d = defaults();
   if (!doc) return d;
-  const o = docprefs.get("display", doc);
+  // a copy: reading never changes what is stored (it marked a saved document Custom)
+  const o = { ...docprefs.get("display", doc) };
   // saved before the Style dropdown (1.1.7): a document's own atom size, bond radius or
   // polyhedra and no style preset is a Custom style, not Default
   if (!("stylePreset" in o) && STYLE_KEYS.some((k) => k in o)) o.stylePreset = "custom";
   return { ...d, ...o };
+}
+/** One effective value, as of(doc)[k] (the 3D view reads a dozen of them at every paint: no copies). */
+export function value(doc, k) {
+  if (!doc) return settings.get(k);
+  const o = docprefs.get("display", doc);
+  if (k in o) return o[k];
+  if (k === "stylePreset" && STYLE_KEYS.some((x) => x in o)) return "custom";
+  return settings.get(k);
 }
 export function overrides(doc) { return doc ? docprefs.get("display", doc) : {}; }
 export const isOverride = (doc, k) => !!doc && k in docprefs.get("display", doc);
@@ -68,7 +86,8 @@ export function reset(doc, groupOrKeys) {
 /** Write the document's values of a group into Settings (the defaults); its overrides then go. */
 export function saveAsDefault(doc, group) {
   const v = of(doc);
-  const keys = GROUPS[group] || [];
+  // a document's own centers are its elements: the default stays "auto"
+  const keys = (GROUPS[group] || []).filter((k) => k !== "polyCenters");
   for (const k of keys) settings.set(k, v[k]);
   reset(doc, keys);
 }
@@ -85,12 +104,14 @@ export function drawRange(doc) {
   const whole = [0, 1, 2].every((k) => r.lo[k] === 0 && Number.isInteger(r.hi[k]) && r.hi[k] >= 1);
   return whole ? r.hi.slice() : r;
 }
-/** The cell box drawn around a range: whole cells from round(lo) to round(hi), at least one. */
-export function boxOf(range) {
-  if (Array.isArray(range)) return { lo: [0, 0, 0], hi: range.slice() };
+/** The cell box drawn around a range: whole cells from round(lo) to round(hi), at least one. With `vacuum`
+ * ({mode, gap, file}, 1.1.6) the non-periodic axes follow the vacuum mode (geom/core.js boxCorners). */
+export function boxOf(range, vacuum = null) {
+  const v = vacuum ? { vacuum } : {};
+  if (Array.isArray(range)) return { lo: [0, 0, 0], hi: range.slice(), ...v };
   const lo = range.lo.map((x) => Math.round(x));
   const hi = range.hi.map((x, k) => Math.max(lo[k] + 1, Math.round(x)));
-  return { lo, hi };
+  return { lo, hi, ...v };
 }
 /** The toolbar's label: 2×2×2, or −0.1–1.1 (one axis' bounds when all agree). */
 export function rangeLabel(doc) {

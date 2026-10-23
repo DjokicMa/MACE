@@ -2,7 +2,8 @@
 Chromium at 100 % and 110 % zoom: on a PbTe CIF, a chain OPT -> SP, SOC is
 switched on for the SP step (its form previews the CLI's SOC deck), the OPT
 step shows the group disabled with the CLI's reason, and Review's projected
-SP deck is a two-component deck (TWOCOMPON, INPSOC).
+SP deck is a two-component deck (TWOCOMPON). The first step's external TZVP-REV2 has the official
+pob-TZVP-rev2-SOC set for Pb and Te, so switching SOC on picks that route (STUTSC records).
 
 MACE_WF_SHOTS=<dir> saves screenshots at 110 % there."""
 import os
@@ -110,10 +111,11 @@ def test_soc_on_the_sp_step_of_a_workflow(app):
               guessDesc: (document.getElementById(g.getAttribute('aria-describedby')) || {}).innerText || '',
               badge: f.querySelector("[data-row='soc-on'] .su-badge").innerText,
               errors: f.querySelectorAll("[data-part='soc-error']").length}""")
-    assert sp["on"] and sp["route"] == "inpsoc" and not sp["routeOff"], sp
+    # the parent's TZVP-REV2 shells have the official SOC set for Pb and Te: that route is picked
+    assert sp["on"] and sp["route"] == "basis" and not sp["routeOff"], sp
     assert sp["restarts"] == [True, True] and "from scratch" in sp["guessDesc"], sp
     assert sp["badge"] == "set here" and sp["errors"] == 0, sp
-    assert _st(drv, "JSON.stringify(window.__maceWfBuilder.draft().steps.SP_2.soc)") == '{"soc":true}'
+    assert _st(drv, "JSON.stringify(window.__maceWfBuilder.draft().steps.SP_2.soc)") == '{"soc":true,"soc_basis":"pob-tzvp-rev2-soc"}'
     # a SMEAR width: the CLI writes SMEAR
     el = H.wait(drv, "return document.querySelector(\"[data-soc='smear']\")")
     el.clear()
@@ -130,7 +132,7 @@ def test_soc_on_the_sp_step_of_a_workflow(app):
     p = _st(drv, "s.preview")
     assert not p.get("code"), (p.get("refused"), (p.get("cli_log") or "")[-2000:])
     proj = {x["step"]: x for x in p["projected"]}
-    assert "TWOCOMPON" in proj["SP_2"]["deck_text"] and "INPSOC" in proj["SP_2"]["deck_text"]
+    assert "TWOCOMPON" in proj["SP_2"]["deck_text"] and "STUTSC" in proj["SP_2"]["deck_text"]
     assert '"soc": true' in p["spec"]["text"] and '"smear": 0.005' in p["spec"]["text"]
     text = drv.execute_script("return document.querySelector('.wfb-sec').innerText")
     assert "SP (step 2)" in text and "projected" in text

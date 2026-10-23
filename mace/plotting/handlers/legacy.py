@@ -112,6 +112,8 @@ def _style_argv(config: Dict[str, Any], dos: bool) -> List[str]:
     out = []
     if config.get('band_color'):
         out += ['--band-color', config['band_color']]
+    if config.get('band_style') and config['band_style'] != 'auto':
+        out += ['--band-style', config['band_style']]
     if config.get('style', 'default') != 'default':
         out += ['--style', config['style']]
     if config.get('spin_style', 'dash') != 'dash':
@@ -143,6 +145,43 @@ def _backend(config: Dict[str, Any]) -> str:
     return choose_backend(config.get('backend'))
 
 
+def _staged_f25(kind: str, files: List[str], config: Dict[str, Any], output_dir, run) -> List[str]:
+    """The matplotlib plotters read BAND.DAT/DOSS.DAT files: each fort.25 (``*.f25``) among ``files`` is
+    converted (mace/plotting/f25.py) into a scratch folder beside copies of the run's small files and
+    drawn from there, the figure written beside the f25 (or into -o) as for the DAT. Returns the figures
+    of the f25 files; the other files go on to ``run`` as before."""
+    import tempfile
+    from .. import f25
+    made: List[str] = []
+    for f in files:
+        src = Path(f).resolve()
+        print(f"\n  Plotting: {src.name}")
+        try:
+            info = f25.describe(src, config.get('f25_domain') or 'auto')
+            run_no = int(config['f25_run']) - 1 if config.get('f25_run') else -1
+            if info.get('kind') not in ('BAND', 'DOSS') or (kind != 'any' and f25.plot_kind(src, kind) is None):
+                raise ValueError(f"{src.name} holds {info.get('kind') or 'no BAND or DOSS'} data, not "
+                                 f"{'band structure' if kind == 'band' else 'DOS'} data")
+            if info.get('n_runs', 1) > 1:
+                print(f"    {info['n_runs']} runs in this fort.25 (CRYSTAL appends): drawing the last")
+            if info.get('domain') == 'phonon':      # (this is the matplotlib path: the plotly one reads the f25 itself)
+                raise ValueError("phonon bands and DOS (frequencies) are drawn by the plotly backend: "
+                                 "pip install plotly kaleido, or --backend plotly")
+            with tempfile.TemporaryDirectory(prefix="mace-f25-") as tmp:
+                dat, _ = f25.materialize(src, tmp, 'BAND' if kind == 'band' else 'DOSS',
+                                         config.get('f25_domain') or 'auto', run=run_no)
+                made += run([str(dat)], config, str(_out_dir(src, output_dir)))
+        except Exception as e:
+            print(f"    Error: {e}")
+            outcome.failed(src.name, str(e))
+    return made
+
+
+def _split_f25(files: List[str]):
+    from .. import f25
+    return [f for f in files if not f25.is_f25_name(f)], [f for f in files if f25.is_f25_name(f)]
+
+
 def plot_bands(files: List[str], config: Dict[str, Any], output_dir: str = None) -> List[str]:
     """Plot band structures for the given files: into ``output_dir`` (mace plotting -o) when
     given, else beside each data file. Drawn by plotly as mace gui draws them (bandos_cli),
@@ -150,6 +189,10 @@ def plot_bands(files: List[str], config: Dict[str, Any], output_dir: str = None)
     if _backend(config) == 'plotly':
         from ..bandos_cli import plot
         return plot('band', files, config, output_dir)
+    plain, staged = _split_f25(files)
+    if staged:
+        made = _staged_f25('band', staged, config, output_dir, plot_bands)
+        return made + (plot_bands(plain, config, output_dir) if plain else [])
     from ..bandos_cli import formats_of, spin_pair
     config = {**config, 'formats': formats_of(config, 'matplotlib')}
     pair = spin_pair(config)
@@ -273,6 +316,10 @@ def _style_config(args) -> Dict[str, Any]:
         v = getattr(args, k, None)
         if v is not None:
             out[k] = v
+    # the plotly figure's labels and reference line (--no-fermi-line, --no-k-labels, --no-spin-labels)
+    for flag, key in (('no_fermi_line', 'fermi_line'), ('no_k_labels', 'k_labels'), ('no_spin_labels', 'spin_labels')):
+        if getattr(args, flag, False):
+            out[key] = False
     for k in ('spin_up_color', 'spin_down_color'):
         if getattr(args, k, None):
             out[k] = getattr(args, k)
@@ -308,7 +355,9 @@ def _size_argv(config: Dict[str, Any], band: bool) -> List[str]:
 
 def _reference_config(args) -> Dict[str, Any]:
     return {'fermi_shift': float(getattr(args, 'fermi_shift', 0.0) or 0.0),
-            'energy_reference': getattr(args, 'energy_reference', None) or 'auto'}
+            'energy_reference': getattr(args, 'energy_reference', None) or 'auto',
+            'f25_domain': getattr(args, 'f25_domain', None) or 'auto',
+            'f25_run': getattr(args, 'f25_run', None)}
 
 
 def _band_config_from_args(args) -> Dict[str, Any]:
@@ -400,6 +449,17 @@ def configure_dos_plot(interactive: bool = True) -> Dict[str, Any]:
     return config
 
 
+def _reach_note(dos_file) -> None:
+    """Print why a band-index DOS (a 1D material's default) stops too low above E_F (mace.utils.doss_reach)."""
+    try:
+        from mace.utils import doss_reach
+        note = doss_reach.cached_note(Path(dos_file))
+    except Exception:
+        note = None
+    if note:
+        print(f"    Note: {Path(dos_file).name}: {note}")
+
+
 def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = None) -> List[str]:
     """Plot DOS for the given files: into ``output_dir`` (mace plotting -o) when given, else
     beside each data file."""
@@ -410,7 +470,20 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = None) -
     # caller's dict.
     if _backend(config) == 'plotly':
         from ..bandos_cli import plot
+        for f in files:
+            _reach_note(f)
         return plot('dos', files, config, output_dir)
+    if config.get('log_dos'):
+        # the matplotlib DOS figure has no log axis: refused, never silently dropped
+        why = "the matplotlib DOS figure cannot draw --log-dos; use --backend plotly (needs plotly and kaleido)"
+        print(f"\n  Error: {why}")
+        for f in files:
+            outcome.failed(Path(f).name, why)
+        return []
+    plain, staged = _split_f25(files)
+    if staged:
+        made = _staged_f25('dos', staged, config, output_dir, plot_dos)
+        return made + (plot_dos(plain, config, output_dir) if plain else [])
     from ..bandos_cli import formats_of, spin_pair
     if config.get('projection_type') in (None, 'auto'):
         # no --projection: the projections and colors of the GUI (--dos-colors, auto by default)
@@ -443,6 +516,7 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = None) -
         print(f"\n  Plotting: {dos_path.name}")
         if _no_potc(dos_path, config):
             continue
+        _reach_note(dos_path)
 
         argv_backup = sys.argv
         try:
@@ -510,6 +584,7 @@ def _dos_config_from_args(args) -> Dict[str, Any]:
         'composition': not args.no_composition,
         'vb_range': 0.5,
         'cb_range': 0.5,
+        'log_dos': bool(getattr(args, 'log_dos', False)),
         **_reference_config(args),
         **_style_config(args),
         **_size_config(args),
@@ -539,10 +614,19 @@ def configure_band_dos_plot(interactive: bool = True) -> Dict[str, Any]:
 def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = None) -> List[str]:
     """One band + DOS figure per run ({material}.BAND_DOS.fmt): each file (a BAND or a DOSS
     file) with its partner of the same run. plotly draws mace gui's figure; with matplotlib
-    (--backend matplotlib, or no plotly/kaleido) the gallery's band + DOS pane."""
+    (--backend matplotlib, or no plotly/kaleido) the gallery's band + DOS pane. A phonon
+    dispersion and its phonon DOS ({material}.PHONON_BAND_DOS.fmt, --phonon-band-dos) are
+    plotly's only, as the phonon band and DOS plots."""
     from .. import bandos_cli
     if _backend(config) == 'plotly':
         return bandos_cli.plot('bandos', files, config, output_dir)
+    if config.get('phonon'):
+        why = ("phonon bands and DOS (frequencies) are drawn by the plotly backend: "
+               "pip install plotly kaleido, or --backend plotly")
+        print(f"\n  Error: {why}")
+        for f in files:
+            outcome.failed(Path(f).name, why)
+        return []
     from .. import gallery
     made, seen = [], set()
     # the matplotlib band + DOS figure is the gallery's pane: it always draws the
@@ -555,6 +639,8 @@ def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = No
         cannot.append(f"--dos-spin {config['spin_dos']} (or [plots] dos_spin)")
     if config.get('units') not in (None, 'eV'):
         cannot.append(f"--units {config['units']} (or [units] energy)")
+    if config.get('log_dos'):
+        cannot.append('--log-dos')
     if cannot:
         why = ("the matplotlib band + DOS figure cannot draw " + ", ".join(cannot)
                + "; use --backend plotly (needs plotly and kaleido), or leave them out"
@@ -565,8 +651,15 @@ def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = No
         return made
     fmts = [f for f in bandos_cli.formats_of(config, 'matplotlib')]
     for f in files:
-        band_file, dos_file = bandos_cli.pair_of(Path(f).resolve())
+        band_file, dos_file = bandos_cli.pair_of(Path(f).resolve(), config.get('partner'))
         print(f"\n  Plotting: {Path(f).name}")
+        dos_shift = 0.0
+        if config.get('partner') and band_file is not None and dos_file is not None:
+            check = bandos_cli.check_pair(band_file, dos_file)
+            if check is None:
+                outcome.failed(Path(f).name, "not the same system as --partner")
+                continue
+            dos_shift = check["dos_shift"]
         if band_file is None or dos_file is None:
             print("    No partner of the same run beside it (a band + DOS figure needs both): skipped")
             outcome.failed(Path(f).name, "no band or DOS partner of the same run")
@@ -579,6 +672,8 @@ def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = No
             import inspect
             smooth = {'dos_smooth': config.get('dos_smooth') or 0.0} \
                 if 'dos_smooth' in inspect.signature(gallery.pane).parameters else {}
+            if config.get('partner'):
+                smooth = {**smooth, 'partner': dos_file, 'dos_shift': dos_shift}
             pane = gallery.pane(band_file, 'bandos', (config['e_lower'], config['e_upper']), config.get('fermi_shift', 0.0),
                                 config.get('energy_reference') or 'auto', config.get('dos_colors') or 'auto', **smooth)
             if pane.get('error'):
@@ -593,7 +688,8 @@ def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = No
                                                  'spin_up_color': config.get('spin_up_color'),
                                                  'spin_down_color': config.get('spin_down_color'),
                                                  'spin_down_style': config.get('spin_style'),
-                                                 'band_color': config.get('band_color')})
+                                                 'band_color': config.get('band_color'),
+                                                 'band_style': config.get('band_style')})
                 made.append(str(target))
                 print(f"    Generated: {target.name}")
         except Exception as e:
@@ -603,7 +699,12 @@ def plot_band_dos(files: List[str], config: Dict[str, Any], output_dir: str = No
 
 
 def _band_dos_config_from_args(args) -> Dict[str, Any]:
-    return {**_band_config_from_args(args), 'dos_colors': getattr(args, 'dos_colors', None)}
+    return {**_band_config_from_args(args), 'dos_colors': getattr(args, 'dos_colors', None),
+            'log_dos': bool(getattr(args, 'log_dos', False)),
+            # --phonon-band-dos: a phonon dispersion with its phonon DOS ({material}.PHONON_BAND_DOS.fmt)
+            'phonon': bool(getattr(args, 'phonon_band_dos', False)),
+            # --partner: the other half from another folder (absolute: the plotter may run elsewhere)
+            'partner': str(Path(args.partner).resolve()) if getattr(args, 'partner', None) else None}
 
 
 # =============================================================================
@@ -716,6 +817,8 @@ def _structure_config_from_args(args) -> Dict[str, Any]:
 
 def register_legacy_plotters() -> None:
     """Register band / DOS / structure into the registry (idempotent)."""
+    from .. import f25
+    from ..bandos_cli import has_partner
     register(PlotterEntry(
         kind=PlotKind.BAND,
         flag='band',
@@ -724,6 +827,7 @@ def register_legacy_plotters() -> None:
         configure=configure_band_plot,
         config_from_args=_band_config_from_args,
         patterns=['*.band.band.dat', '*.BAND.DAT', '*_band.dat'],
+        f25='band',
         accepts_energy_range=True,
         progress_tmpl="\n  Plotting {n} band structure(s)...",
         not_found_msg="  No band structure files found.",
@@ -738,13 +842,13 @@ def register_legacy_plotters() -> None:
         configure=configure_dos_plot,
         config_from_args=_dos_config_from_args,
         patterns=['*_doss.DOSS.DAT', '*.DOSS.DAT', '*_doss.dat'],
+        f25='dos',
         accepts_energy_range=True,
         progress_tmpl="\n  Plotting {n} DOS file(s)...",
         not_found_msg="  No DOS files found.",
         menu_tmpl="Plot DOS ({n} files)",
         discovery_label="DOS",
     ))
-    from ..bandos_cli import has_partner
     register(PlotterEntry(
         kind=PlotKind.BANDDOS,
         flag='band_dos',
@@ -755,6 +859,7 @@ def register_legacy_plotters() -> None:
         # a band file with the DOS of the same run beside it (the pair is one figure)
         patterns=['*.band.band.dat', '*.BAND.DAT', '*_band.dat'],
         sniff=has_partner,
+        f25='bandos',
         accepts_energy_range=True,
         progress_tmpl="\n  Plotting {n} band structure + DOS figure(s)...",
         not_found_msg="  No band structure with its DOS beside it found.",

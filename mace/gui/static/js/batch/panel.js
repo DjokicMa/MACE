@@ -113,7 +113,7 @@ export function createBatch(host, h) {
   function fieldCtl(f, cur, attr) {
     const id = `bat-f-${f.id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
     if (f.kind === "menu") {
-      const opts = (f.options || []).map((o) => `<option value="${esc(o.head)}"${String(o.head) === String(cur) ? " selected" : ""}>${esc(o.head)}</option>`).join("");
+      const opts = (f.options || []).map((o) => `<option value="${esc(o.head)}"${String(o.head) === String(cur) ? " selected" : ""}>${esc(SM.optionLabel(o))}</option>`).join("");
       return `<label for="${id}">${esc(f.label)}<select class="field" id="${id}" ${attr}="${esc(f.id)}">${cur && !(f.options || []).some((o) => o.head === cur) ? `<option selected>${esc(cur)}</option>` : ""}${opts}</select></label>`;
     }
     if (f.kind === "yesno") {

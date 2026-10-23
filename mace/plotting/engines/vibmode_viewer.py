@@ -10,6 +10,16 @@ Usage:
     python vibmode_viewer.py <filename.out> --mode 27
     python vibmode_viewer.py <filename.out> --list
     python vibmode_viewer.py <filename.out> --mode 27 --normalize
+    python vibmode_viewer.py <filename.out> --mode 27 --supercell 2 2 1
+
+Amplitude (1.1.6): CRYSTAL prints the modes as NORMAL MODES NORMALIZED TO
+CLASSICAL AMPLITUDES (IN BOHR), each atom at the classical turning point of
+the vibrational ground state, x = sqrt(hbar / (omega mu)) (CRYSTAL23 manual,
+SCANMODE). They are converted to Angstrom here, so --amplitude 1 draws the
+true zero-point amplitude and larger values exaggerate it; --normalize scales
+the largest atom to 1 Angstrom instead. Before 1.1.6 the bohr numbers were
+added to Angstrom coordinates (1.89x the physical amplitude) and a periodic
+structure's fractional coordinates were drawn as if they were Angstrom.
 """
 
 import os
@@ -17,7 +27,10 @@ import sys
 import re
 import argparse
 import numpy as np
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ImportError:  # optional: Crystal23FreqParser needs only numpy; drawing the modes needs plotly
+    go = None
 from io import BytesIO
 
 # Toned-down VESTA-inspired colors (less saturated)
@@ -126,6 +139,9 @@ ATOMIC_NUM_TO_ELEMENT = {
 }
 
 BOND_THRESHOLD = 1.3
+from mace.constants import BOHR_TO_ANGSTROM as BOHR_TO_ANG  # noqa: E402
+# a phonon dispersion: modes away from Gamma, whose periodic images move with phases (no supercell then)
+_OFF_GAMMA = re.compile(r"PHONON DISPERSION|DISPERSION K POINT|PHONON BANDS")
 
 # Signed int/float with optional E-notation. Shared by the modes-table and
 # eigenvector-block parsers so imaginary (negative cm-1) and scientific-notation
@@ -341,6 +357,74 @@ class Crystal23FreqParser:
         coords = coords - coords.mean(axis=0)
         return coords
 
+    # ---- 1.1.6: the geometry in Cartesian Angstrom (layered on the parse above) ----
+    def _geometry_frame(self):
+        """(fractional axes, lattice) of the coordinates parsed above: which of X, Y, Z
+        the block prints as fractions of the cell (3D: all; SLAB: X and Y; POLYMER: X),
+        and the DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM) printed with it."""
+        if getattr(self, "_frame", None) is not None:
+            return self._frame
+        with open(self.filename, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.read().split('\n')
+        frac, lattice, off_gamma = [], None, False
+        start = next((i for i, ln in enumerate(lines) if 'COORDINATES OF THE EQUIVALENT ATOMS' in ln), None)
+        if start is not None:
+            head = (lines[start] + ' ' + (lines[start + 1] if start + 1 < len(lines) else '')).upper()
+            if '(FRACTIONAL UNITS)' in head:
+                frac = [0, 1, 2]
+            elif 'X AND Y IN FRACTIONARY' in head:
+                frac = [0, 1]
+            elif 'X IN FRACTIONARY' in head:
+                frac = [0]
+            # the vectors print with the geometry, before or (CRYSTAL23) after this block: the nearest before, else the first after
+            order = list(range(start, -1, -1)) + list(range(start + 1, len(lines)))
+            for i in order:
+                if 'DIRECT LATTICE VECTORS CARTESIAN COMPONENTS' in lines[i]:
+                    rows = []
+                    for ln in lines[i + 1:i + 6]:
+                        try:
+                            vals = [float(x) for x in ln.split()]
+                        except ValueError:
+                            continue
+                        if len(vals) == 3:
+                            rows.append(vals)
+                        if len(rows) == 3:
+                            break
+                    if len(rows) == 3:
+                        lattice = np.array(rows, float)
+                    break
+        off_gamma = any(_OFF_GAMMA.search(ln) for ln in lines)
+        if frac and lattice is None:
+            frac = []        # no cell to place them with: drawn as printed, as before 1.1.6
+        self._frame = (frac, lattice, off_gamma)
+        return self._frame
+
+    def get_lattice(self):
+        """The direct lattice vectors (rows, Angstrom), or None (a molecule)."""
+        return self._geometry_frame()[1]
+
+    def periodic_axes(self):
+        """The lattice directions the structure repeats along (fractional in the output)."""
+        return list(self._geometry_frame()[0])
+
+    def is_off_gamma(self):
+        return bool(self._geometry_frame()[2])
+
+    def get_cartesian_coordinates(self):
+        """Every parsed atom in Cartesian Angstrom (CRYSTAL's frame, the frame of the modes),
+        not centered: fractional axes times their lattice vectors, the others as printed."""
+        raw = np.array([[a[1], a[2], a[3]] for a in self.atoms], float).reshape(-1, 3)
+        frac, lattice, _ = self._geometry_frame()
+        if not frac:
+            return raw
+        out = np.zeros_like(raw)
+        for k in range(3):
+            if k in frac:
+                out += np.outer(raw[:, k], lattice[k])
+            else:
+                out[:, k] += raw[:, k]
+        return out
+
     def get_elements(self):
         return [a[0] for a in self.atoms]
 
@@ -369,12 +453,19 @@ class Crystal23FreqParser:
 
 
 class VibModeAnimator:
-    """Fast 3D animator for vibrational modes using optimized Scatter3d."""
+    """Fast 3D animator for vibrational modes using optimized Scatter3d.
 
-    def __init__(self, parser):
+    supercell (1.1.6): cells drawn along a, b, c (periodic directions only; a mode
+    at Gamma moves every image as its atom). Displacements are in Angstrom."""
+
+    def __init__(self, parser, supercell=(1, 1, 1)):
         self.parser = parser
-        self.coords = parser.get_coordinates()
-        self.elements = parser.get_elements()
+        base = parser.get_cartesian_coordinates()
+        self.n_base = len(base)
+        self.images = self._image_shifts(parser, supercell)
+        cart = np.vstack([base + t for t in self.images]) if self.n_base else base
+        self.coords = cart - cart.mean(axis=0) if len(cart) else cart
+        self.elements = parser.get_elements() * len(self.images)
         self.n_atoms = len(self.elements)
         self.bonds = self._calculate_bonds()
         self.amplitude = 1.0
@@ -382,6 +473,22 @@ class VibModeAnimator:
         self.normalize = False
         self.show_arrows = True  # Show displacement arrows by default
         self.arrow_scale = 15.0  # Arrow length multiplier (displacements are in Bohr, need larger scale)
+
+    @staticmethod
+    def _image_shifts(parser, supercell):
+        """The lattice translations (Angstrom) of the drawn cells, the home cell first."""
+        n = [max(1, int(x)) for x in (supercell or (1, 1, 1))][:3] + [1] * (3 - len(supercell or ()))
+        if n == [1, 1, 1]:
+            return [np.zeros(3)]
+        per, lattice = parser.periodic_axes(), parser.get_lattice()
+        if lattice is None or not per:
+            raise ValueError("a supercell needs a periodic structure (this output prints no lattice)")
+        if parser.is_off_gamma():
+            raise ValueError("a supercell needs modes at Gamma: this output's modes are away from Gamma "
+                             "(their periodic images move with phases it does not print)")
+        n = [n[k] if k in per else 1 for k in range(3)]
+        return [a * lattice[0] + b * lattice[1] + c * lattice[2]
+                for a in range(n[0]) for b in range(n[1]) for c in range(n[2])]
 
     def _calculate_bonds(self):
         bonds = []
@@ -612,16 +719,18 @@ class VibModeAnimator:
         d = self.parser.get_displacement(mode_idx)
         if d is None:
             return None
-        if len(d) != self.n_atoms:
+        if len(d) != self.n_base:
             msg = (f"mode {mode_idx}: displacement has {len(d)} atoms but the "
-                   f"parsed structure has {self.n_atoms}; refusing to render "
+                   f"parsed structure has {self.n_base}; refusing to render "
                    f"misaligned vibration vectors (eigenvectors likely span a "
                    f"larger cell than the parsed coordinates).")
             if strict:
                 raise ValueError(msg)
             print(f"  Skipping {msg}")
             return None
-        return d
+        # bohr (as CRYSTAL prints them) to Angstrom, then the same at every image (Gamma)
+        d = np.asarray(d, float) * BOHR_TO_ANG
+        return np.tile(d, (len(self.images), 1)) if len(self.images) > 1 else d
 
     def create_static_view(self, mode_idx):
         """Create a static 3D view with displacement arrows."""
@@ -655,7 +764,7 @@ class VibModeAnimator:
 
         fig.update_layout(
             title=dict(
-                text=f"<b>Mode {mode_idx}: {freq:.1f} cm⁻¹</b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km/mol) | {raman_str}</span>",
+                text=f"<b>Mode {mode_idx}: {freq:.1f} cm<sup>−1</sup></b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km mol<sup>−1</sup>) | {raman_str}</span>",
                 x=0.5,
                 font=dict(size=15, color='#333')
             ),
@@ -727,7 +836,7 @@ class VibModeAnimator:
 
         fig.update_layout(
             title=dict(
-                text=f"<b>Mode {mode_idx}: {freq:.1f} cm⁻¹</b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km/mol) | {raman_str}</span>",
+                text=f"<b>Mode {mode_idx}: {freq:.1f} cm<sup>−1</sup></b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km mol<sup>−1</sup>) | {raman_str}</span>",
                 x=0.5,
                 font=dict(size=15, color='#333')
             ),
@@ -776,7 +885,7 @@ class VibModeAnimator:
             print("Error: Pillow is required for GIF export. Install with: pip install Pillow")
             return
 
-        displacement = self.parser.get_displacement(mode_idx)
+        displacement = self._validated_displacement(mode_idx)
         mode_info = self.parser.get_mode_info(mode_idx)
 
         if displacement is None:
@@ -816,7 +925,7 @@ class VibModeAnimator:
 
             fig.update_layout(
                 title=dict(
-                    text=f"<b>Mode {mode_idx}: {freq:.1f} cm⁻¹</b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km/mol) | {raman_str}</span>",
+                    text=f"<b>Mode {mode_idx}: {freq:.1f} cm<sup>−1</sup></b>{norm_str}<br><span style='font-size:12px;color:#666'>{ir_str} ({intens:.1f} km mol<sup>−1</sup>) | {raman_str}</span>",
                     x=0.5,
                     font=dict(size=15, color='#333')
                 ),
@@ -1731,7 +1840,7 @@ body {
             var irStr = mode.ir_active ? 'Yes (' + mode.ir_intens.toFixed(1) + ' km/mol)' : 'No';
             var ramanStr = mode.raman_active ? 'Yes' : 'No';
             info.innerHTML = '<b>Mode ' + mode.mode + '</b><br>' +
-                '<b>' + mode.freq.toFixed(1) + ' cm⁻¹</b><br>' +
+                '<b>' + mode.freq.toFixed(1) + ' cm<sup>−1</sup></b><br>' +
                 'IR: ' + irStr + '<br>' +
                 'Raman: ' + ramanStr;
         }
@@ -1744,8 +1853,8 @@ body {
             var irStr = mode.ir_active ? 'IR Active' : 'IR Inactive';
             var ramanStr = mode.raman_active ? 'Raman Active' : 'Raman Inactive';
             var normStr = isNormalized ? ' (Normalized)' : '';
-            var title = '<b>Mode ' + mode.mode + ': ' + mode.freq.toFixed(1) + ' cm⁻¹</b>' + normStr +
-                '<br><span style="font-size:12px;color:#666">' + irStr + ' (' + mode.ir_intens.toFixed(1) + ' km/mol) | ' + ramanStr + '</span>';
+            var title = '<b>Mode ' + mode.mode + ': ' + mode.freq.toFixed(1) + ' cm<sup>−1</sup></b>' + normStr +
+                '<br><span style="font-size:12px;color:#666">' + irStr + ' (' + mode.ir_intens.toFixed(1) + ' km mol<sup>−1</sup>) | ' + ramanStr + '</span>';
             Plotly.relayout(plotDiv, {'title.text': title});
         }
     }
@@ -2128,7 +2237,7 @@ body {
                 line: {color: 'steelblue', width: 1.5},
                 fill: 'tozeroy',
                 fillcolor: 'rgba(70, 130, 180, 0.15)',
-                hovertemplate: '%{x:.1f} cm⁻¹<extra>IR</extra>'
+                hovertemplate: '%{x:.1f} cm<sup>−1</sup><extra>IR</extra>'
             });
             // Add markers for peaks (clickable)
             traces.push({
@@ -2140,7 +2249,7 @@ body {
                 marker: {color: 'steelblue', size: 7, symbol: 'circle'},
                 text: irModes.map(function(m) { return 'Mode ' + m; }),
                 customdata: irModes,
-                hovertemplate: '%{text}<br>%{x:.1f} cm⁻¹<br>%{y:.1f} km/mol<extra></extra>'
+                hovertemplate: '%{text}<br>%{x:.1f} cm<sup>−1</sup><br>%{y:.1f} km mol<sup>−1</sup><extra></extra>'
             });
         }
 
@@ -2156,7 +2265,7 @@ body {
                 line: {color: 'darkorange', width: 1.5},
                 fill: 'tozeroy',
                 fillcolor: 'rgba(255, 140, 0, 0.15)',
-                hovertemplate: '%{x:.1f} cm⁻¹<extra>Raman</extra>'
+                hovertemplate: '%{x:.1f} cm<sup>−1</sup><extra>Raman</extra>'
             });
             traces.push({
                 x: ramanFreqs,
@@ -2167,7 +2276,7 @@ body {
                 marker: {color: 'darkorange', size: 7, symbol: 'diamond'},
                 text: ramanModes.map(function(m) { return 'Mode ' + m; }),
                 customdata: ramanModes,
-                hovertemplate: '%{text}<br>%{x:.1f} cm⁻¹<br>Raman<extra></extra>'
+                hovertemplate: '%{text}<br>%{x:.1f} cm<sup>−1</sup><br>Raman<extra></extra>'
             });
         }
 
@@ -2189,7 +2298,7 @@ body {
         var layout = {
             margin: {l: 60, r: 120, t: 30, b: 50},
             xaxis: {
-                title: {text: 'Wavenumber (cm⁻¹)', font: {size: 12}},
+                title: {text: 'Wavenumber (cm<sup>−1</sup>)', font: {size: 12}},
                 range: [maxFreq + 100, 0],  // Inverted x-axis (standard for spectroscopy)
                 gridcolor: 'rgba(0, 0, 0, 0.1)',
                 showgrid: true,
@@ -3202,7 +3311,7 @@ body {
                 type: 'scatter', mode: 'markers', name: 'IR peaks',
                 marker: {{color: 'steelblue', size: 6}},
                 customdata: irModes,
-                hovertemplate: 'Mode %{{customdata}}<br>%{{x:.1f}} cm⁻¹<br>%{{y:.1f}} km/mol<extra></extra>'
+                hovertemplate: 'Mode %{{customdata}}<br>%{{x:.1f}} cm<sup>−1</sup><br>%{{y:.1f}} km mol<sup>−1</sup><extra></extra>'
             }});
         }}
 
@@ -3220,7 +3329,7 @@ body {
                 type: 'scatter', mode: 'markers', name: 'Raman peaks',
                 marker: {{color: 'darkorange', size: 6, symbol: 'diamond'}},
                 customdata: ramanModes,
-                hovertemplate: 'Mode %{{customdata}}<br>%{{x:.1f}} cm⁻¹<extra></extra>'
+                hovertemplate: 'Mode %{{customdata}}<br>%{{x:.1f}} cm<sup>−1</sup><extra></extra>'
             }});
         }}
 
@@ -3243,7 +3352,7 @@ body {
         var layout = {{
             margin: {{l: 60, r: 120, t: 20, b: 40}},
             xaxis: {{
-                title: 'Wavenumber (cm⁻¹)',
+                title: 'Wavenumber (cm<sup>−1</sup>)',
                 range: [maxFreq + 100, 0],
                 gridcolor: 'rgba(0,0,0,0.1)',
                 dtick: 500
@@ -4278,7 +4387,7 @@ def create_comparison_html(animators, labels, output_path='comparison_viewer.htm
         var layout = {{
             margin: {{l: 60, r: 120, t: 20, b: 40}},
             xaxis: {{
-                title: 'Wavenumber (cm⁻¹)',
+                title: 'Wavenumber (cm<sup>−1</sup>)',
                 range: [maxFreq + 100, 0],
                 gridcolor: 'rgba(0,0,0,0.1)',
                 dtick: 500
@@ -4597,10 +4706,15 @@ def main():
     parser.add_argument('--gif-fps', type=int, default=20, help='GIF frames per second (default: 20)')
     parser.add_argument('--static', action='store_true', help='Static view with arrows')
     parser.add_argument('--output-dir', '-o', default='vibmode_html', help='Output directory')
-    parser.add_argument('--amplitude', '-a', type=float, default=1.0, help='Displacement amplitude (default: 1.0)')
+    parser.add_argument('--amplitude', '-a', type=float, default=1.0,
+                        help='Displacement amplitude: 1 = the zero-point classical amplitude CRYSTAL prints, '
+                             'larger exaggerates it (default: 1.0)')
     parser.add_argument('--speed', type=float, default=1.0, help='Animation speed (default: 1.0)')
     parser.add_argument('--frames', '-f', type=int, default=30, help='Animation frames (default: 30)')
-    parser.add_argument('--normalize', '-n', action='store_true', help='Normalize displacements for visibility')
+    parser.add_argument('--normalize', '-n', action='store_true',
+                        help='Scale every mode so its largest atom moves 1 Angstrom x --amplitude (not the physical amplitude)')
+    parser.add_argument('--supercell', type=int, nargs=3, default=[1, 1, 1], metavar=('N1', 'N2', 'N3'),
+                        help='Cells drawn along a, b, c (periodic directions; modes at Gamma only; default: 1 1 1)')
     parser.add_argument('--arrows', action='store_true', default=True, help='Show displacement arrows (default: True)')
     parser.add_argument('--no-arrows', dest='arrows', action='store_false', help='Hide displacement arrows')
     parser.add_argument('--arrow-scale', type=float, default=15.0, help='Arrow length scale (default: 15.0)')
@@ -4625,7 +4739,11 @@ def main():
             print(f"Parsing {f}...")
             freq_parser = Crystal23FreqParser(f)
             print(f"  Found {freq_parser.n_atoms} atoms and {len(freq_parser.modes)} modes")
-            animator = VibModeAnimator(freq_parser)
+            try:
+                animator = VibModeAnimator(freq_parser, supercell=args.supercell)
+            except ValueError as e:
+                print(f"Error: {f}: {e}")
+                sys.exit(1)
             animator.amplitude = args.amplitude
             animator.n_frames = args.frames
             animator.normalize = args.normalize
@@ -4660,7 +4778,13 @@ def main():
     freq_parser = Crystal23FreqParser(filename)
     print(f"Found {freq_parser.n_atoms} atoms and {len(freq_parser.modes)} modes")
 
-    animator = VibModeAnimator(freq_parser)
+    try:
+        animator = VibModeAnimator(freq_parser, supercell=args.supercell)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    if len(animator.images) > 1:
+        print(f"Supercell {'x'.join(map(str, args.supercell))}: {animator.n_atoms} atoms drawn")
     print(f"Detected {len(animator.bonds)} bonds")
 
     if args.list:
@@ -4674,7 +4798,10 @@ def main():
     animator.arrow_scale = args.arrow_scale
 
     if args.normalize:
-        print("Normalization enabled: displacements scaled for visibility")
+        print("Normalization enabled: displacements scaled for visibility (the largest atom moves 1 A x amplitude)")
+    else:
+        print(f"Amplitude x{args.amplitude:g} of the zero-point classical amplitude CRYSTAL prints"
+              f"{' (true size)' if args.amplitude == 1 else ' (exaggerated)' if args.amplitude > 1 else ''}")
     if args.arrows:
         print("Displacement arrows enabled")
 

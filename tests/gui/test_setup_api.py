@@ -76,8 +76,9 @@ def test_opt2d3_band_defaults(tmp_path):
     (src / "Si_sp.f9").write_text("placeholder\n")
     r = _run(tmp_path / "w", src / "Si_sp.out", "Si_sp.out", "opt2d3", "BAND")
     conf = json.loads(r["json_text"])["configuration"]
-    assert (conf["n_points"], conf["path_method"]) == (1000, "labels")
-    assert r["deck_name"] == "Si_band.d3" and "4 0 1000 1 100 1 0" in r["deck"]
+    # SeeK-path is the default k-path (format 4): k-point vectors, not labels
+    assert (conf["n_points"], conf["path_method"], conf["seekpath_full"]) == (1000, "coordinates", True)
+    assert r["deck_name"] == "Si_band.d3" and "6 8 1000 1 100 1 0" in r["deck"] and "SeeKPath" in r["deck"]
 
 
 def test_opt2d3_without_a_wavefunction_shows_the_clis_refusal(tmp_path):
@@ -299,7 +300,14 @@ def test_every_field_is_one_of_the_clis_questions(tmp_path, mode, calc, src):
     r = _run(tmp_path / "w", d / Path(src).name, Path(src).name, mode, calc, preview=False)
     ids = {f["id"] for f in r["form"]}
     want = {f.id for f in S.FIELDS if mode in f.modes and (not f.calcs or calc in f.calcs)}
-    optional = {"smear_width", "dispersion", "basis_keep", "symmetry", "spin"}       # asked only on some routes / parents
+    optional = {"smear_width", "dispersion", "basis_keep", "symmetry", "spin",       # asked only on some routes / parents
+                "spinlock", "levshift_values",                                # (SPIN on, level shifting on)
+                "doss_step", "doss_points",                                   # (DOSS Resolution Step, Points;
+                "doss_window", "doss_window_lo", "doss_window_hi",            #  the window: offered with E_F;
+                "doss_band_index", "doss_conduction_bands"}                   #  bands by index: a 1D material)
+    # worked out from another row: the method from the functional, the basis set's type (and keeping the parent's)
+    # from the basis set; the basis set is a follow-up's row too
+    optional |= {"method", "basis_type", "basis_keep", "basis_set"} if mode == "opt2d12" else {"method", "basis_type"}
     assert want - optional <= ids, sorted(want - ids)
     assert all(S.DERIVED_BY_CLI[f["id"]] in ("cli", "patch") for f in r["form"] if not f["id"].startswith("q:"))
     for f in r["form"]:

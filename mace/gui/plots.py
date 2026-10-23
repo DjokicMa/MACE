@@ -12,6 +12,7 @@ directory is under /tmp, often RAM.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import re
 import math
@@ -27,8 +28,12 @@ KINDS = {
     "dos": ("--dos", (".DOSS.DAT", "_doss.dat")),
     # the band structure and its run's DOS in one figure (what the GUI shows when it has both)
     "bandos": ("--band-dos", (".BAND.DAT", ".band.band.dat", "_band.dat", ".DOSS.DAT", "_doss.dat")),
+    # a phonon dispersion and its phonon DOS in one figure (a phonon run's fort.25 files; Add Phonon DOS…)
+    "phbandos": ("--phonon-band-dos", (".BAND.DAT", ".band.band.dat", "_band.dat", ".DOSS.DAT", "_doss.dat")),
     "ir": ("--ir", ("_IRSPEC.DAT", ".IRSPEC.DAT", "IRSPEC.DAT")),
     "raman": ("--raman", ("_RAMSPEC.DAT", ".RAMSPEC.DAT", "RAMSPEC.DAT")),
+    # a BOLTZTRA file of any kind; the run's other files beside it are copied along (transport_files)
+    "transport": ("--transport", ()),
 }
 FORMATS = ("svg", "png", "pdf")
 _SIBLING_SUFFIXES = (".d3", ".out", ".d12")
@@ -45,21 +50,30 @@ def kind_of(path: Path) -> Optional[str]:
         kind = None
     if kind is None:
         return None
-    return {"band": "band", "dos": "dos", "ir": "ir", "raman": "raman"}.get(kind.value)
+    return {"band": "band", "dos": "dos", "ir": "ir", "raman": "raman", "transport": "transport"}.get(kind.value)
 
 
 def _run_stem(name: str, kind: str) -> str:
+    from mace.plotting import f25
+    if kind == "transport":
+        from mace.utils import transport_plot
+        return transport_plot.split_name(Path(name))[0]
     for suffix in KINDS[kind][1]:
         if name.endswith(suffix):
             return name[: -len(suffix)]
+    if f25.is_f25_name(name):
+        return f25._stem(Path(name))                  # x_band.fort.25 -> x_band, not x_band.fort
     return Path(name).stem
 
 
 BAND_PATH_FILE = "band_path.json"
+PARTNER_DIR = "partner"           # a band + DOS pair's other half (from another folder) in the cache folder
 
 
 # the plots with an energy window (mace plotting --e-lower/--e-upper)
-ENERGY_KINDS = ("band", "dos", "bandos")
+ENERGY_KINDS = ("band", "dos", "bandos", "phbandos")
+# the band + DOS figures (a pair's other half from another folder: --partner)
+PAIR_KINDS = ("bandos", "phbandos")
 
 
 def energy_window(get, folder_window=None) -> Optional[Tuple[float, float]]:
@@ -103,7 +117,7 @@ def energy_reference(get) -> Tuple[float, str]:
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
-UNITS = ("eV", "meV", "Ha", "kJ/mol", "kcal/mol")
+UNITS = ("eV", "meV", "Ha", "kJ/mol", "kcal/mol", "cm-1", "THz")
 # the names the 1.1.6 preview's page sent (before presets.STYLE_OPTIONS)
 _OLD_NAMES = {"spin_style": "spin_down_style", "spin_up": "spin_up_color", "spin_down": "spin_down_color", "spin_dos": "dos_spin"}
 
@@ -149,6 +163,26 @@ def look_args(kind: str, get, explicit: bool = False) -> list:
         style = look.get("style", "default")
         return [f"--style={style}"] if explicit else presets.style_flags({"style": style})
     out = presets.style_flags(look, explicit=explicit)
+    # a fort.25: its domain (electronic or phonon) and which of its runs (--f25-domain, --f25-run)
+    dom, run = get("domain"), get("run")
+    if dom not in (None, "", "auto"):
+        if dom not in ("electronic", "phonon"):
+            raise ValueError("domain is one of auto, electronic, phonon")
+        out.append(f"--f25-domain={dom}")
+    if run not in (None, "", 0, "0", -1, "-1"):
+        try:
+            if int(run) < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("run is a whole number from 1")
+        out.append(f"--f25-run={int(run)}")
+    # the Reference and Labels menus' switches (on by default): --no-fermi-line, --no-k-labels, --no-spin-labels
+    for name in ("fermi_line", "k_labels", "spin_labels"):
+        if str(get(name)).lower() in ("0", "false"):
+            out.append("--no-" + name.replace("_", "-"))
+    # Log Y on a DOS plot, Log DOS on a band + DOS plot: the DOS axis only (band energies stay linear)
+    if kind in ("dos",) + PAIR_KINDS and str(get("log_dos")).lower() in ("1", "true"):
+        out.append("--log-dos")
     unit = get("unit")
     if explicit and unit in (None, ""):
         unit = "eV"
@@ -157,6 +191,69 @@ def look_args(kind: str, get, explicit: bool = False) -> list:
             raise ValueError("unit is one of " + ", ".join(UNITS))
         out.append(f"--units={unit}")
     return out
+
+
+def transport_args(get, kappa_path=None) -> Tuple[list, list]:
+    """(mace plotting flags, files to copy along) of a transport plot as the screen shows it:
+    ``quantity`` (--quantity), ``component``, ``temperature`` (a value or all), ``x`` (mu or carriers),
+    ``kappa_l`` (--kappa-lattice: a value, or a CSV ``kappa_path(text)`` finds inside the folder,
+    copied along and passed by its name) and ``tau_fs`` (--tau-fs). Each checked here."""
+    from mace.utils import transport_plot as T
+    from mace.utils import transport_zt as Z
+    out, files = [], []
+    q = get("quantity")
+    if q not in (None, ""):
+        out.append(f"--quantity={T.CLI_OF[T.quantity_key(q)]}")
+    c = get("component")
+    if c not in (None, ""):
+        if c not in T.COMPONENTS:
+            raise ValueError("component is one of " + ", ".join(T.COMPONENTS))
+        out.append(f"--component={c}")
+    t = get("temperature")
+    if t not in (None, ""):
+        if str(t).lower() != "all":
+            try:
+                if not math.isfinite(float(t)) or float(t) <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValueError("temperature is a number of K or all")
+            t = f"{float(t):g}"
+        out.append(f"--temperature={str(t).lower()}")
+    x = get("x")
+    if x not in (None, ""):
+        if x not in T.X_AXES:
+            raise ValueError("x is one of " + ", ".join(T.X_AXES))
+        out.append(f"--x-axis={x}")
+    kl = str(get("kappa_l") or "").strip()
+    if kl:
+        try:
+            Z.parse_kappa_lattice(float(kl))
+            out.append(f"--kappa-lattice={float(kl):g}")
+        except ValueError:
+            f = kappa_path(kl) if kappa_path else None
+            if f is None or not Path(f).is_file():
+                raise ValueError(f"kappa_l {kl!r} is neither a number nor a CSV file in the folder")
+            Z.parse_kappa_lattice(str(f))
+            out.append(f"--kappa-lattice={Path(f).name}")
+            files.append(Path(f))
+    tau = str(get("tau_fs") or "").strip()
+    if tau:
+        out.append(f"--tau-fs={Z.check_tau_fs(tau):g}")
+    return out, files
+
+
+def transport_files(path: Path, inside=None) -> list:
+    """The run's other transport files, .out and .d3 beside a BOLTZTRA file (mace plotting --transport
+    finds them beside the one it is given, as the GUI's plot)."""
+    from mace.utils import transport_plot as T
+    ok = inside or (lambda f: True)
+    stem = T.split_name(path)[0]
+    files = [f for f in T.run_files(path, ok).values() if f != path]
+    for suffix in (".out", ".d3"):
+        f = T.beside(path, stem, suffix, ok)
+        if f is not None:
+            files.append(f)
+    return [f for f in files if f.stat().st_size < 10 * _SIBLING_MAX]
 
 
 def _window_args(kind: str, ewin, shift: float = 0.0, reference: str = "auto", explicit: bool = False) -> list:
@@ -175,22 +272,26 @@ def _window_args(kind: str, ewin, shift: float = 0.0, reference: str = "auto", e
 
 def render_key(path: Path, kind: str, fmt: str = "", band_path: Optional[list] = None, ewin=None,
                shift: float = 0.0, reference: str = "auto", look: Optional[list] = None,
-               explicit: bool = False) -> str:
+               explicit: bool = False, extra_files=None, partner: Optional[Path] = None) -> str:
     st = path.stat()
     edit = json.dumps(band_path, sort_keys=True) if band_path else ""
-    win = " ".join(_window_args(kind, ewin, shift, reference, explicit) + list(look or []))
-    return hashlib.sha1(f"{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{kind}|{fmt}|{edit}|{win}".encode()).hexdigest()[:16]
+    win = " ".join(_window_args(kind, ewin, shift, reference, explicit) + list(look or [])
+                   + [f"{Path(f).name}:{Path(f).stat().st_mtime_ns}:{Path(f).stat().st_size}" for f in extra_files or []])
+    other = f"|{partner.resolve()}|{partner.stat().st_mtime_ns}" if partner is not None else ""
+    return hashlib.sha1(f"{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{kind}|{fmt}|{edit}|{win}{other}".encode()).hexdigest()[:16]
 
 
 def command(path: Path, kind: str, fmt: str = "", band_path: Optional[list] = None, ewin=None,
             shift: float = 0.0, reference: str = "auto", look: Optional[list] = None,
-            explicit: bool = False) -> str:
+            explicit: bool = False, partner: Optional[Path] = None) -> str:
     """The command a user runs in the data file's folder for the same figure;
     a band/DOS plot always names its window (the server's cache folder has no
     mace-folder.toml, so the window is passed, never looked up), and its
-    Fermi shift and energy reference when they are not the defaults."""
+    Fermi shift and energy reference when they are not the defaults; a band +
+    DOS pair from two folders its other half (--partner, relative to the folder)."""
     import shlex
-    return " ".join([f"mace plotting {KINDS[kind][0]} {shlex.quote(path.name)}"] + ([f"--format {fmt}"] if fmt else [])
+    other = [f"--partner {shlex.quote(os.path.relpath(partner, path.parent))}"] if partner is not None else []
+    return " ".join([f"mace plotting {KINDS[kind][0]} {shlex.quote(path.name)}"] + other + ([f"--format {fmt}"] if fmt else [])
                     + ([f"--band-path {BAND_PATH_FILE}"] if band_path else [])
                     + _window_args(kind, ewin, shift, reference, explicit) + list(look or []))
 
@@ -198,7 +299,7 @@ def command(path: Path, kind: str, fmt: str = "", band_path: Optional[list] = No
 def _potc_files(path: Path, kind: str) -> list:
     """The run's POTC files beside a band/DOS data file (both or none, as the
     GUI's readers take them): with them mace plotting draws the vacuum scale."""
-    if kind not in ENERGY_KINDS:
+    if kind not in ENERGY_KINDS or kind == "phbandos":       # (a phonon plot has no vacuum scale)
         return []
     stem = _run_stem(path.name, kind)
     tag = "_band" if (kind == "band" or (kind == "bandos" and path.name.endswith(KINDS["band"][1]))) else "_doss"
@@ -210,7 +311,7 @@ def _potc_files(path: Path, kind: str) -> list:
 def render(path: Path, kind: str, disk, ctx: Any = None, fmt: str = "", band_path: Optional[list] = None,
            ewin: Optional[Tuple[float, float]] = None, env: Optional[Dict[str, str]] = None,
            shift: float = 0.0, reference: str = "auto", look: Optional[list] = None,
-           explicit: bool = False, inside=None) -> Dict[str, Any]:
+           explicit: bool = False, inside=None, extra_files=None, partner: Optional[Path] = None) -> Dict[str, Any]:
     """Plot ``path`` with mace plotting into the disk cache; the image files it made.
     ``look``: the plot style flags (look_args), so the figure is drawn as the screen shows it.
     ``band_path``: the band plot's edited k-path (written as band_path.json and passed
@@ -219,17 +320,22 @@ def render(path: Path, kind: str, disk, ctx: Any = None, fmt: str = "", band_pat
     Fermi shift and energy zero (--fermi-shift/--energy-reference); ``env``: the
     child's environment (clirun.cli_env() by default); ``inside``: whether a file
     of the same run is inside the served folder (only those are copied along:
-    a partner or sibling that is a symlink out of it is never read)."""
+    a partner or sibling that is a symlink out of it is never read); ``extra_files``: files the
+    flags name (a transport plot's κ_L table), copied in by name. ``partner``: a band + DOS
+    pair's other half from another folder (Add DOS…, Add Band…: --partner)."""
     inside = inside or (lambda f: True)
     if kind not in KINDS:
         raise ValueError(f"cannot render {kind!r} plots")
     if fmt and fmt not in FORMATS:
         raise ValueError(f"format is one of {', '.join(FORMATS)}")
-    if band_path is not None and kind != "band":
+    # (a band + DOS figure draws its bands along the edited path too: mace plotting --band-dos --band-path)
+    if band_path is not None and kind not in ("band",) + PAIR_KINDS:
         band_path = None
     if kind not in ENERGY_KINDS:
         ewin, shift, reference = None, 0.0, "auto"
-    key = render_key(path, kind, fmt, band_path, ewin, shift, reference, look, explicit)
+    if partner is not None and (kind not in PAIR_KINDS or not inside(partner)):
+        raise ValueError(f"{partner.name}: a partner is the other half of a band + DOS figure, inside the folder")
+    key = render_key(path, kind, fmt, band_path, ewin, shift, reference, look, explicit, extra_files, partner)
     work = disk.acquire(key)
     ok = False
     try:
@@ -241,30 +347,54 @@ def render(path: Path, kind: str, disk, ctx: Any = None, fmt: str = "", band_pat
                 ctx.progress(0.1, "Copying the data files")
             shutil.copy2(path, work / path.name)
             # band + DOS: the partner of the same run too (mace plotting --band-dos finds it beside the file)
-            datas = [path]
-            if kind == "bandos":
+            datas = [(path, work)]
+            if kind in PAIR_KINDS and partner is not None:
+                # the other half from another folder, with its run's files, in a folder of its own
+                (work / PARTNER_DIR).mkdir()
+                shutil.copy2(partner, work / PARTNER_DIR / partner.name)
+                datas.append((partner, work / PARTNER_DIR))
+            elif kind in PAIR_KINDS:
                 from . import results
-                other = results.partner(path, "band" if path.name.endswith(KINDS["band"][1]) else "dos")
+                from mace.plotting import f25
+                is_band = path.name.endswith(KINDS["band"][1]) or (f25.is_f25_name(path.name) and f25.plot_kind(path) == "band")
+                other = results.partner(path, "band" if is_band else "dos")
                 if other is not None and not inside(other):
                     other = None
                 if other is None:
                     raise ValueError(f"{path.name}: no band structure and DOS of the same run beside each other")
                 shutil.copy2(other, work / other.name)
-                datas.append(other)
-            for data in datas:
+                datas.append((other, work))
+            # a transport file: the run's other files (its derived quantities need them), .out and .d3
+            if kind == "transport":
+                for sib in transport_files(path, inside):
+                    shutil.copy2(sib, work / sib.name)
+            for f in extra_files or []:
+                shutil.copy2(f, work / Path(f).name)
+            for data, dest in datas:
                 stem = _run_stem(data.name, kind)
                 for sib in data.parent.iterdir():
-                    if (sib.is_file() and sib.name.startswith(stem) and sib not in datas
+                    if (sib.is_file() and sib.name.startswith(stem) and sib not in [x for x, _ in datas]
                             and sib.suffix in _SIBLING_SUFFIXES and inside(sib)
                             and sib.stat().st_size < _SIBLING_MAX):
-                        shutil.copy2(sib, work / sib.name)
+                        shutil.copy2(sib, dest / sib.name)
+            if partner is not None:
+                # the partner's run output under the SCF run's name (its E_F and cell check the pair)
+                from . import results
+                is_band = partner.name.endswith(KINDS["band"][1]) or results._f25_is(partner, "band") and \
+                    not results._f25_is(partner, "dos")
+                out = results.run_output(partner, "band" if is_band else "dos")
+                if out is not None and inside(out) and not (work / PARTNER_DIR / out.name).exists() \
+                        and out.stat().st_size < _SIBLING_MAX:
+                    shutil.copy2(out, work / PARTNER_DIR / out.name)
             # a POTC run: the vacuum scale, as the GUI's plot draws it
             for sib in _potc_files(path, kind):
                 if inside(sib):
                     shutil.copy2(sib, work / sib.name)
             if ctx is not None:
-                ctx.progress(0.3, f"Running {command(path, kind, fmt, band_path, ewin, shift, reference, look, explicit)}")
+                ctx.progress(0.3, f"Running {command(path, kind, fmt, band_path, ewin, shift, reference, look, explicit, partner)}")
             args = ["--no-banner", "plotting", KINDS[kind][0], str(work / path.name)]
+            if partner is not None:
+                args += ["--partner", str(work / PARTNER_DIR / partner.name)]
             if fmt:
                 args += ["--format", fmt]
             if band_path:
@@ -280,7 +410,7 @@ def render(path: Path, kind: str, disk, ctx: Any = None, fmt: str = "", band_pat
         log = (work / "log.txt").read_text() if (work / "log.txt").exists() else ""
         ok = True
         return {"key": key, "images": images, "log": log.replace(str(work) + "/", "")[-4000:],
-                "command": command(path, kind, fmt, band_path, ewin, shift, reference, look, explicit)}
+                "command": command(path, kind, fmt, band_path, ewin, shift, reference, look, explicit, partner)}
     finally:
         # a canceled or failed render leaves nothing half-made behind
         disk.release(key, remove=not ok)

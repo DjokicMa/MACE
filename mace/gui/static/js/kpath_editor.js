@@ -104,10 +104,11 @@ export function render(host, opts) {
       <input data-kp-preset-name placeholder="name" aria-label="Preset name" spellcheck="false">
       <button type="button" data-kp-act="preset_save" data-tip="Save this path as a preset for any plot with the same points">Save as preset</button></div>`;
   }
-  if (opts.bz) h += '<div class="kp-bzslot"></div>';
+  // opts.bzSlot false: the zone view is drawn elsewhere (a band plot's Inspector › Brillouin zone) and follows the strip
+  if (opts.bz && opts.bzSlot !== false) h += '<div class="kp-bzslot"></div>';
   h += "</div>";
   host.innerHTML = h;
-  if (opts.bz) { opts.bz.attach(host.querySelector(".kp-bzslot")); opts.bz.update(segs); }
+  if (opts.bz) { const slot = host.querySelector(".kp-bzslot"); if (slot) opts.bz.attach(slot); opts.bz.update(segs); }
   if (refocus.has(opts.id)) {
     const t = (s && (s.kind === "seg" ? host.querySelector(`.kp-seg[data-i="${s.i}"]`) : host.querySelector(`.kp-gap[data-piece="${s.i}"]`)))
       || host.querySelector(".kp-seg");

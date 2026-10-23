@@ -94,12 +94,9 @@ def test_units_and_tsv_tables_in_the_module(app):
 def test_band_toolbar_every_control(app):
     drv, base, root, downloads = app
     open_band(drv)
-    # Log Y
-    drv.find_element("css selector", "#plot-host .pk-logy").click()
-    H.wait(drv, "return window.__mace.plotView.figure().layout.yaxis.type === 'log'", 10)
-    assert "|value| shown" in drv.execute_script("return document.querySelector('#plot-host .pv-chips').textContent")
-    drv.find_element("css selector", "#plot-host .pk-logy").click()
-    H.wait(drv, "return window.__mace.plotView.figure().layout.yaxis.type === 'linear'", 10)
+    # no Log Y: band energies are signed (1.1.6: Log Y is a DOS axis, tests/gui/test_log_dos_e2e.py)
+    assert not drv.find_elements("css selector", "#plot-host .pk-logy")
+    assert drv.execute_script("return window.__mace.plotView.figure().layout.yaxis.type") == "linear"
     ev = drv.execute_script("return window.__mace.plotView.figure().traces[0]")
     # Units: kJ/mol (title and values)
     drv.find_element("css selector", "#plot-host .pk-units").click()
@@ -207,9 +204,10 @@ def test_keyboard_and_names(app):
     open_band(drv)
     btns = drv.execute_script("return [...document.querySelectorAll('#plot-host .pv-acts > button, #plot-host .pv-acts .pk-wrap > button')].map((b) => b.textContent.trim())")
     assert all(btns) and len(btns) >= 4
-    drv.execute_script("document.querySelector('#plot-host .pk-logy').focus()")
-    # Log Y, Units, Style (1.1.6: the plot's own style), Export, Plot Options
-    for _ in range(4):
+    drv.execute_script("document.querySelector('#plot-host .pk-units').focus()")
+    # Units, Style, Traces, Reference, Labels (1.1.6: a band plot's categories; no Log Y on a band plot alone), Export,
+    # Axes & Ranges (Plot Options)
+    for _ in range(6):
         U.keys(drv, Keys.TAB)
     assert drv.execute_script("return document.activeElement.classList.contains('pk-more')")
     U.keys(drv, Keys.ENTER)

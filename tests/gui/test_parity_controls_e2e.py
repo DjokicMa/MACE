@@ -158,9 +158,10 @@ def test_volume_plane_and_save_result_as(fresh):
 def test_transport_quantity_switch(fresh):
     drv = fresh[0]
     open_path(drv, "run.SEEBECK.dat")
-    H.wait(drv, "const s = window.__mace.plotView.state(); return s && s.kind === 'transport' && s.drawn", 60)
-    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tq='run.SIGMA.dat']"))
-    H.wait(drv, "const d = window.__mace.doc(); const s = window.__mace.plotView.state(); return d.path === 'run.SIGMA.dat' && s.kind === 'transport' && s.drawn", 60)
+    H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.kind === 'transport' && s.drawn", 60)
+    # the run's σ in the same document (1.1.6: as a density volume colors by its run's potential)
+    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tquantity='SIGMA']"))
+    H.wait(drv, "const d = window.__mace.doc(); const s = window.__mace.plotView.state(); return d.path === 'run.SEEBECK.dat' && s.kind === 'transport' && s.drawn && s.transport.quantity === 'SIGMA'", 60)
     assert "conductivity" in drv.execute_script("return window.__mace.plotView.el().layout.yaxis.title.text")
     no_errors(drv)
 

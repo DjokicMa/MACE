@@ -10,6 +10,8 @@
  * the focus; Enter or Space shows the level); the k points, spins and views
  * are buttons and radio groups (arrow keys move within a group). */
 
+import * as MQ from "../viewport/mesh_quality.js";
+
 const QUALITY_OF_SETTING = { low: "preview", medium: "normal", high: "fine" };
 const PART_LABEL = { re: "Re ψ", im: "Im ψ", abs2: "|ψ|²" };
 const SPIN_TAB = { "ALPHA+BETA": "Closed shell", ALPHA: "α (alpha)", BETA: "β (beta)" };
@@ -35,7 +37,9 @@ export function createOrbitalPicker(el, H, onRequest) {
     let part = prev ? prev.part : "re";
     if (part === "im" && e && e.real) part = "re";
     if (!prev && e && !e.real) part = "abs2";
-    const quality = prev ? prev.quality : (QUALITY_OF_SETTING[H.setting("volume.quality") || "medium"] || "normal");
+    // 1.1.6: Settings › Viewport › Mesh quality other than Standard picks the first grid
+    const mq = H.setting(MQ.KEY), quality = prev ? prev.quality
+      : (mq && mq !== MQ.DEFAULT && MQ.ORBITAL[mq]) || QUALITY_OF_SETTING[H.setting("volume.quality") || "medium"] || "normal";
     return { k: ix.selected, spin: s.spin, mo: s.default_mo, part, sum: false,
       cells: prev ? prev.cells.slice() : (H.initialCells && H.initialCells(ix)) || (ix.default_cells || [1, 1, 1]).slice(), quality };
   }
@@ -52,9 +56,12 @@ export function createOrbitalPicker(el, H, onRequest) {
     if (!d || !d.orbitals.index) { el.innerHTML = ""; return; }
     const ix = d.orbitals.index, r = d.orbitals.request, sp = curSpin(), sel = levelOf(r.mo);
     const k = ix.k, check = k.status;
-    const checkText = { ok: "Self-check passed", warn: "Self-check: small orthonormality errors", fail: "Self-check failed",
-      unchecked: "Not checked" }[check] || check;
-    const worst = Object.values(k.check || {}).reduce((a, b) => Math.max(a, b), 0);
+    const failed = k.failed_spins || [];
+    const checkText = ({ ok: "Self-check passed", warn: "Self-check: small orthonormality errors", fail: "Self-check failed",
+      unchecked: "Not checked" }[check] || check) + (failed.length && check !== "fail"
+      ? ` (${failed.map((s) => SPIN_TAB[s] || s).join(", ")} failed: not drawn)` : "");
+    // over the spins drawn (a failed one is named in the text)
+    const worst = Object.entries(k.check || {}).filter(([s]) => !failed.includes(s)).reduce((a, [, b]) => Math.max(a, b), 0);
     const ks = ix.kpoints.length > 1 || !ix.molecule ? `<div class="orb-sec"><div class="po-h" id="orb-k-h">k points</div>
       <div class="orb-klist" role="group" aria-labelledby="orb-k-h">${ix.kpoints.map((e) => {
         const on = e.index === r.k, off = !e.usable;
@@ -92,7 +99,7 @@ export function createOrbitalPicker(el, H, onRequest) {
         <span class="orb-e mono">${fmtE(l.rel_ev)}</span><span class="orb-bar" aria-hidden="true"></span>
         <span class="orb-n">MO ${l.n}</span>${tags.map((t) => `<span class="orb-tag">${t}</span>`).join("")}
         ${deg && pos === " deg-top" ? `<span class="orb-deg" title="Degenerate set: MO ${Math.min(...g)}–${Math.max(...g)}">×${l.degenerate}</span>` : ""}
-        <span class="orb-occ" title="${esc(l.occ_text)}">${esc(l.occ_text)}</span></div>`;
+        <span class="orb-occ" title="${esc(l.occ_text)}">${esc(l.occ_short || l.occ_text)}</span></div>`;
     }).join("");
     const degSet = sel && sel.degenerate > 1 ? groupOf(sel) : null;
     const parts = ["re", "im", "abs2"].map((p) => {
@@ -108,6 +115,7 @@ export function createOrbitalPicker(el, H, onRequest) {
       <div class="orb-head"><div class="orb-sys"><b>${esc(ix.system)}</b> · ${esc(ix.root)} · ${k.nbf} basis functions</div>
         <span class="orb-check" data-check="${esc(check)}" title="Largest |CᴴSC − 1| over the occupied levels and the first two empty ones: ${worst.toExponential(1)}">${esc(checkText)}</span></div>
       ${ks}${spins}
+      ${k.beta_from_alpha && k.spin_note ? `<p class="orb-note small" role="note" data-k="spin-note">${esc(k.spin_note)}.</p>` : ""}
       <div class="orb-sec orb-show">
         <div class="po-row"><span id="orb-part-h">View</span><span class="segment orb-parts" role="radiogroup" aria-labelledby="orb-part-h">${parts}</span></div>
         <label class="chk po-row"><input type="checkbox" id="orb-sum"${r.sum ? " checked" : ""}${degSet ? "" : " disabled"}> Sum the set (|ψ|²${degSet ? `, MO ${degSet[0]}–${degSet[degSet.length - 1]}` : ""})</label>

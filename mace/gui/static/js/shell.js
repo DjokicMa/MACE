@@ -22,11 +22,16 @@ import { abbrev, chars, middle } from "./paths.js";
 import * as docprefs from "./docprefs.js";
 import * as profile from "./profile.js";
 import * as DS from "./viewport/display_state.js";
+import * as VAC from "./viewport/vacuum.js";
+import * as MQ from "./viewport/mesh_quality.js";
 import { rotationPrefs, dragOrientation, turnOrientation, turntableUp, nearestAxisView } from "./viewport/camera.js";
 import { PANE, createGroups } from "./groups.js";
 import { bindSplitter } from "./splitter.js";
 import { initSidebar } from "./sidebar.js";
 import { createPanelContext } from "./panelctx.js";
+import * as IT from "./inspector_tiers.js";
+import * as AP from "./activity_prefs.js";
+import * as SM from "./setup/model.js";
 
 const M = () => window.MACE;
 /* The viewport and the editor (js/editor, js/viewport, js/geom) load when the
@@ -52,9 +57,9 @@ function loadEditor() {
   return editorLoading;
 }
 const edOf = (d) => (E && d ? E.edOf(d) : null);
-const KIND_PANEL = { structure: "structure", trajectory: "opt", plot: "results", runplot: "results", db: "db", editor: "edit", text: "text", freq: "freq",
+const KIND_PANEL = { structure: "structure", trajectory: "opt", plot: "results", runplot: "results", mech: "results", db: "db", editor: "edit", text: "text", freq: "freq",
   cluster: "cluster", job: "job", volume: "volume", batch: "batch", gallery: "gallery", workflows: "workflows" };
-const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "band", dos: "dos", ir: "IR", raman: "Ram", db: "db", json: "json",
+const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "BAND", dos: "DOS", ir: "IR", raman: "Ram", db: "db", json: "json",
   image: "img", html: "html", freq: "FREQ", cube: "cube", orbitals: "orb", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34",
   f25: "f25", transport: "trn", crystaldata: "data", wavefunction: "wf", script: "sh", log: "log", joblog: "log", volume: "vol", props: "PROPS", convergence: "conv" };
 const docs = [];
@@ -73,8 +78,9 @@ function ctxHere() {
     tool, moveNudge: tool === "move" && !!ae && !!ae.closest && !!ae.closest(".viewer-wrap"), controlFocus: control,
     hasDoc: !!d, docCount: docs.length, docKind: d ? d.kind : "", docFileKind: d ? d.fileKind || "" : "",
     // a single-point output (one geometry, no optimization): no trajectory, cell or measurement along a run
-    docSinglePoint: !!(d && d.kind === "structure" && d.data && d.data.summary && !d.data.is_opt),
+    docSinglePoint: !!(d && d.fileKind === "out" && d.data && d.data.is_opt === false),   // editStep documents have no data.summary
     docEditable: !!eds && !eds.editBlock(),
+    doc3d: !!eds && !!eds.structure && !!eds.structure.pbc && eds.structure.pbc.every(Boolean),
     canUndo: !!eds && eds.canUndo && !eds.lost && !eds.previewing,
     canRedo: !!eds && eds.canRedo && !eds.lost && !eds.previewing,
     previewing: !!(eds && eds.previewing),
@@ -136,6 +142,8 @@ function run(id, args = null) {
 
 /* ================================================================ documents */
 function fileKind(path) { const f = M().fileByPath(path); return f ? f.kind : ""; }
+// the kinds that open as a structure (app.js openFile): the editor loads with them, so the first one opened is editable
+const EDITOR_KINDS = ["cif", "d12", "out", "xyz", "poscar", "mol", "pdb", "gen", "fort34"];
 
 /* What a file opens as (plan E1): by its kind, and for outputs and logs by what their content says. */
 const INFO_KINDS = ["wavefunction", "crystaldata", "f25"];
@@ -144,8 +152,10 @@ async function openDoc(path, opts = {}) {
   const existing = docs.find((d) => d.path === path && !(d.frame >= 0) &&      // not a step opened with Edit This Step
     (as !== "structure" || d.kind === "structure" || d.kind === "trajectory"));
   if (existing) return activate(existing);
-  const fk = fileKind(path);
+  let fk = fileKind(path);
   if (fk === "json" || fk === "d3" || fk === "script") return openAsText(path);       // settings files, d3 decks, job scripts
+  // a fort.25 of BAND or DOSS blocks plots like the BAND.DAT / DOSS.DAT of its run
+  if (fk === "f25") { const f25 = M().fileByPath(path); if (f25 && (f25.sub === "BAND" || f25.sub === "DOSS")) fk = f25.sub === "BAND" ? "band" : "dos"; }
   if (fk === "f25") {
     // a fort.25 that holds a 2D map (ECHG, POTM) opens as a contour plot (plan E6); BAND and DOSS ones say what they are
     let inf = null;
@@ -164,12 +174,14 @@ async function openDoc(path, opts = {}) {
     if (r && r.role === "crystal_out" && r.nogeom) return openNoGeometry(path);
     if (r && r.role === "crystal_out" && (r.kind === "freq" || r.freq) && settings.get("files.openFreqAs") !== "structure")
       return openModes(path);
+    // 1.1.6: an ELASTIC, EOS, QHA or CPHF run opens as its results, as a transport file opens as its plots
+    if (r && r.role === "crystal_out" && MECH_CALCS.includes(r.calc)) return openMech(path, r.calc);
   }
   saveView(active);
   performance.mark("open:start");
   const busy = setTimeout(() => setTask("Opening " + path.split("/").pop() + "…"), 300);
   try {
-    const [r] = await Promise.all([M().openFile(path), ["cif", "d12", "out"].includes(fk) ? loadEditor() : null]);
+    const [r] = await Promise.all([M().openFile(path), EDITOR_KINDS.includes(fk) ? loadEditor() : null]);
     const d = { id: nextId++, path, kind: r.kind, fileKind: fk, title: path.split("/").pop(), data: r.data || null };
     docs.push(d);
     if (d.kind === "structure" && E) E.attach(d, M().state.structure);
@@ -241,6 +253,12 @@ async function activate(d) {
     panelOwner[panel] = d.id;
     if (d.path) { M().state.active = d.path; M().renderFiles(); }
     showPlot(d);
+  } else if (d.kind === "mech") {
+    // before the file branch too: the results document reads its output itself (js/docs/mech.js)
+    M().showTab(panel);
+    panelOwner[panel] = d.id;
+    if (d.path) { M().state.active = d.path; M().renderFiles(); }
+    showMech(d);
   } else if (d.path && panelOwner[panel] !== d.id) {
     await M().openFile(d.path, d.data);       // cached payload: no request for structures
     panelOwner[panel] = d.id;
@@ -289,8 +307,8 @@ function afterSwitch() {
   // the bottom panel follows the document: atoms for a structure, the
   // timeline for a run, tasks for a plot, nothing for the database
   const k = active ? active.kind : null;
-  // (the Jobs tab is about the folder, not a document: it stays with no document open)
-  shell.classList.toggle("doc-no-bottom", (k === "db" || k === "workflows" || !k) && layout.bottomTab !== "jobs");
+  // (the Jobs tab is about the folder, not a document: it stays with no document open; so does Analysis, for its batches)
+  shell.classList.toggle("doc-no-bottom", (k === "db" || k === "workflows" || !k) && layout.bottomTab !== "jobs" && layout.bottomTab !== "analysis");
   const atomsPane = $(".bottom-pane.atoms");
   if (atomsPane) atomsPane.classList.toggle("no-structure", !(k === "structure" || k === "trajectory"));
   // a plot borrows Atoms and Coordination from its run (panelctx.js; a placeholder says when it has none): they stay
@@ -299,6 +317,8 @@ function afterSwitch() {
   if (k === "text" && ["atoms", "timeline", "measurements", "coordination"].includes(layout.bottomTab)) showBottom(active && active.deck ? "problems" : "tasks", false);
   if (k === "structure" && layout.bottomTab === "timeline") showBottom("atoms", false);
   if (k === "batch" && ["atoms", "timeline", "measurements", "coordination"].includes(layout.bottomTab)) showBottom("tasks", false);
+  // the Rotate tool acts on a structure document only (actions.js): elsewhere it goes back to Select
+  if (tool === "rotate" && k !== "structure") { tool = "select"; toolChip(); }
   if (k === "freq") showBottom("modes", false);
   else if (layout.bottomTab === "modes") showBottom(k === "structure" ? "atoms" : k === "trajectory" ? "timeline" : "tasks", false);
   requestAnimationFrame(revealBottomTab);
@@ -344,6 +364,7 @@ function closeDoc(d, force = false) {
   if (d.kind === "job") { if (jobView) jobView.close(d); M().api("cluster/job/close", { body: { id: d.jobId } }).catch(() => {}); }
   if (d.kind === "cluster" && clusterView) clusterView.close();
   if (d.kind === "workflows" && workflowView) workflowView.close();
+  if (d.kind === "mech" && mechView) mechView.close(d);                 // the results view lets go of a closed document
   Object.keys(panelOwner).forEach((k) => { if (panelOwner[k] === d.id) delete panelOwner[k]; });
   if (active === d) {
     active = null;
@@ -553,6 +574,7 @@ function applyLayout() {
   shell.classList.toggle("no-inspector", narrow() ? !drawerOpen : layout.inspector === false);
   shell.classList.toggle("drawer-open", narrow() && drawerOpen);
   shell.classList.toggle("no-bottom", layout.bottom === false);
+  shell.classList.toggle("no-activity", !AP.shown());
   shell.classList.toggle("zen", !!layout.zen);
   zenChip();
   renderPanelControls();
@@ -635,7 +657,7 @@ function renderPanelControls() {
   if (chip) { chip.hidden = !layout.focus || !!layout.zen; chip.querySelector("kbd").textContent = shortcutOf("view.hideAllPanels") || ""; }
 }
 function initPanelControls() {
-  if (PANE) return;
+  if (PANE) { paneBottomX(); return; }
   const btn = (n, cls, ico) => {
     const [label, cmd] = PANEL_INFO[n];
     return `<button class="${cls}" type="button" data-panel="${n}" data-panel-cmd="${cmd}" aria-controls="${n}" data-tip="${cls === "edge-tab" ? "Show" : "Hide"} ${label}" data-tip-cmd="${cmd}">${icon(ico)}</button>`;
@@ -673,6 +695,14 @@ function initPanelControls() {
     if (b) { e.stopPropagation(); run(b.dataset.panelCmd); }
   }, true);
   renderPanelControls();
+}
+/* 1.1.6: the right editor group's own bottom panel had no ×, so it could not be hidden from where it shows:
+ * this one runs View › Bottom Panel, which the window owns (groups.js forwards it), hiding both groups' panels */
+function paneBottomX() {
+  const b = $("#bottom");
+  if (!b || $(".pane-x", b)) return;
+  b.insertAdjacentHTML("afterbegin", `<button class="icon-btn sm panel-hide pane-x" type="button" data-tip="Hide Bottom Panel" data-tip-cmd="view.bottom" aria-label="Hide Bottom Panel">${icon("x")}</button>`);
+  $(".pane-x", b).addEventListener("click", (e) => { e.stopPropagation(); run("view.bottom"); });
 }
 /* Zen Mode hides the menu bar, toolbar, activity bar and status bar: the chip
  * (top right), Esc and the viewport menu lead out. The chip fades after 3 s
@@ -722,12 +752,22 @@ function renderActivity() {
     // the bottom panel's Jobs tab and the Workflows view, as View › Jobs and View › Workflows open them
     ["view.jobs", "clock", false, "Jobs"], ["view.workflows", "layers", active && active.kind === "workflows", "Workflows"]];
   if (clusterShown()) items.push(["view.cluster", "activity", active && (active.kind === "cluster" || active.kind === "job"), "Cluster"]);
-  const html = items.map(([id, ic, on]) =>
+  const html = AP.arrange(items).map(([id, ic, on]) =>
     `<button class="icon-btn" data-cmd="${id}" aria-pressed="${!!on}" aria-label="${esc(registry.get(id).title)}">${icon(ic)}</button>`).join("") +
     `<span style="flex:1"></span><button class="icon-btn" data-cmd="file.settings" aria-label="Settings">${icon("settings")}</button>`;
   // only when something changed: a button replaced between press and release loses the click (and its focus)
-  if (html !== activityHtml) { activityHtml = html; $("#activity").innerHTML = html; }
+  if (html !== activityHtml) { activityHtml = html; $("#activity").innerHTML = html; AP.decorate($("#activity")); }
 }
+/* 1.1.6 (js/activity_prefs.js): the activity bar's views, reordered by dragging or its context menu, hidden one by one or all */
+const ACTIVITY_IDS = ["view.explorer", "view.database", "file.quickOpen", "view.tasks", "view.jobs", "view.workflows", "view.cluster"];
+AP.enableDrag($("#activity"), () => ACTIVITY_IDS);
+$("#activity").addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const b = e.target.closest("[data-cmd]"), id = b && b.dataset.cmd !== "file.settings" ? b.dataset.cmd : null;
+  openAt([...(id ? ["view.activity.hideItem", "view.activity.moveUp", "view.activity.moveDown", "-"] : []),
+    { head: "Show in the Activity Bar" }, ...ACTIVITY_IDS.map((x) => `view.activity.show.${x}`), "-", "view.activity.reset", "view.activityBar"],
+  e.clientX, e.clientY, "Activity bar menu", { id });
+});
 /* Every container of [data-cmd] buttons outside the menus needs one delegated
  * click listener (Enter and Space on a focused button arrive as clicks too):
  * #toolbar (renderToolbar), #tab-welcome (welcome), and these two, whose
@@ -777,7 +817,7 @@ function renderToolbar() {
       openAt([{ head: "View along" }, ...MENUS[2].items[2].sub, "-", ...ROTATION_MENU], r.left, r.bottom + 2, "View along");
     } else if (e.target.closest("#tb-range")) {
       const r = $("#tb-range").getBoundingClientRect();
-      openAt(["view.range1", "view.range2", "view.range3", "view.rangeCustom"], r.left, r.bottom + 2, "Display range");
+      openAt(["view.range1", "view.range2", "view.range3", "view.rangeCells", "view.rangeCustom"], r.left, r.bottom + 2, "Display range");
     }
   });
 }
@@ -805,9 +845,12 @@ function renderToolbarState() {
     // the label is what is drawn: a SLAB's c is 1 unless the user asked for more (then the tooltip names the spacing)
     $("#tb-range-label").textContent = lab;
     const rep = np.filter((k) => Number(m[k]) > 1);
-    $("#tb-range").dataset.tip = rep.length ? `Display range (${rep.map((k) => "abc"[k]).join(", ")} repeated at the ${vacuumText()} vacuum spacing)`
+    const open = rep.length && !VAC.repeats(VAC.of(viewDoc()));
+    $("#tb-range").dataset.tip = open ? `Display range (the Open vacuum draws ${rep.map((k) => "abc"[k]).join(", ")} once: pick another Vacuum mode to repeat it)`
+      : rep.length ? `Display range (${rep.map((k) => "abc"[k]).join(", ")} repeated at the ${vacuumText()} vacuum spacing)`
       : np.length ? `Display range (${nonPeriodicText(np)})` : "Display range";
   }
+  VAC.sync();
   renderActivity();
 }
 
@@ -829,7 +872,9 @@ function viewDoc() {
   return docs.find((x) => x.id === panelOwner.structure) || active || null;
 }
 /** A Settings value as the 3D views use it: a per-document display key comes from the drawn document. */
-function viewSetting(k) { return DS.KEYS.has(k) ? DS.of(viewDoc())[k] : settings.get(k); }
+function viewSetting(k) { return DS.KEYS.has(k) ? DS.value(viewDoc(), k) : settings.get(k); }
+/** A document's bond rule values (geom/core.js bondRule; Build › Calculate Bonds…): Clean holds the bonds the viewer draws. */
+const bondValues = (d = viewDoc()) => Object.fromEntries(DS.GROUPS.bonds.map((k) => [k, DS.value(d, k)]));
 /* Display range: 1×1×1, 2×2×2, 3×3×3, n1×n2×n3, or fractional from/to (Inspector ›
  * Range & boundary). range() is n for a cube from 0, 0 for anything else; the
  * classic views' 2×2×2 checkbox mirrors "2". */
@@ -853,6 +898,15 @@ function setRange(n) {
   DS.setCells(d, cells);
   if (!Array.isArray(n) && n > 1 && np.length) toast(`${nonPeriodicText(np)}: the range repeats ${cells.join("×")} (a custom range repeats it at the vacuum spacing)`, "info");
 }
+/* 1.1.6: the drawn document's periodic directions (the cells picker leaves the others at 1) */
+function viewPbc() {
+  const d = viewDoc(), all = [true, true, true];
+  if (!d) return all;
+  if (d.kind === "volume") return (d.meta && d.meta.pbc) || all;
+  if (d.kind === "freq") return (d.structure && d.structure.pbc) || all;
+  const st = structureOf(d);
+  return st && st.pbc ? st.pbc.map(Boolean) : all;
+}
 /* The lattice directions (0, 1, 2) the drawn structure has no period along: c of a SLAB, b and c of a POLYMER. */
 function nonPeriodicAxes() {
   const d = viewDoc();
@@ -863,10 +917,7 @@ function nonPeriodicAxes() {
   // a molecule (no periodic direction) is drawn once along x, y and z
   return pbc ? [0, 1, 2].filter((k) => !pbc[k]) : s && s.pbc ? [0, 1, 2] : [];
 }
-function vacuumText() {
-  const mode = settings.get("viewport.vacuumMode") || "cell";
-  return mode === "gap" ? `${+settings.get("viewport.vacuumGap") || 10} Å gap` : mode === "crystal" ? "CRYSTAL (500 Å)" : "Cell";
-}
+function vacuumText() { return VAC.text(VAC.of(viewDoc())); }
 function nonPeriodicText(np) {
   const s = structureOf(viewDoc()), dim = (s && s.dimensionality) || (np.length === 1 ? "SLAB" : "POLYMER");
   const ax = np.map((k) => "abc"[k]);
@@ -878,6 +929,7 @@ function displayChanged(doc) {
   if (box && box.checked !== (range() === 2)) box.checked = range() === 2;
   syncBoundaryBox();
   syncStyleBox();
+  VAC.sync();
   if (doc && doc !== viewDoc()) return;
   redrawSoon();
   if (displayPanel) displayPanel.refresh();
@@ -901,13 +953,12 @@ function syncStyleBox() {
 }
 /** What the structure viewer draws: the classic views' checkboxes, Settings, and the document's display state. */
 function viewOpts() {
-  const d = viewDoc(), r = DS.drawRange(d);
+  const d = viewDoc(), r = DS.drawRange(d), vac = VAC.of(d, d ? structureOf(d) : null);   // the document's vacuum mode (1.1.6)
   // the document's Style can choose the drawing (Space-filling: no bonds; Wireframe: thin sticks)
   const draw = M().effDraw ? M().effDraw(style(), optChecked("opt-bonds")) : { style: style(), bonds: optChecked("opt-bonds") };
   return { cell: optChecked("opt-cell"), boundary: !!viewSetting("showBoundary"), bonds: draw.bonds,
     labels: optChecked("opt-labels") ? (labelMode() === "off" ? "both" : labelMode()) : "off", style: draw.style,
-    range: r, box: DS.boxOf(r), bondedOutside: viewSetting("bondedOutside") || "off",
-    vacuum: { mode: settings.get("viewport.vacuumMode") || "cell", gap: Number(settings.get("viewport.vacuumGap")) || 10 } };
+    range: r, box: DS.boxOf(r, vac), bondedOutside: viewSetting("bondedOutside") || "off", vacuum: vac };
 }
 /* The Magnetic style's data (1.1.7): a document's Mulliken spin moments from its run (/api/spins),
  * fetched once per document: {state: "ok", values, max, source} when they match the drawn atoms, else
@@ -1029,6 +1080,9 @@ function toolChip() {
   chip.hidden = tool === "select" || !c;
   if (!chip.hidden) chip.textContent = `${c.menuTitle || c.title} · ${TOOL_HINTS[tool] || ""}${TOOL_HINTS[tool] ? " · " : ""}Esc to exit`;
 }
+
+/* a volume grid's request at Settings › Viewport › Mesh quality (Standard: Volume quality, as before) */
+const meshGridQuery = () => MQ.volumeQuery({ quality: settings.get(MQ.KEY) }, settings.get("volume.quality") || "medium");
 
 /* ---------------- axis triad: an overlay SVG fed from the camera */
 function attachTriad(tries = 0) {
@@ -1175,11 +1229,13 @@ function sectionBar(host) {
 let displayPanel = null, displayPanelLoading = null;
 // after a draw: the estimate and the bonded-atoms note follow what was drawn
 document.addEventListener("mace-scene", () => { if (displayPanel) displayPanel.refresh(); });
+// the polyhedra arrive from the worker after the scene: the Centers checkboxes follow
+document.addEventListener("mace-polyhedra", () => { if (displayPanel) displayPanel.refresh(); });
 function loadDisplayPanel() {
   if (displayPanel) return Promise.resolve(displayPanel);
   if (!displayPanelLoading) displayPanelLoading = import("./viewport/display_panel.js").then((m) => {
     displayPanel = m.createDisplayPanel({ esc, icon, doc: () => viewDoc(), structure: () => structureOf(viewDoc()), spins: (d) => spinsOf(d),
-      bonded: () => (E && E.scene() ? E.scene().bonded : null), cssColor: (k) => getComputedStyle(document.documentElement).getPropertyValue(k).trim(),
+      bonded: () => (E && E.scene() ? E.scene().bonded : null), polyhedra: () => (E && E.scene() ? E.scene().polyhedra() : null), cssColor: (k) => getComputedStyle(document.documentElement).getPropertyValue(k).trim(),
       boundaryLabel: () => pieces.boundary, park: (el) => parked.appendChild(el), saved: (m2) => toast(m2, "success") });
     return displayPanel;
   });
@@ -1239,6 +1295,7 @@ function renderInspector() {
   document.documentElement.classList.toggle("setup-open", setupOpen);
   if (setupOpen) {
     // Calculation Setup replaces the inspector while open (spec §1.2): js/setup/panel.js, loaded on first use
+    inspTabs(host);
     setupPanel().then((m) => { if (setupOpen) m.mount(host); }).catch((e) => toast(`Calculation Setup: ${e.message}`, "error"));
     return;
   }
@@ -1260,6 +1317,7 @@ function renderInspector() {
     host.appendChild(section("structure", "Structure", pieces.structureTitle));
     host.appendChild(section("cell", "Cell", editable ? E.inspector.cell(ed) : pieces.lattice));
     host.appendChild(section("symmetry", "Symmetry", E.inspector.symmetry(ed)));
+    appendOverlays(host);
     host.appendChild(section("display", "Display", pieces.display, "All documents"));
     appendDisplayGroups(host);
     if (editable) {
@@ -1277,10 +1335,16 @@ function renderInspector() {
     host.appendChild(section("structure", "Structure", pieces.structureTitle));
     host.appendChild(section("cell", "Cell", pieces.lattice));
     host.appendChild(section("symmetry", "Symmetry", pieces.symmetry));
+    appendOverlays(host);
     host.appendChild(section("display", "Display", pieces.display, "All documents"));
     appendDisplayGroups(host);
   }
   else if (k === "runplot") host.appendChild(section("run", "Run", runCard({ path: active.runPath, id: active.id })));
+  else if (k === "mech") {
+    // the run's key settings (module, NUMDERIV, STEPSIZE, volumes, temperatures, functional), then its Run card
+    host.appendChild(section("calculation", "Calculation", mechSettings(active)));
+    host.appendChild(section("run", "Run", runCard(active)));
+  }
   else if (k === "plot") host.appendChild(section("plotopts", "Plot options", pieces.plotOpts));
   else if (k === "freq") {
     host.appendChild(section("mode", "Mode", pieces.freqOpts));
@@ -1293,6 +1357,29 @@ function renderInspector() {
   lent.forEach(([key, title, el, caption]) => host.appendChild(section(key, title, el, caption)));
   sectionBar(host);
   PC.labelInspector(active);
+  inspTabs(host);
+}
+/* Inspector › 3D Overlays (1.1.6, js/lazy/analysis_overlays.js): the pores, net, crystal shape and
+ * Miller planes Structure Analysis drew on this document, once it has drawn one in this window */
+function appendOverlays(host) {
+  const A = window.__maceAnalysis;
+  if (!A || !A.store || !A.store.records().length) return;
+  const el = document.createElement("div");
+  host.appendChild(section("overlays", "3D Overlays", el, "This document"));
+  lazy("analysis_overlays").then((m) => m.fill(el, H)).catch((e) => console.error("overlays:", e));
+}
+document.addEventListener("mace-analysis", (e) => {
+  const w = e.detail && e.detail.what;
+  if ((w === "overlay" || w === "add") && !setupOpen && active && (active.kind === "structure" || active.kind === "trajectory")
+    && !$('#inspector .insp-section[data-key="overlays"]')) renderInspector();
+});
+/* 1.1.6: the tabs over the Inspector column (Inspector | Setup: a way back from Setup besides its own button)
+ * and the Basic / Advanced detail per view kind (js/inspector_tiers.js; niche controls carry data-tier="advanced") */
+function inspTabs(host) {
+  const why = setupOpen ? "" : disabledReason(registry.get("calc.setup"), ctx());
+  host.prepend(IT.tabStrip({ setupOpen, setupWhy: why, tier: IT.tierOf(active && active.kind, active), icon,
+    onInspector: () => toggleSetup(false), onSetup: () => run("calc.setup", { open: true }) }));
+  IT.attach(host, { kind: () => (active ? active.kind : null), view: () => active, refresh: () => refresh() }).apply();
 }
 /* The selection, nudge, cell and symmetry sections follow the document:
  * rebuilt in place (the focused field gets its focus back). */
@@ -1343,16 +1430,29 @@ function toggleSetup(force) {
 
 /* ================================================================ bottom panel */
 const BOTTOM = [["atoms", "Atoms"], ["measurements", "Measurements"], ["history", "History"], ["timeline", "Timeline"],
-  ["modes", "Modes"], ["coordination", "Coordination"], ["tasks", "Tasks"], ["jobs", "Jobs"], ["problems", "Problems"]];
+  ["modes", "Modes"], ["coordination", "Coordination"], ["analysis", "Analysis"], ["properties", "Properties"], ["tasks", "Tasks"], ["jobs", "Jobs"],
+  ["problems", "Problems"]];
 /* The panel context (js/panelctx.js): every document-scoped panel follows the document in
  * focus, with a neutral placeholder where it has nothing for it; Tasks, Jobs and Problems are global. */
 const OWN_KINDS = ["structure", "trajectory"];
 const NO_RELATED = ["db", "workflows", "gallery", "cluster", "job", "batch", "editor", "structure", "trajectory"];
+/** The file a document shows (an output, a plot's or spectrum's file, a run plot's run), or null. */
+function docFilePath(d) {
+  if (!d) return null;
+  return d.path || d.srcPath || d.runPath || (d.plot && d.plot.path && !String(d.plot.path).includes("|") ? d.plot.path : null) || null;
+}
+/* The Properties tab's run: a CRYSTAL output, or a file one wrote (not a structure, a page or a database). */
+const PROPS_NONE = ["db", "workflows", "gallery", "cluster", "job", "batch", "editor"];
+function propertiesPath(d) {
+  if (!d || PROPS_NONE.includes(d.kind)) return null;
+  const p = docFilePath(d);
+  return p && !/\.(cif|vasp|poscar|xyz|extxyz|json|toml|md|txt|csv|png|svg|html)$/i.test(p) ? p : null;
+}
 const PC = createPanelContext({ esc, icon, api: (route) => M().api(route),
   own: (d) => edOf(d) || runFrameOf(d),
   wantsRelated: (d) => {
     if (!d || NO_RELATED.includes(d.kind) || (d.plot && d.plot.kind === "convergence")) return null;
-    return d.path || d.srcPath || d.runPath || (d.plot && d.plot.path && !String(d.plot.path).includes("|") ? d.plot.path : null) || null;
+    return docFilePath(d);
   },
   changed: (d) => {
     if (d !== active) return;
@@ -1381,6 +1481,12 @@ const PC = createPanelContext({ esc, icon, api: (route) => M().api(route),
     applies: (s) => !!s.doc && s.doc.kind === "freq" });
   PC.register("coordination", { title: "Coordination", thing: "coordination table", what: atomsWhat, borrow: true,
     host: pane("coordination"), tab: tab("coordination"), applies: (s) => !!s.frame || ownKind(s) });
+  // Structure Analysis results (lazy/analysis_results.js): the document's, all open documents' or the batches, its own choice
+  PC.register("analysis", { title: "Analysis", thing: "analysis results", what: "structures", host: pane("analysis"), tab: tab("analysis"),
+    applies: () => true });
+  // what materials.db holds for the document's run (lazy/properties_tab.js)
+  PC.register("properties", { title: "Properties", thing: "properties", what: "CRYSTAL outputs and the files a run wrote (plots, spectra, volumes, decks)",
+    host: pane("properties"), tab: tab("properties"), applies: (s) => !!propertiesPath(s.doc) });
   PC.register("tasks", { title: "Tasks", scope: "global", note: "all documents" });
   PC.register("jobs", { title: "Jobs", scope: "global", note: "this folder" });
   PC.register("problems", { title: "Problems", scope: "global", note: "all documents" });
@@ -1401,6 +1507,7 @@ function initBottom() {
   $(".bottom-pane.timeline").dataset.table = "compare";
   $(".bottom-pane.coordination").dataset.table = "coordination";
   $(".bottom-pane.coordination").innerHTML = `<p class="empty-note">Analysis › Coordination Analysis lists CN, ECoN and the neighbor shells here.</p>`;
+  $(".bottom-pane.analysis").innerHTML = `<p class="empty-note">Analysis › Structure Analysis lists its results here, with the settings each was computed with.</p>`;
   $(".bottom-pane.measurements").innerHTML = `<p class="empty-note">No measurements. The Measure tool (M) arrives with the editor tools.</p>`;
   $(".bottom-pane.history").innerHTML = `<div class="hist-chips" role="radiogroup" aria-label="History of" hidden></div><div class="hist-host"><p class="empty-note" id="history-note">Undo and redo apply to the structure editor: ${esc(shortcutOf("edit.undo"))} and ${esc(shortcutOf("edit.redo"))}.</p></div>`;
   renderTasks();
@@ -1427,6 +1534,8 @@ function showBottom(k, reveal = true) {
   saveLayout(reveal ? undefined : "local");
   if (k === "timeline" && M() && M().state.traj) requestAnimationFrame(() => M().drawEnergy());
   if (k === "coordination") renderCoordination();
+  if (k === "analysis") { shell.classList.remove("doc-no-bottom"); analysisTab(); }
+  if (k === "properties") { shell.classList.remove("doc-no-bottom"); propertiesTab(); }
   if (k === "jobs") {
     shell.classList.remove("doc-no-bottom");
     jobsPanel().then((p) => p.show()).catch((e) => console.error("jobs:", e));
@@ -1438,8 +1547,12 @@ let coordPanel = null, coordLoading = null;
 function coordinationPanel() {
   if (coordPanel) return Promise.resolve(coordPanel);
   if (!coordLoading) coordLoading = import("./editor/coordination.js").then((m) => {
-    coordPanel = m.createCoordPanel($(".bottom-pane.coordination"), { esc, wyckoff: (s, i) => (E ? E.wyckoff(s, i) : ""),
-      tol: (s) => Number(settings.get("bondTolerance")) || s.bond_scale || 1.15, copy: (t, done) => copyText(t, done) });
+    // the panel fills its pane: the placeholder the panel context put there (a document it does not apply to) stays
+    const host = $(".bottom-pane.coordination"), ph = host.querySelector(":scope > .pc-ph");
+    coordPanel = m.createCoordPanel(host, { esc, wyckoff: (s, i) => (E ? E.wyckoff(s, i) : ""),
+      tol: (s) => Number(viewSetting("bondTolerance")) || s.bond_scale || 1.15, copy: (t, done) => copyText(t, done),
+      rule: (s) => m.ruleOf(s, viewSetting) });
+    if (ph) host.prepend(ph);
     tableExporters.set("coordination", (fmt) => {
       const r = coordPanel.exportTable(fmt);
       if (!r) { toast("No table is shown", "info"); return false; }
@@ -1455,6 +1568,21 @@ function renderCoordination() {
   coordinationPanel().then((p) => p.render(edOf(active) || runFrameOf(active) || PC.borrowed(active))).catch((e) => console.error("coordination:", e));
 }
 function showCoordination() { showBottom("coordination"); }
+/* The Analysis tab (1.1.6, js/lazy/analysis_results.js, loaded on first use): it follows the document itself. */
+function analysisTab(batch = null) {
+  const host = $(".bottom-pane.analysis");
+  return lazy("analysis_results").then((m) => (batch ? m.showBatch(H, host, batch) : m.show(H, host))).catch((e) => console.error("analysis:", e));
+}
+
+/* The Properties tab (1.1.6, js/lazy/properties_tab.js, loaded on first use): what the database holds for the document's run. */
+function propertiesTab() {
+  const host = $(".bottom-pane.properties");
+  return lazy("properties_tab").then((m) => m.show(H, host)).catch((e) => console.error("properties:", e));
+}
+function propertiesChanged() {
+  if (lazyLoads.properties_tab) lazyLoads.properties_tab.then((m) => m.invalidate()).catch(() => {});
+}
+document.addEventListener("mace-db-changed", () => { propertiesChanged(); if (dbView && active && active.kind === "db") dbView.poll(); });
 
 /* Submit, Jobs and Batch Setup (PLAN_submit): js/docs/jobs.js, js/batch/panel.js and
  * js/lazy/submit_dialog.js, each loaded the first time it is used. */
@@ -1831,6 +1959,7 @@ function awaitTask(rec, onUpdate = null) {
     taskWaiters.set(rec.id, { update: settle });
     const now = taskStore.get(rec.id);
     if (now && FINAL.has(now.state)) settle(now);
+    else if (now && onUpdate) onUpdate(now);           // the record so far (its events may have come before the 202)
   });
 }
 /** A route that may detach: the answer at once, or (202) the task's result when it is done. */
@@ -2504,6 +2633,8 @@ const H = {
   tokenColor: (k) => getComputedStyle(document.documentElement).getPropertyValue(k === "cellColor" ? "--cell" : k === "outlineColor" ? "--text" : "--viewport-bg").trim(),
   // the editor's dialogs (Edit Cell, Set Coordinates, selection): the active document and the editor
   editor: () => ({ ed: edOf(active), E, doc: active }),
+  // the document the 3D view draws (Calculate Bonds…)
+  viewDoc: () => viewDoc(), structureOf: (d) => structureOf(d), bondValues: (d) => bondValues(d || viewDoc()),
   setRange: (n) => setRange(n), range: () => rangeCells(), rangeOf: () => DS.rangeOf(viewDoc()),
   setRangeLoHi: (lo, hi) => { const d = viewDoc(); if (d) DS.set(d, { displayLo: lo, displayHi: hi }); }, updateTriad: () => updateTriad(),
   alongLabel: (t) => { if ($("#tb-along-label")) $("#tb-along-label").textContent = t; },
@@ -2516,12 +2647,15 @@ const H = {
   saveAll: () => run("file.saveAll"), flushDrafts: () => { if (window.__maceDrafts) window.__maceDrafts.flush(); },
   leave: (url) => { leaving = true; location.href = url; },
   copyText: (text, done) => copyText(text, done),
+  // the Properties tab (lazy/properties_tab.js)
+  apiTask: (p, b, u, x) => apiTask(p, b, u, x), showText: (title, text) => openTextDoc(title, text), dbBuild: (a) => dbBuild(a),
+  docPathOf: (d) => propertiesPath(d), openDbPath: () => { const d = (active && active.kind === "db" ? active : docs.find((x) => x.kind === "db")); return d && d.path ? d.path : null; },
   stopping: () => { stopInitiator = true; serverStopped(); },
   docsUrl: (anchor) => docsUrl() + (anchor ? "#" + anchor : ""),
   setUpdate: (d) => { updateState = d; renderStatus(); }, updateDeferred: () => (updateState && updateState.deferred) || null,
 };
 const connectUi = () => lazy("connect_ui");
-function openFolderDialog() { return connectUi().then((m) => m.openFolder(H)); }
+function openFolderDialog(path) { return connectUi().then((m) => m.openFolder(H, path)); }
 /* Copy Diagnostics keeps the user's click: the bundle is fetched when the Help
  * menu (or About) opens, and copied at once from that cache (plan D20). */
 let diagCache = null;
@@ -2561,7 +2695,7 @@ async function dbBuild(a = {}) {
   if (folder === undefined) folder = db && db.includes("/") ? db.slice(0, db.lastIndexOf("/")) : "";
   const m = await lazy("db_build_dialog");
   return m.open(H, { folder, db: db || "", onStart: () => { if (dbView && active && active.kind === "db") dbView.poll(); },
-    afterBuild: () => { if (dbView && active && active.kind === "db") dbView.poll(); } });
+    afterBuild: () => { propertiesChanged(); if (dbView && active && active.kind === "db") dbView.poll(); } });
 }
 /** File History (history.py): the versions MACE kept of a file before replacing it. */
 async function fileHistory(path) {
@@ -2599,7 +2733,8 @@ function aboutDialog() {
  * tab) and as the local file; no server route and no Markdown renderer. */
 const DOCS_REPO = "https://github.com/DjokicMa/MACE";
 function docsUrl() {
-  return `${DOCS_REPO}/blob/v${encodeURIComponent(info && info.version ? info.version : "main")}/docs/gui.md`;
+  // the server names a ref that exists on GitHub: the release tag of a tagged final release, else main
+  return `${DOCS_REPO}/blob/${encodeURIComponent(info && info.docs_ref ? info.docs_ref : "main")}/docs/gui.md`;
 }
 function docsDialog(anchor = "") {
   const url = docsUrl() + (anchor ? `#${anchor}` : "");
@@ -2762,6 +2897,7 @@ function applySetting(k) {
   if (k === "showAxes") updateTriad();
   if (k === "keymap") applyUserKeymap();
   if (k === "cluster.showView") renderActivity();
+  if (k.startsWith("activity.")) { renderActivity(); applyLayout(); }
   if (k === "cluster.notify" && settings.get("cluster.notify") && typeof Notification !== "undefined" && Notification.permission === "default") {
     try { Notification.requestPermission(); } catch (e) { /* not a secure context */ }
   }
@@ -2784,16 +2920,26 @@ function applySetting(k) {
   // the plots redraw on mace-theme: the plot background, the presets, the DOS colors and the spin styling
   if (k === "plots.surface" || k === "volume.mepColors" || /^plots\.(style|dos(Colors|Total)|spin(Colors|Up|Down|DownDash|Dos))/.test(k)) M().applyTheme(themePreview || settings.get("theme"));
   if (k === "background" || k === "backgroundColor") { M().syncSurfaces(); updateTriad(); }
+  if (k === "viewport.printPatterns") printPatternsLayer();
   if (REDRAW_KEYS.has(k)) redrawSoon();
   if (DS.KEYS.has(k) && displayPanel) displayPanel.refresh();    // a default changed: documents without their own value follow it
   refresh();
 }
 /* Settings that change what the 3D views draw: one redraw per frame, camera kept. */
-const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "radiusSet", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "labelSize",
+const REDRAW_KEYS = new Set(["showPolyhedra", "polyCenters", "polyOpacity", "polyEdges", "polyCenterAtom", "colorScheme", "radiusSet", "atomScale", "bondRadius", "bondTolerance", "bondMetalMetal", "bondMin", "bondPairs", "labelSize",
   "background", "backgroundColor", "cellColor", "decimals.length", "decimals.angle", "decimals.coord",
   "displayLo", "displayHi", "showBoundary", "bondedOutside", "lightStrength", "lightDirection", "ambient", "outline",
   "outlineWidth", "outlineColor", "ambientOcclusion", "shininess", "atomDraw", "atomColor", "atomRadii", "styleOutline",
   "viewport.vacuumMode", "viewport.vacuumGap"]);
+/* Settings › Viewport › Print patterns (1.1.6): a layer over every 3D view (js/viewport/print_patterns.js),
+ * loaded the first time it is on; every view paints again so the layer follows at once. */
+function printPatternsLayer() {
+  if ((settings.get("viewport.printPatterns") || "off") === "off" && !window.__macePatterns) return;
+  import("./viewport/print_patterns.js").then((m) => {
+    m.install();
+    Object.values(M().state.viewers || {}).forEach((v) => { try { if (v && v.render) v.render(); } catch (e) { /* a hidden view */ } });
+  }).catch(() => {});
+}
 let redrawFrame = 0;
 function redrawSoon() {
   cancelAnimationFrame(redrawFrame);
@@ -2806,6 +2952,7 @@ function mirrorClassicControls() {
   // Boundary atoms is per document (Inspector › Range & boundary); Settings keep the default
   on("opt-boundary", () => { const d = viewDoc(); if (d && optChecked("opt-boundary") !== !!viewSetting("showBoundary")) DS.set(d, "showBoundary", optChecked("opt-boundary")); });
   on("opt-super", () => setRange(optChecked("opt-super") ? 2 : 1));
+  VAC.bind({ viewDoc, structureOf });       // Vacuum: a slab's, polymer's or molecule's mode, per document (1.1.6)
   on("opt-labels", () => { if (optChecked("opt-labels") !== (settings.get("labels") !== "off")) settings.set("labels", optChecked("opt-labels") ? "both" : "off"); });
   on("opt-colors", () => settings.set("colorScheme", optEl("opt-colors").value));
   // an atom style picked while the document's Style draws its own: the style follows the Display section, as Custom
@@ -2868,7 +3015,11 @@ const STRUCTURE_KINDS = new Set(["cif", "d12", "out", "xyz", "poscar"]);
 function legendActive() {
   const s = structureOf(active);
   if (!s) return toast("Open a structure first", "info");
-  return legendDialog({ title: `Elements of ${active.title}`, stem: active.title, symbols: [...s.symbols] });
+  // its atoms' print patterns, when Settings › Viewport › Print patterns is on (the layer's module is loaded then)
+  const pp = window.__macePatterns, v = M().state.viewers["viewer-main"];
+  const patterns = pp && v ? pp.mapFor(v) : {};
+  return legendDialog({ title: `Elements of ${active.title}`, stem: active.title, symbols: [...s.symbols],
+    ...(Object.keys(patterns).length ? { patterns } : {}) });
 }
 /** The open documents with a structure: saved files by path, the edited or unsaved ones by their symbols. */
 function openStructures() {
@@ -2896,6 +3047,28 @@ function legendExplorer(a) {
   if (!paths.length) return toast("Pick structure files (CIF, d12, out, XYZ, POSCAR) or a folder", "info");
   return legendDialog({ title: paths.length === 1 ? `Elements of ${paths[0]}` : `Elements of ${paths.length} files`,
     stem: paths.length === 1 ? paths[0].split("/").pop() : "selected_files", paths });
+}
+/* Analyze Structures… (1.1.6, lazy/analysis_batch.js): the Explorer's selected structure files (and the
+ * one right-clicked), or a folder's; the dialog lists the folder's other structures to add */
+const structureFile = (f) => !!f && STRUCTURE_KINDS.has(f.kind) && !M().isJobLog(f);
+function structureFiles() { return M().state.files.filter(structureFile).map((f) => f.path); }
+function explorerStructures() { return [...(M().state.selected || [])].filter((x) => structureFile(M().fileByPath(x))); }
+function analyzeStructures(a) {
+  let paths;
+  if (a && a.dir !== undefined) {
+    const dir = a.dir ? `${a.dir}/` : "";
+    paths = M().state.files.filter((f) => structureFile(f) && f.path.startsWith(dir) && !f.path.slice(dir.length).includes("/")).map((f) => f.path);
+  } else {
+    const picked = new Set(explorerStructures());
+    const p = pathOf(a);
+    if (p && structureFile(M().fileByPath(p))) picked.add(p);
+    // from a menu with nothing picked: the structure in front, if it is a file
+    if (!picked.size && active && active.path && structureFile(M().fileByPath(active.path))) picked.add(active.path);
+    paths = [...picked];
+  }
+  const all = structureFiles();
+  return lazy("analysis_batch").then((m) => m.open(H, { paths, all, done: (b) => { showBottom("analysis"); analysisTab(b.id); } }))
+    .catch((e) => toast(`Analyze Structures: ${e.message}`, "error"));
 }
 const elementColors = () => lazy("palette_editor").then((m) => m.open(H)).catch((e) => toast(`Element Colors did not load: ${e.message}`, "error"));
 function cycleTheme() {
@@ -3016,13 +3189,15 @@ function plotViewer() {
       // with two editor groups, a clicked peak opens its mode in the other group
       openModes: (p, o) => (GR && GR.openModesOther(p, o)) || openModes(p, o), lineShape: (kind) => (kind === "ir" ? settings.get("spectra.lineShape") || "lorentzian" : "lorentzian"),
       download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k), setSetting: (k, v) => settings.set(k, v),
-      folderFile: () => settings.folderInfo().file });
+      folderFile: () => settings.folderInfo().file,
+      // Add DOS… / Add Band… (a band + DOS pair from two folders): the folder's files, picked in a dialog
+      files: () => M().state.files, dialog });
     return plotView;
   }).catch((e) => { plotViewLoading = null; throw e; });
   return plotViewLoading;
 }
 function showPlot(d) {
-  $("#plot-host").hidden = false; $("#runplot-host").hidden = true;
+  $("#plot-host").hidden = false; $("#runplot-host").hidden = true; $("#mech-host").hidden = true;
   return plotViewer().then((v) => {
     if (active !== d) return;
     if (["image", "html"].includes(d.fileKind)) v.openImage(d, d.fileKind);
@@ -3049,8 +3224,64 @@ function runViewer() {
   return runViewLoading;
 }
 function showRunPlot(d) {
-  $("#plot-host").hidden = true; $("#runplot-host").hidden = false;
+  $("#plot-host").hidden = true; $("#runplot-host").hidden = false; $("#mech-host").hidden = true;
   return runViewer().then((v) => { if (active === d) return v.open(d); }).catch((e) => toast(`Run Analysis: ${e.message}`, "error"));
+}
+/* Mechanical results documents (js/docs/mech.js, 1.1.6): an ELASTIC, EOS, QHA or CPHF output's tables
+ * and plots (mace analyze elastic [--plot]), a document of the output itself, as a FREQ output's modes. */
+const MECH_CALCS = ["ELASTIC", "EOS", "QHA", "CPHF"];
+let mechView = null, mechViewLoading = null;
+function mechViewer() {
+  if (mechView) return Promise.resolve(mechView);
+  if (!mechViewLoading) mechViewLoading = Promise.all([import("./docs/mech.js"), import("./lazy/lazy_util.js")]).then(async ([m, lu]) => {
+    const at = new URL("./docs/mech.js", import.meta.url).href;
+    await Promise.all([lu.loadCss(at, "../../css/plot.css"), lu.loadCss(at, "../../css/mechanics.css")]);
+    mechView = m.createMechView($("#mech-host"), { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
+      cssVar: (n) => M().cssVar(n), plotVar: (n, f, s) => M().plotVar(n, f, s), plotPaper: () => M().plotPaper(), styleFigure: (t, l, f, pid, s) => M().styleFigure(t, l, f, pid, s),
+      loadPlotly: () => M().loadPlotly(), download: (b, n) => download(b, n), dirHash: () => dirHash(), setting: (k) => settings.get(k),
+      // the Explorer's outputs of one kind (the EOS document's Add phase… lists the other EOS runs)
+      outputs: (calc) => Object.entries(M().state.details || {}).filter(([, x]) => x && x.role === "crystal_out" && x.calc === calc).map(([p]) => p).sort(),
+      // the document's settings came in: the Inspector's Calculation section shows them
+      loaded: (d) => { renderTabs(); renderOpenEditors(); if (active === d) { updateTitle(); if (!setupOpen) renderInspector(); } } });
+    mechView.bind((act, d) => (act === "text" ? openAsText(d.path) : openDoc(d.path, { as: "structure" })));
+    return mechView;
+  }).catch((e) => { mechViewLoading = null; throw e; });
+  return mechViewLoading;
+}
+function showMech(d) {
+  $("#plot-host").hidden = true; $("#runplot-host").hidden = true; $("#mech-host").hidden = false;
+  return mechViewer().then((v) => { if (active === d) return v.open(d); }).catch((e) => toast(`Results: ${e.message}`, "error"));
+}
+async function openMech(path, calc = null) {
+  const existing = docs.find((x) => x.kind === "mech" && x.path === path);
+  if (existing) { await activate(existing); return existing; }
+  saveView(active);
+  const name = path.split("/").pop().replace(/\.[^.]+$/, "");
+  const d = { id: nextId++, path, kind: "mech", fileKind: "out", calc, title: `${name} · ${calc ? calc : "results"}` };
+  docs.push(d);
+  pushRecent(path);
+  await activate(d);
+  feedRunProblems(d);
+  return d;
+}
+/** Inspector › Calculation of a results document: its key settings, each with where it was read from. */
+const MECH_SRC = { out: "from the .out", d12: "from the .d12 beside it", default: "CRYSTAL23 default" };
+function mechSettings(d) {
+  const el = document.createElement("div");
+  el.className = "run-card mv-settings";
+  const m = d.mech;
+  if (!m) { el.innerHTML = Array.from({ length: 5 }, () => `<div class="skel-line"></div>`).join(""); return el; }
+  const rows = m.settings || [];
+  el.innerHTML = rows.length ? `<table class="kv rc-kv" aria-label="Calculation settings">${rows.map((r) =>
+    `<tr title="${esc(MECH_SRC[r.source] || r.source)}"><td>${esc(r.label)}</td><td>${esc(r.value)}</td></tr>`).join("")}</table>
+    <div class="rc-acts"><button class="tb-btn-text" data-mvs="cli" title="${esc(m.cli)}">Copy CLI</button><button class="tb-btn-text" data-mvs="text">Show Output</button></div>`
+    : `<p class="insp-hint">No settings read from ${esc(m.name)}</p>`;
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mvs]");
+    if (b && b.dataset.mvs === "cli") copyText(m.cli, "Copied the CLI command");
+    if (b && b.dataset.mvs === "text") openAsText(d.path);
+  });
+  return el;
 }
 /** The run's .out: the argument, the active run, or the run a Run Analysis document reads. */
 function runPathOf(a) {
@@ -3232,7 +3463,8 @@ function freqViewer() {
       apiTask: (p, b, u, x) => apiTask(p, b, u, x), download: (b, n) => download(b, n), M,
       // the toolbar's display options, as the structure view takes them (the range and boundary atoms per document)
       viewOpts: () => viewOpts(), setting: (k) => settings.get(k), rangeN: () => range(), setRange: (n) => setRange(n),
-      openStructure: (p) => openStructure(p), openSpectrum: (p, kind) => openFreqSpectrum(p, kind),
+      rangeCells: () => rangeCells(), setSetting: (k, v) => settings.set(k, v),
+      openStructure: (p) => openStructure(p), openSpectrum: (p, kind) => openFreqSpectrum(p, kind), openMech: (p) => openMech(p, "FREQ"),
       imaginary: (d, list) => {
         clearProblems(d.id, "FREQ");
         if (!list || !list.length) return;
@@ -3429,7 +3661,7 @@ function clusterModule() {
 }
 const clusterHelpers = () => ({ api: (...a) => M().api(...a), esc, icon, toast, files: () => M().state.files,
   copy: (t) => copyText(t), openJob: (id) => openJob(id), newWorkflow: (a) => openWorkflowBuilder(a), abbrev: (p) => (info ? abbrev(p, { home: info.home || "", max: 80 }) : p),
-  apiTask: (p, b) => apiTask(p, b), confirm: (o) => SETUP_API.confirm(o),
+  apiTask: (p, b) => apiTask(p, b), confirm: (o) => SETUP_API.confirm(o), openFolderAt: (p) => openFolderDialog(p),
   retitle: () => { renderTabs(); updateTitle(); },
   openPath: (rel, kind) => (kind === "out" || kind === "stdout" || kind === "stderr" ? openAsText(rel) : openDoc(rel)) });
 async function clusterViewer() {
@@ -3703,7 +3935,7 @@ async function volumeDifference(d) {
     dlg.close();
     try {
       const meta = await apiTask("volume/combine", { paths: rows.map((r) => r[0]), coefficients: rows.map((r) => r[1]),
-        quality: settings.get("volume.quality") || "medium" });
+        ...meshGridQuery() });
       await openVolume(null, { title: meta.name, combo: true, meta });
     } catch (e) { toast(`Volume difference: ${e.message}`, "error"); }
   });
@@ -3804,7 +4036,7 @@ async function renderInfoDoc(d) {
   const WHAT = { wavefunction: ["CRYSTAL wave function", "MACE uses it for GUESSP restarts and properties runs; it is not opened here."],
     crystaldata: ["CRYSTAL data file", "CRYSTAL writes it for restarts and analyses; it is not opened here."],
     f25: ["fort.25 plot data", "The same data as the run's .DAT files: open those for the plot."],
-    transport: ["Transport data (BOLTZTRA)", "Seebeck, conductivity and related tensors: open the file for its plot."],
+    transport: ["Transport data (BOLTZTRA)", "Seebeck, conductivity and related tensors, and the ZT, power factor and Lorenz number they give: open any of the run's files for its plot."],
     cube: ["Volumetric grid (Gaussian cube)", "Volumes open in the Volume viewer."] }[P.kind] || ["File", "MACE does not open this kind of file."];
   if (P.kind === "f25" && P.f25_kind) {
     const word = { BAND: "a BAND run", DOSS: "a DOSS run", MAPN: "a 2D map (ECHG or POTM)" }[P.f25_kind];
@@ -4110,6 +4342,24 @@ async function exportImage() {
   const m = await lazy("export_image");
   m.open(H, exportCtx());
 }
+/* Export Animation… (1.1.6, js/lazy/anim_export.js): the FREQ view's mode or an optimization's steps captured from
+ * the view itself, or a trajectory file (MD, NEB, an output) drawn by the server as `mace animate` draws it. */
+const ANIM_FILE = /\.(out|o|log|xyz|extxyz|traj)$/i;
+function canAnimate() {
+  if (!active) return false;
+  if (freqActive() || (active.kind === "trajectory" && trajSteps() > 1)) return true;
+  const p = active.path || active.srcPath || "";
+  return ANIM_FILE.test(p);
+}
+async function exportAnimation() {
+  if (!canAnimate()) { toast("Open a FREQ output's modes, an optimization, or an MD or NEB trajectory", "info"); return; }
+  const m = await lazy("anim_export");
+  const d = active;
+  m.open(H, { M: M(), apiTask: (p, b) => apiTask(p, b), doc: d, kind: d.kind, viewer: mainViewer(), stem: stemOf(d),
+    path: d.path || d.srcPath || null, bg: () => M().viewerBg(), setting: (k) => viewSetting(k), download: (b, n) => download(b, n),
+    freq: freqActive() ? freqView : null,
+    traj: d.kind === "trajectory" && trajSteps() > 1 ? { steps: () => trajSteps(), step: (k) => trajStep(k, true), current: () => Number(($("#o-frame") || {}).value || 0) } : null });
+}
 async function copyImage() {
   if (!M().state.viewers["viewer-main"]) return false;
   const m = await lazy("export_image");
@@ -4148,7 +4398,8 @@ async function restoreDraft(key, d) {
   let r;
   try {
     r = await M().api("edit/from_structure", { body: { name: safeName(d.name), cell: s.cell, numbers: s.numbers.map((z) => z % 100 || z), frac: s.frac,
-      locked: d.symMode === "sym", symprec: d.symprec || 1e-3, label: `Restored draft of ${d.name}`, meta: d.meta || undefined } });
+      locked: d.symMode === "sym", symprec: d.symprec || 1e-3, label: `Restored draft of ${d.name}`, meta: d.meta || undefined,
+      ...(s.pbc ? { pbc: s.pbc, origin: s.origin, vacuum_vectors: s.vacuum_vectors } : {}) } });
   } catch (err) { toast(`Could not restore ${d.name}: ${err.message}`, "error"); return; }
   const open = d.path && docs.find((x) => x.path === d.path);
   if (open) closeDoc(open, true);
@@ -4513,6 +4764,8 @@ const SETUP_API = {
   setting: (k) => settings.get(k), settingSource: (k) => settings.source(k), set: (k, v) => settings.set(k, v), shortcut: (id) => shortcutOf(id), run: (id, a) => run(id, a),
   cancelTask: (id) => cancelTask(id), reveal: (p) => reveal(p), focusRegion: (r) => focusRegion(r), copyText: (t, m) => copyText(t, m),
   refreshFiles: () => M().loadFiles().catch(() => {}),
+  // Setup's 4-7 and Phonopy (setup/modules.js): the deck they write, and the Submit dialog on a set
+  openPath: (p) => openDoc(p), builder: (name, fn, ...args) => S.builder(name, fn, ...args),
   showText: (title, text) => openTextDoc(title, text), showProblems: () => showBottom("problems"),
   historyChanged: () => renderPanels(),
   cifCount: (path) => { const dir = path && path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
@@ -4538,7 +4791,35 @@ const SETUP_API = {
     const def = dl.querySelector(`[data-r="${defaultNo ? "no" : "yes"}"]`);
     if (def) def.focus();
   }),
+  setupSchema: () => setupSchema(), runFacts: (d) => runFacts(d),
 };
+
+/* The calculation types of Setup and of Calculation › Regular / Properties Calculations (1.1.6):
+ * grouped, numbered and gated by one table, setup/schema calc_groups (the workflow's prerequisites,
+ * mace/workflow/common/constants.py SETUP_CALC_GROUPS), read through setup/model.js calcBlocked */
+let setupSchemaP = null, calcGroups = null;
+function setupSchema() {
+  if (!setupSchemaP) setupSchemaP = M().api("setup/schema").then((r) => { calcGroups = r.calc_groups || null; return r; },
+    (e) => { setupSchemaP = null; throw e; });
+  return setupSchemaP;
+}
+/** What Setup's gate needs to know of an output: a FREQ run, an optimization not (yet) converged. */
+function runFacts(d) {
+  const out = !!(d && /\.(out|log|o)$/i.test(d.path || ""));
+  return { freq: isFreqDoc(d), optOpen: !!(out && d.data && d.data.is_opt && !/OPT END - CONVERGED/.test(d.data.opt_status || "")) };
+}
+const setupSubject = () => (active && active.setupFor ? docs.find((x) => x.id === active.setupFor) || null : active);
+function calcBlockedHere(calc) {
+  if (!calcGroups) { setupSchema().catch(() => {}); return "Loading the calculation types…"; }
+  const d = setupSubject();
+  return SM.calcBlocked(calcGroups, calc, d, { dirty: isDirty(d), frame: SETUP_API.frameInfo(d), ...runFacts(d) });
+}
+/** A Calculation menu group's entries, numbered as its CLI menu (Phonopy: its own command, no number). */
+function calcMenu(key) {
+  if (!calcGroups) { setupSchema().catch(() => {}); return [{ label: "Loading…", disabled: true, run: () => {} }]; }
+  const g = calcGroups.groups.find((x) => x.key === key);
+  return g ? g.types.map((t) => ({ cmd: "calc.setupType", args: { calc: t.calc }, label: `${t.n ? `${t.n} ` : ""}${t.label}` })) : [];
+}
 
 /* ================================================================ the shell API the commands use */
 const S = {
@@ -4565,10 +4846,21 @@ const S = {
     DS.set(d, style ? { [k]: !viewSetting(k), stylePreset: "custom" } : { [k]: !viewSetting(k) });
   },
   displayPanel: (group) => openDisplayGroup(group),
-  range, setRange, rangeText: () => DS.rangeLabel(viewDoc()), style, setStyle, panelShown, togglePanel, toggleAllPanels, allPanelsHidden: () => !!layout.focus, cycleTheme, zoomUi, focusRegion, setAllSections,
+  range, setRange, rangeText: () => DS.rangeLabel(viewDoc()),
+  // 1.1.6: Display Range › N × M × L… (js/cells_picker.js) and whether the range is whole cells from 0
+  rangeIsCells: () => { const r = DS.rangeOf(viewDoc()); return r.lo.every((x) => x === 0) && r.hi.every((x) => Number.isInteger(x)); },
+  cellsDialog: () => import("./cells_picker.js").then((m) => m.openDialog({ ...H, cells: () => rangeCells(), pbc: () => viewPbc(),
+    repeatNonPeriodic: () => !!viewDoc() && viewDoc().kind === "structure", setCells: (c) => setRange(c),
+    build: viewDoc() && viewDoc().kind === "structure" && edOf(viewDoc()) ? () => run("build.supercell") : null })),
+  inspectorTier: () => IT.tierOf(active && active.kind, active),
+  setInspectorTier: (t) => { if (!panelShown("inspector")) togglePanel("inspector"); IT.setTier(active && active.kind, t, active); renderInspector(); },
+  showInspector: () => { if (!panelShown("inspector")) togglePanel("inspector"); if (setupOpen) toggleSetup(false); },
+  activityShown: () => AP.shown(), activityItemShown: (id) => !AP.isHidden(id),
+  activityToggleItem: (id) => AP.toggleItem(id), activityMove: (id, dir) => AP.move(id, dir, ACTIVITY_IDS), activityReset: () => AP.reset(),
+  style, setStyle, panelShown, togglePanel, toggleAllPanels, allPanelsHidden: () => !!layout.focus, cycleTheme, zoomUi, focusRegion, setAllSections,
   /** Can Expand All / Collapse All do anything? Two or more Inspector sections, or Calculation Setup open. */
   manySections: () => setupOpen || $$("#inspector .insp-section").length >= 2,
-  previewTheme, pickTheme, elementColors, legendActive, legendOpenDocs, legendExplorer,
+  previewTheme, pickTheme, elementColors, legendActive, legendOpenDocs, legendExplorer, explorerStructures, structureFiles, analyzeStructures,
   openStructureCount: () => { const o = openStructures(); return o.paths.length + o.symbols.length; },
   openDb: () => {
     const want = settings.get("defaultDb"), fs = M().state.files;
@@ -4680,7 +4972,8 @@ const S = {
   selectedAtom: () => { const e = edOf(active); return e && e.selection.size === 1 ? [...e.selection][0] : null; },
   elementCount: () => { const s = structureOf(active); return s ? new Set(s.symbols).size : 0; },
   fileHistory: (p) => fileHistory(p), activePath: () => (active && active.path) || null,
-  openRunPlot: (p, tab) => openRunPlot(p, tab), runPathOf: (a) => runPathOf(a), compareRuns: () => compareRunsDialog(),
+  openRunPlot: (p, tab) => openRunPlot(p, tab), openMech: (p) => openMech(p),
+  openStructure: (p) => openStructure(p), opensAsResults: (p) => { const d = p && M().state.details && M().state.details[p]; return !!(d && d.refined && d.role === "crystal_out" && MECH_CALCS.includes(d.calc)); }, runPathOf: (a) => runPathOf(a), compareRuns: () => compareRunsDialog(),
   trackMeasurement: (m, label) => trackMeasurement(m, label),
   /** The save toast's Undo: the version File History kept before this save goes back, then the document reloads. */
   undoSave: async (ed, path, entry, stamp) => {
@@ -4695,6 +4988,19 @@ const S = {
   copyText, reveal, pathOf, copyRootPath: () => (info ? copyText(info.root, "Folder path copied") : null), kindOf: (p) => (p && M().fileByPath(p) ? M().fileByPath(p).kind : ""),
   openPath: (p) => openDoc(p), fileExists: (p) => !!(M() && M().fileByPath(p)), isText: (p) => ["cif", "d12", "d3", "out", "json", "band", "dos", "ir", "raman"].includes(fileKind(p)),
   openAsText, canCompare, compareWith, compareInput, compareSub, showCoordination, setupFor, atomOf, centerOnAtom, copyAtom,
+  /** Calculation Setup on an output at 4 ELASTIC ... 7 CPHF or Phonopy (setup/modules.js). */
+  setupModule: async (calc, path) => {
+    if (path) await setupFor(path); else if (!setupOpen) toggleSetup(true);
+    return (await setupPanel()).pick(calc);
+  },
+  /** Calculation › Regular / Properties Calculations: Setup on the file in front at that type, if it can have it. */
+  calcBlocked: (calc) => calcBlockedHere(calc), calcMenu,
+  setupCalc: async (calc) => {
+    const why = calcBlockedHere(calc);
+    if (why) { toast(why, "info"); return false; }
+    if (!setupOpen) toggleSetup(true);
+    return (await setupPanel()).pick(calc);
+  },
   compareStructures: () => { M().showTab("opt"); toast("Pick structure A and B under “Compare two structures”, then Compare.", "info"); },
   setupOpen: () => setupOpen, toggleSetup: (force) => { toggleSetup(force); if (setupOpen) setupPanel().then((m) => requestAnimationFrame(() => m.focus())); },
   previewDeck: async () => { if (!setupOpen) toggleSetup(true); return (await setupPanel()).preview(true); },
@@ -4716,7 +5022,7 @@ const S = {
   saveAsDialog: (e, def, preset) => saveDialog().then((m) => m.open(H, e, def, preset)),
   activateEd: (e) => activate(e.doc),
   saveAll: () => (E ? E.saving.saveAll(editorDocs()) : null), revert: () => revert(active),
-  exportImage, copyImage,
+  exportImage, copyImage, exportAnimation: () => exportAnimation(), canAnimate: () => canAnimate(),
   newStructure: () => lazy("new_structure").then((m) => m.open(H, S)),
   editStep: () => editStep(),
   setPreviewKeys: (fn) => { previewKeys = fn; }, previewKeysOwner: () => previewKeys,
@@ -4738,6 +5044,9 @@ const S = {
   awaitTask, apiTask, taskEvent, cancelTask, problem: (p) => addProblem(p), clearProblems, dbBuild,
   exportStructure, sourceOf: (d) => sourceOf(d || active), openHeld, exportName, checkDisk: () => { diskCheckAt = -Infinity; return checkDisk(); },
   clientId: () => clientId, tasks: () => taskStore,
+  // Structure Analysis (lazy/analysis_store.js): a document by id, its edit revision, and framing a region of the 3D view
+  docById: (id) => docs.find((d) => d.id === id) || null, editRev: (d) => (edOf(d) ? edOf(d).rev : 0),
+  framePoints: (pts, margin) => { const c = E && E.cam && E.cam(); if (c && pts && pts.length) c.frame(pts, margin); },
   // Submit, Jobs and Batch Setup (PLAN_submit)
   submit: (a) => openSubmit({ targets: submitTargets(a), where: "slurm" }),
   runHere: (a) => openSubmit({ targets: submitTargets(a), where: "local" }),
@@ -4752,6 +5061,7 @@ async function boot() {
   settings.init(M().api);
   settings.setNotifier((m, kind) => toast(m, kind));
   M().setting = (k) => viewSetting(k);
+  M().rangeN = () => range();          // the classic draw (app.js structOpts) before the scene loads
   M().docSpins = () => { const d = viewDoc(); if (!d || viewSetting("atomColor") !== "spin") return null; const sp = spinsOf(d); return sp.state === "ok" ? sp : null; };
   // the Structure card's "Not saved in the folder yet" for a dropped document (plan T9)
   M().untitledHint = (s) => (active && active.untitled && !active.path && active.dropped && active.kind === "structure" ? "Not saved in the folder yet" : "");
@@ -4790,6 +5100,9 @@ async function boot() {
   const calcMenu = MENUS.find((m) => m.label === "Calculation");
   const exEntry = calcMenu && calcMenu.items.find((x) => x && x.label === "Open Example Config");
   if (exEntry) Object.defineProperty(exEntry, "sub", { get: () => S.exampleMenu() });
+  // Regular / Properties Calculations: filled from setup/schema calc_groups when the menu opens
+  for (const it of (calcMenu ? calcMenu.items : [])) if (it && it.calcGroup) Object.defineProperty(it, "sub", { get: () => S.calcMenu(it.calcGroup) });
+  setupSchema().catch(() => {});
   const setsEntry = MENUS[3].items.find((x) => x && x.label === "Selection Sets");
   Object.defineProperty(setsEntry, "sub", { get: () => [...setItems(edOf(active)), "select.sets"] });
   collectPieces();
@@ -4838,7 +5151,7 @@ async function boot() {
       return;
     }
     const path = row.dataset.path || row.dataset.open;
-    if (["cif", "d12", "out"].includes(fileKind(path))) hoverTimer = setTimeout(() => { preloadEditor(); prefetchStructure(path); }, 150);
+    if (EDITOR_KINDS.includes(fileKind(path))) hoverTimer = setTimeout(() => { preloadEditor(); prefetchStructure(path); }, 150);
   });
 }
 
@@ -4855,6 +5168,7 @@ function preloadEditor() {
 
 async function onAppReady(detail) {
   info = detail;
+  IT.setDefaultTier(info && info.inspector_tier);
   // the profile (layout, Recent, remembered choices) from the server; a pre-1.1.5 browser's keys go up once
   profile.init((...a) => M().api(...a), M().state.boot && M().state.boot.profile, info);
   profile.setNotifier((m, k) => toast(m, k));
@@ -4868,7 +5182,11 @@ async function onAppReady(detail) {
   profile.onChange(() => { adoptProfileLayout(); applyFilesOpen(); renderOpenEditors(); renderRecentSection(); renderWelcome(); });
   // per-document view options: the server's copy, localStorage as its cache (docprefs.js)
   docprefs.init((...a) => M().api(...a), (info && info.dir_hash) || "", "api/docprefs");
-  docprefs.onChange((kind, doc) => { if (kind === "display") displayChanged(doc ? docs.find((x) => x === doc || (x.path && x.path === doc.path)) || null : viewDoc()); });
+  // (the Rotate tool's pivot alone changes nothing drawn: no redraw)
+  docprefs.onChange((kind, doc, keys) => {
+    if (kind !== "display" || (keys && keys.length && keys.every((k) => DS.GROUPS.rotate.includes(k)))) return;
+    displayChanged(doc ? docs.find((x) => x === doc || (x.path && x.path === doc.path)) || null : viewDoc());
+  });
   docprefs.retryPending();
   renderWelcome(); renderStatus(); updateTitle();
   renderRoot();
@@ -4884,6 +5202,7 @@ async function onAppReady(detail) {
   ["theme", "density", "uiScale", "reduceMotion", "showCell", "showBoundary", "labels", "colorScheme"].forEach(applySetting);
   if (!PANE) adoptPaletteDefault();
   booted = true;
+  printPatternsLayer();
   document.documentElement.dataset.appReady = "1";
   if (PANE) return;            // the right editor group: the window offers drafts and restores the split
   noticeSetupDefaults();
@@ -4932,6 +5251,7 @@ async function reopenDesc(x) {
   if (!x || !x.path) return null;
   if (x.kind === "freq") return openModes(x.path);
   if (x.kind === "runplot") return openRunPlot(x.path, x.tab || null);
+  if (x.kind === "mech") return openMech(x.path);
   return openDoc(x.path, x.as ? { as: x.as } : {});
 }
 function focusActiveView() {
@@ -5005,6 +5325,9 @@ window.__macePane = {
 
 window.__mace = {
   lastCommand: () => lastCommand, sidebar: () => sidebar,
+  // 1.1.6: the cells the optimization view repeats (whole cells of the document's range; 1 along a non-periodic axis)
+  commandChecked: (id) => { const c = registry.get(id); return c && c.checked ? !!c.checked(ctx()) : null; },
+  optCells: () => { const d = viewDoc(); if (!d || d.kind !== "trajectory") return [1, 1, 1]; const p = viewPbc(); return rangeCells().map((n, k) => (p[k] ? n : 1)); },
   // the per-document display state (viewport/display_state.js) and its storage
   display: DS, docprefs, profile,
   spyRun: (on) => { if (on) { window.__maceRan = []; runSpy = (id) => window.__maceRan.push(id); } else runSpy = null; },
@@ -5088,7 +5411,7 @@ window.__mace = {
   contextAt, contextFor,
   parseChord, formatChord, fuzzyScore, evalWhen, triadSvg,
   /* why a command is off right now ("" when it runs), as its menu item says */
-  menuReason: (id) => disabledReason(registry.get(id), ctx()),
+  menuReason: (id, args) => disabledReason(registry.get(id), args ? { ...ctx(), args } : ctx()),
   modalRows: () => Object.values(commands.MODAL_LAYERS).reduce((t, l) => t + l.rows.length, 0),
   activeDoc: () => active,
   panelContext: () => PC.state(), pickRelated: (p) => PC.pick(active, p),
@@ -5120,12 +5443,14 @@ window.__mace = {
     return { selection: () => (ed() ? [...ed().selection].sort((a, b) => a - b) : []),
       select: (ix, mode) => ed() && E.select(ed(), ix, mode), doc: ed, E };
   },
-  loadEditor: () => loadEditor().then(() => true),
+  loadEditor: () => loadEditor().then(() => true), bondValues: () => bondValues(),
+  // Clean › Bonds held, as the Clean panel last set it (the classic Clean sends it too)
+  cleanBondsHeld: () => profile.memory("cleanBondsHeld", "shown"),
   /* Calculation Setup (js/setup/panel.js), once loaded; setupReady() loads it */
   get setup() { return setupMod; }, setupReady: () => setupPanel().then(() => true), shortcut: (id) => shortcutOf(id),
   get textView() { return textView; }, openAsText: (p) => openAsText(p),
   get dbView() { return dbView; }, exportTable: (fmt) => exportTable(fmt),
-  get plotView() { return plotView; }, get runView() { return runView; }, get galleryView() { return galleryView; }, openGallery: (o) => openGallery(o || {}), get freqView() { return freqView; }, openModes: (p, o) => openModes(p, o),
+  get plotView() { return plotView; }, get runView() { return runView; }, get mechView() { return mechView; }, openMech: (p) => openMech(p), get galleryView() { return galleryView; }, openGallery: (o) => openGallery(o || {}), get freqView() { return freqView; }, openModes: (p, o) => openModes(p, o),
   notifications: { recent: (n) => notifications.recent(n), clear: () => notifications.clear(), unread: () => notifications.unreadCount(),
     subscribe: (fn) => notifications.subscribe(fn) },
   openStructure: (p) => openStructure(p), openInfo: (p) => openInfo(p), openJobLog: (p) => openJobLog(p),

@@ -169,6 +169,7 @@ def _flows():
         ("opt2d3", "BAND", {"band_range": "Custom range"}),
         ("opt2d3", "DOSS", {"doss_projection": "Total DOS only"}), ("opt2d3", "DOSS", {"doss_range": "Energy window around Fermi level"}),
         ("opt2d3", "DOSS", {"doss_projection": "Projected DOS on specific atoms"}),
+        ("opt2d3", "DOSS", {"doss_resolution": "Step"}), ("opt2d3", "DOSS", {"doss_resolution": "Points"}),
         ("cif2d12", "OPT", {"opt_convergence": "Custom"}), ("cif2d12", "OPT", {"tolerance": "Custom"}),
         ("opt2d12", "SP", {"basis_keep": False}),
         # one functional of each category (VBH: the LDA question, "Select LDA/LSD functional")
@@ -248,6 +249,13 @@ def test_every_question_of_every_setup_route_is_matched(staged, mode, calc, kind
              "answers": lambda: S.answer_rules(mode, answers)}[kind]()
     tag = kind + "_" + "_".join(sorted(answers or {})) + str(abs(hash(json.dumps(answers, sort_keys=True))) % 10**6)
     r = S.ask(st, work, rules, tag)
+    if (mode, calc) == ("opt2d3", "TRANSPORT"):
+        # Si_sp.out prints no Fermi energy and has no BAND or DOSS run beside it: TRANSPORT's chemical
+        # potentials cannot be relative to E_F, so the CLI asks for absolute ones, which have no default
+        # (never a guessed -2..+2 eV): Setup stops there and names it. With a Fermi energy:
+        # test_transport_on_an_output_with_a_fermi_energy_asks_relative_to_it
+        assert r["error"] and "Minimum μ (eV, absolute)" in r["error"], r["error"]
+        return
     assert r["error"] is None, r["error"]
     assert r["questions"], r["log"][-2000:]
     unmatched = [S.Question(q).last for q in r["questions"] if q.get("rule") is None and q.get("known") is None]

@@ -11,6 +11,7 @@ import * as KE from "../kpath_editor.js";
 import * as K from "../kpath.js";
 import { createBZ } from "../bz_view.js";
 import * as CF from "./charge.js";
+import * as MOD from "./modules.js";
 
 const css = loadCss(import.meta.url, "../../css/setup.css");
 let S = null, U = null;               // the shell API and its UI helpers (esc, icon, toast, dialog)
@@ -24,7 +25,7 @@ export async function init(shell, ui) {
   S = shell; U = ui;
   await css;
   if (!schema) {
-    try { schema = await S.api("setup/schema"); } catch (e) { schema = { calc_types: {}, functional_categories: [], basis_coverage: {} }; }
+    try { schema = await S.setupSchema(); } catch (e) { schema = { calc_types: {}, functional_categories: [], basis_coverage: {} }; }
   }
   return api;
 }
@@ -58,7 +59,7 @@ function stateFor(d) {
   try { st = M.fromDraft(JSON.parse(localStorage.getItem(draftKey(d)) || "null")); } catch (e) { st = null; }
   const ct = schema.calc_types || {};
   if (!st || (mo.mode === "cif2d12" && st.mode !== "cif2d12") || (mo.mode === "follow" && st.mode === "cif2d12")
-      || (mo.deck && st.mode === "opt2d3")) {
+      || (mo.deck && st.mode === "opt2d3") || (MOD.isModule(st.calc) && (mo.mode !== "follow" || mo.deck))) {
     const mode = mo.mode === "follow" ? "opt2d12" : "cif2d12";
     st = M.newState(mode, (schema.default_calc || {})[mode] || (ct[mode] || ["OPT"])[0]);
   }
@@ -96,6 +97,8 @@ async function sourceFor(d, st) {
 function schedule(d, preview = null, delay = null) {
   const st = stateFor(d);
   if (!st) return;
+  // 4-7 and Phonopy write their decks with their own command (modules.js): nothing to ask opt2d12
+  if (MOD.isModule(st.calc)) { clearTimeout(timers.get(d.id)); st.pendingRun = false; render(); return; }
   const auto = S.setting("setupAutoPreview") !== false;
   const want = preview === null ? auto : preview;
   st.stale = true;
@@ -107,7 +110,7 @@ function schedule(d, preview = null, delay = null) {
 
 async function run(d, preview) {
   const st = stateFor(d);
-  if (!st || guardFor(d, st)) return null;
+  if (!st || guardFor(d, st) || MOD.isModule(st.calc)) return null;
   const { source, name } = await sourceFor(d, st);
   const body = M.request(st, source, d.id, preview);
   if (name) body.name = name;
@@ -130,6 +133,7 @@ async function run(d, preview) {
     if (running === mine) running = null;
     if (!r || r.canceled) return null;
     st.busy = null;
+    if (MOD.isModule(st.calc)) return null;         // 4-7 or Phonopy was picked meanwhile: no opt2d12 deck
     st.result = r;
     st.jsonText = r.json_text;
     st.error = null;
@@ -202,11 +206,21 @@ function render() {
   const allBtn = (act, cmd, ic, label) => `<button type="button" class="icon-btn sm" data-act="${act}" data-tip="${label}" data-tip-cmd="${cmd}" aria-label="${label}">${icon(ic)}</button>`;
   const acts = st && st.result ? `<span class="su-head-acts" role="group" aria-label="Setup sections">${allBtn("expandAll", "view.expandSections", "chevrons-up-down", "Expand All Sections")}` +
     `${allBtn("collapseAll", "view.collapseSections", "chevrons-down-up", "Collapse All Sections")}</span>` : "";
-  root.appendChild(el(`<header class="su-head"><h2 class="su-title">Calculation Setup</h2>${st ? `<span class="su-chip" title="The CLI command that makes this deck">${esc(st.mode)} · ${esc(M.MODES[st.mode])}</span>` : ""}${acts}</header>`));
+  const mod = st && MOD.isModule(st.calc) ? MOD.MODULES[st.calc] : null;
+  const chip = mod ? esc(mod.cmd) : st ? `${esc(st.mode)} · ${esc(M.MODES[st.mode])}` : "";
+  root.appendChild(el(`<header class="su-head"><h2 class="su-title">Calculation Setup</h2>${st ? `<span class="su-chip" title="The CLI command that makes this deck">${chip}</span>` : ""}${mod ? "" : acts}</header>`));
   const body = el(`<div class="su-body"></div>`);
   root.appendChild(body);
   body.appendChild(step1(d, st));
-  if (st) {
+  if (mod) {
+    // 4 ELASTIC ... 7 CPHF and Phonopy: their own form and command (modules.js), no opt2d12 footer
+    const f = MOD.formFor(S, U, d, st.calc);
+    const s2 = el(`<section class="su-step" aria-label="Settings"><h3 id="su-s2"><span class="num">2</span>Settings</h3></section>`);
+    s2.insertAdjacentHTML("beforeend", calcSegment(d, st));
+    s2.appendChild(f.settings);
+    body.appendChild(s2);
+    body.appendChild(f.write);
+  } else if (st) {
     body.appendChild(step2(d, st));
     body.appendChild(step3(d, st));
     root.appendChild(footer(d, st));
@@ -297,31 +311,49 @@ function parentLine(d, st, name) {
   return el(`<div class="su-parentbox"><p class="su-note su-parent">${icon("info")}<span>${what} (${esc(how)}); fields marked “from parent .${deck ? "d12" : "out"}” keep its values.</span></p>${warn}</div>`);
 }
 
+/** What Setup's gate (setup/model.js calcBlocked) reads of this document. */
+const gateInfo = (d) => ({ ...info(d), ...S.runFacts(d) });
+
 function calcSegment(d, st) {
   // follow-ups this parent cannot have (the server's parent_refusals: ORBITALS from a two-component run),
   // grayed out with the reason as their tooltip; kept across calculation changes (a change clears the result)
   if (st.result && st.result.parent && st.result.parent.refused) st.refused = st.result.parent.refused;
-  const refused = st.refused || {};
+  // and every type this file cannot have at all (a property from a CIF, a module from a FREQ run): the
+  // gate of Calculation › Regular / Properties Calculations, from the same table (setup/schema calc_groups)
+  const groups = (schema.calc_groups && schema.calc_groups.groups) || [];
+  const refused = {}, gi = gateInfo(d);
+  for (const g of groups) for (const t of g.types) { const why = M.calcBlocked(schema.calc_groups, t.calc, d, gi); if (why) refused[t.calc] = why; }
+  Object.assign(refused, st.refused || {});
   // the reason a screen reader reads: visually hidden text after the group, named by aria-describedby
   const whyId = (t) => `su-why-${t.replace(/[^A-Za-z0-9]/g, "_")}`;
   const why = Object.entries(refused).map(([t, r]) => `<span class="sr-only" id="${whyId(t)}">${esc(r)}</span>`).join("");
-  const btn = (t, prop) => `<button role="radio" aria-checked="${t === st.calc}" data-calc="${esc(t)}" class="${prop ? "prop" : ""}${refused[t] ? " refused" : ""}"` +
-    (refused[t] ? ` aria-disabled="true" title="${esc(refused[t])}" aria-describedby="${whyId(t)}"`
-      : `${t === "CHARGE+POTENTIAL" ? ' title="CHARGE+POTENTIAL"' : ""}`) +
-    `>${esc(t === "CHARGE+POTENTIAL" ? "CHG+POT" : t)}</button>`;
-  if (st.mode === "cif2d12") {
-    return `<div class="su-calc" role="radiogroup" aria-label="Calculation type">${(schema.calc_types.cif2d12 || []).map((t) => btn(t, false)).join("")}</div>${why}`;
-  }
-  // a follow-up: rows of three equal segments, the SCF runs (opt2d12) above the properties of its wavefunction (opt2d3)
-  const row = (types, prop, label) => `<div class="su-calc-row" title="${esc(label)}">${types.map((t) => btn(t, prop)).join("")}</div>`;
-  if (M.modeOf(d, info(d)).deck) {
-    return `<div class="su-calc grouped" role="radiogroup" aria-label="Calculation type">` +
-      row(schema.calc_types.opt2d12 || [], false, "A new SCF run from this deck (mace opt2d12 --d12-file); properties need a run's wavefunction") + "</div>" + why;
-  }
-  const props = schema.calc_types.opt2d3 || [], rows = [];
-  for (let k = 0; k < props.length; k += 3) rows.push(row(props.slice(k, k + 3), true, "Properties from this output's wavefunction (mace opt2d3)"));
-  return `<div class="su-calc grouped" role="radiogroup" aria-label="Calculation type">` +
-    row(schema.calc_types.opt2d12 || [], false, "A new SCF run from this output (mace opt2d12)") + rows.join("") + "</div>" + why;
+  // each group numbered as its CLI menu (opt2d12's 1-8, opt2d3's 1-7), the number before the name
+  const btn = (t, prop) => `<button role="radio" aria-checked="${t.calc === st.calc}" data-calc="${esc(t.calc)}" class="${prop ? "prop" : ""}${refused[t.calc] ? " refused" : ""}"` +
+    (t.n ? ` data-n="${t.n}"` : "") +
+    (refused[t.calc] ? ` aria-disabled="true" title="${esc(refused[t.calc])}" aria-describedby="${whyId(t.calc)}"`
+      : MOD.isModule(t.calc) ? ` title="${esc(MOD.MODULES[t.calc].title)}"` : ` title="${esc(t.label)}"`) +
+    `>${esc(t.calc === "CHARGE+POTENTIAL" ? "CHG+POT" : MOD.isModule(t.calc) ? MOD.MODULES[t.calc].label : t.calc)}</button>`;
+  // two groups as the Calculation menu has them, in rows of three equal segments: the runs (opt2d12, and
+  // Phonopy's displaced supercells) above the properties of a run's wavefunction (opt2d3)
+  const TITLE = { regular: "A new run from this file (mace convert or mace opt2d12; ELASTIC ... PHONOPY: mace opt2d12 --calc-type)",
+    properties: "Properties from a finished run's wavefunction (mace opt2d3)" };
+  const row = (types, g) => `<div class="su-calc-row" title="${esc(TITLE[g.key] || g.cli)}">${types.map((t) => btn(t, g.key === "properties")).join("")}</div>`;
+  return `<div class="su-calc grouped" role="radiogroup" aria-label="Calculation type">` + groups.map((g) => {
+    let html = `<div class="su-calc-cap" role="presentation" data-group="${esc(g.key)}">${esc(g.label)} <span>${esc(g.cli)}</span></div>`;
+    for (let k = 0; k < g.types.length; k += 3) html += row(g.types.slice(k, k + 3), g);
+    return html;
+  }).join("") + "</div>" + why;
+}
+
+/** Pick calculation type c: the CLI mode that writes it, a fresh form, one undo step. */
+function choose(d, st, c) {
+  const was = st.calc;
+  st.calc = c;
+  if (st.mode !== "cif2d12") st.mode = M.followMode(c, schema.calc_types);
+  st.answers = {}; st.patches = {}; st.hand = null; st.result = null;
+  M.record(st, `Calculation ${was} → ${c}`);
+  persist(d, st);
+  schedule(d, null, 0);
 }
 
 function step2(d, st) {
@@ -350,6 +382,7 @@ function step2(d, st) {
       <span class="su-count">${rows.filter((f) => f.changed).length ? `${rows.filter((f) => f.changed).length} changed` : ""}</span></button><div class="su-rows"></div></div>`);
     const host = sec.querySelector(".su-rows");
     for (const f of rows) host.appendChild(row(d, st, f, fol));
+    if (name === "BAND" && st.mode === "opt2d3" && schema.static_kpath) host.appendChild(staticKpathRow(st));
     s.appendChild(sec);
   }
   if (st.mode === "opt2d3" && st.calc === "BAND" && r.kpath) s.appendChild(kpathSection(d, st, r.kpath, collapsed));
@@ -358,6 +391,17 @@ function step2(d, st) {
   if (socSec) s.appendChild(socSec);
   s.appendChild(advanced(d, st));
   return s;
+}
+
+/** --static-kpath: SeeK-path's path is the default; this writes the space group's static table path instead
+ * (the CLI's own refusal, without the seekpath package, names this switch). */
+function staticKpathRow(st) {
+  const sk = schema.static_kpath, on = !!(st.flags && st.flags.static_kpath);
+  return el(`<div class="su-row${on ? " changed" : ""}" data-static-row="1">
+    <label for="su-static-kpath" class="su-l" id="su-static-kpath-l">${esc(sk.label)}</label>
+    <div class="su-ctl"><span class="su-switch"><input type="checkbox" role="switch" id="su-static-kpath" data-static="1" aria-checked="${on}"
+      aria-labelledby="su-static-kpath-l" aria-describedby="su-static-kpath-h"${on ? " checked" : ""}><span aria-hidden="true">${on ? "On" : "Off"}</span></span></div>
+    <div class="su-meta"><code class="cf-switch">${esc(sk.switch)}</code><span class="su-h" id="su-static-kpath-h">${esc(sk.hint)}</span></div></div>`);
 }
 
 /** The k-path to compute (opt2d3 BAND): the editor of the band plot, on the path the deck computes.
@@ -583,11 +627,14 @@ function row(d, st, f, fol) {
     const groups = new Map();
     for (const o of opts) { const g = o.group || ""; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(o); }
     const optHtml = [...groups.entries()].map(([g, os]) => {
-      const inner = os.map((o) => `<option value="${esc(o.head)}"${o.head === cur ? " selected" : ""} title="${esc(o.text)}">${esc(o.head)}</option>`).join("");
+      const inner = os.map((o) => `<option value="${esc(o.head)}"${o.head === cur ? " selected" : ""} title="${esc(o.text)}">${esc(M.optionLabel(o))}</option>`).join("");
       return g ? `<optgroup label="${esc(g)}">${inner}</optgroup>` : inner;
     }).join("");
     const missing = cur && !opts.some((o) => o.head === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
-    ctl = `<select id="${id}" aria-describedby="${id}-h">${missing}${optHtml}</select>`;
+    // a long choice (TOLINTEG ..., TOLDEG ...) does not fit the box: the title carries it whole
+    const sel = opts.find((o) => o.head === cur);
+    const tip = [sel ? M.optionLabel(sel) : cur, f.detail].filter(Boolean).join(" · ");
+    ctl = `<select id="${id}" aria-describedby="${id}-h"${tip ? ` title="${esc(tip)}"` : ""}>${missing}${optHtml}</select>`;
   } else if (f.kind === "yesno") {
     const on = f.id in st.answers ? [true, "y", "Yes"].includes(st.answers[f.id]) : f.value === "Yes";
     // one label per control (WCAG 1.3.1): the row's own; the Yes/No text is visual only
@@ -603,7 +650,7 @@ function row(d, st, f, fol) {
     <label for="${id}" id="${id}-l" class="su-l" title="${esc(q)}">${esc(f.label)}</label>
     <div class="su-ctl">${ctl}${f.unit ? `<span class="su-unit">${esc(f.unit)}</span>` : ""}${cover}</div>
     <div class="su-meta"><span class="su-badge ${b.kind}">${esc(b.text)}</span>${f.changed ? `<button class="su-reset" data-reset="${esc(f.id)}" aria-label="Reset ${esc(f.label)}">Reset</button>` : ""}
-    <span class="su-h" id="${id}-h">${esc(f.hint || "")}</span></div></div>`);
+    <span class="su-h" id="${id}-h">${esc(f.hint || "")}${f.note ? esc((f.hint ? ". " : "") + f.note) : ""}</span></div></div>`);
   return r;
 }
 
@@ -767,13 +814,7 @@ function onClick(e) {
   if (calc && st) {
     const c = calc.dataset.calc;
     if (c === st.calc || calc.getAttribute("aria-disabled") === "true") return;
-    const was = st.calc;
-    st.calc = c;
-    if (st.mode !== "cif2d12") st.mode = M.followMode(c, schema.calc_types);
-    st.answers = {}; st.patches = {}; st.hand = null; st.result = null;
-    M.record(st, `Calculation ${was} → ${c}`);
-    persist(d, st);
-    schedule(d, null, 0);
+    choose(d, st, c);
     return;
   }
   const socReset = t.closest("[data-soc-reset]");
@@ -851,6 +892,13 @@ function onChange(e) {
     bulk(d, v === undefined ? `${def.switch} removed` : `${def.switch} ${v}`, (s) => { s.flags = CF.withValue(s.flags, def.id, v); });
     return;
   }
+  if (t.dataset && t.dataset.static && st) {
+    bulk(d, t.checked ? `${schema.static_kpath.switch} on` : `${schema.static_kpath.switch} off`, (s) => {
+      s.flags = { ...(s.flags || {}) };
+      if (t.checked) s.flags.static_kpath = true; else delete s.flags.static_kpath;
+    });
+    return;
+  }
   if (t.dataset && t.dataset.soc && st) { socChange(d, st, t); return; }
   const r = t.closest(".su-row");
   if (!r || !st || !st.result) return;
@@ -920,6 +968,16 @@ function focusField(id) {
   if (c) c.focus();
 }
 
+/** Preview, Save, Submit and Batch are opt2d12's: 4-7 and Phonopy write with their own button. */
+function moduleOnly(st) {
+  if (!st || !MOD.isModule(st.calc)) return false;
+  const m = MOD.MODULES[st.calc];
+  S.toast(`${m.label} writes its ${st.calc === "PHONOPY" ? "decks" : "deck"} with ${m.cmd}: use the button in step 3`, "info");
+  const b = root && root.querySelector('[data-mact="write"]');
+  if (b) b.focus();
+  return true;
+}
+
 /* ---------------------------------------------------------------- the API the shell uses */
 const api = {
   /** Expand or collapse every section of the form (Advanced only collapses: it holds the hand-edited file). */
@@ -966,6 +1024,7 @@ const api = {
   async preview(explicit = true) {
     const d = subject || subjectDoc(), st = stateFor(d);
     if (!st) { S.toast("Open a CIF or a CRYSTAL output to set up a calculation", "info"); return null; }
+    if (moduleOnly(st)) return null;
     if (guardFor(d, st)) { S.toast("Choose which geometry the deck uses first", "info"); return null; }
     clearTimeout(timers.get(d.id));
     const p = run(d, true);
@@ -995,6 +1054,13 @@ const api = {
   async copyCli() {
     const d = subject, st = stateFor(d);
     if (!st) return;
+    if (MOD.isModule(st.calc)) {
+      const f = MOD.formFor(S, U, d, st.calc);
+      if (!f.command) { moduleOnly(st); return; }
+      window.__maceLastCopy = f.command;
+      await S.copyText(f.command, "Command copied");
+      return;
+    }
     if (!st.saved) { st.saveOpen = true; render(); S.toast("Save the settings first: the command names the saved file", "info"); return; }
     window.__maceLastCopy = st.saved.command;
     await S.copyText(st.saved.command, "Command copied");
@@ -1006,6 +1072,7 @@ const api = {
    * to the network (the dialog refuses it too), before anything is written. */
   async submitDeck() {
     const d = subject, st = stateFor(d);
+    if (moduleOnly(st)) return null;
     if (!st || !st.result || !st.result.json_text) { S.toast("Preview a deck first", "info"); return null; }
     if (st.result.save_blocked) { S.toast(st.result.save_blocked, "error"); return null; }
     if (M.modeOf(d, info(d)).source === "session") {
@@ -1039,7 +1106,7 @@ const api = {
    * folder of decks and its step 4 opens Submit on them. */
   batchFrom() {
     const d = subject, st = stateFor(d);
-    if (!st || !d) return null;
+    if (!st || !d || moduleOnly(st)) return null;
     const mo = M.modeOf(d, info(d));
     if (mo.source === "session" || !d.path) {
       S.toast("Save the structure as a CIF in the folder first: Batch Setup reads files in a folder", "info");
@@ -1123,5 +1190,21 @@ const api = {
   historyRows: (d) => { const st = stateFor(d || subject); return st ? st.history.map((h, k) => ({ label: h.label, t: h.t, cur: k === st.pos })) : []; },
   jump: (k) => { const d = subject, st = stateFor(d); M.jump(st, k); persist(d, st); schedule(d, null, 0); },
   bytes: () => [...states.values()].reduce((t, s) => t + M.historyBytes(s), 0),
-  forget: (d) => { const st = states.get(d.id); if (st && st.bz) st.bz.destroy(); states.delete(d.id); },
+  forget: (d) => { const st = states.get(d.id); if (st && st.bz) st.bz.destroy(); states.delete(d.id); MOD.forget(d.id); },
+  /** Setup at this calculation type (Calculation › Regular / Properties Calculations, Mechanical Properties
+   * Deck, Phonopy Displacements), when the file can have it: else the gate's reason, as the grayed entry says. */
+  pick(calc) {
+    const d = subject || subjectDoc(), st = stateFor(d);
+    const why = M.calcBlocked(schema.calc_groups, calc, d, gateInfo(d)) || (st ? "" : "Open a structure, a deck or an output first");
+    if (why) {
+      const t = M.calcEntry(schema.calc_groups, calc);
+      S.toast(`${t ? t.label : calc}: ${why}`, "info");
+      return false;
+    }
+    if (st.calc !== calc) choose(d, st, calc);
+    render();
+    const c = root && root.querySelector(`.su-calc [data-calc="${calc}"]`);
+    if (c) c.focus();
+    return true;
+  },
 };

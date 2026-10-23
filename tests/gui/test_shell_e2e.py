@@ -168,7 +168,7 @@ def test_toolbar_groups_and_every_tooltip(fresh):
           along: !!t.querySelector('#tb-along'), range: !!t.querySelector('#tb-range'),
           sym: t.querySelector('.segment').textContent, clean: !!t.querySelector('[data-cmd="build.clean"]'),
           setup: !!t.querySelector('[data-cmd="calc.setup"]')}""")
-    assert groups == {"tools": 10, "toggles": True, "along": True, "range": True, "sym": "P1Sym",
+    assert groups == {"tools": 11, "toggles": True, "along": True, "range": True, "sym": "P1Sym",
                       "clean": True, "setup": True}
     buttons = drv.find_elements("css selector", "#toolbar [data-cmd], #toolbar [data-tip]")
     cmds = {c["id"]: c for c in drv.execute_script("return window.__mace.commands")}
@@ -209,6 +209,9 @@ def test_three_documents_and_the_trajectory_timeline(fresh):
     drv = fresh[0]
     assert drv.execute_script("return document.querySelector('#tab-welcome').classList.contains('active')")
     assert open_doc(drv, "structures/MgO.cif") == "structure"
+    # its first view is complete: the Display panel (loaded with the first structure) has read the
+    # structure's spin moments once (the Magnetic style), which a switch back must not read again
+    H.wait(drv, "const d = window.__mace.doc(); return !!d.spins && d.spins.state !== 'loading'", 10)
     assert open_doc(drv, "outputs/Ag2Br3_opt_unfinished.out") == "trajectory"
     assert drv.execute_script("return document.querySelector('#tab-opt').classList.contains('active')")
     assert drv.execute_script("return document.querySelector('.bottom-tab.active').dataset.bottom") == "timeline"
@@ -1224,7 +1227,11 @@ def test_settings_schema_covers_defaults(fresh):
         import(document.querySelector('script[src*="/js/shell.js"]').src.replace('shell.js', 'lazy/settings_schema.js'))
           .then((m) => d(m.SCHEMA.map((r) => r.key)))""")
     defaults = drv.execute_script("return Object.keys(window.__mace.settings.defaults())")
-    assert sorted(k for k in keys_) == sorted(k for k in defaults if k != "keymap"), set(keys_) ^ set(defaults)
+    # settings with their own UI, not a Settings row: the keymap (Keyboard Shortcuts), the Inspector's
+    # Basic | Advanced per view kind (its tab strip) and the activity bar's order and hidden views (its menu)
+    # and the bond pair rules (Build › Calculate Bonds…, 1.1.6)
+    own_ui = {"keymap", "inspector.tier", "activity.order", "activity.hidden", "activity.visible", "bondPairs"}
+    assert sorted(k for k in keys_) == sorted(k for k in defaults if k not in own_ui), set(keys_) ^ set(defaults)
     assert len(keys_) == len(set(keys_))
     assert not set(SPEC_SETTINGS) - set(keys_), set(SPEC_SETTINGS) - set(keys_)
 
@@ -1260,10 +1267,11 @@ def test_settings_live_and_persistent(fresh):
     H.wait(drv, "const a = window.__mace.atomStyle(0); return Math.abs(a.radius / arguments[0] - 1.5) < 0.01", 5, r0)
     shot(drv, "settings_viewport_dark")
     flush(drv)
-    assert stored(xdg) == {"theme": "dark", "colorScheme": "jmol", "atomScale": 0.6}
+    # an edited style value makes the Style preset Custom, as in the Inspector (1.1.6)
+    assert stored(xdg) == {"theme": "dark", "colorScheme": "jmol", "atomScale": 0.6, "stylePreset": "custom"}
     Select(drv.find_element("css selector", "#set-colorScheme")).select_by_value(D1_DEFAULT_SCHEME)
     flush(drv)
-    assert stored(xdg) == {"theme": "dark", "atomScale": 0.6}        # the default is not stored
+    assert stored(xdg) == {"theme": "dark", "atomScale": 0.6, "stylePreset": "custom"}     # the default is not stored
     drv.refresh()
     H.wait(drv, "return document.documentElement.dataset.appReady === '1'")
     open_doc(drv, "structures/MgO.cif")
@@ -1277,6 +1285,7 @@ def test_settings_live_and_persistent(fresh):
     drv.execute_script("document.querySelector(`#settings [data-sec='viewport']`).click()")
     drv.find_element("css selector", '#settings [data-reset="atomScale"]').click()
     assert drv.execute_script("return document.querySelector('#settings [data-reset=\"atomScale\"]').hidden")
+    drv.find_element("css selector", '#settings [data-reset="stylePreset"]').click()
     flush(drv)
     assert stored(xdg) == {}
     drv.execute_script("document.querySelector('#settings').close()")
@@ -1288,10 +1297,10 @@ def test_settings_search_sections_and_errors(fresh):
     assert drv.execute_script("return document.activeElement.id") == "set-search"
     drv.find_element("id", "set-search").send_keys("bond")
     rows = drv.execute_script("return [...document.querySelectorAll('#settings .set-row')].map((r) => r.dataset.row)")
-    # "Bonded atoms outside" (polish A5) is found too
-    assert set(rows) == {"bondRadius", "bondTolerance", "bondMetalMetal", "bondColoring", "bondedOutside"}, rows
+    # "Bonded atoms outside" (polish A5) is found too, and the shortest bond (1.1.6, Calculate Bonds…)
+    assert set(rows) == {"bondRadius", "bondTolerance", "bondMin", "bondMetalMetal", "bondColoring", "bondedOutside"}, rows
     counts = drv.execute_script("return [...document.querySelectorAll('.set-nav-item')].map((b) => [b.dataset.sec, b.querySelector('.n').textContent, b.classList.contains('dim')])")
-    assert ["viewport", "5", False] in counts and ["editor", "", True] in counts, counts
+    assert ["viewport", "6", False] in counts and ["editor", "", True] in counts, counts
     shot(drv, "settings_search_bond")
     drv.find_element("id", "set-search").clear()
     drv.find_element("id", "set-search").send_keys("zzz")
@@ -1781,10 +1790,10 @@ ATOM_MENU = ["Select Equivalents", "Select Element (Mg)", "Select Neighbors", "-
              "Delete", "-", "Vacancy Here", "Substitute…", "Antisite…", "-", "Measure from Here", "Center View Here", "-", "Copy Coordinates (Fractional)",
              "Copy Coordinates (Cartesian)", "-", "Properties"]
 # Export Element Legend… (1.1.6) in both
-EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Snap View to Nearest Axis", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…",
+EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Snap View to Nearest Axis", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "Calculate Bonds…", "-", "Export Image…",
               "Export Element Legend…"]
-EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Compare With Active", "Plot", "Compare Convergence", "Plot Gallery",
-                 "Export Element Legend…", "-",
+EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Open as Structure", "Compare With Active", "Plot", "Compare Convergence", "Plot Gallery",
+                 "Export Element Legend…", "Phonons with Phonopy…", "Analyze Structures…", "-",
                  "Copy Path", "Reveal in Folder", "Show File History…", "-", "Set Up Calculation", "Submit…", "Run on This Node…", "New Workflow…",
                  "Create or Update Database from This Folder…"]
 TAB_MENU = ["Close", "Close Others", "Close to the Right", "-", "Move to Other Group", "Move Left", "Move Right", "-", "Copy Path", "Reveal in Explorer"]
@@ -1878,7 +1887,9 @@ def test_explorer_context_menu(fresh):
     rows = menu_rows(drv, "Explorer menu")
     assert [r[0] for r in rows] == EXPLORER_MENU
     off = {r[0] for r in rows if r[2] == "true"}
-    assert off == {"Plot", "Compare Convergence", "Submit…", "Run on This Node…"}, off   # NaCl is no BAND/DOSS file, nor an output, nor a deck
+    # NaCl is no BAND/DOSS file, nor an output, nor a deck, nor a phonopy set's file
+    # (nor an ELASTIC, EOS, QHA or CPHF output, which opens as its results: Open as Structure)
+    assert off == {"Open as Structure", "Plot", "Compare Convergence", "Phonons with Phonopy…", "Submit…", "Run on This Node…"}, off
     shot(drv, "ctx_explorer_light")
     click_item(drv, "Copy Path")
     H.wait(drv, "return window.__copied === 'structures/NaCl.cif'", 3)

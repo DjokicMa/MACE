@@ -1,9 +1,10 @@
 """The 3D view's Style and Lighting presets (Inspector › Rendering, 1.1.7):
 each style draws what it says (Space-filling has no bonds, Wireframe thin
 sticks only, Grayscale grays with outlines, VESTA-like VESTA's colors and
-radii whatever Settings choose, Polyhedral one octahedron per drawn Ti in
-TiPbO3, Magnetic colors following the sign of the Mulliken moments with a
-legend), styles that cannot apply are grayed out with the reason, each
+radii whatever Settings choose, Polyhedral one octahedron per Ti in the
+drawn cells of TiPbO3, Magnetic colors following the sign of the Mulliken
+moments with a legend), styles that cannot apply are grayed out with the
+reason, each
 lighting preset sets its values (Glossy dark: a specular highlight on a black
 background), the two dropdowns combine without touching each other's keys,
 and a document saved with the old Rendering preset keeps it as its lighting.
@@ -246,24 +247,26 @@ def test_vesta_like_pins_vesta_whatever_settings_choose(fresh):
         drv.execute_script("window.__mace.settings.reset('colorScheme'); window.__mace.settings.reset('radiusSet')")
 
 
-def test_polyhedral_draws_one_octahedron_per_drawn_ti(fresh):
+def test_polyhedral_draws_one_octahedron_per_ti_in_the_range(fresh):
+    """Since 1.1.6 Pb bonds to O out to the sum of the Shannon ionic radii (heavy-element bonds), so in this
+    TiPbO3 (I4/m) both cations are centers (their ligands are O): TiO6 octahedra and PbO5 square pyramids
+    (Pb, with fewer ligands than Ti, is no A site here). A center gets its polyhedron once, inside the drawn
+    cells: the boundary copies on the far faces draw none (1.1.6)."""
     drv, root = fresh[0], fresh[1]
     need(root, "real/tipbo3.cif")
     open_doc(drv, "real/tipbo3.cif")
     choose(drv, "style", "polyhedral", settle=0.3)
     H.wait(drv, "const p = window.__mace.viewport.scene().polyhedra(); return p.on && p.count > 0", 20)
     p = drv.execute_script("return window.__mace.viewport.scene().polyhedra()")
-    ti = drv.execute_script("""const s = window.__mace.doc().structure, d = window.__mace.viewport.scene().display;
-      return Array.from(d.base).filter((i) => s.symbols[i] === 'Ti').length""")
-    assert p["count"] == ti and p["meshes"] == 1, (p, ti)            # Ti only: Pb is not a center
-    assert p["faces"] and all(f["cn"] == 6 and f["faces"] == 8 for f in p["faces"]), p["faces"]
-    assert p["shapes"] == 2                                          # one mesh and its edges
+    cations = drv.execute_script("return window.__mace.doc().structure.symbols.filter((x) => x === 'Ti' || x === 'Pb').length")
+    assert p["count"] == cations and p["meshes"] == 2, (p, cations)    # one mesh per center element
+    # TiO6 octahedra (8 faces) and PbO5 square pyramids (5 faces)
+    assert {(f["cn"], f["faces"]) for f in p["faces"]} == {(6, 8), (5, 5)}, p["faces"]
+    assert p["shapes"] == 2 * p["meshes"]                            # each mesh and its edges
     # the drawn range's periodic images get theirs: 2x2x2 has 8 times the cell's
     drv.execute_script("window.__mace.display.setCells(window.__mace.activeDoc(), 2)")
     H.wait(drv, "const p = window.__mace.viewport.scene().polyhedra(); return p.count > arguments[0]", 20, p["count"])
-    ti2 = drv.execute_script("""const s = window.__mace.doc().structure, d = window.__mace.viewport.scene().display;
-      return Array.from(d.base).filter((i) => s.symbols[i] === 'Ti').length""")
-    assert drv.execute_script("return window.__mace.viewport.scene().polyhedra().count") == ti2
+    assert drv.execute_script("return window.__mace.viewport.scene().polyhedra().count") == 8 * cations
     assert not H.errors(drv)
 
 

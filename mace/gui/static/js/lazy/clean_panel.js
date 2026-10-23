@@ -11,11 +11,21 @@
  * potentials (third-party models, unrelated to this MACE, run in their own
  * environment) and Auto. GFN-FF, ML and Auto take a minute or more, so they
  * never preview on a field change: Run starts a job, and a second Run cancels
- * the first (the loaded model stays). The GUI never installs or downloads
- * anything; a missing method shows the commands that set it up. */
+ * the first (the loaded model stays). The panel itself never installs or downloads
+ * anything; a missing method shows the commands that set it up, and ML
+ * Potentials… opens Settings › ML potentials, which installs when asked.
+ *
+ * A slab, polymer or molecule (1.1.6) cleans too: it has no space group to keep (the box is off and
+ * says why), and Relax the cell relaxes its periodic directions only (a molecule has no cell). */
 import { openBuilder } from "./builder_util.js";
 import * as profile from "../profile.js";
 
+// Bonds held (1.1.6): the bonds the springs hold (mace/gui/clean.py held_bonds; mace preopt --bonds)
+const BONDS_NOTE = {
+  shown: "The bonds the view draws (Build › Calculate Bonds… sets them)",
+  lenient: "1.2 × the sum of the bond radii: also bonds stretched a little past what the view draws",
+  none: "No bonds: close atoms only push apart",
+};
 const RELAX_NOTE = {
   springs: "The cell follows the bond springs only; ionic crystals shrink a few percent",
   gfnff: "Cell relaxation of ionic solids often fails with GFN-FF",
@@ -106,7 +116,8 @@ export function open(H) {
         <p class="bld-note insp-hint" data-k="unrelated" hidden></p>
         <details class="clean-more" data-k="more"><summary data-k="more-summary">Other methods</summary>
           <ul class="clean-unavailable" data-k="unavailable"></ul>
-          <button type="button" class="tb-btn-text" data-k="recheck">Recheck</button></details>
+          <button type="button" class="tb-btn-text" data-k="recheck">Recheck</button>
+          <button type="button" class="tb-btn-text" data-k="mlip-setup" title="Settings › ML potentials: install the ML environment, download weights">ML Potentials…</button></details>
         ${deck.geometry_edits && deck.geometry_edits.length ? `<p class="bld-note bld-warn" data-k="host-warning">This document is the host geometry of ${esc(deck.name || "its deck")} (${esc(deck.geometry_edits.join(", "))}): Clean acts on the host, not the structure CRYSTAL builds from the deck.</p>` : ""}
         <label class="bld-row"><span>Charge</span><input type="number" step="1" value="${esc(q)}" data-k="charge" aria-label="Charge"></label>
         <p class="bld-note insp-hint">Springs ignore the charge<span data-k="uhf-note" hidden>; the spin (uhf) is recorded only; GFN-FF ignores it</span><span data-k="ml-charge-note" hidden>; ML potentials take no charge input (they see a neutral cell)</span></p>
@@ -116,18 +127,39 @@ export function open(H) {
           <p class="bld-note insp-hint" data-k="symfirst-note" hidden>This can raise the space group; CRYSTAL keeps the raised group</p></div>
         <label class="bld-check"><input type="checkbox" data-k="cell"> Relax the cell</label>
         <p class="bld-note insp-hint" data-k="relax-note">${RELAX_NOTE.springs}</p>
+        <label class="bld-row"><span>Bonds held</span><select data-k="bonds" aria-label="Bonds held">
+          <option value="shown">As shown</option><option value="lenient">Lenient (1.2 ×)</option><option value="none">None (repulsion only)</option></select></label>
+        <p class="bld-note insp-hint" data-k="bonds-note"></p>
         <label class="bld-row"><span>Time limit (s)</span><input type="number" min="0.5" max="120" step="0.5" value="10" data-k="limit" aria-label="Time limit (s)"></label>
         <div class="bld-row" data-k="run-row" hidden><span></span><span><button type="button" class="tb-btn-text primary" data-k="run">Run</button></span></div>
         <details data-k="adv" hidden><summary>Advanced</summary>
           <label class="bld-row"><span>fmax (eV/Å)</span><input type="number" min="0.0001" step="0.001" data-k="fmax" aria-label="fmax (eV/Å)"></label>
           <label class="bld-row"><span>Steps</span><input type="number" min="1" step="1" data-k="steps" aria-label="Steps"></label></details>
         <div class="bld-row" data-k="longer-row" hidden><span></span><span><button type="button" class="tb-btn-text" data-k="longer">Run Longer</button></span></div>`;
+      // a slab, polymer or molecule: no space group to keep; only the periodic directions relax
+      const st = api.structure(), per = st && st.pbc ? st.pbc.map(Boolean) : [true, true, true];
+      if (!per.every(Boolean)) {
+        const dim = String(st.dimensionality || "").toLowerCase() || "structure";
+        const sym = host.querySelector('[data-k="sym"]'), cell = host.querySelector('[data-k="cell"]');
+        sym.checked = false; sym.disabled = true;
+        sym.parentElement.title = `A ${dim} has no space group to keep (spglib's groups are 3D)`;
+        if (!per.some(Boolean)) { cell.checked = false; cell.disabled = true; cell.parentElement.title = "A molecule has no cell to relax"; }
+        else cell.parentElement.title = `Relaxes the ${dim}'s periodic directions only`;
+        host.querySelector('[data-k="relax-note"]').insertAdjacentHTML("afterend",
+          `<p class="bld-note insp-hint" data-k="lowdim-note">A ${esc(dim)}: no space group is kept${per.some(Boolean) ? "; the cell relaxes along its periodic directions only" : ""}</p>`);
+      }
       host.querySelector('[data-k="method"]').addEventListener("change", (e) => {
         e.target.dataset.picked = "1";
         profile.remember("cleanMethod", e.target.value);
         methodChanged(api); api.changed();
       });
+      const bonds = host.querySelector('[data-k="bonds"]'), bondsNote = () => { host.querySelector('[data-k="bonds-note"]').textContent = BONDS_NOTE[bonds.value]; };
+      bonds.value = BONDS_NOTE[profile.memory("cleanBondsHeld", "shown")] ? profile.memory("cleanBondsHeld", "shown") : "shown";
+      bondsNote();
+      // another choice can have bonds where this one had nothing to clean: its message goes
+      bonds.addEventListener("change", () => { profile.remember("cleanBondsHeld", bonds.value); bondsNote(); msg = ""; api.changed(); });
       host.querySelector('[data-k="recheck"]').addEventListener("click", () => { checking = true; fillSelect(api); loadMethods(api, true); });
+      host.querySelector('[data-k="mlip-setup"]').addEventListener("click", () => H.openSettings("mlip"));
       host.querySelector('[data-k="symfirst"]').addEventListener("change", (e) => {
         host.querySelector('[data-k="symtol"]').disabled = !e.target.checked;
         host.querySelector('[data-k="symfirst-note"]').hidden = !e.target.checked;
@@ -158,7 +190,7 @@ export function open(H) {
       const t = Number(val("limit").value);
       if (!(t > 0)) return { error: "The time limit is a number of seconds", blocked: true };
       // springs: exactly the request Clean made before the other methods existed
-      const p = { keep_symmetry: val("sym").checked, relax_cell: val("cell").checked, time_limit: t };
+      const p = { keep_symmetry: val("sym").checked, relax_cell: val("cell").checked, time_limit: t, bonds_held: val("bonds").value };
       if (kind !== "springs") {
         const qs = val("charge").value.trim();
         p.method = method;
@@ -205,7 +237,8 @@ export function open(H) {
       api.frame.params.querySelector('[data-k="longer-row"]').hidden = true;
       if (!ed.srv.session) await api.E.editing.ensureSession(ed);
       await waitIdle(ed);
-      const body = { session: ed.srv.session, base_rev: ed.srv.rev, ...p.params };
+      // the document's bond rule: the springs hold the bonds its viewer draws
+      const body = { session: ed.srv.session, base_rev: ed.srv.rev, ...p.params, bonds: H.bondValues(H.editor().doc) };
       const mine = ++runSeq;
       let r;
       try {

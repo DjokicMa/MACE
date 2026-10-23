@@ -9,6 +9,7 @@
  * hover or a preview; the view reports the segment under the pointer (onHover) and a click on a
  * segment (onSelect) or on a point (onPick: in Calculation Setup it adds that point to the path). */
 import * as K from "./kpath.js";
+import { legible } from "./viewport/contrast.js";
 
 let serial = 0;
 
@@ -29,13 +30,17 @@ export function createBZ({ api, path, onHover, onSelect, onPick, pickable = fals
   const note = (t) => { el.querySelector(".kp-bz-note").textContent = t; };
   let data = null, segs = [], hl = null, v = null, loading = null, failed = null, fitted = false;
   const M = () => window.MACE;
-  const css = (n) => (M() && M().cssVar ? M().cssVar(n) : getComputedStyle(document.documentElement).getPropertyValue(n).trim());
+  // the zone is drawn on the 3D views' background (Settings › Viewport › Background, which every viewer gets on a
+  // theme or a background change) in the 3D views' tokens, so its edges, path and labels keep their contrast on a
+  // White or Black background in a theme of the other lightness (1.1.6: they were the theme's, and vanished)
+  const css = (n) => (M() && M().vpVar ? M().vpVar(n) : M() && M().cssVar ? M().cssVar(n) : getComputedStyle(document.documentElement).getPropertyValue(n).trim());
+  const bg = () => (M() && M().viewerBg ? M().viewerBg() : css("--surface-2") || "#f7f8fa");
 
   function load() {
     if (!loading) loading = Promise.all([api(`bz?path=${encodeURIComponent(path)}`), M().load3Dmol()]).then(([d]) => {
       data = d;
       draw();
-    }).catch((e) => { failed = e.message || String(e); note(failed); });
+    }).catch((e) => { failed = e.message || String(e); note(failed); el.querySelector(".kp-bz-gl").hidden = true; });   // no zone: no empty box
     return loading;
   }
   function viewer() {
@@ -58,8 +63,9 @@ export function createBZ({ api, path, onHover, onSelect, onPick, pickable = fals
     const span = Math.max(1e-6, ...V.map((p) => Math.hypot(...p)));
     const r = span * 0.011;
     v.removeAllShapes(); v.removeAllLabels();
-    v.setBackgroundColor(css("--surface-2") || "#f7f8fa");
-    const edge = css("--text-3"), text = css("--text"), accent = css("--accent"), warn = css("--warning"), faint = css("--border-strong");
+    v.setBackgroundColor(bg());
+    const ground = bg(), L = (k, min = 3) => legible(css(k), ground, min);
+    const edge = L("--text-3"), text = L("--text", 4.5), accent = L("--accent"), warn = L("--warning"), faint = L("--border-strong", 2);
     // the zone: its edges, its faces faintly
     for (const [i, j] of bz.edges) v.addCylinder({ start: P(V[i]), end: P(V[j]), radius: r * 0.6, color: edge, fromCap: 1, toCap: 1 });
     for (const f of bz.faces || []) {
@@ -125,7 +131,9 @@ export function createBZ({ api, path, onHover, onSelect, onPick, pickable = fals
     m.setStyle({}, {});
     v.zoomTo({ model: m });
     v.removeModel(m);
-    v.zoom(0.85);
+    // zoomTo fits the points' bounding sphere into about half the view's shorter side (3Dmol 2.x, as the volume
+    // view measures it): the zone showed small until zoomed. x1.6 fills ~80 % and keeps the labels inside
+    v.zoom(1.6);
   }
   const api_ = {
     el,
@@ -138,13 +146,16 @@ export function createBZ({ api, path, onHover, onSelect, onPick, pickable = fals
     hoverSegment(i) { if (onHover) onHover(i); },
     selectSegment(i) { if (onSelect) onSelect(i); },
     pickPoint(lab) { if (onPick && data && data.points[lab]) onPick(lab, data.points[lab]); },
-    state: () => ({ loaded: !!data, failed, segments: segs.length, hl, points: data ? Object.keys(data.points) : [], viewer: !!v }),
+    state: () => ({ loaded: !!data, failed, segments: segs.length, hl, points: data ? Object.keys(data.points) : [], viewer: !!v,
+      dim: data ? data.bz.dim : null,
+      fitted, colors: data ? { bg: bg(), edge: legible(css("--text-3"), bg()), text: legible(css("--text"), bg(), 4.5), accent: legible(css("--accent"), bg()) } : null }),
     /** Its document closed (or Setup made a new one): stop following the theme, let the viewer go. */
     destroy() {
       if (gone) return;
       gone = true;
       live--;
       document.removeEventListener("mace-theme", onTheme);
+      if (ro) ro.disconnect();
       el.remove();
       try { if (v && v.clear) v.clear(); } catch (e) { /* already gone */ }
       v = null; data = null;
@@ -152,6 +163,13 @@ export function createBZ({ api, path, onHover, onSelect, onPick, pickable = fals
   };
   let gone = false;
   const onTheme = () => { if (data && el.isConnected) draw(); };
+  // the panel's size settles after the first draw (a split, the inspector's width): fitted again at its new size
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
+    if (gone || !data || !v || !el.isConnected) return;
+    const gl = el.querySelector(".kp-bz-gl"), size = `${gl.clientWidth}x${gl.clientHeight}`;
+    if (gl.clientWidth > 0 && gl.clientHeight > 0 && fitted !== size) { v.resize(); fit(); fitted = size; v.render(); }
+  }) : null;
+  if (ro) ro.observe(el.querySelector(".kp-bz-gl"));
   document.addEventListener("mace-theme", onTheme);
   live++;
   el.__bz = api_;            // the tests reach the view through its element

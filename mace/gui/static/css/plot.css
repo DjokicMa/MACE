@@ -7,6 +7,15 @@
 .pv-title { flex: 1 1 200px; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-chips { display: flex; gap: var(--s-2); }
 .pv-chip { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 600; }
+.pv-chip.warn { background: var(--surface-2); color: var(--warning); }
+/* Add DOS… / Add Band…: the other half's files, one per row (name, then its folder) */
+.pv-pair-q { width: 100%; height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); padding: 0 8px; margin-top: var(--s-2); }
+.pv-pair-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow: auto; margin-top: var(--s-2); }
+.pv-pair-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); padding: 6px 8px; border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--text); text-align: left; cursor: pointer; }
+.pv-pair-item:hover, .pv-pair-item:focus-visible { background: var(--surface-2); border-color: var(--border); }
+.pv-pair-dir { font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-pair-msg { color: var(--warning); min-height: 1.2em; margin-top: var(--s-2); }
+.pv-pair-msg:empty { display: none; }
 .pv-acts { display: flex; gap: var(--s-1); }
 .pv-acts[hidden] { display: none; }
 /* a band/DOS subtitle: one line, its longer guidance in the help icon's tooltip */
@@ -36,6 +45,8 @@
 .po-row.po-stack { grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
 .po-row .po-tq { display: flex; flex-wrap: wrap; max-width: 100%; justify-self: start; }
 .po-row .po-tq button { flex: 1 0 auto; }
+.po-row .po-tq + .po-tq { margin-top: var(--s-1); }
+.po-row .po-tq button[aria-disabled="true"] { color: var(--text-3); cursor: not-allowed; }
 .po-u { color: var(--text-3); font-size: var(--fs-xs); }
 /* a slider's readout keeps its width, so the slider (the 1fr column) does not resize under the pointer as the value changes */
 .po-row > input[type=range] + .po-u { min-width: 8ch; text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -49,3 +60,17 @@
 .po-note { font-size: var(--fs-xs); color: var(--text-2); margin: 0 0 var(--s-2); line-height: 1.4; overflow-wrap: anywhere; }
 .po-note.po-err { color: var(--danger); }
 .po-acts .tb-btn-text:disabled { opacity: .45; cursor: default; }
+.po-cat { border-top: 1px solid var(--border); padding: var(--s-1) 0 var(--s-2); }
+.po-cat > summary { cursor: pointer; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); padding: var(--s-1) 0; }
+.po-cat > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pk-catp { min-width: 280px; }
+.pk-catp .pk-row select { max-width: 260px; }
+.pk-catp .po-note { margin: 0; }
+/* Inspector › Brillouin zone of a band plot: the path's facts under the zone view (plot.js kFacts) */
+.po-bz { margin-bottom: var(--s-2); }
+.po-bz .kp-bz-h .kp-sub { display: none; }        /* the section's own title says it */
+.po-kfacts { display: grid; grid-template-columns: minmax(96px, 40%) 1fr; gap: 2px var(--s-2); margin: 0; font-size: var(--fs-sm); }
+.po-kfacts dt { color: var(--text-2); }
+.po-kfacts dd { margin: 0; overflow-wrap: anywhere; }
+.po-ksegs { margin: var(--s-1) 0 0; padding-left: 1.4em; font-size: var(--fs-sm); }
+.po-ksegs li { padding: 1px 0; }

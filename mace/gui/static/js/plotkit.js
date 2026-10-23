@@ -8,18 +8,27 @@
  * option model and its persistence (per document); plotkit owns the unit
  * tables, the controls, CSV/TSV and the clipboard.
  *
+ * A plot with several kinds of options (a band or DOS plot) splits Style ▾ into categories: the adapter's
+ * categories() -> [{key, label, title, type: "menu" | "pop"}] draws one button each, styleMenu(key) the items of a
+ * menu and catPop(key) -> {html, change(target) -> bool, click(el) -> bool} the body of a popover (the adapter owns the
+ * controls and their undo; plotkit the buttons, the popover and the focus). features.moreLabel names the
+ * "⋯ Plot Options" popover otherwise (Axes & Ranges for a band or DOS plot) and adapter.extra() -> {html,
+ * change(target) -> bool} adds the plot's own fields to the top of it.
+ *
  * adapter = { name, host (the chart element), features: {logY, logX, units: "energy" | "wavenumber" | null,
- *   per, relTo, segments, range, width, png, svg, image, csv, pub}, get() -> opts, set(patch, label),
- *   table() -> {columns, rows}, png(), svg(), image() (Export Image…), pub(), resetZoom(), axes() -> {x: label, y: label} }
+ *   per, relTo, segments, range, width, png, svg, image, csv, pub, logYLabel, logYTitle (the Log Y button's
+ *   words: a band + DOS plot's reads Log DOS)}, get() -> opts, set(patch, label),
+ *   table() -> {columns, rows}, png(), svg(), image() (Export Image…), pub(), resetZoom(), axes() -> {x: label, y: label},
+ *   buttons() -> [{key, label, title}] (the plot's own buttons after Log Y: a band plot's Add DOS…), button(key) }
  * opts = {ylog, xlog, unit, per, relTo, segments ("continuous" | "separate"), xr: [from, to], yr: [from, to], width} */
 import { overlayHost, place } from "./ui.js";
 
-import { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide } from "./plotbase.js";
-export { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide };
+import { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, PHONON_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide } from "./plotbase.js";
+export { HARTREE_EV, AVOGADRO_EV_KJMOL, EV_KCALMOL, CM_PER_MEV, CM_PER_THZ, ENERGY_UNITS, WAVENUMBER_UNITS, PHONON_UNITS, UNIT_LABEL, PER_LABEL, legendTop, legendSide };
 
 export function energy(eV, unit = "eV") { return eV * (ENERGY_UNITS[unit] ?? 1); }
 export function wavenumber(cm, unit = "cm-1") { return cm * (WAVENUMBER_UNITS[unit] ?? 1); }
-export function unitsFor(kind) { return kind === "energy" ? Object.keys(ENERGY_UNITS) : kind === "wavenumber" ? Object.keys(WAVENUMBER_UNITS) : []; }
+export function unitsFor(kind) { return kind === "energy" ? Object.keys(ENERGY_UNITS) : kind === "wavenumber" ? Object.keys(WAVENUMBER_UNITS) : kind === "phonon" ? Object.keys(PHONON_UNITS) : []; }
 /** The axis unit text: "meV/atom"; kJ/mol and kcal/mol say "per cell" or "per atom" explicitly. */
 export function unitText(unit, per = "cell") {
   const u = UNIT_LABEL[unit] || unit;
@@ -99,20 +108,24 @@ export function attach(acts, adapter, H) {
   const feat = () => ({ logY: true, logX: false, units: null, per: false, relTo: false, segments: false, range: true, width: true,
     png: true, svg: true, image: false, csv: true, pub: false, style: false, cli: false, ...(adapter.features || {}) });
   let f = feat(), sig = "";
+  const cats = () => (f.style && adapter.categories ? adapter.categories() : []);
   const icon = H.icon || (() => "");
   acts.classList.add("pk-acts");
   acts.dataset.plotkit = "1";
   if (adapter.host) { adapter.host.dataset.plotkit = "1"; hosts.add(adapter.host); }
   function render() {
     f = feat();
-    const s = JSON.stringify(f);
+    const own = adapter.buttons ? adapter.buttons() : [];
+    const s = JSON.stringify([f, cats(), own]);
     if (s === sig) return;
     sig = s;
-    acts.innerHTML = `${f.logY ? `<button type="button" class="tb-btn-text pk-logy" aria-pressed="false" title="Logarithmic value axis">Log Y</button>` : ""}
+    acts.innerHTML = `${f.logY ? `<button type="button" class="tb-btn-text pk-logy" aria-pressed="false" title="${esc(f.logYTitle || "Logarithmic value axis")}">${esc(f.logYLabel || "Log Y")}</button>` : ""}
+    ${own.map((x) => `<button type="button" class="tb-btn-text pk-own" data-own="${esc(x.key)}" title="${esc(x.title || x.label)}">${esc(x.label)}</button>`).join("")}
     ${f.units ? `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-units" aria-haspopup="menu" aria-expanded="false" title="Units">Units<span class="pk-u"></span> ▾</button></span>` : ""}
-    ${f.style && adapter.styleMenu ? `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-style" aria-haspopup="menu" aria-expanded="false" title="Plot style, spin colors and DOS look of this plot">Style ▾</button></span>` : ""}
+    ${f.style && adapter.styleMenu && !cats().length ? `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-style" aria-haspopup="menu" aria-expanded="false" title="Plot style, spin colors and DOS look of this plot">Style ▾</button></span>` : ""}
+    ${cats().map((c) => `<span class="pk-wrap"><button type="button" class="tb-btn-text pk-cat ${c.type === "menu" ? "pk-style" : "pk-catpop"}" data-cat="${esc(c.key)}" aria-haspopup="${c.type === "menu" ? "menu" : "dialog"}" aria-expanded="false" title="${esc(c.title || c.label)}">${esc(c.label)} ▾</button></span>`).join("")}
     <span class="pk-wrap"><button type="button" class="tb-btn-text pk-export" aria-haspopup="menu" aria-expanded="false" title="Export the plot or its data">${icon("download")}<span>Export</span> ▾</button></span>
-    <span class="pk-wrap"><button type="button" class="tb-btn-text pk-more" aria-haspopup="dialog" aria-expanded="false" title="Plot options">⋯ Plot Options</button></span>`;
+    <span class="pk-wrap"><button type="button" class="tb-btn-text pk-more" aria-haspopup="dialog" aria-expanded="false" title="${esc(f.moreTitle || "Plot options")}">${f.moreLabel ? `${esc(f.moreLabel)} ▾` : "⋯ Plot Options"}</button></span>`;
   }
   render();
   const $ = (s) => acts.querySelector(s);
@@ -150,7 +163,8 @@ export function attach(acts, adapter, H) {
     p.setAttribute("role", "dialog");
     p.setAttribute("aria-label", "Plot options");
     const num = (k, i, v) => `<input type="number" step="any" data-r="${k}${i}" value="${v ?? ""}" placeholder="auto" aria-label="${k === "x" ? esc(ax.x) : esc(ax.y)} ${i ? "to" : "from"}">`;
-    p.innerHTML = `${f.logX ? `<label class="pk-row"><input type="checkbox" data-k="xlog"${o.xlog ? " checked" : ""}> Log X</label>` : ""}
+    const extra = adapter.extra ? adapter.extra() : null;
+    p.innerHTML = `${extra ? extra.html : ""}${f.logX ? `<label class="pk-row"><input type="checkbox" data-k="xlog"${o.xlog ? " checked" : ""}> Log X</label>` : ""}
       ${f.relTo ? `<label class="pk-row"><span>Relative to</span><select data-k="relTo" aria-label="Relative to">${[["first", "First point"], ["final", "Final point"], ["minimum", "Minimum"], ["absolute", "Absolute"]]
         .map(([v, t]) => `<option value="${v}"${o.relTo === v ? " selected" : ""}${(adapter.disabled || {})["relTo:" + v] ? ` disabled title="${esc(adapter.disabled["relTo:" + v])}"` : ""}>${t}</option>`).join("")}</select></label>` : ""}
       ${f.segments ? `<label class="pk-row" title="One curve and one reference across the FINALRUN restarts, or each FINALRUN segment relative to its own point"><span>Segments</span><select data-k="segments" aria-label="FINALRUN segments">${[["continuous", "Continuous"], ["separate", "Separate"]]
@@ -168,6 +182,7 @@ export function attach(acts, adapter, H) {
     (p.querySelector("input, select, button"))?.focus();
     p.addEventListener("change", (e) => {
       const t = e.target;
+      if (extra && extra.change(t)) { refresh(); return; }
       if (t.dataset.k === "xlog") adapter.set({ xlog: t.checked }, t.checked ? "Log X" : "Linear X");
       else if (t.dataset.k === "segments") adapter.set({ segments: t.value }, t.value === "separate" ? "Segments: separate" : "Segments: continuous");
       else if (t.dataset.k === "relTo") adapter.set({ relTo: t.value }, `Relative to ${t.value}`);
@@ -190,6 +205,31 @@ export function attach(acts, adapter, H) {
     });
   }
 
+  /* a category's popover (adapter.catPop): the body is drawn again after every change, the control that had
+     the focus keeps it */
+  function catPopover(btn, key) {
+    closeMenus();
+    const p = document.createElement("div");
+    p.className = "pk-pop pk-catp";
+    p.setAttribute("role", "dialog");
+    p.setAttribute("aria-label", btn.getAttribute("title") || key);
+    p.innerHTML = adapter.catPop(key).html;
+    float(p, btn);
+    btn.setAttribute("aria-expanded", "true");
+    p.close = () => { p.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
+    menuOpen = p;
+    p.querySelector("input, select, button")?.focus();
+    const again = (id) => {
+      const body = adapter.catPop(key);
+      p.innerHTML = body.html;
+      refresh();
+      const n = id && p.querySelector(`#${CSS.escape(id)}`);
+      if (n) n.focus({ preventScroll: true });
+    };
+    p.addEventListener("change", (e) => { if (adapter.catPop(key).change(e.target)) again(e.target.id); });
+    p.addEventListener("click", (e) => { const a = e.target.closest("[data-act]"); if (a && adapter.catPop(key).click && adapter.catPop(key).click(a)) again(null); });
+  }
+
   function refresh() {
     render();
     const o = adapter.get();
@@ -202,7 +242,13 @@ export function attach(acts, adapter, H) {
   acts.addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b || !acts.contains(b) || b.closest(".pk-menu, .pk-pop")) return;
-    if (b.classList.contains("pk-logy")) { const v = !adapter.get().ylog; adapter.set({ ylog: v }, v ? "Log Y" : "Linear Y"); refresh(); return; }
+    if (b.classList.contains("pk-logy")) {
+      const v = !adapter.get().ylog, name = f.logYLabel || "Log Y";
+      adapter.set({ ylog: v }, v ? name : name.replace(/^Log/, "Linear"));
+      refresh();
+      return;
+    }
+    if (b.classList.contains("pk-own")) { if (adapter.button) adapter.button(b.dataset.own, b); return; }
     if (b.classList.contains("pk-units")) {
       if (menuOpen) { closeMenus(); return; }
       menu(b, unitsFor(f.units).map((v) => ({ v, label: UNIT_LABEL[v] || v, checked: adapter.get().unit === v })),
@@ -224,15 +270,17 @@ export function attach(acts, adapter, H) {
     if (b.classList.contains("pk-style")) {
       if (menuOpen) { closeMenus(); return; }
       // the plot's own style (plot.js): picking an entry is one undoable option change
-      menu(b, adapter.styleMenu(), (v) => {
+      const cat = b.dataset.cat || "";
+      menu(b, adapter.styleMenu(cat), (v) => {
         if (v === "cli") run("cli"); else adapter.styleSet(v);
         refresh();
-        // the pick drew the toolbar again: the keyboard's focus goes to the new Style button, not to <body>
-        const back = () => { const nb = $(".pk-style"); if (nb && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) nb.focus(); };
+        // the pick drew the toolbar again: the keyboard's focus goes to the new button of the category, not to <body>
+        const back = () => { const nb = cat ? $(`.pk-style[data-cat="${cat}"]`) : $(".pk-style"); if (nb && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) nb.focus(); };
         back(); requestAnimationFrame(back);
       });
       return;
     }
+    if (b.classList.contains("pk-catpop")) { if (menuOpen) { closeMenus(); return; } catPopover(b, b.dataset.cat); return; }
     if (b.classList.contains("pk-more")) { if (menuOpen) { closeMenus(); return; } popover(b); }
   });
 

@@ -60,6 +60,16 @@
   --plot-1: #e5484d; --plot-2: #30a46c; --plot-3: #f59e0b; --plot-4: #8b5cf6; --plot-5: #0891b2;
   --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
   --fallback-atom: #888888;
+  --pore-surface: #9c36b5;                 /* the pore surface cut by a plane (viewport/pores.js) */
+  /* pores (viewport/pores.js): accessible channels and closed pockets, Okabe–Ito bluish green and orange,
+   * which read on light and dark backgrounds alike (one pair for every theme) */
+  --pore-acc: #009e73; --pore-nac: #e69f00;
+  /* ... and each pocket its own (Color pockets individually): the rest of Okabe–Ito */
+  --pore-pocket-1: #e69f00; --pore-pocket-2: #cc79a7; --pore-pocket-3: #56b4e9; --pore-pocket-4: #f0e442;
+  --pore-pocket-5: #d55e00; --pore-pocket-6: #0072b2; --pore-pocket-7: #999999;
+  /* one channel or pocket picked in the Analysis tab (the others dimmed): Okabe–Ito reddish purple,
+   * apart from the blue and red of most atoms */
+  --pore-highlight: #cc79a7;
   /* volumes (plan E5): the two lobes, and the potential's diverging scale (RdBu, as mace plotting --cube) */
   --vol-plus: #2563eb; --vol-minus: #dc2626; --mep-red: #b2182b; --mep-mid: #f7f7f7; --mep-blue: #2166ac;
   /* the Magnetic style (1.1.7): atoms by Mulliken spin moment, a diverging scale centered at 0 (RdBu) */

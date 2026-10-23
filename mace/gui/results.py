@@ -43,6 +43,8 @@ def _plotters():
 
 
 def _stem(name: str, suffixes) -> str:
+    if name.lower().endswith((".f25", ".fort.25")):          # a fort.25: its name without the extension
+        return name[:-4] if name.lower().endswith(".f25") else name[:-8]
     for suffix in suffixes:
         if name.endswith(suffix):
             return name[: -len(suffix)]
@@ -107,10 +109,45 @@ def _window(bands: np.ndarray, fermi: float, window: Optional[Tuple[float, float
     return bands[:, keep], truncated
 
 
-def band_data(path: Path, reference: str = "auto", window: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+def _fermi_note(path: Path) -> str:
+    """What the band plot says when CRYSTAL wrote no Fermi level (-1.0, a spin-locked SCF): the one
+    mace.utils.fermi_level derived from the bands, or that there is none."""
+    from mace.utils import fermi_level
+    try:
+        fl = fermi_level.band_fermi(path)
+    except Exception:
+        return ""
+    return fl.note if fl.derived or (not fl.known and fermi_level.is_placeholder(fl.file_au)) else ""
+
+
+def _from_f25(path: Path, kind: str, reference: str, window, domain: str, run: int) -> Dict[str, Any]:
+    """A fort.25's BAND or DOSS blocks as the data of a BAND.DAT/DOSS.DAT of the same run: converted into a
+    scratch folder beside copies of the run's small files (mace/plotting/f25.py) and read by the same code."""
+    import tempfile
+    from mace.plotting import f25
+    info = f25.describe(path, domain)
+    with tempfile.TemporaryDirectory(prefix="mace-f25-") as tmp:
+        dat, _ = f25.materialize(path, tmp, "BAND" if kind == "band" else "DOSS", domain, run=run)
+        data = band_data(dat, reference, window) if kind == "band" else dos_data(dat, reference)
+    data["name"] = path.name
+    data["source"] = "f25"
+    note = _fermi_note(path) if kind == "band" else ""
+    if note:                  # the converted DAT holds the corrected E_F: the note is the f25's
+        data["fermi_note"] = note
+    data["n_runs"] = info.get("n_runs", 1)
+    return data
+
+
+def band_data(path: Path, reference: str = "auto", window: Optional[Tuple[float, float]] = None,
+              domain: str = "auto", run: int = -1) -> Dict[str, Any]:
     """The band plot's data. ``window`` (eV around E_F, Fermi shift included): mace plotting's
-    requested energies, every band in it (see _window); None: the GUI's."""
+    requested energies, every band in it (see _window); None: the GUI's. A fort.25 (``*.f25``) is read
+    through its blocks (``domain``: electronic or phonon, auto from the run; ``run``: which of the runs
+    the file holds, the last by default)."""
     path = Path(path)
+    from mace.plotting import f25 as _f25
+    if _f25.is_f25_name(path.name):
+        return _from_f25(path, "band", reference, window, domain, run)
     ipb, _ = _plotters()
     stem = _stem(path.name, BAND_SUFFIXES)
     material = _material(stem, "_band")
@@ -130,6 +167,9 @@ def band_data(path: Path, reference: str = "auto", window: Optional[Tuple[float,
     half = len(ticks) // 2
     if half and len(ticks) % 2 == 0 and np.allclose(ticks[:half], ticks[half:]):
         ticks = ticks[:half]
+    if not labels and _domain(path) == "phonon":        # a phonon fort.25 has no .d3: the DAT's panel labels
+        from mace.plotting import f25
+        labels = [_plotly_label(lab) for lab in f25.dat_labels(path)]
     if len(labels) != len(ticks):
         labels = labels[: len(ticks)] + [""] * max(0, len(ticks) - len(labels))
     breaks = ipb.path_break_indices(E[:n], ticks, labels)
@@ -150,7 +190,11 @@ def band_data(path: Path, reference: str = "auto", window: Optional[Tuple[float,
         "ticks": ticks, "labels": labels, "truncated": trunc_up,
         "n_kpoints": n, "n_bands": int(B.shape[1]),
         "window_ev": WINDOW_EV, "n_beyond": beyond,
+        "domain": _domain(path), "has_potc": Path(dat).is_file() and Path(out).is_file(),
     }
+    note = _fermi_note(path)
+    if note:
+        result["fermi_note"] = note
     if spin:
         down, trunc_down = _window(Bb, fermi, window)
         _, result["down"] = _with_breaks(Eb[:n], down[:n], breaks)
@@ -163,8 +207,17 @@ def _doss_header(path: Path) -> Tuple[Optional[int], int]:
     return ipd.read_doss_header(str(path))
 
 
-def dos_data(path: Path, reference: str = "auto") -> Dict[str, Any]:
+def _domain(dat: Path) -> str:
+    """"phonon" for the data of a phonon fort.25 (its converted DAT says so), else "electronic"."""
+    from mace.plotting import f25
+    return f25.dat_domain(dat)
+
+
+def dos_data(path: Path, reference: str = "auto", domain: str = "auto", run: int = -1) -> Dict[str, Any]:
     path = Path(path)
+    from mace.plotting import f25 as _f25
+    if _f25.is_f25_name(path.name):
+        return _from_f25(path, "dos", reference, None, domain, run)
     _, ipd = _plotters()
     stem = _stem(path.name, DOS_SUFFIXES)
     material = _material(stem, "_doss")
@@ -212,8 +265,13 @@ def dos_data(path: Path, reference: str = "auto") -> Dict[str, Any]:
     summed = down is not None and not spin
     if summed:
         up = [u - d for u, d in zip(up, down)]
+    # a band-index DOS (a 1D material's default) that stops below E_F + 15 eV (mace.utils.doss_reach)
+    from mace.utils import doss_reach
+    reach = doss_reach.cached_note(path)
     return {
-        "kind": "dos", "name": path.name, "energy": energy.tolist(),
+        "reach_note": reach, "notes": [reach] if reach else [],
+        "kind": "dos", "name": path.name, "energy": energy.tolist(), "domain": _domain(path),
+        "has_potc": Path(dat).is_file() and Path(out).is_file(),
         "fermi": float(maxV), "reference": "vacuum" if has_potc else "fermi",
         "spin_polarized": spin, "spin_summed": summed,
         # the computed DOS window: no data beyond it (the plot shades that region)
@@ -256,119 +314,370 @@ def bz_data(path: Path, inside=None) -> Dict[str, Any]:
         raise FileNotFoundError(f"no CRYSTAL output beside {path.name} to read the cell from")
     segments: List[Dict[str, Any]] = []
     if path.suffix != ".out":
-        stem = _stem(path.name, BAND_SUFFIXES)
-        material = _material(stem, "_band")
-        for cand in (path.parent / f"{stem}.d3", path.parent / f"{material}_band.d3", path.parent / f"{material}.d3"):
-            if cand.is_file() and ok(cand):
-                parsed = kp.parse_band_deck(cand.read_text(errors="replace"))
-                if parsed:
-                    segments = parsed["segments"]
-                break
+        # the run's path: its .d3, else a fort.25's segment records (a phonon run's: its FREQCALC BANDS)
+        info = kpath_info(path, inside)
+        segments = [s for s in info["segments"] if s.get("k_from") is not None] if info else []
     data = bz.bz_view(str(out), segments)
     data["output"] = out.name
     return data
 
 
+def _band_deck(path: Path, ok) -> Optional[Path]:
+    stem = _stem(path.name, BAND_SUFFIXES)
+    material = _material(stem, "_band")
+    for cand in (path.parent / f"{stem}.d3", path.parent / f"{material}_band.d3", path.parent / f"{material}.d3"):
+        if cand.is_file() and ok(cand):
+            return cand
+    return None
+
+
+_DAT_POINT = re.compile(r"^#\s+(\d+)\s+\((-?\d+),(-?\d+),(-?\d+)\)/(\d+)")
+
+
+def kpath_info(path: Path, inside=None) -> Optional[Dict[str, Any]]:
+    """The k-path a band structure was computed along, for the Inspector: {source (the file it is read from),
+    title, iss (the shrinking factor the segment ends are integers of), points (k points along the path),
+    lines (segments), segments [{from, to, k_from, k_to (fractional, None when unknown)}], domain}. Read from
+    the run's BAND deck (.d3), else a fort.25's segment records (a phonon run's ISS from its FREQCALC BANDS in
+    the .d12 beside it), else a BAND.DAT's header; None when the file says nothing about its path."""
+    from mace.plotting import f25
+    path = Path(path)
+    ok = inside or (lambda f: True)
+    kp, _ = _d3_tools()
+    deck = path if path.suffix == ".d3" else _band_deck(path, ok)
+    if deck is not None:
+        parsed = kp.parse_band_deck(deck.read_text(errors="replace"))
+        if parsed:
+            head = parsed["header"]
+            try:
+                points = int(head[2])
+            except (ValueError, IndexError):
+                points = None
+            return {"source": deck.name, "title": parsed["title"], "iss": parsed["shrink"] or None, "points": points,
+                    "lines": len(parsed["segments"]), "domain": "electronic", "labels_mode": parsed["labels_mode"],
+                    "segments": [{"from": s["from"], "to": s["to"], "k_from": s.get("k_from"), "k_to": s.get("k_to")}
+                                 for s in parsed["segments"]]}
+    if f25.is_f25_name(path.name):
+        try:
+            blocks = f25.read_blocks(path, ("BAND",))
+            domain = f25.domain_of(path)
+        except Exception:
+            return None
+        blocks = [b for b in blocks if len(b.ints) >= 6]
+        # an open-shell run writes the path once per spin: the second half repeats the first
+        half = len(blocks) // 2
+        if half and len(blocks) % 2 == 0 and [b.ints[:6] for b in blocks[:half]] == [b.ints[:6] for b in blocks[half:]]:
+            blocks = blocks[:half]
+        if not blocks:
+            return None
+        iss = f25._iss_of(path) if domain == "phonon" else None
+        # a phonon path's names: the deck title's, as the band plot labels its ticks (f25._phonon_labels)
+        named = f25._title_labels(f25._deck_of(path), [tuple(blocks[0].ints[:3])] + [tuple(b.ints[3:6]) for b in blocks]) \
+            if domain == "phonon" else None
+        names = [["GAMMA" if n == "Γ" else re.sub(r"[${}]", "", n) for n in lab.split("|")] for lab in named or []]
+        segs = []
+        for i, b in enumerate(blocks):
+            a, e = b.ints[:3], b.ints[3:6]
+            segs.append({"from": names[i][-1] if names else "GAMMA" if not any(a) else f"({a[0]},{a[1]},{a[2]})",
+                         "to": names[i + 1][0] if names else "GAMMA" if not any(e) else f"({e[0]},{e[1]},{e[2]})",
+                         "k_from": [x / iss for x in a] if iss else None, "k_to": [x / iss for x in e] if iss else None,
+                         "ints": [list(a), list(e)]})
+        return {"source": path.name, "title": None, "iss": iss, "points": int(sum(b.ncol for b in blocks)),
+                "lines": len(segs), "domain": domain, "labels_mode": False, "segments": segs}
+    if path.name.endswith(BAND_SUFFIXES):
+        try:
+            head = [ln for ln in path.read_text(errors="replace").splitlines()[:64] if ln.startswith("#")]
+        except OSError:
+            return None
+        m = re.search(r"NKPT\s+(\d+)", head[0]) if head else None
+        pts = [_DAT_POINT.match(ln) for ln in head]
+        pts = [p for p in pts if p and int(p.group(5)) > 0]          # a malformed "/0" header point says nothing
+        iss = int(pts[0].group(5)) if pts else None
+        ks = [[int(p.group(k)) / int(p.group(5)) for k in (2, 3, 4)] for p in pts]
+        segs = [{"from": "GAMMA" if not any(a) else "", "to": "GAMMA" if not any(b) else "", "k_from": a, "k_to": b}
+                for a, b in zip(ks, ks[1:])]
+        if not m and not segs:
+            return None
+        return {"source": path.name, "title": None, "iss": iss, "points": int(m.group(1)) if m else None,
+                "lines": len(segs) or None, "domain": _domain(path) if path.name.endswith(".BAND.DAT") else "electronic",
+                "labels_mode": False, "segments": segs}
+    return None
+
+
 def partner(path: Path, kind: str) -> Optional[Path]:
     """The DOSS file of the same run as a BAND file (and the reverse)."""
+    from mace.plotting import f25
+    if f25.is_f25_name(path.name) and f25.plot_kind(path, "band") and f25.plot_kind(path, "dos"):
+        return path                    # a phonon run's fort.25 holds the band structure and the DOS
     if kind == "band":
         material = _material(_stem(path.name, BAND_SUFFIXES), "_band")
-        names = (f"{material}_doss.DOSS.DAT", f"{material}.DOSS.DAT", f"{material}_doss.dat")
+        names = (f"{material}_doss.DOSS.DAT", f"{material}.DOSS.DAT", f"{material}_doss.dat", f"{material}_doss.f25")
     else:
         material = _material(_stem(path.name, DOS_SUFFIXES), "_doss")
         names = (f"{material}_band.BAND.DAT", f"{material}.BAND.DAT", f"{material}_band.dat",
-                 f"{material}.band.band.dat")
+                 f"{material}.band.band.dat", f"{material}_band.f25")
     for name in names:
+        c = path.parent / name
+        if c.is_file():
+            if name.endswith(".f25") and not _f25_is(c, "dos" if kind == "band" else "band"):
+                continue
+            return c
+    return None
+
+
+def _f25_is(path: Path, kind: str) -> bool:
+    from mace.plotting import f25
+    return f25.plot_kind(path, kind) is not None
+
+
+# ---------------------------------------------------------------- a band + DOS pair from two folders (1.1.6)
+PAIR_FERMI_TOL_EV = 0.05        # E_F of the two runs agree within this (a DOSS output prints it to 1 mHa)
+PAIR_CELL_TOL = 0.01            # and their periodic lattice lengths within 1 %
+from mace.constants import HARTREE_TO_EV as HARTREE_EV  # noqa: E402
+_FERMI_RE = (re.compile(r"EFERMI\s+(-?\d*\.\d+(?:E[+-]?\d+)?)"),
+             re.compile(r"FERMI ENERGY\s+(-?\d*\.\d+(?:E[+-]?\d+)?)"),
+             re.compile(r"TOP OF VALENCE BANDS.*EIG\s+(-?\d*\.\d+(?:E[+-]?\d+)?)"))
+
+
+def run_output(path: Path, kind: str) -> Optional[Path]:
+    """The CRYSTAL output of the run a band or DOS file comes from: its .out beside it, else the SCF run's."""
+    path = Path(path)
+    if kind == "band":
+        _, bz = _d3_tools()
+        out = bz.output_for(str(path))
+        return Path(out) if out is not None else None
+    stem = _stem(path.name, DOS_SUFFIXES)
+    material = _material(stem, "_doss")
+    for name in (f"{stem}.out", f"{material}_doss.out", f"{material}_sp.out", f"{material}_opt.out",
+                 f"{material}.out", f"{material}_SP.out", f"{material}_OPT.out"):
         if (path.parent / name).is_file():
             return path.parent / name
     return None
 
 
-# ---------------------------------------------------------------- transport (plan E8)
-TRANSPORT_QUANTITIES = {
-    # file token: (label, unit shown, factor from the file's SI unit)
-    "SEEBECK": ("Seebeck coefficient", "µV/K", 1e6),
-    "SIGMA": ("Electrical conductivity σ", "S/m", 1.0),
-    "SIGMAS": ("σS (conductivity × Seebeck)", "A/(m·K)", 1.0),
-    # KAPPA.dat: the manual's κₑ (CRYSTAL23 Eq. 14.3) is the zero-field
-    # coefficient κ₀; the electronic κₑ at zero current is κ₀ − T·σ·S²
-    "KAPPA": ("Zero-field thermal coefficient κ₀ (the manual's κₑ, Eq. 14.3)", "W/(m·K)", 1.0),
-    "TDF": ("Transport distribution function", "1/ħ²·eV·fs/Å", 1.0),
-}
-_TRANSPORT_RE = re.compile(r"^(?P<stem>.+)\.(?P<q>SEEBECK|SIGMAS|SIGMA|KAPPA|TDF)\.dat$", re.I)
+def _fermi_ev(path: Path, out: Optional[Path]) -> Optional[float]:
+    """The run's Fermi energy (eV, absolute): a fort.25's header, else the last one its output prints;
+    CRYSTAL's -1.0 Ha placeholder (a spin-locked SCF) is replaced by the run's derived E_F, as everywhere
+    (mace.utils.fermi_level.run_fermi), else there is none."""
+    from mace.plotting import f25
+    from mace.utils import fermi_level
+    printed = None
+    if f25.is_f25_name(path.name):
+        try:
+            blocks = f25.read_blocks(path, ("BAND", "DOSS"))
+            if blocks:
+                printed = float(blocks[-1].ef)
+        except Exception:
+            pass
+    if printed is None and out is not None:
+        try:
+            text = out.read_text(errors="replace")
+        except OSError:
+            text = ""
+        for rx in _FERMI_RE:
+            hits = rx.findall(text)
+            if hits:
+                printed = float(hits[-1])
+                break
+    if printed is None:
+        return None
+    if fermi_level.is_placeholder(printed):
+        value = fermi_level.run_fermi(out, printed).value_au if out is not None else None
+        return None if value is None else value * HARTREE_EV
+    return printed * HARTREE_EV
 
 
-def transport_data(path: Path) -> Dict[str, Any]:
-    """A BOLTZTRA .dat file for the transport plot: per temperature, the chemical
-    potential and the average of the tensor's diagonal (both from the database
-    extractor's own ``_parse_transport_dat``), plus the xx, yy, zz components
-    read from the same rows; the other quantities of the run beside it."""
-    from mace.utils.property_extractor import CrystalPropertyExtractor
-    m = _TRANSPORT_RE.match(path.name)
-    if not m:
-        raise ValueError(f"{path.name} is not a BOLTZTRA .SEEBECK/.SIGMA/.SIGMAS/.KAPPA/.TDF.dat file")
-    q = m.group("q").upper()
-    label, unit, factor = TRANSPORT_QUANTITIES[q]
-    if q == "TDF":
-        return _tdf_data(path, m.group("stem"), label, unit)
-    # rows with the tensor diagonal: an open-shell file's alpha and beta blocks
-    # summed (CRYSTAL23 manual p. 315), as the extractor and the ZT tab read it
-    file_unit, trows, axes = CrystalPropertyExtractor._parse_transport_dat_tensor(path, with_axes=True)
-    if not trows:
-        raise ValueError(f"{path.name}: no data rows")
-    header = None
-    for line in path.read_text(errors="ignore").splitlines():
-        s = line.strip()
-        if s.startswith("#") and "Mu(eV)" in s:
-            header = s.lstrip("#").split()
+def _run_facts(path: Path, kind: str, inside=None) -> Dict[str, Any]:
+    """What a pair is checked by: the formula and periodic lattice lengths of the run's output, and its E_F."""
+    ok = inside or (lambda f: True)
+    out = run_output(path, kind)
+    if out is not None and not ok(out):
+        out = None
+    domain = half_domain(path)
+    facts: Dict[str, Any] = {"file": path.name, "out": out.name if out else None, "formula": None,
+                             "lengths": None, "domain": domain, "supercell": None,
+                             "fermi_ev": None if domain == "phonon" else _fermi_ev(path, out)}
+    if out is not None:
+        facts.update(_out_facts(out))
+    if domain == "phonon":
+        facts["supercell"] = _supercell(path, out, ok)
+    return facts
+
+
+def half_domain(path: Path) -> str:
+    """"phonon" for a phonon run's band or DOS file (a fort.25 of a FREQCALC run, a DAT written from one),
+    else "electronic"."""
+    from mace.plotting import f25
+    path = Path(path)
+    return f25.quick_domain(path) if f25.is_f25_name(path.name) else f25.dat_domain(path)
+
+
+_EXPANSION = re.compile(r"EXPANSION MATRIX OF PRIMITIVE CELL\s*\n\s*E1([^\n]*)\n\s*E2([^\n]*)\n\s*E3([^\n]*)")
+
+
+def _supercell(path: Path, out: Optional[Path], ok) -> Optional[List[List[int]]]:
+    """A phonon run's supercell (its SCELPHONO expansion matrix, the rows of the periodic directions): from the
+    output's EXPANSION MATRIX OF PRIMITIVE CELL, else the run's .d12 beside the file; None when neither says."""
+    if out is not None:
+        try:
+            m = _EXPANSION.search(out.read_text(errors="replace"))
+        except OSError:
+            m = None
+        if m:
+            rows = [[int(round(float(x))) for x in g.split()[:3]] for g in m.groups()]
+            return [r for r in rows if any(r)] or None
+    stem = _stem(path.name, BAND_SUFFIXES + DOS_SUFFIXES)
+    deck = path.with_name(stem + ".d12")
+    if not (deck.is_file() and ok(deck)):
+        return None
+    try:
+        lines = [ln.strip() for ln in deck.read_text(errors="replace").splitlines()]
+    except OSError:
+        return None
+    if "SCELPHONO" not in lines:
+        return None
+    rows = []
+    for ln in lines[lines.index("SCELPHONO") + 1:]:
+        try:
+            rows.append([int(x) for x in ln.split()])
+        except ValueError:
             break
-    temps: Dict[float, Dict[str, List[float]]] = {}
-    for T, mu, n, diag in trows:
-        d = temps.setdefault(T, {"mu": [], "avg": [], "carriers": [], "xx": [], "yy": [], "zz": []})
-        d["mu"].append(mu)
-        d["avg"].append(sum(diag) / len(diag) * factor)
-        d["carriers"].append(n)
-        for k, v in zip(axes, diag):  # a slab's file: xx and yy only
-            d[k].append(v * factor)
-    comps = temps
-    blocks = []
-    for T in sorted(temps):
-        b = temps[T]
-        c = comps.get(T, {})
-        blocks.append({"T": T, "mu": b["mu"], "avg": b["avg"], "carriers": b["carriers"],
-                       **{k: c.get(k) for k in ("xx", "yy", "zz") if c.get(k) and len(c[k]) == len(b["mu"])}})
-    return {"name": path.name, "quantity": q, "label": label, "unit": unit, "file_unit": file_unit, "blocks": blocks,
-            "siblings": _transport_siblings(path, m.group("stem")), "header": header, "x": "mu"}
+    return rows or None
+
+
+def supercell_text(rows: List[List[int]]) -> str:
+    """2×2×2 for a diagonal expansion (a slab's 2×2×1, a polymer's 2×1×1), else its rows."""
+    n = len(rows)
+    if all(len(r) >= n and all(r[j] == 0 for j in range(len(r)) if j != i) for i, r in enumerate(rows)):
+        return "×".join([str(r[i]) for i, r in enumerate(rows)] + ["1"] * (3 - n))
+    return "(" + "; ".join(" ".join(str(x) for x in r) for r in rows) + ")"
+
+
+_ATOM_ROW = re.compile(r"^\s*\d+\s+\d+\s+([A-Z][A-Z]?)\s+\d+\s+-?\d")
+
+
+def _out_facts(out: Path) -> Dict[str, Any]:
+    """An output's reduced formula and periodic lattice lengths (Å): a properties run prints the direct lattice
+    vectors and its ATOM N.AT. SHELL table, an SCF run its geometry. CRYSTAL's formal 500 Å of a slab, polymer
+    or molecule is not a period."""
+    from collections import Counter
+    from functools import reduce
+    from math import gcd
+    _, bz = _d3_tools()
+    facts: Dict[str, Any] = {"formula": None, "lengths": None}
+    cell = bz.printed_cell(str(out))
+    symbols: List[str] = []
+    try:
+        lines = out.read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    for n, line in enumerate(lines):
+        if "ATOM N.AT.  SHELL" in line:
+            symbols = []
+            for row in lines[n + 2:]:
+                m = _ATOM_ROW.match(row)
+                if not m:
+                    break
+                symbols.append(m.group(1).capitalize())
+    if cell is None or not symbols:
+        try:
+            s = bz.structure_of(str(out))
+        except Exception:
+            s = None
+        if s is not None:
+            cell = s["cell"] if cell is None else cell
+            st = s.get("structure") or {}
+            if not symbols and st.get("numbers"):
+                from ase.data import chemical_symbols
+                symbols = [chemical_symbols[int(z) % 100] for z in st["numbers"]]
+    if cell is not None:
+        facts["lengths"] = [float(x) for x in np.linalg.norm(np.asarray(cell, float), axis=1) if x < 499.0]
+    if symbols:
+        c = Counter(symbols)
+        g = reduce(gcd, c.values())
+        order = sorted(c, key=lambda el: (0, el) if "C" in c and el in ("C", "H") else (1, el))     # Hill order
+        facts["formula"] = "".join(f"{el}{c[el] // g if c[el] // g > 1 else ''}" for el in order)
+    return facts
+
+
+def pair_check(band: Path, dos: Path, inside=None) -> Dict[str, Any]:
+    """Whether a band file and a DOS file from another folder are one system: the same reduced formula
+    (refused when not), the same periodic lattice lengths within 1 % and E_F within 0.05 eV (warned). With
+    E_F further apart the DOS is drawn on the band run's E_F: ``dos_shift`` (eV) is added to its energies.
+    A phonon dispersion pairs only with a phonon DOS (an electronic half with a phonon one is refused), of the
+    same supercell when both runs say (refused when not); the two share zero frequency, there is no E_F."""
+    b, d = _run_facts(Path(band), "band", inside), _run_facts(Path(dos), "dos", inside)
+    out: Dict[str, Any] = {"band": b, "dos": d, "error": None, "warnings": [], "notes": [], "dos_shift": 0.0,
+                           "domain": b["domain"]}
+    if b["domain"] != d["domain"]:
+        what = {("band", "phonon"): "a phonon dispersion", ("band", "electronic"): "an electronic band structure",
+                ("dos", "phonon"): "a phonon DOS", ("dos", "electronic"): "an electronic DOS"}
+        out["error"] = (f"{b['file']} is {what['band', b['domain']]} and {d['file']} {what['dos', d['domain']]}: "
+                        f"electronic bands and phonons are never one figure")
+        return out
+    if b["formula"] and d["formula"] and b["formula"] != d["formula"]:
+        out["error"] = (f"{b['file']} is {b['formula']} ({b['out']}) and {d['file']} is {d['formula']} ({d['out']}): "
+                        f"not the same system")
+        return out
+    if b["lengths"] and d["lengths"]:
+        if len(b["lengths"]) != len(d["lengths"]):
+            out["error"] = f"{b['file']} is {len(b['lengths'])}D and {d['file']} {len(d['lengths'])}D: not the same system"
+            return out
+        worst = max(abs(x - y) / max(x, 1e-9) for x, y in zip(b["lengths"], d["lengths"]))
+        if worst > PAIR_CELL_TOL:
+            out["warnings"].append("The cells differ: " + ", ".join(f"{x:.3f}" for x in b["lengths"]) + " Å against " +
+                                   ", ".join(f"{y:.3f}" for y in d["lengths"]) + f" Å ({100 * worst:.1f} %)")
+    if not (b["formula"] and d["formula"]):
+        missing = [f["file"] for f in (b, d) if not f["formula"]]
+        out["notes"].append(f"No CRYSTAL output beside {' and '.join(missing)}: the system could not be checked")
+    if b["domain"] == "phonon":
+        if b["supercell"] and d["supercell"] and b["supercell"] != d["supercell"]:
+            out["error"] = (f"{b['file']} was computed in a {supercell_text(b['supercell'])} supercell and {d['file']} in a "
+                            f"{supercell_text(d['supercell'])} one: not the same phonon calculation")
+            return out
+        out["notes"].append("Phonon frequencies: both halves share zero frequency and the plot's unit (no Fermi level)"
+                            + (f"; {supercell_text(b['supercell'])} supercell" if b["supercell"] and d["supercell"] else ""))
+        return out
+    if b["fermi_ev"] is not None and d["fermi_ev"] is not None:
+        delta = d["fermi_ev"] - b["fermi_ev"]
+        if abs(delta) > PAIR_FERMI_TOL_EV:
+            out["dos_shift"] = delta
+            out["warnings"].append(f"The Fermi levels differ by {delta:+.3f} eV ({b['fermi_ev']:.3f} eV for the bands, "
+                                   f"{d['fermi_ev']:.3f} eV for the DOS): the DOS is drawn on the band run's E_F")
+    else:
+        out["notes"].append("A Fermi level was not found: each half is drawn on its own run's E_F")
+    return out
+
+
+# ---------------------------------------------------------------- transport (plan E8)
+# the raw files' quantities: file token -> (label, unit shown, factor from the file's SI unit); the
+# derived ones (PF, κₑ, ZT, L, σ/τ, PF/τ) and the reader are mace.utils.transport_plot, shared with
+# mace plotting --transport
+from mace.utils import transport_plot as _TP  # noqa: E402
+
+TRANSPORT_QUANTITIES = {k: (_TP.QUANTITIES[k]["label"], _TP.QUANTITIES[k]["unit"], _TP.QUANTITIES[k]["factor"])
+                        for k in _TP.FILE_KINDS}
+_TRANSPORT_RE = _TP.NAME_RE
+
+
+def transport_data(path: Path, quantity: Optional[str] = None, kappa_l=None, tau_fs=None, inside=None) -> Dict[str, Any]:
+    """A BOLTZTRA run's quantity for the transport plot (default: the opened file's own), per
+    temperature against the chemical potential (the TDF against energy): the average of the
+    diagonal and its xx, yy, zz, from the database extractor's own rows (an open-shell run's alpha
+    and beta blocks summed), and which quantities the run's files beside it allow
+    (``available``). See mace.utils.transport_plot.quantity_data."""
+    from mace.utils import transport_mesh
+    return transport_mesh.add_note(_TP.quantity_data(path, quantity, kappa_l, tau_fs, inside), path)
 
 
 def _transport_siblings(path: Path, stem: str) -> Dict[str, str]:
-    siblings = {}
-    for qq in TRANSPORT_QUANTITIES:
-        for cand in (path.with_name(f"{stem}.{qq}.dat"), path.with_name(f"{stem}.{qq.lower()}.dat")):
-            if cand.is_file():
-                siblings[qq] = cand.name
-                break
-    return siblings
+    """The run's transport files beside ``path``, by kind (any case: MACE's runs write .DAT)."""
+    return {k: p.name for k, p in _TP.run_files(path).items()}
 
 
 def _transport_out(path: Path, stem: str, inside=None) -> Optional[Path]:
     """The BOLTZTRA .out of a run's .dat files: ``<stem>.out``, else the one transport .out beside them."""
-    from mace.utils.calc_detection import is_transport_output
-    ok = inside or (lambda f: True)
-    exact = path.with_name(f"{stem}.out")
-    if exact.is_file():
-        return exact if ok(exact) else None
-    cands = []
-    for c in sorted(path.parent.glob("*.out")):
-        if not ok(c):
-            continue
-        try:
-            with c.open(errors="ignore") as fh:
-                if is_transport_output(fh.read(2_000_000)):
-                    cands.append(c)
-        except OSError:
-            continue
-    return cands[0] if len(cands) == 1 else None
+    return _TP.find_out(path, stem, inside)
 
 
 def transport_zt(path: Path, kappa_l=None, tau_fs=None, inside=None) -> Dict[str, Any]:
@@ -429,25 +738,3 @@ def transport_zt(path: Path, kappa_l=None, tau_fs=None, inside=None) -> Dict[str
             "tau_fs": tau, "tau_run_fs": tau_run, "tau_source": tau_source, "refused": refused,
             "blocks": blocks, "zt_e_max": r["zt_e_max"],
             "zt_total_max": r["zt_total_max"] if kl is not None and refused is None else None}
-
-
-def _tdf_data(path: Path, stem: str, label: str, unit: str) -> Dict[str, Any]:
-    """The TDF file: energy, then the symmetric tensor xx xy xz yy yz zz (no temperature)."""
-    E, comp = [], {"xx": [], "yy": [], "zz": []}
-    for line in path.read_text(errors="ignore").splitlines():
-        s = line.strip()
-        if not s or s.startswith("#"):
-            continue
-        try:
-            v = [float(x) for x in s.split()]
-        except ValueError:
-            continue
-        if len(v) < 7 or not all(np.isfinite(v)):
-            continue
-        E.append(v[0])
-        comp["xx"].append(v[1]); comp["yy"].append(v[4]); comp["zz"].append(v[6])
-    if not E:
-        raise ValueError(f"{path.name}: no data rows")
-    avg = [(a + b + c) / 3 for a, b, c in zip(comp["xx"], comp["yy"], comp["zz"])]
-    return {"name": path.name, "quantity": "TDF", "label": label, "unit": unit, "file_unit": None, "x": "energy",
-            "blocks": [{"T": None, "mu": E, "avg": avg, **comp}], "siblings": _transport_siblings(path, stem), "header": None}

@@ -108,6 +108,14 @@ export function openAt(items, x, y, label = "Context menu", args = null) {
   return el;
 }
 
+/* A grayed entry's reason for a screen reader: hidden text inside the entry named by
+   aria-describedby (aria-description is an ARIA 1.3 draft that the a11y gate refuses). */
+let whyN = 0;
+function whyRef(text) {
+  const id = `menu-why-${++whyN}`;
+  return { attr: ` aria-describedby="${id}"`, span: `<span id="${id}" hidden>${esc(text)}</span>` };
+}
+
 function buildMenu(items, label, args = null) {
   const ctx = { ...ctxFn(), args };
   const el = document.createElement("div");
@@ -123,8 +131,9 @@ function buildMenu(items, label, args = null) {
         `${icon(it.icon)}<span class="lbl">${esc(it.label)}</span><span></span>${icon("chevron-right", "i sub")}</button>`;
     }
     if (typeof it === "object" && it.run) {
+      const w = it.title && it.disabled ? whyRef(it.title) : { attr: "", span: "" };
       return `<button class="menu-item" role="menuitem" data-fn="${k}" tabindex="-1"${it.disabled ? ' aria-disabled="true"' : ""}` +
-        `${it.title ? ` title="${esc(it.title)}"` : ""}>${icon(it.icon)}<span class="lbl">${esc(it.label)}</span><kbd></kbd><span></span></button>`;
+        `${it.title ? ` title="${esc(it.title)}"${w.attr}` : ""}>${icon(it.icon)}<span class="lbl">${esc(it.label)}</span><kbd></kbd><span></span>${w.span}</button>`;
     }
     const id = typeof it === "string" ? it : it.cmd;
     const c = registry.get(id);
@@ -135,10 +144,12 @@ function buildMenu(items, label, args = null) {
     const checked = c.checked ? ` aria-checked="${!!c.checked(ictx)}"` : "";
     const mt = typeof c.menuTitle === "function" ? c.menuTitle(ictx) : c.menuTitle;
     const title = (typeof it === "object" && it.label) || mt || c.title;
-    return `<button class="menu-item" role="${role}" data-cmd-id="${esc(id)}" tabindex="-1"${checked}` +
-      `${why ? ` aria-disabled="true" title="${esc(why)}"` : ""}>` +
+    const w = why ? whyRef(why) : { attr: "", span: "" };
+    // data-k: the entry itself (one command may be listed with different arguments)
+    return `<button class="menu-item" role="${role}" data-cmd-id="${esc(id)}" data-k="${k}" tabindex="-1"${checked}` +
+      `${why ? ` aria-disabled="true" title="${esc(why)}"${w.attr}` : ""}>` +
       `${c.checked ? icon("check", "i check") : icon(c.icon)}<span class="lbl">${esc(title)}</span>` +
-      `<kbd>${esc(shortcutOf(id))}</kbd><span></span></button>`;
+      `<kbd>${esc(shortcutOf(id))}</kbd><span></span>${w.span}</button>`;
   }).join("");
   el.__args = args;
   overlayHost().appendChild(el);
@@ -154,12 +165,13 @@ function buildMenu(items, label, args = null) {
     if (b.dataset.sub !== undefined) { openSub(el, b, items[Number(b.dataset.sub)], true); return; }
     if (b.dataset.fn !== undefined) { closeAll(); items[Number(b.dataset.fn)].run(); giveBack(); return; }
     const id = b.dataset.cmdId;
-    const it = items.find((x) => x && (x === id || x.cmd === id));
+    const it = items[Number(b.dataset.k)];
     closeAll();
     runFn(id, (it && it.args) || args);
     giveBack();
   });
-  let hoverTimer = 0;
+  let hoverTimer = 0, prev = null, last = null;
+  el.addEventListener("pointermove", (e) => { prev = last; last = { x: e.clientX, y: e.clientY }; });
   el.addEventListener("pointerover", (e) => {
     const b = e.target.closest(".menu-item");
     if (!b) return;
@@ -168,14 +180,28 @@ function buildMenu(items, label, args = null) {
     // the pointer crossing the label or icon of the row whose submenu is open: keep that submenu
     // (rebuilding it under a pointer on its way in pulled the entries away)
     if (b.getAttribute("aria-expanded") === "true" && stack[stack.indexOf(el) + 1]) return;
+    // on its way to the open submenu across other rows (a diagonal): wait longer before switching
+    const open = stack[stack.indexOf(el) + 1];
     hoverTimer = setTimeout(() => {
       if (!stack.includes(el)) return;      // this menu has closed: closeAfter would close every menu
+      const sub = stack[stack.indexOf(el) + 1];
+      if (sub && sub.matches(":hover")) return;      // it arrived: keep the submenu
       closeAfter(el);
       if (b.dataset.sub !== undefined) openSub(el, b, items[Number(b.dataset.sub)], false);
-    }, 120);
+    }, open && towards(open, prev, last) ? 400 : 150);
   });
   el.addEventListener("keydown", (e) => menuKey(e, el, items));
   return el;
+}
+
+/** Is the pointer, from prev to last, heading into menu `sub` (the triangle from prev to its near edge)? */
+function towards(sub, prev, last) {
+  if (!prev || !last) return false;
+  const r = sub.getBoundingClientRect(), x = r.left >= last.x ? r.left : r.right;
+  const side = (p, a, c) => (c.x - a.x) * (p.y - a.y) - (c.y - a.y) * (p.x - a.x);
+  const a = { x, y: r.top - 4 }, c = { x, y: r.bottom + 4 };
+  const s1 = side(last, prev, a), s2 = side(last, a, c), s3 = side(last, c, prev);
+  return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
 }
 
 function openSub(parent, b, it, focus) {

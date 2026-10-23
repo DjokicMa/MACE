@@ -3,8 +3,22 @@
  * bottom panel with an IR/Raman stick spectrum, and the mode controls in the
  * inspector. The animation renders on demand at most 30 times a second and stops
  * while the tab is hidden or the window has no focus; under reduced motion the
- * mode shows as a still view with displacement arrows and a Play button. */
+ * mode shows as a still view with displacement arrows and a Play button.
+ *
+ * Amplitude (1.1.6). CRYSTAL prints each mode as NORMAL MODES NORMALIZED TO
+ * CLASSICAL AMPLITUDES (IN BOHR): every atom's displacement at the classical
+ * turning point of the vibrational ground state, x = √(ħ/ωμ) (CRYSTAL23
+ * manual, SCANMODE; checked on the test corpus: Σ m|u|² · ω/ħ = 1.000 ± 0.004
+ * for every real mode). freq.py turns it into Å, so "Physical" ×1 draws the
+ * true zero-point amplitude (0.01 to 0.2 Å) and the Exaggeration slider
+ * scales it, shown as ×N in the view's header. Before 1.1.6 the view always
+ * scaled the largest atom to 0.5 Å and called that 1×: an exaggeration of 3×
+ * to 40× by mode, never shown. "Largest atom 0.5 Å" keeps that drawing, now
+ * named. Translations and rotations (≈0 cm⁻¹) have no zero-point amplitude:
+ * their vector is drawn as CRYSTAL prints it. The arrows keep their own scale
+ * (the largest 0.5 Å × Arrow length) in both. */
 import * as PK from "../plotkit.js";
+import { cellsPicker } from "../cells_picker.js";
 
 const FRAMES = 24, FPS = 30;
 
@@ -14,6 +28,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
       <button class="tb-btn-text fv-struct" data-act="structure" data-tip="Open this output's structure">${icon("atom")}<span>Structure</span></button>
       <button class="tb-btn-text fv-ir" data-act="ir" data-tip="IR spectrum: CRYSTAL's IRSPEC.DAT, else broadened from the modes">${icon("chart-spline")}<span>IR</span></button>
       <button class="tb-btn-text fv-raman" data-act="raman" data-tip="Raman spectrum: CRYSTAL's RAMSPEC.DAT, else broadened from the modes">${icon("chart-spline")}<span>Raman</span></button>
+      <button class="tb-btn-text fv-diel" data-act="dielectric" hidden data-tip="Born charges, ε∞ and ε0, LO-TO splitting (INTCPHF): the output's dielectric results">${icon("table")}<span>Dielectric</span></button>
       <button class="tb-btn-text fv-steps" data-act="steps" hidden data-tip="The optimization before the frequencies">${icon("chart-line")}<span>Pre-optimization Steps</span></button>
       <button class="tb-btn-text primary fv-play" data-act="play" aria-pressed="false">${icon("play")}<span>Play</span><kbd>Space</kbd></button></div>
     <div class="fv-view"><div class="viewer" id="viewer-freq" tabindex="0" aria-label="Normal mode"></div>
@@ -31,7 +46,8 @@ export function createFreqView(host, tableHost, optsHost, H) {
 
   const reduced = () => document.documentElement.dataset.motion === "reduce"
     || (document.documentElement.dataset.motion !== "full" && matchMedia("(prefers-reduced-motion: reduce)").matches);
-  const defaults = () => ({ amplitude: 1, speed: 1, arrows: true, arrowScale: 2 });
+  const scaleSetting = () => (H.setting && H.setting("freq.amplitudeScale") === "normalized" ? "normalized" : "physical");
+  const defaults = () => ({ amplitude: 1, speed: 1, arrows: true, arrowScale: 2, scale: scaleSetting() });
 
   function v() { if (!viewer) viewer = M().viewer("viewer-freq"); return viewer; }
 
@@ -42,12 +58,15 @@ export function createFreqView(host, tableHost, optsHost, H) {
    * would need its phases, so it draws one cell. */
   let G = null;            // geom/core.js, loaded with the first document
   let lastDisplay = null;   // what the last draw showed (state(), for the tests)
+  let lastBoxKey = null;    // the drawn document and box: a change refits the camera
   function display(d) {
     const s = d.structure, vo = H.viewOpts ? H.viewOpts() : {}, per = s.pbc.some(Boolean), many = per && d.gamma !== false;
     const range = many ? (vo.range || [1, 1, 1]) : [1, 1, 1];
     const box = many ? (vo.box || { lo: [0, 0, 0], hi: Array.isArray(range) ? range : [1, 1, 1] }) : { lo: [0, 0, 0], hi: [1, 1, 1] };
     const list = G.displayList(s, range, many && !!vo.boundary);
-    return { list, box, cell: per && vo.cell !== false, bonds: vo.bonds !== false, labels: vo.labels || "off", style: vo.style || "ballstick" };
+    // a molecule's cell: its Vacuum mode's box around the atoms, as the structure view draws it (1.1.6; Open: none)
+    const box0 = !per && s.cell && M().vacuumBox ? M().vacuumBox(s, 1) : null;
+    return { list, box, cell: (per || !!box0) && vo.cell !== false, bonds: vo.bonds !== false, labels: vo.labels || "off", style: vo.style || "ballstick" };
   }
   /* the drawn cell box (from box.lo to box.hi cells along the periodic axes), as a structure for drawCell and the fit */
   function boxed(s, box) {
@@ -63,13 +82,23 @@ export function createFreqView(host, tableHost, optsHost, H) {
   // arrows during the animation are FRAMES copies of each arrow; above this many shapes they show only when paused
   const PLAY_ARROWS_MAX = 24000;
   const ARROW_FROM = 0.5;   // Å: about the drawn sphere's radius (0.28 × the van der Waals radius)
-  const scaleOf = (disp) => { const m = disp ? Math.max(...disp.map((v) => Math.hypot(...v))) : 0; return m > 1e-9 ? 0.5 / m : 0; };
+  const scaleOf = (disp) => { const m = maxOf(disp); return m > 1e-9 ? 0.5 / m : 0; };
+  /* the largest atom's displacement as CRYSTAL prints it (Å): the zero-point classical amplitude */
+  const maxOf = (disp) => (disp && disp.length ? Math.max(...disp.map((v) => Math.hypot(...v))) : 0);
+  /* a translation or rotation (|ν| below 1 cm⁻¹): no zero-point amplitude, its printed vector is not one */
+  const zeroMode = (m) => !!m && Math.abs(Number(m.freq) || 0) < 1;
+  /* how much a displacement is multiplied when drawn: Physical, the Exaggeration itself; else the largest atom at 0.5 Å × Amplitude */
+  const drawScale = (d, disp) => (d.opts.scale === "normalized" ? d.opts.amplitude * scaleOf(disp) : d.opts.amplitude);
+  /* the slider: Physical ×1 to ×100 on a log scale (0 to 2), the old 0.2 to 4 linear for the fit */
+  const ampToSlider = (o) => (o.scale === "normalized" ? o.amplitude : Math.log10(Math.max(1, o.amplitude)));
+  const sliderToAmp = (o, v) => (o.scale === "normalized" ? v : Number((10 ** v).toPrecision(v < 1 ? 2 : 3)));
+  const fmtX = (x) => (x >= 10 ? x.toFixed(0) : x >= 1 ? +x.toFixed(1) + "" : x.toFixed(2));
   /* frames of one mode: XYZ text, FRAMES per cycle (3Dmol keeps each as a frame) */
   function framesXyz(d, disp, list = display(d).list) {
-    const s = d.structure, o = d.opts, out = [], k0 = scaleOf(disp);
+    const s = d.structure, out = [], k0 = disp ? drawScale(d, disp) : 0;
     for (let f = 0; f < FRAMES; f++) {
-      const w = disp ? Math.sin((2 * Math.PI * f) / FRAMES) * o.amplitude * k0 : 0;
-      out.push(String(list.n), `${d.title} mode ${d.mode ? d.mode.mode : 0} frame ${f + 1}`);
+      const w = disp ? Math.sin((2 * Math.PI * f) / FRAMES) * k0 : 0;
+      out.push(String(list.n), `${d.title} mode ${d.mode ? d.mode.mode : 0} frame ${f + 1}${disp ? ` amplitude x${fmtX(k0)} of the zero-point classical amplitude` : ""}`);
       for (let k = 0; k < list.n; k++) {
         const i = list.base[k], c = cartOf(list, k), dv = disp ? disp[i] || [0, 0, 0] : [0, 0, 0];
         out.push(`${s.symbols[i]} ${(c[0] + w * dv[0]).toFixed(5)} ${(c[1] + w * dv[1]).toFixed(5)} ${(c[2] + w * dv[2]).toFixed(5)}`);
@@ -82,9 +111,12 @@ export function createFreqView(host, tableHost, optsHost, H) {
     if (!doc || !doc.structure || !G) return;
     const vw = v();
     if (!vw) return;                // no WebGL: the viewport explains it
-    const view = keepView && vw.getModel() ? vw.getView() : null;
-    vw.removeAllModels(); vw.removeAllShapes(); vw.removeAllLabels();
     const s = doc.structure, disp = doc.mode && doc.mode.displacement, dd = display(doc), list = dd.list;
+    // a new display range (or Vacuum mode) of the same document refits, as the structure view does
+    const boxKey = JSON.stringify([doc.path, dd.box]);
+    const view = keepView && vw.getModel() && boxKey === lastBoxKey ? vw.getView() : null;
+    lastBoxKey = boxKey;
+    vw.removeAllModels(); vw.removeAllShapes(); vw.removeAllLabels();
     lastDisplay = dd;
     const m = vw.addModelsAsFrames(framesXyz(doc, disp, list), "xyz");
     // bonds from the rest geometry in every frame: they never flicker as atoms swing past the bond cutoff
@@ -129,12 +161,12 @@ export function createFreqView(host, tableHost, optsHost, H) {
       // arrows that move with their atoms: one set per animation frame, each shape tagged with its frame
       // (3Dmol draws a shape with a frame only while the viewer shows that frame), so toggling them never
       // stops the animation and no shape is rebuilt per frame
-      const col = M().vpVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale, k0 = scaleOf(disp);
+      const col = M().vpVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale, k0 = drawScale(doc, disp);
       const live = moving();
       if (live.length * FRAMES > PLAY_ARROWS_MAX) doc.arrowsCapped = true;
       else {
         for (let f = 0; f < FRAMES; f++) {
-          const w = Math.sin((2 * Math.PI * f) / FRAMES) * doc.opts.amplitude * k0, arr = [];
+          const w = Math.sin((2 * Math.PI * f) / FRAMES) * k0, arr = [];
           for (const [c, dv] of live) {
             const len = Math.hypot(...dv), u = dv.map((x) => x / len);
             const s0 = c.map((x, j) => x + w * dv[j] + u[j] * ARROW_FROM);
@@ -232,11 +264,12 @@ export function createFreqView(host, tableHost, optsHost, H) {
     try {
       const r = await api("freq/mode?" + q({ path: doc.path, k: m.mode }));
       doc.mode = r;
-      $(".fv-mode").textContent = `Mode ${m.mode} · ${fmt(m.freq, 1)} cm⁻¹ (${m.irrep})${m.imaginary ? " · imaginary" : ""}`;
+      modeLabel();
       // the server could not match CRYSTAL's Cartesian frame to the drawn cell: say so rather than draw arrows that may be turned
       if (r.frame === "crystal" && !doc.frameWarned) { doc.frameWarned = true; toast("The mode's directions are in CRYSTAL's Cartesian frame, which could not be matched to the drawn cell: arrows may be rotated", "warning"); }
       renderTable();
       if (hadFocus) { const row = rowsEl.querySelector(`[data-k="${doc.active}"]`); if (row) row.focus(); }
+      { const n = optsHost.querySelector(".fo-amp-note"); if (n) n.textContent = ampNote(); }
       draw(true);
       if (!playing && !reduced() && doc.autoplay !== false) play(true);
     } catch (e) { toast(e.message, "error"); }
@@ -276,6 +309,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
     else if (e.target.closest("[data-act=structure]") && doc && H.openStructure) H.openStructure(doc.path);
     else if (e.target.closest("[data-act=steps]") && doc && H.openStructure) H.openStructure(doc.path);
     else if (e.target.closest("[data-act=ir]") && doc && H.openSpectrum) H.openSpectrum(doc.path, "ir");
+    else if (e.target.closest("[data-act=dielectric]") && doc && H.openMech) H.openMech(doc.path);
     else if (e.target.closest("[data-act=raman]") && doc && H.openSpectrum) H.openSpectrum(doc.path, "raman");
   });
   /* the stick spectrum: a click picks the nearest IR- or Raman-active mode */
@@ -285,35 +319,92 @@ export function createFreqView(host, tableHost, optsHost, H) {
   });
   host.addEventListener("keydown", (e) => { if (e.key === " " && e.target.closest(".viewer")) { e.preventDefault(); play(); } });
 
+  /* the view's header: the mode, and how its motion is scaled (always said: ×1 is the physical amplitude) */
+  function modeLabel() {
+    const m = doc && doc.mode;
+    if (!m) return;
+    const disp = m.displacement, o = doc.opts, k = disp ? drawScale(doc, disp) : 1;
+    const how = !disp ? "" : zeroMode(m) || m.classical === false ? ` · drawn ×${fmtX(k)} (CRYSTAL's vector)`
+      : Math.abs(k - 1) < 1e-6 ? " · physical amplitude" : ` · exaggerated ×${fmtX(k)}`;
+    $(".fv-mode").textContent = `Mode ${m.mode} · ${fmt(m.freq, 1)} cm⁻¹ (${m.irrep})${m.imaginary ? " · imaginary" : ""}${how}`;
+    $(".fv-mode").title = o.scale === "normalized" ? "Scaled so the largest atom moves 0.5 Å × Amplitude (Inspector › Mode)"
+      : "×1 is the zero-point classical amplitude CRYSTAL prints, √(ħ/ωμ); Inspector › Mode › Exaggeration scales it";
+  }
+  /* the line under the slider: what one atom really does and what is drawn */
+  function ampNote() {
+    const m = doc.mode, disp = m && m.displacement;
+    if (!disp) return "";
+    const mx = maxOf(disp), k = drawScale(doc, disp), A = (x) => `${x < 0.01 ? x.toFixed(4) : x.toFixed(3)} Å`;
+    if (zeroMode(m)) return `≈0 cm⁻¹: a translation or rotation has no zero-point amplitude. Largest atom drawn ${A(mx * k)}.`;
+    if (m.classical === false) return `This output does not print its modes as classical amplitudes: the largest atom is drawn ${A(mx * k)}, ×${fmtX(k)} the printed vector.`;
+    if (doc.opts.scale === "normalized") return `Largest atom drawn ${A(mx * k)}: ×${fmtX(k)} its zero-point amplitude (${A(mx)}).`;
+    return Math.abs(k - 1) < 1e-6 ? `True size: the largest atom moves ${A(mx)} (zero-point amplitude √(ħ/ωμ), as CRYSTAL prints it).`
+      : `Exaggerated ×${fmtX(k)}: the largest atom is drawn ${A(mx * k)}; it really moves ${A(mx)}.`;
+  }
   /* the mode controls (inspector) */
+  let pick = null, pickDoc = null;
   function renderOpts() {
-    const o = doc.opts;
-    optsHost.innerHTML = `<label class="po-row"><span>Amplitude</span><input type="range" id="fo-amp" min="0.2" max="4" step="0.1" value="${o.amplitude}"><span class="po-u">${o.amplitude.toFixed(1)}×</span></label>
+    const o = doc.opts, phys = o.scale !== "normalized";
+    optsHost.innerHTML = `<div class="po-row fo-scale-row"><span>Amplitude</span><span class="segment" role="radiogroup" aria-label="Amplitude scale">
+        <button type="button" role="radio" data-fo-scale="physical" aria-checked="${phys}" title="×1 is the zero-point classical amplitude CRYSTAL prints">Physical</button>
+        <button type="button" role="radio" data-fo-scale="normalized" aria-checked="${!phys}" title="Every mode scaled so its largest atom moves 0.5 Å">Fit 0.5 Å</button></span></div>
+      <label class="po-row"><span>${phys ? "Exaggeration" : "Amplitude"}</span><input type="range" id="fo-amp" ${phys ? 'min="0" max="2" step="0.05"' : 'min="0.2" max="4" step="0.1"'} value="${ampToSlider(o)}"
+        aria-valuetext="×${fmtX(o.amplitude)}"><span class="po-u">${fmtX(o.amplitude)}×</span></label>
+      <p class="muted small po-row fo-amp-note" aria-live="polite">${esc(ampNote())}</p>
       <label class="po-row"><span>Speed</span><input type="range" id="fo-speed" min="0.2" max="3" step="0.1" value="${o.speed}"><span class="po-u">${o.speed.toFixed(1)}/s</span></label>
       <label class="chk po-row"><input type="checkbox" id="fo-arrows"${o.arrows ? " checked" : ""}> Arrows</label>
       ${doc.arrowsCapped ? `<p class="muted small po-row">This structure has too many moving atoms for arrows during the animation: they show when paused</p>` : ""}
-      <label class="po-row"><span>Arrow scale</span><input type="range" id="fo-ascale" min="0.5" max="8" step="0.5" value="${o.arrowScale}"><span class="po-u">${o.arrowScale}×</span></label>
+      <label class="po-row" data-tier="advanced" title="The arrows' own scale: the largest is 0.5 Å × this, whatever the amplitude"><span>Arrow length</span><input type="range" id="fo-ascale" min="0.5" max="8" step="0.5" value="${o.arrowScale}"><span class="po-u">${o.arrowScale}×</span></label>
       ${doc.structure && doc.structure.pbc.some(Boolean) ? (doc.gamma === false
     ? `<p class="muted small po-row">One cell: this mode is not at Γ, so its periodic images move with phases the output does not give</p>`
-    : `<label class="chk po-row"><input type="checkbox" id="fo-super"${H.rangeN && H.rangeN() === 2 ? " checked" : ""}> 2×2×2 cells</label>`) : ""}
-      <div class="po-acts"><button class="tb-btn-text" data-fo="xyz">${icon("download")}<span>Export Mode as XYZ</span></button></div>`;
+    : `<div class="po-row fo-cells-slot"></div>`) : ""}
+      <div class="po-acts" data-tier="advanced"><button class="tb-btn-text" data-fo="xyz">${icon("download")}<span>Export Mode as XYZ</span></button></div>`;
+    // the cells drawn (N × M × L, js/cells_picker.js): one picker per document, its values follow the range
+    const slot = optsHost.querySelector(".fo-cells-slot");
+    if (slot) {
+      const cells = H.rangeCells ? H.rangeCells() : [1, 1, 1].map(() => (H.rangeN && H.rangeN()) || 1);
+      if (pickDoc !== doc || !pick) {
+        pick = cellsPicker({ id: "fo-cells", cells, pbc: doc.structure.pbc, label: "Cells",
+          onChange: (c) => { if (H.setRange) H.setRange(c); } });
+        pickDoc = doc;
+      } else pick.setCells(cells);
+      if (pick) slot.replaceChildren(pick); else slot.remove();
+    }
   }
   optsHost.addEventListener("input", (e) => {
     if (!doc) return;
     const t = e.target, o = doc.opts;
-    if (t.id === "fo-amp") o.amplitude = Number(t.value);
+    if (t.id === "fo-amp") o.amplitude = sliderToAmp(o, Number(t.value));
     else if (t.id === "fo-speed") o.speed = Number(t.value);
     else if (t.id === "fo-ascale") o.arrowScale = Number(t.value);
     else if (t.id === "fo-arrows") o.arrows = t.checked;
-    else if (t.id === "fo-super") { if (H.setRange) H.setRange(t.checked ? 2 : 1); return; }
     else return;
     const u = t.parentElement.querySelector(".po-u");
-    if (u) u.textContent = t.id === "fo-speed" ? `${o.speed.toFixed(1)}/s` : t.id === "fo-amp" ? `${o.amplitude.toFixed(1)}×` : `${o.arrowScale}×`;
+    if (u) u.textContent = t.id === "fo-speed" ? `${o.speed.toFixed(1)}/s` : t.id === "fo-amp" ? `${fmtX(o.amplitude)}×` : `${o.arrowScale}×`;
+    if (t.id === "fo-amp") {
+      t.setAttribute("aria-valuetext", `×${fmtX(o.amplitude)}`);
+      const n = optsHost.querySelector(".fo-amp-note");
+      if (n) n.textContent = ampNote();
+      modeLabel();
+    }
     clearTimeout(building);
     building = setTimeout(() => draw(true), 60);
   });
   optsHost.addEventListener("click", (e) => {
+    const sc = e.target.closest("[data-fo-scale]");
+    if (sc && doc) {
+      // Physical or the 0.5 Å fit: the slider starts again at ×1 (kept as Settings' choice for the next FREQ)
+      if (doc.opts.scale === sc.dataset.foScale) return;
+      doc.opts.scale = sc.dataset.foScale;
+      doc.opts.amplitude = 1;
+      if (H.setSetting) H.setSetting("freq.amplitudeScale", doc.opts.scale);
+      renderOpts(); modeLabel(); draw(true);
+      const b = optsHost.querySelector(`[data-fo-scale="${doc.opts.scale}"]`);
+      if (b) b.focus();
+      return;
+    }
     if (!doc || !e.target.closest("[data-fo=xyz]") || !doc.mode) return;
+    // the frames as drawn (their comment line says how the amplitude is scaled)
     download(new Blob([framesXyz(doc, doc.mode.displacement)], { type: "chemical/x-xyz" }),
       `${doc.title.replace(/\.[^.]+$/, "")}_mode${doc.mode.mode}.xyz`);
   });
@@ -337,7 +428,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
           const core = await import("../geom/core.js");
           G = core;
           Object.assign(d, { modes: r.modes, structure: core.decodePacked(r.structure), imaginary: r.imaginary, active: 0,
-            nFrames: r.n_frames || 1, gamma: r.gamma !== false });
+            nFrames: r.n_frames || 1, gamma: r.gamma !== false, born: !!r.born });
           if (r.mode_atoms && r.mode_atoms !== r.n_atoms) throw new Error(`the modes move ${r.mode_atoms} atoms, the geometry has ${r.n_atoms}`);
           H.imaginary(d, r.imaginary);
         } catch (e) { msg.textContent = e.message; return; }
@@ -350,6 +441,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
       $(".fv-steps").hidden = !(d.nFrames > 1);          // FREQCALC with PREOPTGEOM: its optimization
       $(".fv-ir").hidden = !d.modes.some((m) => m.ir_active && m.ir_intens > 0);
       $(".fv-raman").hidden = !d.modes.some((m) => m.raman_active && m.raman_intens > 0);
+      $(".fv-diel").hidden = !d.born;                       // INTCPHF: Born charges and the dielectric results
       const want = d.wantMode ? d.modes.findIndex((m) => m.mode === d.wantMode) : -1;
       d.wantMode = null;
       const k = want >= 0 ? want : d.mode ? d.active : Math.max(0, d.modes.findIndex((m) => !m.imaginary && m.freq > 1));
@@ -369,6 +461,10 @@ export function createFreqView(host, tableHost, optsHost, H) {
     state: () => doc && { mode: doc.mode && doc.mode.mode, active: doc.active, frame,
       arrows: playing ? (frameArrows[frame] || []).slice() : drawnArrows.slice(), capped: !!doc.arrowsCapped,
       n: doc.modes ? doc.modes.length : 0, opts: { ...doc.opts }, gamma: doc.gamma !== false,
+      // 1.1.6: the multiplier on CRYSTAL's zero-point amplitude, and the largest atom's printed and drawn displacement (Å)
+      drawScale: doc.mode && doc.mode.displacement ? drawScale(doc, doc.mode.displacement) : null,
+      maxDisp: doc.mode && doc.mode.displacement ? maxOf(doc.mode.displacement) : null,
+      cells: pick && pickDoc === doc ? pick.cells() : null,
       display: lastDisplay && { atoms: lastDisplay.list.n, cell: lastDisplay.cell, bonds: lastDisplay.bonds, labels: lastDisplay.labels,
         style: lastDisplay.style, box: lastDisplay.box } },
   };

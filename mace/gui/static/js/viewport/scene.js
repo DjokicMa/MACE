@@ -6,6 +6,7 @@
  * grid, on the main thread up to 2000 drawn atoms and in the worker above. */
 import * as G from "../geom/core.js";
 import * as W from "../geom/client.js";
+import { keepBuilt } from "./shape_cache.js";
 
 const SYNC_LIMIT = 2000;
 
@@ -17,6 +18,8 @@ export function createScene(v, deps) {
   let shapes = { cell: [], measure: [], ghost: [] }, labels = { atoms: [], measure: [], hover: [] };
   let bonded = null, compCache = null;
   let disp = null, vdoc = null, lod = 1, version = 0, radiiPx = null, drawnR = null, pairs = null;
+  // the radii before the polyhedra's sizes, and the bonds before they drop a center's sticks
+  let baseR = null, rawPairs, drawBonds = false;
   let projCache = null, hovered = -1, bondsForced = false, measureLabelPos = [];
   const wrap = v.getCanvas().closest(".viewer-wrap");
   // the level-of-detail badge and the large-structure banner (spec §8.2.4)
@@ -38,21 +41,26 @@ export function createScene(v, deps) {
     // the element colors, or the Magnetic style's spin colors (a colorfunc)
     const cs = M.colorSpec ? M.colorSpec() : { colorscheme: M.styleFor("ballstick", true).sphere.colorscheme };
     if (style === "wireframe") return { line: { ...cs }, sphere: { scale: 0.1, ...cs } };
+    // Sticks: an atom without bonds (a polyhedron's corner, a lone ion) is a ball of the stick radius, not left out
+    if (style === "stick") { const st = M.styleFor(style, bonds); return st.stick ? { ...st, stick: { ...st.stick, showNonBonded: true } } : st; }
     if (style !== "ballstick" || !bonds) return M.styleFor(style, bonds);
     if (level >= 2) return { sphere: { scale: M.sphereScale(true), ...cs }, line: { ...cs } };
     return M.styleFor("ballstick", true);
   }
 
   /* ---------------------------------------------------------------- the structure layer */
+  /** A bond rule's minimum and pair rules, for cache keys. */
+  const ruleKey = (rule) => `${rule.min}|${JSON.stringify([...rule.pairs])}`;
   function bondLists(s, d, done) {
     const o = deps.opts();
     const radii = new Float32Array(d.n), metal = new Uint8Array(d.n);
     for (let k = 0; k < d.n; k++) { radii[k] = s.radii[d.base[k]]; metal[k] = s.metal && s.metal[d.base[k]] ? 1 : 0; }
-    const tol = Number(deps.setting("bondTolerance")) || s.bond_scale || 1.15, mm = deps.setting("bondMetalMetal") === true;
-    if (d.n <= SYNC_LIMIT) return done(G.cellListBonds(d.cart, radii, metal, tol, mm));
+    // the document's bond rule (geom/core.js bondRule; Build › Calculate Bonds… edits it)
+    const rule = G.bondRule(s, deps.setting), tol = rule.tol, mm = rule.metalMetal, r0 = G.ruleFor(rule, d.base);
+    if (d.n <= SYNC_LIMIT) return done(G.cellListBonds(d.cart, radii, metal, tol, mm, r0));
     const v0 = version;
     performance.mark("vp:bonds:post");
-    W.job("bonds", { cart: d.cart.slice(), radii, metal, tol, metalMetal: mm }).then((r) => {
+    W.job("bonds", { cart: d.cart.slice(), radii, metal, tol, metalMetal: mm, rule: r0 }).then((r) => {
       if (r.superseded || v0 !== version) return;
       performance.measure("vp:bonds", "vp:bonds:post");
       done(r.pairs, true);
@@ -111,31 +119,148 @@ export function createScene(v, deps) {
     }
     const m = v.addModel();
     m.addAtoms(atoms);
-    m.setStyle({}, styleObj(opts.style, !!p, lod));
+    applyStyle(m, styleObj(opts.style, !!p, lod));
     layer.structure = m;
   }
   function drawCellBox(s, opts) {
     shapes.cell.forEach((x) => v.removeShape(x));
     shapes.cell = [];
     if (!opts.cell) return;
-    // a molecule (no periodic direction, plan E10): its "cell" is only the atoms' bounding box, never drawn
-    if (s.pbc && !s.pbc.some(Boolean)) return;
+    // a molecule (no periodic direction, plan E10): its "cell" is only the atoms' box, drawn when a Vacuum
+    // mode gives it one (1.1.6: Bounding box, File-defined, CRYSTAL 500 Å, Custom; never Open)
+    if (s.pbc && !s.pbc.some(Boolean) && !(opts.box && opts.box.vacuum && opts.box.vacuum.mode !== "open")) return;
     // whole cells from round(lo) to round(hi): -0.1..1.1 draws the unit cell, 0..3 three cells
     const corners = G.boxCorners(s, opts.box || { lo: [0, 0, 0], hi: opts.range });
     const color = /^#[0-9a-f]{6}$/i.test(deps.setting("cellColor") || "") ? deps.setting("cellColor") : css("--cell");
     for (const [a, b] of [[0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 4], [2, 6], [3, 5], [3, 6], [4, 7], [5, 7], [6, 7]]) {
+      if (G.norm3(G.sub3(corners[a], corners[b])) < 1e-6) continue;     // an Open vacuum axis: no wall
       shapes.cell.push(v.addCylinder({ start: xyz(corners[a]), end: xyz(corners[b]), radius: 0.03, color, fromCap: 1, toCap: 1 }));
     }
   }
   /* ---------------------------------------------------------------- coordination polyhedra (plan B9) */
-  // built in the worker, cached per structure and drawn range; one mesh (and one edge set) per center element
-  const POLY_LIMIT = 2000;
-  let polyShapes = [], polyCache = { key: null, result: null }, polyState = { on: false, skipped: false, count: 0, meshes: 0, faces: [] };
+  // built in the worker (geom/core.js polyhedra), cached per structure, drawn range and centers: per center
+  // element one face mesh and one edge shape. While they are drawn (1.1.6) the structure layer is VESTA's
+  // polyhedral style in the chosen atom style: no sticks from a center to its anions (the polyhedron's
+  // edges), the centers small (Inspector › Center Atom: small, hidden or full size), the vertex anions
+  // smaller, and a vertex outside the drawn range a small ball of its own, so every corner of a polyhedron
+  // has its atom. Every other bond stays: a spacer cation's (a perovskite's A site), the contacts between
+  // neighboring polyhedra (Mg-Si in an olivine), the S-S of pyrite, a carbonate's C-O.
+  const POLY_LIMIT = 2000, VERTEX_SCALE = 0.6, CENTER_SCALE = { small: 0.45, hidden: 0, full: 1 }, EDGE_RADIUS = 0.025;
+  let polyShapes = [], polyCache = { key: null, result: null }, polyLook = null, polyVerts = null, polyDrawn = null;
+  let polyState = { on: false, skipped: false, count: 0, meshes: 0, faces: [] };
+  // keyed by the symbols themselves: an edit that swaps an element keeps the count (and a copied structure its __z)
+  const zOfBase = (s) => {
+    const key = s.symbols.join(" ");
+    if (s.__z && s.__zKey === key) return s.__z;
+    s.__zKey = key;
+    return (s.__z = Uint8Array.from(s.symbols.map((x) => G.zOf(x))));
+  };
   function clearPolyhedra() {
     polyShapes.forEach((x) => v.removeShape(x));
     polyShapes = [];
+    polyDrawn = null;
+    if (polyVerts) { v.removeModel(polyVerts); polyVerts = null; }
   }
-  function drawPolyhedra(s, d) {
+  /** What the worker builds for this draw (null: no polyhedra): the cache key and the job's arguments. */
+  function polyJob(s, d, opts) {
+    if (deps.setting("showPolyhedra") !== true || !s.radii || d.n > POLY_LIMIT) return null;
+    const rule = G.bondRule(s, deps.setting), tol = rule.tol;
+    const raw = deps.setting("polyCenters"), pc = typeof raw === "string" ? raw : "auto";
+    const only = pc === "auto" ? null : pc.split(",").map((x) => G.zOf(x.trim())).filter((zz) => zz > 0);
+    const box = opts.box || { lo: [0, 0, 0], hi: Array.isArray(opts.range) ? opts.range : [1, 1, 1] };
+    // every drawn position and element: an edit that moves a middle atom or swaps an element builds them again
+    let h = 0;
+    const mix = (x) => { h = (Math.imul(h, 31) + x) | 0; };
+    for (let q = 0; q < d.cart.length; q++) mix(Math.round(d.cart[q] * 1e4));
+    for (let q = 0; q < d.base.length; q++) mix(d.base[q]);
+    for (const x of s.symbols) for (let c = 0; c < x.length; c++) mix(x.charCodeAt(c));
+    const key = [d.n, tol, ruleKey(rule), pc, d.base.length, h, box.lo.join(","), box.hi.join(",")].join("|");
+    return { key, args: { tol, only, rule: G.ruleFor(rule), range: { shift: Int16Array.from(d.shift), lo: box.lo.slice(), hi: box.hi.slice() } } };
+  }
+  /** Points found again within 0.01 Å (0.1 Å buckets and their neighbors): a key of coordinates rounded to
+   * 0.01 Å told a corner at 3.905 Å from itself, one copy on each side of the rounding (SrTiO3's three far O). */
+  function pointSet() {
+    const cells = new Map(), C = 0.1, key = (a, b, c) => `${a},${b},${c}`;
+    return {
+      add(x, y, zc) {
+        const k = key(Math.floor(x / C), Math.floor(y / C), Math.floor(zc / C));
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push(x, y, zc);
+      },
+      has(x, y, zc) {
+        const a = Math.floor(x / C), b = Math.floor(y / C), c = Math.floor(zc / C);
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let l = -1; l <= 1; l++) {
+          const p = cells.get(key(a + i, b + j, c + l));
+          if (p) for (let q = 0; q < p.length; q += 3) if ((p[q] - x) ** 2 + (p[q + 1] - y) ** 2 + (p[q + 2] - zc) ** 2 < 1e-4) return true;
+        }
+        return false;
+      },
+    };
+  }
+  function lookOf(r) {
+    const mode = String(deps.setting("polyCenterAtom") || "small");
+    const verts = pointSet();
+    for (let q = 0; q < r.vertZ.length; q++) verts.add(r.verts[3 * q], r.verts[3 * q + 1], r.verts[3 * q + 2]);
+    return { centers: new Set(r.centers), ligands: new Set(r.ligands), keep: new Set(),
+      center: mode in CENTER_SCALE ? CENTER_SCALE[mode] : CENTER_SCALE.small, drawn: new Set(r.drawn), verts, ligandBase: r.ligandBase };
+  }
+  /** The bonds under the polyhedra: all but a center's to its anions (the polyhedron's edges stand for them)
+   * and those of an atom left out (polyScale 0). An anion left out that still has a bond to a drawn atom (a
+   * carbonate's O at a far face, beside the CaO6) is drawn after all (polyLook.keep), with that bond. */
+  function polyPairs(s, d, p) {
+    if (!p || !polyLook) return p;
+    const Z = zOfBase(s), en = (zz) => G.PAULING[zz] || 0, C = polyLook.centers, keep = (polyLook.keep = new Set());
+    const edge = (za, zb) => C.has(za) && G.ANION_Z.has(zb) && en(zb) > en(za);
+    const f = new Float32Array(d.n), kept = [], out = [];
+    for (let k = 0; k < d.n; k++) f[k] = polyScale(s, d, k);
+    for (let q = 0; q < p.length; q += 2) {
+      const za = Z[d.base[p[q]]], zb = Z[d.base[p[q + 1]]];
+      if (!edge(za, zb) && !edge(zb, za)) kept.push(p[q], p[q + 1]);
+    }
+    for (let q = 0; q < kept.length; q += 2) {
+      const a = kept[q], b = kept[q + 1];
+      if (!f[a] && f[b] && polyLook.ligandBase[d.base[a]]) keep.add(a);
+      if (!f[b] && f[a] && polyLook.ligandBase[d.base[b]]) keep.add(b);
+    }
+    for (let q = 0; q < kept.length; q += 2) {
+      const a = kept[q], b = kept[q + 1];
+      if ((f[a] || keep.has(a)) && (f[b] || keep.has(b))) out.push(a, b);
+    }
+    return Uint32Array.from(out);
+  }
+  /** Scale of drawn atom k under the polyhedra: centers, vertex anions, others 1. A boundary copy of a center
+   * (its polyhedron is drawn once, at the copy inside the range) and an anion at no drawn polyhedron's corner
+   * (its polyhedron is the one at the far face) are left out (0): balls floating beside the polyhedra would
+   * only clutter them. An anion no center has (a water's O) stays. */
+  function polyScale(s, d, k) {
+    if (!polyLook) return 1;
+    const b = d.base[k], zz = zOfBase(s)[b];
+    if (polyLook.centers.has(zz)) return polyLook.drawn.has(k) || !d.image[k] ? polyLook.center : 0;
+    if (polyLook.ligandBase[b]) return polyLook.verts.has(d.cart[3 * k], d.cart[3 * k + 1], d.cart[3 * k + 2]) || polyLook.keep.has(k) ? VERTEX_SCALE : 0;
+    return polyLook.ligands.has(zz) ? VERTEX_SCALE : 1;
+  }
+  /** The structure model's style with the polyhedra's atom sizes on top (st: styleObj). An atom left out (0)
+   * is not drawn in any style (its bonds went with it, polyPairs); sticks have no ball to scale. */
+  function applyStyle(m, st) {
+    m.setStyle({}, st);
+    if (!polyLook || !disp || !vdoc) return;
+    const s = vdoc.structure, groups = new Map();
+    for (let k = 0; k < disp.n; k++) {
+      const f = polyScale(s, disp, k);
+      if (f === 1 || (f > 0 && !st.sphere)) continue;
+      if (!groups.has(f)) groups.set(f, new Set());
+      groups.get(f).add(k);
+    }
+    for (const [f, set] of groups) {
+      const sty = f > 0 ? { ...st, sphere: { ...st.sphere, scale: (st.sphere.scale || 1) * f } } : {};
+      m.setStyle({ predicate: (a) => set.has(a.index) }, sty);
+    }
+  }
+  function polyRadii(s, d) {
+    if (!polyLook || !drawnR) return;
+    for (let k = 0; k < d.n; k++) drawnR[k] = baseR[k] * polyScale(s, d, k);
+  }
+  function drawPolyhedra(s, d, opts) {
     clearPolyhedra();
     const on = deps.setting("showPolyhedra") === true;
     polyState = { on, skipped: false, count: 0, meshes: 0, faces: [] };
@@ -146,45 +271,83 @@ export function createScene(v, deps) {
       banner.textContent = (lod >= 4 ? "Large structure: simplified drawing. " : "") + `Polyhedra are off above ${POLY_LIMIT.toLocaleString("en-US")} drawn atoms (${d.n.toLocaleString("en-US")} here): narrow the range to see them`;
       return;
     }
-    const tol = Number(deps.setting("bondTolerance")) || s.bond_scale || 1.15;
-    const key = [d.n, tol, d.base.length, d.cart[0], d.cart[d.cart.length - 1]].join("|");
+    const job = polyJob(s, d, opts);
+    const opacity = Math.min(1, Math.max(0.05, Number(deps.setting("polyOpacity")) || 0.5));
+    const edges = deps.setting("polyEdges") !== false;
     const paint = (r) => {
       const t0 = performance.now();
       clearPolyhedra();
-      const edgeColor = css("--cell");
       for (const m of r.meshes) {
-        const sym = G.SYMBOLS[m.z] || "X";
+        const sym = G.SYMBOLS[m.z] || "X", color = M.elementColor(sym);
         const vertexArr = [], normalArr = [], faceArr = [];
         for (let k = 0; k < m.pos.length; k += 3) {
           vertexArr.push({ x: m.pos[k], y: m.pos[k + 1], z: m.pos[k + 2] });
           normalArr.push({ x: m.nrm[k], y: m.nrm[k + 1], z: m.nrm[k + 2] });
           faceArr.push(k / 3);
         }
-        polyShapes.push(v.addCustom({ vertexArr, normalArr, faceArr, color: M.elementColor(sym), opacity: 0.35 }));
-        // the edges: degenerate triangles (a, b, b) drawn as wireframe lines
-        const ev = [], ef = [];
+        polyShapes.push(keepBuilt(v.addCustom({ vertexArr, normalArr, faceArr, color, opacity })));
+        if (!edges) continue;
+        // thin edges a shade darker than the faces: cylinders, so they keep their width in a scaled export
+        const sh = v.addShape({ color: polyEdgeColor(color) });
         for (let k = 0; k < m.edge.length; k += 6) {
-          const q = ev.length;
-          ev.push({ x: m.edge[k], y: m.edge[k + 1], z: m.edge[k + 2] }, { x: m.edge[k + 3], y: m.edge[k + 4], z: m.edge[k + 5] });
-          ef.push(q, q + 1, q + 1);
+          sh.addCylinder({ start: { x: m.edge[k], y: m.edge[k + 1], z: m.edge[k + 2] }, end: { x: m.edge[k + 3], y: m.edge[k + 4], z: m.edge[k + 5] },
+            radius: EDGE_RADIUS, color: polyEdgeColor(color), fromCap: 1, toCap: 1 });
         }
-        polyShapes.push(v.addCustom({ vertexArr: ev, normalArr: ev.map(() => ({ x: 0, y: 0, z: 1 })), faceArr: ef, color: edgeColor, wireframe: true, linewidth: 1 }));
+        polyShapes.push(keepBuilt(sh));
       }
-      polyState = { on, skipped: false, count: r.count, meshes: r.meshes.length, faces: r.faces, mainMs: performance.now() - t0 };
+      // the vertices outside the drawn range: balls as small as the vertex anions inside it
+      const at = pointSet();
+      for (let k = 0; k < d.n; k++) at.add(d.cart[3 * k], d.cart[3 * k + 1], d.cart[3 * k + 2]);
+      const extra = [];
+      for (let q = 0; q < r.vertZ.length; q++) {
+        const x = r.verts[3 * q], y = r.verts[3 * q + 1], zc = r.verts[3 * q + 2];
+        if (at.has(x, y, zc)) continue;
+        extra.push({ elem: G.SYMBOLS[r.vertZ[q]] || "X", x, y, z: zc, bonds: [], index: extra.length, serial: extra.length + 1 });
+      }
+      // in the atom style of the structure layer, as large as the vertex anions inside the range
+      const st = styleObj(opts.style, drawBonds, lod);
+      const ballScale = st.sphere ? (st.sphere.scale || 1) * VERTEX_SCALE : undefined;
+      if (extra.length && (st.sphere || st.stick)) {
+        polyVerts = v.addModel();
+        polyVerts.addAtoms(extra);
+        polyVerts.setStyle({}, st.sphere ? { sphere: { ...st.sphere, scale: ballScale } } : { stick: st.stick });
+      }
+      polyDrawn = { meshes: r.meshes, extra, opacity, edges, radius: EDGE_RADIUS, vertexScale: VERTEX_SCALE, ballScale };
+      polyState = { on, skipped: false, count: r.count, meshes: r.meshes.length, faces: r.faces, mainMs: performance.now() - t0,
+        centers: r.centers.map((zz) => G.SYMBOLS[zz]), candidates: r.candidates.map((zz) => G.SYMBOLS[zz]), auto: r.auto.map((zz) => G.SYMBOLS[zz]),
+        spacers: r.spacers.map((zz) => G.SYMBOLS[zz]), outside: extra.length, opacity, edges };
     };
-    if (polyCache.key === key && polyCache.result) { paint(polyCache.result); return; }
-    const z = Uint8Array.from(s.symbols.map((x) => G.zOf(x)));
+    if (polyCache.key === job.key && polyCache.result) { paint(polyCache.result); return; }
+    const z = zOfBase(s);
     const frac = Float64Array.from(s.frac.flat()), radii = Float32Array.from(s.radii), metal = Uint8Array.from(s.metal.map(Number));
     const v0 = version;
     performance.mark("vp:poly:post");
-    W.job("polyhedra", { cell: s.cell, frac, z, radii, metal, tol, dispCart: d.cart.slice(), dispBase: Uint32Array.from(d.base) }).then((r) => {
+    W.job("polyhedra", { cell: s.cell, frac, z, radii, metal, tol: job.args.tol, dispCart: d.cart.slice(), dispBase: Uint32Array.from(d.base), pbc: s.pbc,
+      only: job.args.only, range: job.args.range, rule: job.args.rule }).then((r) => {
       if (r.superseded || v0 !== version) return;
       performance.measure("vp:polyhedra", "vp:poly:post");
-      polyCache = { key, result: r };
+      polyCache = { key: job.key, result: r };
+      // the structure layer again, now that the centers are known: their sticks go, their sizes change
+      polyLook = lookOf(r);
+      if (rawPairs !== undefined && layer.structure) {
+        pairs = polyPairs(s, d, rawPairs);
+        buildStructure(s, d, pairs, opts);
+        ghosted = null;
+        if (preview && preview.dimStructure) restyle("all");
+        polyRadii(s, d);
+        radiiPx = null; projCache = null;
+      }
       paint(r);
       v.render();
       document.dispatchEvent(new CustomEvent("mace-polyhedra", { detail: { count: r.count } }));
     }).catch((e) => console.error("polyhedra:", e.message));
+  }
+  /** A polyhedron's edge color: its face color darkened (SVG export too). */
+  function polyEdgeColor(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if (!m) return css("--text-2");
+    const n = parseInt(m[1], 16);
+    return "#" + [n >> 16 & 255, n >> 8 & 255, n & 255].map((x) => Math.round(x * 0.55).toString(16).padStart(2, "0")).join("");
   }
   function labelText(s, i, mode) {
     if (mode === "element") return s.symbols[i];
@@ -232,9 +395,9 @@ export function createScene(v, deps) {
     // atoms outside the range bonded to drawn ones (VESTA): one shell, or whole discrete molecules
     bonded = null;
     if (opts.bondedOutside && opts.bondedOutside !== "off" && s.cell && s.frac) {
-      const tol = Number(deps.setting("bondTolerance")) || s.bond_scale || 1.15, mm = deps.setting("bondMetalMetal") === true;
-      const ck = `${tol}|${mm}`;
-      if (!compCache || compCache.s !== s || compCache.k !== ck) compCache = { s, k: ck, c: G.components(s, tol, mm) };
+      const rule = G.bondRule(s, deps.setting);
+      const ck = `${rule.tol}|${rule.metalMetal}|${ruleKey(rule)}`;
+      if (!compCache || compCache.s !== s || compCache.k !== ck) compCache = { s, k: ck, c: G.components(s, rule.tol, rule.metalMetal, rule) };
       const r = G.bondedImages(s, disp, opts.bondedOutside, compCache.c);
       bonded = { added: r.added, extended: r.extended, allExtended: r.allExtended, truncated: r.truncated, mode: opts.bondedOutside };
       disp = r;
@@ -247,10 +410,17 @@ export function createScene(v, deps) {
     drawnR = new Float32Array(disp.n);
     if (M.sphereScale) M.sphereScale(true);        // installs the document's radius set before the radii are read
     const bondsWanted = opts.bonds && opts.style !== "spacefill" && (lod <= 2 || bondsForced);
+    drawBonds = bondsWanted;
     for (let k = 0; k < disp.n; k++) drawnR[k] = atomRadius(s.symbols[disp.base[k]], opts.style, bondsWanted);
-    pairs = null;
+    baseR = drawnR.slice();
+    // polyhedra already built for this drawing: the structure layer is drawn their way at once
+    const pj = polyJob(s, disp, opts);
+    polyLook = pj && polyCache.key === pj.key && polyCache.result ? lookOf(polyCache.result) : null;
+    pairs = null; rawPairs = undefined;
     const finish = (p, late) => {
-      pairs = p ? filterPairs(s, disp, p, doc) : null;
+      rawPairs = p ? filterPairs(s, disp, p, doc) : null;
+      pairs = polyPairs(s, disp, rawPairs);
+      polyRadii(s, disp);             // after the pairs: an anion they keep (polyLook.keep) is drawn
       buildStructure(s, disp, pairs, opts);
       ghosted = null;
       if (preview && preview.dimStructure) restyle("all");
@@ -268,7 +438,7 @@ export function createScene(v, deps) {
     // a preview belongs to its document: another document's draw drops it (its frame puts it back)
     if (preview) { const p = preview; preview = null; previewShapes.length = 0; previewLabels.length = 0; if (!p.doc || p.doc === doc) setPreview(p); }
     showLod(disp.n);
-    drawPolyhedra(s, disp);            // after the LOD banner: above 2000 atoms it says why there are none
+    drawPolyhedra(s, disp, opts);      // after the LOD banner: above 2000 atoms it says why there are none
     deps.setRadius(sceneRadius(s, opts));
     // a new display range of the same document (2×2×2 after 1×1×1): what is drawn grew or shrank, so the
     // camera follows it (the kept view cut a 2×2×2 to the cells that fit, often just 2×2×1 in a wide viewport)
@@ -461,7 +631,7 @@ export function createScene(v, deps) {
     const key = set === "all" ? "all" : set ? [...set].sort().join(",") : "";
     if (key === (ghosted || "") || !layer.structure) return;
     const opts = deps.opts(), st = styleObj(opts.style, !!pairs, lod);
-    layer.structure.setStyle({}, st);
+    applyStyle(layer.structure, st);
     if (set === "all" || (set && set.size)) {
       const ghost = {};
       const op = Number(M.cssVar("--ghost-opacity")) || 0.3;
@@ -610,6 +780,9 @@ export function createScene(v, deps) {
     badgeText: () => (badge.hidden ? "" : badge.textContent),
     bannerText: () => (banner.hidden ? "" : banner.textContent),
     polyhedra: () => ({ ...polyState, shapes: polyShapes.length }),
+    /** What the polyhedra drew (the SVG export): {meshes, extra (vertex balls outside the range), opacity, edges, radius,
+     * vertexScale, edgeColor}, or null. */
+    polyGeometry: () => (polyDrawn ? { ...polyDrawn, edgeColor: polyEdgeColor } : null),
     invalidate() { projCache = null; },
     fmtMeasure,
     /** Export Image: leave out the cell and/or the measurements (and the

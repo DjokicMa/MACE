@@ -37,6 +37,7 @@ class PlotKind(Enum):
     SPECTRA_IR = "ir"
     SPECTRA_RAMAN = "raman"
     ORBITALS = "orbitals"
+    TRANSPORT = "transport"
     UNKNOWN = "unknown"
 
 
@@ -67,6 +68,10 @@ class PlotterEntry:
     sniff:
         Optional content classifier ``(path) -> bool`` for later phases where
         extension/glob cannot disambiguate (cube sub-types, FREQ ``.out``).
+    f25:
+        ``"band"``, ``"dos"`` or ``"bandos"``: the entry also takes a fort.25 (``*.f25``, ``fort.25``) whose
+        BAND or DOSS blocks it plots (band-dos: a band f25 with its DOS beside it). Decided by content
+        (mace/plotting/f25.py), so the filename ``patterns`` stay as they were.
     accepts_energy_range:
         Whether ``--all`` should override e_lower/e_upper from CLI args
         (true for band/DOS, false for structure) — preserves legacy behavior.
@@ -83,6 +88,7 @@ class PlotterEntry:
     config_from_args: Optional[Callable[[Any], Dict[str, Any]]] = None
     patterns: Optional[List[str]] = None
     sniff: Optional[Callable[[str], bool]] = None
+    f25: Optional[str] = None
     accepts_energy_range: bool = False
     progress_tmpl: str = "  Plotting {n} file(s)..."
     not_found_msg: str = "  No files found."

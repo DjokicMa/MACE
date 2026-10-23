@@ -94,7 +94,7 @@ def kind_by_name(name: str) -> str:
         return "gen"
     if low == "fort.34" or low.endswith((".gui", ".f34")):
         return "fort34"
-    if low == "fort.25" or low.endswith(".f25"):
+    if low.endswith((".f25", "fort.25")):
         return "f25"
     if _TRANSPORT.search(name):
         return "transport"
@@ -107,6 +107,21 @@ def kind_by_name(name: str) -> str:
     if _LOG_SUFFIX.search(name):
         return "log"
     return ""
+
+
+def f25_sub(path: Path) -> str:
+    """BAND, DOSS or MAPN for a fort.25 (its first block's type; a phonon run's leading PDOS block reads on
+    to the next header), else "" (the listing's chip: a BAND or DOSS f25 is plot data, plotted like the
+    .DAT of the run)."""
+    from mace.plotting import f25
+    return f25.sniff_kind(path, first=True) or ""
+
+
+def f25_phonon(path: Path) -> bool:
+    """A phonon run's fort.25 (FREQCALC BANDS or PDOS), from its header lines (f25.quick_domain without the
+    run's output: the listing reads every fort.25)."""
+    from mace.plotting import f25
+    return f25.quick_domain(path, run_output=False) == "phonon"
 
 
 # ------------------------------------------------------------------ cubes
@@ -325,7 +340,13 @@ def info_payload(path: Path, kind: str) -> Dict[str, Any]:
             head = ""
         m = re.search(r"-%-\d(BAND|DOSS|MAPN)", head)
         out["f25_kind"] = m.group(1) if m else None
-        stem = path.name[:-4] if path.name.lower().endswith(".f25") else path.stem
+        if out["f25_kind"] in ("BAND", "DOSS"):
+            try:
+                from mace.plotting import f25
+                out.update({k: v for k, v in f25.describe(path).items() if k in ("domain", "n_runs", "nspin")})
+            except Exception:            # an unreadable f25 is still a file the explorer lists
+                pass
+        stem = path.name[:-4] if path.name.lower().endswith(".f25") else path.name[:-8] if path.name.lower().endswith(".fort.25") else path.stem
         for suffix, k in ((".BAND.DAT", "BAND"), (".DOSS.DAT", "DOSS")):
             cand = path.with_name(stem + suffix)
             if out["f25_kind"] == k and cand.is_file():

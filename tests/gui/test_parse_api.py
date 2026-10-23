@@ -102,7 +102,7 @@ def test_sniff_unit():
 
 def test_parse_xyz_box_option(served):
     """A plain XYZ: with the box it's an editable 3D cell (10 A of vacuum
-    between images); without, a view-only molecule."""
+    between images); without, a molecule (1.1.6: editable too, in P1)."""
     base = served[0]
     data = b"3\nwater\nO 0.0 0.0 0.0\nH 0.757 0.586 0.0\nH -0.757 0.586 0.0\n"
     st, _, r = parse(base, "water.xyz", data, box=True)
@@ -110,7 +110,8 @@ def test_parse_xyz_box_option(served):
     cell = r["session"]["cell"]
     assert all(cell[k][k] >= 10.0 for k in range(3)), cell
     st, _, r = parse(base, "water.xyz", data, box=False)
-    assert st == 200 and r.get("held") and r["view_only"] and not r.get("session"), r
+    assert st == 200 and r.get("session") and not r.get("held"), r
+    assert r["session"]["pbc"] == [False, False, False] and r["session"]["dimensionality"] == "MOLECULE"
 
 
 def test_parse_errors_shown(served):

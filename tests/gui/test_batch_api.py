@@ -140,13 +140,13 @@ def test_scan_db_child_and_workflow_plan(srv, tmp_path):
     db.update_calculation_status(c2, "submitted", slurm_job_id="123")
     try:
         rows = _scan(srv, "runs", "followup", "SP")
-        assert "The database has a SP of this material" in rows["runs/1_dia_opt_rev1.out"]["why_not"]
-        # a plan written by `mace submit --progress opt_sp` whose next step is SP
+        assert "The database has an SP of this material" in rows["runs/1_dia_opt_rev1.out"]["why_not"]
+        # `mace submit --progress opt_sp` on a deck whose OPT finished: the OPT is not run again,
+        # and its SP, the plan's next step, is submitted at launch
         r = SU.twin_submit(tmp_path, srv.fake, srv.root / "runs", ["submit", "--progress", "opt_sp", "2_dia2_opt_rev1.d12"])
         assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
         rows = _scan(srv, "runs", "followup", "SP")
-        assert rows["runs/2_dia2_opt_rev1.out"]["why_not"].startswith("Workflow ")
-        assert rows["runs/2_dia2_opt_rev1.out"]["why_not"].endswith("will run SP next")
+        assert rows["runs/2_dia2_opt_rev1.out"]["why_not"] == "The database has an SP of this material (submitted)"
     finally:
         for f in ["materials.db", "structures.db"]:
             p = srv.root / "runs" / f

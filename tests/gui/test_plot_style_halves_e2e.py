@@ -108,16 +108,24 @@ def inspector(drv):
                               " out[g.dataset.group] = [...g.querySelectorAll('input[id], select[id]')].map((i) => i.id)); return out")
 
 
+TRACES = {"bstyle", "bandm", "bandc", "bdash", "dos", "dspin", "dtotal", "dsmooth", "dsigma"}
+
+
 def style_menu(drv):
-    """{group: [menu value prefixes]} of the toolbar's Style ▾ menu (closed again)"""
-    drv.find_element("css selector", "#plot-host .pk-style").click()
-    H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
-    out = drv.execute_script("const out = {plot: []}; let g = 'plot';"
-                             "for (const el of document.querySelectorAll('.pk-menu > *')) {"
-                             "  if (el.classList.contains('pk-group')) { g = el.dataset.group; out[g] = out[g] || []; }"
-                             "  else if (el.dataset.v && !['settings', 'cli'].includes(el.dataset.v)) { const k = el.dataset.v.split(':')[0]; if (!out[g].includes(k)) out[g].push(k); } }"
-                             "return out")
-    close_menu(drv)
+    """{group: [menu value prefixes]} of the toolbar's Style ▾ and Traces ▾ menus (each closed again)"""
+    out = {"plot": []}
+    for cat in ("style", "traces"):
+        drv.find_element("css selector", f"#plot-host .pk-cat[data-cat={cat}]").click()
+        H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
+        got = drv.execute_script("const out = {plot: []}; let g = 'plot';"
+                                 "for (const el of document.querySelectorAll('.pk-menu > *')) {"
+                                 "  if (el.classList.contains('pk-group')) { g = el.dataset.group; out[g] = out[g] || []; }"
+                                 "  else if (el.dataset.v && !['settings', 'cli'].includes(el.dataset.v)) { const k = el.dataset.v.split(':')[0]; if (!out[g].includes(k)) out[g].push(k); } }"
+                                 "return out")
+        for g, ks in got.items():
+            out.setdefault(g, [])
+            out[g] += [k for k in ks if k not in out[g]]
+        close_menu(drv)
     return out
 
 
@@ -126,7 +134,8 @@ def close_menu(drv):
 
 
 def pick(drv, value):
-    drv.find_element("css selector", "#plot-host .pk-style").click()
+    cat = "traces" if value.split(":")[0] in TRACES else "style"
+    drv.find_element("css selector", f"#plot-host .pk-cat[data-cat={cat}]").click()
     H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
     drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = '';"
                        "document.querySelector(`.pk-menu button[data-v=\"${arguments[0]}\"]`).click()", value)

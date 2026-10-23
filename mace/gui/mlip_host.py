@@ -48,12 +48,19 @@ class MlipHost:
         self._idle: Optional[threading.Timer] = None
         self.last_error: Optional[str] = None
         self.cpu_restarts = 0                      # restarts before a per-process CPU-time limit
+        self.device = ("cpu", None)                # (device, GPU memory share) the worker was loaded with
         atexit.register(self.shutdown)
 
     # -- the lease ---------------------------------------------------------------
-    def acquire(self, task, model_id: str, threads: int) -> Callable[[], None]:
+    def acquire(self, task, model_id: str, threads: int, device: str = "cpu",
+                gpu_mem_fraction: Optional[float] = None, scope: Optional[str] = "preopt") -> Callable[[], None]:
         """Wait for the worker, make sure it runs ``model_id``, put the lease
-        in ``task.payload["mlip_lease"]``; returns the release callback."""
+        in ``task.payload["mlip_lease"]``; returns the release callback.
+
+        ``device``/``gpu_mem_fraction`` (the Calculators panel: auto, GPU 0
+        when there is one): a worker loaded on another device is restarted.
+        ``scope``: the registry scope the model comes from (None: any; Clean
+        asks for the preopt models only)."""
         from mace.gui import compute
         from mace.preopt import detect, mlip_client, proc, registry
         canceled = lambda: bool(getattr(task, "cancel_requested", False))  # noqa: E731
@@ -80,12 +87,13 @@ class MlipHost:
                 self.cpu_restarts += 1
                 task.message = task.log = "Reloading the ML model (CPU-time limit)…"
                 print("mace gui: restarted the ML worker before this node's CPU-time limit", file=sys.stderr, flush=True)
-            if w is not None and (self.model_id != model_id or not w.alive() or not self._ping(w)):
+            if w is not None and (self.model_id != model_id or getattr(self, "device", "cpu") != (device, gpu_mem_fraction)
+                                  or not w.alive() or not self._ping(w)):
                 self._stop_worker()
                 w = None
             if w is None:
-                model = registry.get(model_id)
-                py = detect.configured_python()
+                model = registry.get(model_id, scope=scope)
+                py = detect.configured_python(model)
                 ws = detect.weights_status(model) if model else {"status": "unknown"}
                 mem = proc.mem_available_gb()
                 if model is None or not py:
@@ -96,11 +104,13 @@ class MlipHost:
                     raise mlip_client.MlipError("memory", f"only {mem:.1f} GB of RAM available (an ML model "
                                                           "needs about 2 GB)")
                 w = mlip_client.WorkerProcess(py, model, weights=ws.get("path"), threads=threads, use_socket=True,
-                                              nice=self.nice, canceled=canceled)
+                                              nice=self.nice, canceled=canceled, device=device,
+                                              gpu_mem_fraction=gpu_mem_fraction)
                 with self.lock:
                     self.worker, self.model_id = w, model_id
+                    self.device = (device, gpu_mem_fraction)
                     self.loads += 1
-            lease.update(socket=w.socket_path, hello=w.hello, pid=w.pid)
+            lease.update(socket=w.socket_path, hello=w.hello, pid=w.pid, device_text=getattr(w, "device_text", None))
         except proc.Canceled:
             self._release(task.id)
             raise compute.Canceled("canceled while the ML worker was loading")
@@ -175,6 +185,7 @@ class MlipHost:
 
     def _stop_worker(self) -> None:
         w, self.worker, self.model_id = self.worker, None, None
+        self.device = ("cpu", None)
         if w is not None:
             w.kill()
             w.close()
@@ -195,5 +206,6 @@ class MlipHost:
     def report(self) -> Dict[str, Any]:
         w = self.worker
         return {"running": bool(w and w.alive()), "pid": w.pid if w else None, "model": self.model_id,
+                "device": self.device[0],
                 "owner": self.owner, "loads": self.loads, "kills": self.kills, "last_error": self.last_error,
                 "cpu_restarts": self.cpu_restarts}

@@ -21,6 +21,11 @@ CHUNK = 1 << 20
 # A phonon dispersion (FREQCALC with DISPERSI): modes away from Gamma, whose periodic
 # images move with phases; the page then draws one cell only.
 OFF_GAMMA = re.compile(rb"PHONON DISPERSION|DISPERSION K POINT|PHONON BANDS")
+# CRYSTAL prints each mode at the classical turning point of its vibrational ground state,
+# x = sqrt(hbar / (omega mu)) (CRYSTAL23 manual, SCANMODE): a physical amplitude, in bohr
+CLASSICAL = b"NORMALIZED TO CLASSICAL AMPLITUDES"
+# INTENS + INTCPHF: the Born charges, eps_0 and LO-TO open as the output's dielectric results (1.1.6)
+BORN = b"ATOMIC BORN CHARGE TENSOR"
 
 
 class TooBig(ValueError):
@@ -40,12 +45,18 @@ def parse_job(ctx=None, path: str = "", start: int = 0, end: int = 0, tmpdir: Op
             done = 0
             tail = b""
             gamma = True
+            classical = False
+            born = False
             while left > 0:
                 chunk = src.read(min(CHUNK, left))
                 if not chunk:
                     break
                 if gamma and OFF_GAMMA.search(tail + chunk):
                     gamma = False
+                if not classical and CLASSICAL in tail + chunk:
+                    classical = True
+                if not born and BORN in tail + chunk:
+                    born = True
                 tail = chunk[-64:]
                 out.write(chunk)
                 left -= len(chunk)
@@ -65,10 +76,11 @@ def parse_job(ctx=None, path: str = "", start: int = 0, end: int = 0, tmpdir: Op
     modes = [{k: m[k] for k in ("mode", "freq", "irrep", "imaginary", "degeneracy", "ir_active", "ir_intens",
                                 "raman_active", "raman_intens")} for m in p.modes]
     disp = {int(k): np.asarray(v, dtype=np.float32) for k, v in p.displacements.items()}
-    return {"modes": modes, "displacements": disp, "section_bytes": end - start, "gamma": gamma}
+    return {"modes": modes, "displacements": disp, "section_bytes": end - start, "gamma": gamma, "classical": classical,
+            "born": born}
 
 
-BOHR = 0.529177210903
+from mace.constants import BOHR_TO_ANGSTROM as BOHR  # noqa: E402
 
 
 def frame_rotation(block_lines, cell) -> Optional[Any]:
@@ -113,7 +125,9 @@ def frame_rotation(block_lines, cell) -> Optional[Any]:
 
 
 def mode_payload(parsed: Dict[str, Any], k: int) -> Dict[str, Any]:
-    """One mode: its row and its displacement per atom in Å, in the GUI's Cartesian frame."""
+    """One mode: its row and its displacement per atom in Å, in the GUI's Cartesian frame.
+    ``classical``: the output printed the modes normalized to classical amplitudes (the zero-point
+    turning point, a physical displacement); False when it did not say so."""
     import numpy as np
     m = next((x for x in parsed["modes"] if x["mode"] == k), None)
     if m is None:
@@ -125,7 +139,8 @@ def mode_payload(parsed: Dict[str, Any], k: int) -> Dict[str, Any]:
         if R is not None:
             d = d @ np.asarray(R, float)
     return {**m, "displacement": None if d is None else [[round(float(v), 6) for v in row] for row in d],
-            "units": "angstrom", "frame": "gui" if parsed.get("rotation") is not None else "crystal"}
+            "units": "angstrom", "frame": "gui" if parsed.get("rotation") is not None else "crystal",
+            "classical": bool(parsed.get("classical", True))}
 
 
 def nbytes(parsed: Dict[str, Any]) -> int:

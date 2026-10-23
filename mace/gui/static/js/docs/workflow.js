@@ -110,7 +110,7 @@ export function createWorkflowView(host, H) {
     const aria = `${m.material_id}, ${stepName(n.step)}: ${n.label}${extra ? `, ${extra}` : ""}`;
     return `<td><button type="button" class="wfv-node tone-${TONE[n.state] || "idle"}${sel ? " on" : ""}" data-mid="${esc(m.material_id)}" data-step="${esc(n.step)}"
       aria-pressed="${sel ? "true" : "false"}" aria-label="${esc(aria)}" title="${esc(n.help || "")}">
-      <span class="wfv-node-state">${icon(STATE_ICON[n.state] || "circle-dot")}<span>${esc(n.label)}</span>${n.attempts > 1 ? `<span class="wfv-att" title="Attempts (recoveries included)">×${n.attempts}</span>` : ""}</span>
+      <span class="wfv-node-state">${icon(STATE_ICON[n.state] || "circle-dot")}<span>${esc(n.label)}</span>${n.attempts > 1 ? `<span class="wfv-att" title="Attempts (recoveries included)">×${n.attempts}</span>` : ""}${n.group ? `<span class="wfv-att" title="Strained single points finished">${n.group.done}/${n.group.total}</span>` : ""}</span>
       ${extra && n.state === "running" ? `<span class="wfv-node-eta small">${extra}</span>` : ""}
       ${pct !== null && n.state === "running" ? `<span class="wfv-bar" aria-hidden="true"><span style="width:${pct}%"></span></span>` : ""}
     </button></td>`;
@@ -136,6 +136,11 @@ export function createWorkflowView(host, H) {
       if (n.eta.risk && n.eta.risk.sentence) add("Walltime", `<span class="small wfv-risk">${esc(n.eta.risk.sentence)}</span>`);
     }
     if (n.attempts > 1) add("Attempts", `${n.attempts} <span class="muted small">(recoveries resubmit a failed step)</span>`);
+    if (n.group) add("Strained runs", `${n.group.done} of ${n.group.total} finished${n.group.failed ? `, ${n.group.failed} failed` : ""}${n.group.running ? `, ${n.group.running} running` : ""}`);
+    if (n.relaxation_time) {
+      const rt = n.relaxation_time;
+      add("Relaxation time", `${esc(rt.relaxation_time_fs)} fs <span class="muted small">(${rt.fallback ? `fallback: ${esc(rt.reason || "")}` : `from ${esc(rt.source)}, ${esc(rt.carrier)}s along ${esc(rt.axis)}${rt.low_confidence ? ", low confidence" : ""}`})</span>`);
+    }
     if (n.calc_id) add("Calculation", `<span class="mono small">${esc(n.calc_id)}</span>`);
     if (n.error_type) add("Error", esc(n.error_type));
     if (n.submitted_at) add("Submitted", esc(when(n.submitted_at)));
@@ -148,8 +153,34 @@ export function createWorkflowView(host, H) {
     const acts = nodeActions(st, m, n);
     return `<h3>${esc(m.material_id)} · ${esc(stepName(n.step))}</h3>
       <table class="wfv-kv">${rows.join("")}</table>
+      ${n.tau ? tauCard(n.tau) : ""}
       ${acts}
       ${btns.length ? `<div class="wfv-actions">${btns.join("")}</div>` : `<p class="muted small">No job or files yet.</p>`}`;
+  }
+
+  /** A TAU step's result: what TRANSPORT runs with, and E1, C, the masses (with where they came from) and τ. */
+  function tauCard(t) {
+    const g = (x, d = 3) => (x === null || x === undefined ? "—" : Number(x).toPrecision(d));
+    const res = [];
+    for (const [car, axes] of Object.entries(t.results || {})) {
+      for (const [ax, r] of Object.entries(axes)) {
+        res.push(`<tr><th scope="row">${esc(car)} · ${esc(ax)}</th><td>${g(r.E1_eV)} eV <span class="muted small">(R² ${g(r.E1_r2, 2)})</span></td>
+          <td>${g(r.C)} ${esc(r.C_unit)} <span class="muted small">(R² ${g(r.C_r2, 4)})</span></td>
+          <td title="${esc(r.m_c_source || "")}">${g(r.m_c)} mₑ</td><td title="${esc(r.m_d_source || "")}">${g(r.m_d)} mₑ</td><td><b>${g(r.tau_fs, 4)} fs</b></td></tr>`);
+      }
+    }
+    const sources = [];
+    const first = ((t.results || {})[t.carrier] || {})[t.axis];
+    if (first) sources.push(`m_c: ${first.m_c_source}`, `m_d: ${first.m_d_source}`);
+    return `<div class="wfv-tau" data-part="tau-card"><h4>Relaxation time</h4>
+      <p class="${t.fallback ? "sub-line warn" : ""}">${t.fallback ? `TRANSPORT ${t.held ? "is held (strict)" : `uses RELAXTIM ${esc(t.used_fs)} fs`}: fell back, ${esc(t.reason || "")}`
+        : `TRANSPORT ${t.held ? "is held (strict: the fit is poor)" : `uses RELAXTIM ${esc(t.used_fs)} fs`}: ${esc(t.carrier)}s along ${esc(t.axis)}${t.low_confidence ? " (low confidence)" : ""}`}</p>
+      ${t.carrier_reason ? `<p class="muted small">Carrier: ${esc(t.carrier_reason)}. Axes: ${esc(t.axes_reason || "")}.</p>` : ""}
+      ${res.length ? `<table class="wfv-kv"><tr><th></th><th scope="col">E1</th><th scope="col">C</th><th scope="col">m_c</th><th scope="col">m_d</th><th scope="col">τ</th></tr>${res.join("")}</table>` : ""}
+      ${sources.length ? `<p class="muted small">${sources.map(esc).join("<br>")}</p>` : ""}
+      ${(t.warnings || []).map((w) => `<p class="sub-line warn small">${esc(w)}</p>`).join("")}
+      <p class="muted small">Acoustic-phonon (deformation-potential) τ: an upper bound where other scattering matters.${t.temperature_k ? ` T = ${esc(t.temperature_k)} K.` : ""}</p>
+      ${t.summary_rel ? `<div class="wfv-actions"><button type="button" class="tb-btn-text" data-open="${esc(t.summary_rel)}">${icon("file-text")}<span>Open tau_summary.json</span></button></div>` : ""}</div>`;
   }
 
   /* ------------------------------------------------------------ actions */

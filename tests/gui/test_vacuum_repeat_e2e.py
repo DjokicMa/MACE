@@ -87,7 +87,7 @@ def test_slab_structure_repeats_c_at_the_gap(drv):
     custom(drv, [1, 1, 3])
     H.wait(drv, f"return window.__mace.viewState().displayedAtoms === {n0 * 3}", 20)
     assert label(drv) == "1×1×3"
-    assert "10 Å gap" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
+    assert "10 Å custom" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
     z = sorted(zs(drv, VM))
     for k in range(3):
         layer = z[k * n0:(k + 1) * n0]
@@ -115,7 +115,7 @@ def test_slab_cube_2x2x2_at_the_cell_spacing(drv):
     H.wait(drv, "return window.__mace.volumeView.state().surfaces === 8", 30)
     s = drv.execute_script("return window.__mace.volumeView.state()")
     assert s["display"]["images"] == 8 and not s["display"]["capped"] and s["display"]["atoms"] == 8 * n, s["display"]
-    assert label(drv) == "2×2×2" and "Cell vacuum spacing" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
+    assert label(drv) == "2×2×2" and "file-defined vacuum spacing" in drv.execute_script("return document.getElementById('tb-range').dataset.tip")
     # the upper layer is the lower one moved up by the cube's height
     z = sorted(zs(drv, VV))
     lo, hi = z[:4 * n], z[4 * n:]

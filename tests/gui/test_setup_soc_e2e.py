@@ -13,7 +13,10 @@ import guiharness as H
 import p4util as U
 import setup_routes as R
 from test_setup_e2e import READY, printed_deck, set_field, state
-from test_setup_soc_api import HFO_CIF, INAS_CIF, PBTE_CIF, SOC_READY
+from test_setup_soc_api import HFO_CIF, INAS_CIF, PBTE_CIF
+
+# an external basis (the SOC ECPs), picked in the one Basis set row (TZVP-REV2 is the CLI's default external set)
+SOC_READY = {"basis_set": "TZVP-REV2", "functional": "PBE0", "dispersion": "No"}
 
 pytestmark = pytest.mark.gui
 pytest.importorskip("selenium.webdriver")

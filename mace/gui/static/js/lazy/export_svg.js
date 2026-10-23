@@ -2,13 +2,16 @@
  * projector. Every drawn atom becomes one <circle> (the same atoms the
  * viewer shows: the display range, boundary atoms and images included),
  * every drawn bond two <line> halves in their atoms' colors, the cell its
- * twelve edges; painted back to front by depth along the view direction.
+ * twelve edges, a coordination polyhedron its faces toward the viewer (translucent
+ * polygons, as the view's depth-tested faces show) and its edges; painted back to
+ * front by depth along the view direction.
  * The projection is the viewer's own (camera.calibrate, fitted to 3Dmol's
  * modelToScreen), so the picture lines up with the screen. Perspective is
  * refused: an SVG circle cannot stand for a perspective sphere honestly.
  * Large structures are written in chunks of 2000 atoms, yielding between
  * them, so the page never blocks for long. No external references. */
 import * as G from "../geom/core.js";
+import * as PP from "../viewport/print_patterns.js";
 
 const CHUNK = 2000;
 const yieldNow = () => new Promise((r) => setTimeout(r, 0));
@@ -26,7 +29,8 @@ function shade(hex, k) {
     .toString(16).padStart(2, "0")).join("");
 }
 
-/** One SVG from groups of {id, dx, atoms:[{u, v, r, z, fill, opacity, title}], lines:[{u1, v1, u2, v2, z, stroke, width, opacity}]}. */
+/** One SVG from groups of {id, dx, atoms:[{u, v, r, z, fill, opacity, title}], lines:[{u1, v1, u2, v2, z, stroke, width, opacity}],
+ * faces?:[{pts: [u, v, ...], z, fill, opacity}]}. */
 /** Shaded (plan E9): one radial gradient per atom color, lit from the upper left; Flat (the default) keeps
  * plain fills. Fog and ambient occlusion stay raster only. */
 function gradients(groups) {
@@ -46,6 +50,9 @@ export async function svgDocument({ width, height, background, groups, title = "
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<title>${esc(title)}</title>`];
   if (shaded) out.push(gradients(groups));
+  // print patterns (Settings › Viewport › Print patterns): each group's <pattern> tiles, drawn over its atoms
+  const patDefs = groups.map((g) => (g.patterns && g.patterns.defs) || "").join("");
+  if (patDefs) out.push(`<defs>${patDefs}</defs>`);
   if (background) out.push(`<rect width="100%" height="100%" fill="${esc(background)}"/>`);
   for (const g of groups) {
     out.push(`<g id="${esc(g.id)}"${g.dx ? ` transform="translate(${f1(g.dx)} 0)"` : ""}>`);
@@ -53,11 +60,19 @@ export async function svgDocument({ width, height, background, groups, title = "
     const items = [];
     for (const l of g.lines) items.push([l.z, 0, l]);
     for (const a of g.atoms) items.push([a.z, 1, a]);
+    for (const f of g.faces || []) items.push([f.z, 2, f]);
     items.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
     for (let k = 0; k < items.length; k++) {
       const [, kind, o] = items[k];
-      if (kind) out.push(`<circle cx="${f1(o.u)}" cy="${f1(o.v)}" r="${f1(Math.max(0.5, o.r))}" fill="${shaded && /^#?[0-9a-f]{6}$/i.test(String(o.fill).trim()) ? `url(#${gradId(o.fill)})` : o.fill}" stroke="${shade(o.fill, 0.55)}" stroke-width="${f1(Math.max(0.4, o.r * 0.06))}"${o.opacity < 1 ? ` fill-opacity="${o.opacity}" stroke-opacity="${o.opacity}"` : ""}>${o.title ? `<title>${esc(o.title)}</title>` : ""}</circle>`);
-      else out.push(`<line x1="${f1(o.u1)}" y1="${f1(o.v1)}" x2="${f1(o.u2)}" y2="${f1(o.v2)}" stroke="${o.stroke}" stroke-width="${f1(o.width)}" stroke-linecap="round"${o.opacity < 1 ? ` stroke-opacity="${o.opacity}"` : ""}/>`);
+      if (kind === 2) {
+        const pts = [];
+        for (let q = 0; q < o.pts.length; q += 2) pts.push(`${f1(o.pts[q])},${f1(o.pts[q + 1])}`);
+        out.push(`<polygon points="${pts.join(" ")}" fill="${o.fill}" fill-opacity="${o.opacity}" stroke="none"/>`);
+      } else if (kind) {
+        out.push(`<circle cx="${f1(o.u)}" cy="${f1(o.v)}" r="${f1(Math.max(0.5, o.r))}" fill="${shaded && /^#?[0-9a-f]{6}$/i.test(String(o.fill).trim()) ? `url(#${gradId(o.fill)})` : o.fill}" stroke="${shade(o.fill, 0.55)}" stroke-width="${f1(Math.max(0.4, o.r * 0.06))}"${o.opacity < 1 ? ` fill-opacity="${o.opacity}" stroke-opacity="${o.opacity}"` : ""}>${o.title ? `<title>${esc(o.title)}</title>` : ""}</circle>`);
+        const pat = o.sym && g.patterns && g.patterns.idOf[o.sym];
+        if (pat && o.r >= 1.5) out.push(`<circle cx="${f1(o.u)}" cy="${f1(o.v)}" r="${f1(o.r * 0.97)}" fill="url(#${pat})"/>`);
+      } else out.push(`<line x1="${f1(o.u1)}" y1="${f1(o.v1)}" x2="${f1(o.u2)}" y2="${f1(o.v2)}" stroke="${o.stroke}" stroke-width="${f1(o.width)}" stroke-linecap="round"${o.opacity < 1 ? ` stroke-opacity="${o.opacity}"` : ""}/>`);
       if (k % (2 * CHUNK) === 2 * CHUNK - 1) await yieldNow();
     }
     out.push("</g>");
@@ -81,7 +96,7 @@ export async function sceneGroup(X, { cell = true } = {}) {
   for (let i = 0; i < d.n; i++) {
     const b = d.base[i], sym = s.symbols[b];
     const f = byAtom ? byAtom({ serial: b + 1, properties: { base: b } }) : fill(sym);
-    atoms[i] = { u: uv[2 * i], v: uv[2 * i + 1], r: R[i] * k, z: depth(d.cart[3 * i], d.cart[3 * i + 1], d.cart[3 * i + 2]), fill: f, opacity: 1, title: `${sym}${b + 1}` };
+    atoms[i] = { u: uv[2 * i], v: uv[2 * i + 1], r: R[i] * k, z: depth(d.cart[3 * i], d.cart[3 * i + 1], d.cart[3 * i + 2]), fill: f, opacity: 1, title: `${sym}${b + 1}`, sym };
     if (i % CHUNK === CHUNK - 1) await yieldNow();
   }
   const p = sc.pairs, bw = 2 * (Number(X.setting("bondRadius")) || 0.12) * k;
@@ -101,7 +116,40 @@ export async function sceneGroup(X, { cell = true } = {}) {
         stroke: color, width: Math.max(1, 0.06 * k), opacity: 1 });
     }
   }
-  return { id: "structure", atoms, lines };
+  // the coordination polyhedra as the view draws them: the faces toward the viewer, the edges, the corner atoms
+  // outside the range; an atom the polyhedra leave out (radius 0: a hidden center, a boundary copy) is not drawn
+  const faces = [], P3 = (x, y, z) => G.projectAll(P, Float64Array.of(x, y, z));
+  const pg = sc.polyGeometry ? sc.polyGeometry() : null;
+  if (pg) {
+    for (const m of pg.meshes) {
+      const color = fill(G.SYMBOLS[m.z] || "X"), edge = pg.edgeColor(color);
+      for (let f = 0, o = 0; f < m.ringLen.length; o += m.ringLen[f], f++) {
+        if (m.ringNrm[3 * f] * T[0] + m.ringNrm[3 * f + 1] * T[1] + m.ringNrm[3 * f + 2] * T[2] <= 0) continue;
+        const ring = m.rings.subarray(3 * o, 3 * (o + m.ringLen[f]));
+        let zc = 0;
+        for (let q = 0; q < ring.length; q += 3) zc += depth(ring[q], ring[q + 1], ring[q + 2]);
+        faces.push({ pts: G.projectAll(P, Float64Array.from(ring)), z: zc / m.ringLen[f], fill: color, opacity: pg.opacity });
+      }
+      if (pg.edges) for (let q = 0; q < m.edge.length; q += 6) {
+        const a = P3(m.edge[q], m.edge[q + 1], m.edge[q + 2]), b = P3(m.edge[q + 3], m.edge[q + 4], m.edge[q + 5]);
+        lines.push({ u1: a[0], v1: a[1], u2: b[0], v2: b[1], z: (depth(m.edge[q], m.edge[q + 1], m.edge[q + 2]) + depth(m.edge[q + 3], m.edge[q + 4], m.edge[q + 5])) / 2,
+          stroke: edge, width: Math.max(0.6, 2 * pg.radius * k), opacity: 1 });
+      }
+    }
+    const scale = pg.ballScale !== undefined ? pg.ballScale : X.M.sphereScale ? X.M.sphereScale(true) * pg.vertexScale : 0.24;
+    const vdw = (sym) => ((window.$3Dmol && window.$3Dmol.GLModel && window.$3Dmol.GLModel.vdwRadii) || {})[sym] || 1.5;
+    for (const a of pg.extra) {
+      const p = P3(a.x, a.y, a.z);
+      atoms.push({ u: p[0], v: p[1], r: scale * vdw(a.elem) * k, z: depth(a.x, a.y, a.z), fill: fill(a.elem), opacity: 1, title: a.elem, sym: a.elem });
+    }
+  }
+  const shown = atoms.filter((a) => a.r > 0);
+  // print patterns as the view draws them (by element color; the Magnetic style colors by spin: none)
+  const mode = X.setting("viewport.printPatterns");
+  const map = !byAtom && (mode === "auto" || mode === "all") && d.n <= 4000
+    ? PP.assign(Array.from(d.base, (b) => s.symbols[b]), fill, mode) : {};
+  const patterns = Object.keys(map).length ? PP.svgPatterns(map, fill) : null;
+  return { id: "structure", atoms: shown, lines, faces, patterns, patternMap: map };
 }
 
 /** Atoms of a 3Dmol viewer (the comparison panes): [{x, y, z, r(Å), fill, opacity, title}] projected with modelToScreen. */

@@ -22,7 +22,7 @@ const PLOT_NOUN = { band: "a band structure plot", dos: "a DOS plot", ir: "an IR
 export function nounOf(d) {
   if (!d) return "";
   if (d.kind === "plot") return PLOT_NOUN[d.fileKind] || (d.plot && PLOT_NOUN[d.plot.kind]) || "a plot";
-  return ({ structure: "a structure", trajectory: "an optimization run", runplot: "a plot of a run", volume: "a volume",
+  return ({ structure: "a structure", trajectory: "an optimization run", runplot: "a plot of a run", mech: "a results document", volume: "a volume",
     freq: "a normal-mode view", db: "the database", workflows: "the workflow list", gallery: "the plot gallery",
     text: "a text file", cluster: "the cluster view", job: "a job's details", batch: "Batch Setup",
     editor: "the classic editor" })[d.kind] || "a document";

@@ -136,7 +136,7 @@ def test_browser_smoke(tmp_path):
     try:
         H.wait(drv, "const d = window.MACE.state.details; return d && d['water_freq.out'] && d['water_freq.out'].refined", 60)
         chips = drv.execute_script("return Object.fromEntries([...document.querySelectorAll('#file-list .file')].map((b) => [b.dataset.path, b.querySelector('.kb').textContent]))")
-        assert chips["water_freq.out"] == "FREQ" and chips["water_opt.out"] == "OPT" and chips["mgo_doss.out"] == "DOSS"
+        assert chips["water_freq.out"] == "FREQ" and chips["water_opt.out"] == "OPT" and chips["mgo_doss.out"] == "out"
         assert chips["water_opt-123456.o"] == "log"
         drv.execute_script("window.__mace.open('water_freq.out')")
         H.wait(drv, "const v = window.__mace.freqView, s = v && v.state(); return s && s.mode && s.n === 9", 60)
@@ -179,7 +179,7 @@ def test_map_names_come_from_the_properties_output(folder, tmp_path):
     properties output beside it does; without one the map is not called a density."""
     from mace.gui import maps
     p = maps.map_payload(folder / "mgo_echg.f25")
-    assert [m["label"] for m in p["maps"]] == ["Charge density"] and p["maps"][0]["unit"] == "e/bohr³"
+    assert [m["label"] for m in p["maps"]] == ["Charge density"] and p["maps"][0]["unit"] == "e bohr<sup>−3</sup>"
     alone = tmp_path / "mgo_echg.f25"
     shutil.copyfile(folder / "mgo_echg.f25", alone)
     p = maps.map_payload(alone)

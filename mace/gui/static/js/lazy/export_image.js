@@ -37,6 +37,7 @@ function prefs(H) {
   // plan E9: the resolution and physical size, and SVG shading; defaults from Settings › export.*
   const g = (k, d) => { try { const v = H && H.settings && H.settings.get(k); return v === undefined || v === null || v === "" ? d : v; } catch (e) { return d; } };
   const base = { format: "png", size: "1", w: 1920, h: 1080, transparent: false, triad: true, labels: true, cell: true, legend: "none",
+    patterns: ["auto", "all"].includes(g("viewport.printPatterns", "off")) ? g("viewport.printPatterns", "off") : "off",
     dpi: Number(g("export.dpi", 150)) || 150, units: g("export.units", "in") === "cm" ? "cm" : "in", pw: g("export.units", "in") === "cm" ? 8.9 : 3.5,
     shading: g("export.vectorShading", "flat") === "shaded" ? "shaded" : "flat" };
   // the last choices, in the profile (memory.exportImage); a pre-1.1.5 browser's own key until then
@@ -51,7 +52,7 @@ function prefs(H) {
   delete last.settings;
   return { ...base, ...last };
 }
-const SETTING_KEYS = { dpi: "export.dpi", units: "export.units", shading: "export.vectorShading" };
+const SETTING_KEYS = { dpi: "export.dpi", units: "export.units", shading: "export.vectorShading", patterns: "viewport.printPatterns" };
 function settingsOf(H) {
   const out = {};
   for (const [k, key] of Object.entries(SETTING_KEYS)) {
@@ -116,6 +117,9 @@ export async function render(X, o) {
   // the canvas holds devicePixelRatio x the UI scale's zoom pixels per own px (app.js sharpUnderZoom)
   const dpr = (window.devicePixelRatio || 1) * (window.maceZoom ? window.maceZoom.of(el) : 1);
   const restoreScene = X.scene ? X.scene.forExport({ cell: o.cell, measurements: o.labels }) : () => {};
+  // the grayscale print patterns (Settings › Viewport), drawn at the picture's size over it
+  const pat = o.patterns && o.patterns !== "off" ? await import("../viewport/print_patterns.js") : null;
+  let over = null;
   const saved = el.getAttribute("style") || "";
   // the shared WebGL context takes the new size only on a later frame (a
   // synchronous resize draws into the old corner): the viewer is drawn off
@@ -136,6 +140,7 @@ export async function render(X, o) {
     v.render();
     // encode in this task: the viewer's canvas keeps the frame only until the next composite
     url = v.getCanvas().toDataURL("image/png");
+    if (pat) over = pat.overlayCanvas(v, o.width, o.height, o.patterns, dpr);
   } finally {
     el.setAttribute("style", saved);
     if (o.transparent) v.setBackgroundColor(X.bg(), 1);
@@ -149,12 +154,14 @@ export async function render(X, o) {
   const img = await loadImage(url);
   // the element legend at the picture's scale (the view's own px -> the image's)
   const k = o.width / Math.max(1, viewRect.width);
-  const leg = o.legend && o.legend !== "none" && X.legend ? await legendImage(X, o.transparent ? null : X.bg(), k) : null;
-  if (!img || (!triad && !leg && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
+  const leg = o.legend && o.legend !== "none" && X.legend
+    ? await legendImage(X, o.transparent ? null : X.bg(), k, pat ? pat.mapFor(v, o.patterns) : null) : null;
+  if (!img || (!triad && !leg && !over && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
   const out = document.createElement("canvas");
   out.width = o.width; out.height = o.height;
   const g = out.getContext("2d");
   g.drawImage(img, 0, 0, o.width, o.height);
+  if (over) g.drawImage(over, 0, 0, o.width, o.height);
   if (leg) {
     const [x, y] = corner(o.legend, o.width, o.height, leg.w, leg.h, 12 * k);
     g.drawImage(leg.img, x, y, leg.w, leg.h);
@@ -172,11 +179,12 @@ const LEGEND_CORNERS = [["none", "None"], ["top-left", "Top left"], ["top-right"
 export function corner(where, W, H, w, h, m) {
   return [where.endsWith("left") ? m : W - w - m, where.startsWith("top") ? m : H - h - m];
 }
-/** The legend (lazy/legend_dialog.js forImage, the same function as mace plotting --legend) as an image `k` times its size. */
-async function legendImage(X, background, k) {
+/** The legend (lazy/legend_dialog.js forImage, the same function as mace plotting --legend) as an image `k` times its size,
+ * its swatches with the print patterns the image draws on the atoms. */
+async function legendImage(X, background, k, patterns = null) {
   const syms = X.symbols ? X.symbols() : [];
   if (!syms.length) return null;
-  const L = await X.legend(syms, { background, scale: 1 });
+  const L = await X.legend(syms, { background, scale: 1, patterns });
   const img = await loadImage(URL.createObjectURL(new Blob([L.svg], { type: "image/svg+xml" })));
   return img ? { img, w: L.width * k, h: L.height * k } : null;
 }
@@ -198,11 +206,15 @@ export async function open(H, X) {
   body.className = "export-dlg";
   if (X.format) p.format = X.format;          // a plot's PNG or SVG button
   const refuse = X.viewState && X.viewState.projection === "perspective" ? "SVG export is orthographic; press 5" : "";
+  // Analysis overlays (pore surfaces, a crystal shape, planes, a net) are WebGL meshes: PNG only
+  let overlays = false, pores = false;
+  try { const A = window.__maceAnalysis; overlays = !X.plot && !!A && ["pores", "mesh", "planes", "net"].some((k) => A.overlay.count(k) > 0); pores = overlays && A.overlay.count("pores") > 0; } catch (e) { overlays = false; }
   if (refuse && p.format === "svg") p.format = "png";
   body.innerHTML = `<label class="f">Format<select class="field" data-k="format" aria-label="Format">
       <option value="png"${p.format !== "svg" ? " selected" : ""}>PNG</option>
       <option value="svg"${p.format === "svg" ? " selected" : ""}${refuse ? ` disabled title="${H.esc(refuse)}"` : ""}>SVG${refuse ? ` (${H.esc(refuse)})` : ""}</option></select></label>
-    <p class="note svg-note" hidden>Vector drawing of the orthographic view: one circle per drawn atom, the bonds and the cell. Flat colors: lighting, depth cueing and outline apply to PNG only.</p>
+    <p class="note svg-note" hidden>Vector drawing of the orthographic view: one circle per drawn atom, the bonds and the cell. Flat colors: lighting, depth cueing and outline apply to PNG only.${overlays
+      ? " The analysis overlays shown (pore surfaces, crystal shape, planes or net) are left out: export PNG to keep them." : ""}</p>
     <label class="f size-f">Size<select class="field" data-k="size" aria-label="Size">${PRESETS.map(([v, t]) =>
       `<option value="${v}"${v === p.size ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <div class="row custom"><label class="f">Width<input class="field" type="number" min="16" max="${M}" step="1" data-k="w" value="${p.w}"></label>
@@ -218,6 +230,9 @@ export async function open(H, X) {
     <label class="chk"><input type="checkbox" data-k="triad"${p.triad ? " checked" : ""}> Include the axis triad</label>
     <label class="chk"><input type="checkbox" data-k="labels"${p.labels ? " checked" : ""}> Include measurement labels</label>
     <label class="chk"><input type="checkbox" data-k="cell"${p.cell ? " checked" : ""}> Include the cell</label>
+    <label class="chk remesh-f"${pores ? "" : " hidden"} title="The pore surfaces are made again, densely, for this image only (can take seconds); the view keeps its own"><input type="checkbox" data-k="remesh"${p.remesh ? " checked" : ""}> Re-mesh the pore surfaces at Publication quality for this image</label>
+    <label class="f patterns-f">Print patterns<select class="field" data-k="patterns" aria-label="Print patterns">${[["off", "Off"], ["auto", "Similar grays"], ["all", "Every element"]].map(([v, t]) =>
+      `<option value="${v}"${v === p.patterns ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <label class="f legend-f">Element legend<select class="field" data-k="legend" aria-label="Element legend">${LEGEND_CORNERS.map(([v, t]) =>
       `<option value="${v}"${v === p.legend ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <label class="f">File name<input class="field" data-k="name" spellcheck="false" autocomplete="off" value="${H.esc(X.plot ? `${X.stem}.png` : `${X.stem}_${X.view}.png`)}"></label>
@@ -226,7 +241,7 @@ export async function open(H, X) {
   const dpiOf = () => (q("dpisel").value === "custom" ? Number(q("dpi").value) : Number(q("dpisel").value));
   const read = () => ({ format: q("format").value, size: q("size").value, w: Number(q("w").value), h: Number(q("h").value), transparent: q("transparent").checked,
     triad: q("triad").checked, labels: q("labels").checked, cell: q("cell").checked, dpi: dpiOf(), units: q("units").value, pw: Number(q("pw").value),
-    shading: q("shading").value, legend: q("legend").value });
+    shading: q("shading").value, legend: q("legend").value, patterns: q("patterns").value, remesh: q("remesh").checked });
   const check = () => {
     const r = read(), svg = r.format === "svg";
     for (const k of ["px", "triad", "labels"]) { const el = q(k); (el.closest("label") || el).hidden = svg; }
@@ -238,6 +253,8 @@ export async function open(H, X) {
     body.querySelector(".dpi-custom").hidden = q("dpisel").value !== "custom";
     body.querySelector(".physical").hidden = svg || r.size !== "physical";
     for (const k of ["triad", "labels", "cell", "transparent", "legend"]) { const el = q(k); if (X.plot && el) el.closest("label").hidden = true; }
+    body.querySelector(".patterns-f").hidden = svg || !!X.plot;          // a PNG of the 3D view
+    body.querySelector(".remesh-f").hidden = svg || !pores;
     const nm = q("name");
     if (svg && /\.png$/i.test(nm.value)) nm.value = nm.value.replace(/\.png$/i, ".svg");
     if (!svg && /\.svg$/i.test(nm.value)) nm.value = nm.value.replace(/\.svg$/i, ".png");
@@ -282,7 +299,17 @@ export async function open(H, X) {
     let name = q("name").value.trim() || `${X.stem}_${X.view}.png`;
     if (!/\.png$/i.test(name)) name += ".png";
     performance.mark("ui:export:start");
-    const raw = X.plot ? await X.plot.renderPng(wh[0], wh[1]) : await render(X, { width: wh[0], height: wh[1], ...r, legend: X.plot ? "none" : r.legend });
+    const draw = () => render(X, { width: wh[0], height: wh[1], ...r, legend: X.plot ? "none" : r.legend });
+    let raw;
+    if (X.plot) raw = await X.plot.renderPng(wh[0], wh[1]);
+    else if (r.remesh && pores) {
+      // the pore surfaces at Publication for the image only (the view's own come back after, kept: no second request)
+      const ex = d.querySelector('[data-v="export"]');
+      ex.disabled = true;
+      body.querySelector(".err").textContent = "";
+      H.toast("Re-meshing the pore surfaces at Publication quality for the image…", "info");
+      try { raw = await window.__maceAnalysis.overlay.withQuality("publication", draw); } finally { ex.disabled = false; }
+    } else raw = await draw();
     // the PNG says its resolution (pHYs), so it keeps its printed size
     const url = dataUrlWithDpi(raw, r.dpi);
     performance.mark("ui:export:end");
@@ -306,7 +333,7 @@ export async function exportSvg(X, { transparent = false, cell = true, name = "s
     title: `${X.stem} (${X.view})`, shading });
   if (legend !== "none" && X.legend && X.symbols && X.symbols().length) {
     // the legend's own <g id="element-legend"> (editable text), moved into its corner
-    const L = await X.legend(X.symbols(), { background: transparent ? null : X.bg(), scale: 1 });
+    const L = await X.legend(X.symbols(), { background: transparent ? null : X.bg(), scale: 1, patterns: g.patternMap });
     const inner = L.svg.slice(L.svg.indexOf("<g id=\"element-legend\""), L.svg.lastIndexOf("</svg>")).trim();
     const [x, y] = corner(legend, c.clientWidth, c.clientHeight, L.width, L.height, 12);
     text = text.replace(/<\/svg>\s*$/, `<g id="legend-corner" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">\n${inner}\n</g>\n</svg>`);

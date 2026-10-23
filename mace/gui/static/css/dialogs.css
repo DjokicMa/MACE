@@ -203,6 +203,9 @@ dialog.dlg-panel { position: fixed; top: calc(var(--h-menubar) + var(--h-toolbar
 dialog.dlg-panel .dlg-head { cursor: move; user-select: none; touch-action: none; }
 dialog.dlg-panel .dlg-head button { cursor: pointer; }
 dialog.dlg-panel.wide { width: 440px; }
+/* a resizable panel's left edge (lazy_util.js resizeByEdge): drag, double-click or arrow keys */
+dialog.dlg-panel .dlg-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 1; touch-action: none; }
+dialog.dlg-panel .dlg-edge:hover, dialog.dlg-panel .dlg-edge.dragging, dialog.dlg-panel .dlg-edge:focus-visible { background: var(--accent); outline: none; }
 .dlg-panel .grid3, .dlg-panel .grid33 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
 .dlg-panel label.f { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); }
 .dlg-panel label.f.link input { border-color: var(--accent); }
@@ -321,3 +324,18 @@ dialog.dlg-panel.lg-panel { width: 520px; }
 .cd-ok { color: var(--success); }
 .cd-bad { color: var(--danger); }
 @media (max-width: 720px) { .cd-form { grid-template-columns: minmax(0, 1fr); } }
+
+/* Calculate Bonds… (1.1.6, js/lazy/bonds_dialog.js) */
+.bd-panel .bd-doc { margin: 0 0 var(--s-2); }
+.bd-panel .bd-h { font-size: var(--fs-sm); font-weight: 600; margin: var(--s-3) 0 var(--s-1); color: var(--text); }
+.bd-panel .bd-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); margin: var(--s-1) 0; }
+.bd-panel .bd-table caption { text-align: left; padding-bottom: 2px; }
+.bd-panel .bd-table th { text-align: left; font-weight: 500; color: var(--text-2); border-bottom: 1px solid var(--border); padding: 2px var(--s-1); }
+.bd-panel .bd-table td { padding: 2px var(--s-1); border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.bd-panel .bd-rules input.field { width: 100%; min-width: 0; }
+.bd-panel .bd-rules .bd-pair { display: flex; align-items: center; gap: 2px; }
+.bd-panel .bd-rules input.bd-el { width: 3.2em; }
+.bd-panel .bd-rules tr.err input.field { border-color: var(--danger); }
+.bd-panel .bd-msg { min-height: 1.3em; margin: var(--s-2) 0 0; color: var(--text-2); }
+.bd-panel .bd-msg.err { color: var(--danger); }
+.bd-panel .bd-found { max-height: 12em; overflow: auto; }

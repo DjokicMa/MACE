@@ -36,15 +36,22 @@ import re
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 import numpy as np
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ImportError:  # optional: CubeFile and the cube arithmetic need only numpy; drawing needs plotly
+    go = None
+
+from mace.constants import BOHR_TO_ANGSTROM
+
 # Use plotly.colors, NOT plotly.express: importing plotly.express pulls in
 # xarray -> pandas -> pyarrow, and under the full `mace` CLI (which already loads
 # the pandas/pyarrow stack) that re-init raises
 # `ArrowKeyError: A type extension with name arrow.py_extension_type already
 # defined`. plotly.colors is the lightweight home of sample_colorscale (the only
 # plotly.express symbol this engine used) and pulls no heavy deps.
-import plotly.colors as pcolors
-from plotly.subplots import make_subplots
+if go is not None:
+    import plotly.colors as pcolors
+    from plotly.subplots import make_subplots
 import sys
 import os
 import argparse
@@ -382,7 +389,7 @@ class CubeFile:
     
     def _apply_manual_shift(self):
         """Apply manual z-shift to atoms."""
-        shift_bohr = self.z_shift / 0.529177
+        shift_bohr = self.z_shift / BOHR_TO_ANGSTROM
         cell_z = self.cell_dims[2]
 
         for pos in self.atomic_positions:
@@ -1284,8 +1291,8 @@ def check_grid_alignment_compatibility(cube1: CubeFile, cube2: CubeFile,
     if max_diff > max_spacing_diff:
         error_msg = f"Voxel spacing difference too large ({max_diff*100:.1f}% > {max_spacing_diff*100:.1f}%)\n"
         error_msg += f"  Voxel spacing (Å):\n"
-        error_msg += f"    CUBE 0: [{spacing1[0]*0.529177:.4f}, {spacing1[1]*0.529177:.4f}, {spacing1[2]*0.529177:.4f}]\n"
-        error_msg += f"    CUBE 1: [{spacing2[0]*0.529177:.4f}, {spacing2[1]*0.529177:.4f}, {spacing2[2]*0.529177:.4f}]\n"
+        error_msg += f"    CUBE 0: [{spacing1[0]*BOHR_TO_ANGSTROM:.4f}, {spacing1[1]*BOHR_TO_ANGSTROM:.4f}, {spacing1[2]*BOHR_TO_ANGSTROM:.4f}]\n"
+        error_msg += f"    CUBE 1: [{spacing2[0]*BOHR_TO_ANGSTROM:.4f}, {spacing2[1]*BOHR_TO_ANGSTROM:.4f}, {spacing2[2]*BOHR_TO_ANGSTROM:.4f}]\n"
         error_msg += f"  Difference: [{spacing_diff[0]*100:.2f}%, {spacing_diff[1]*100:.2f}%, {spacing_diff[2]*100:.2f}%]\n"
         return False, error_msg.rstrip(), False
 
@@ -1568,7 +1575,7 @@ def validate_cube_compatibility(cube1: CubeFile, cube2: CubeFile, tolerance=1e-6
 
 
 def interpolate_cube_at_vertices(cube_data, cube_origin, cube_voxels, cube_voxel_vectors,
-                                 vertices_real, bohr_to_ang=0.529177, nonzero_bounds=None):
+                                 vertices_real, bohr_to_ang=BOHR_TO_ANGSTROM, nonzero_bounds=None):
     """
     Interpolate CUBE values at arbitrary 3D vertex positions.
 
@@ -1862,7 +1869,7 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
     print(f"  Isovalue: {iso_value:.3e}")
     print(f"  Grid: {shape_cube.nvoxels}")
 
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
 
     # Use cropped data if available
     if hasattr(shape_cube, 'data_bounds') and shape_cube.vacuum_detected:
@@ -2280,7 +2287,7 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
     X, Y, Z = cube.get_cartesian_grid()
     
     # Convert to Angstroms
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
     X *= bohr_to_ang
     Y *= bohr_to_ang
     Z *= bohr_to_ang
@@ -2523,7 +2530,7 @@ def plot_isosurface_browser_optimized(cube: CubeFile, n_values=20,
 
     # Pre-calculate frames
     frames = []
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
     colorscale_name = get_plotly_colorscale(cube.data_type, colorscale)
 
     for idx in calc_indices:
@@ -2918,15 +2925,17 @@ def parse_color_range(text: str) -> Tuple[float, float]:
 
 
 def cube_value_unit(cube) -> str:
-    """The unit of a cube's values (CRYSTAL ECH3/POT3 cubes and MACE orbital cubes are atomic units)."""
+    """The unit of a cube's values (CRYSTAL ECH3/POT3 cubes and MACE orbital cubes are atomic units), in plot
+    markup (mace.utils.plot_labels: e bohr<sup>−3</sup>; the GUI's slice says the same)."""
+    from mace.utils import plot_labels as L
     if getattr(cube, 'orbital', None) in ('re', 'im'):
-        return 'bohr⁻³ᐟ²'
+        return L.unit('bohr-3/2')
     if getattr(cube, 'orbital', None) == 'abs2':
-        return 'bohr⁻³'
+        return L.unit('bohr-3')
     if str(cube.data_type).startswith('potential'):
-        return 'Hartree/e'
+        return L.unit('Ha/e')
     if cube.data_type in ('density', 'spin', 'density_difference', 'spin_difference'):
-        return 'e/bohr³'
+        return L.unit('e/bohr3')
     return ''
 
 
@@ -2973,7 +2982,7 @@ def resample_plane(cube, axis: str, position: int, values: np.ndarray, max_point
     z = map_coordinates(values.astype(float), [np.clip(i, 0, n0 - 1), np.clip(j, 0, n1 - 1)],
                         order=1, mode='nearest')
     z = np.where(inside, z, np.nan)
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
     return (xs + x0) * bohr_to_ang, (ys + y0) * bohr_to_ang, z
 
 
@@ -2989,7 +2998,7 @@ def plot_slice_plotly(cube: CubeFile, axis: str = 'z', position: Optional[int] =
     colorscale = get_plotly_colorscale(cube.data_type, colorscale)
     if log_scale is None:
         log_scale = (cube.data_type == 'density')
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
     display_data = slice_data.copy()
     if cube.data_type == 'density' and log_scale:
         display_data = np.log10(slice_data + 1e-10)
@@ -2999,10 +3008,11 @@ def plot_slice_plotly(cube: CubeFile, axis: str = 'z', position: Optional[int] =
     xs, ys, z = resample_plane(cube, axis, position, display_data)
     names = 'abc'
     aligned = abs(abs(e1[o0]) - 1) < 1e-6 and abs(abs(e2[o1]) - 1) < 1e-6
-    x_label = f"{'XYZ'[o0]} (Å)" if aligned else f"along {names[o0]} (Å)"
-    y_label = f"{'XYZ'[o1]} (Å)" if aligned else f"in the {names[o0]}{names[o1]} plane, ⊥ {names[o0]} (Å)"
+    # the GUI's slice and mace gui's slice CLI name a skewed plane's axes alike (slice_cli._axes)
+    x_label = f"{'XYZ'[o0]} (Å)" if aligned else f"Along {names[o0]} (Å)"
+    y_label = f"{'XYZ'[o1]} (Å)" if aligned else f"⊥ {names[o0]} (Å)"
     unit = cube_value_unit(cube)
-    log_txt = "log₁₀ " if log_scale and cube.data_type == "density" else ""
+    log_txt = "log<sub>10</sub> " if log_scale and cube.data_type == "density" else ""
     cb_title = f"{log_txt}{cube.get_data_type_label()}" + (f"<br>({unit})" if unit else "")
 
     fig = go.Figure()
@@ -3090,7 +3100,7 @@ def plot_all_slices_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optional
     if log_scale is None:
         log_scale = (cube.data_type == 'density')
     
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
     
     # Calculate color scale (robust: slice_range)
     vmin, vmax = slice_range(cube, cube.data, log_scale, percentile_clip)
@@ -3249,7 +3259,7 @@ def _plot_slice_browser_surface(cube, axis='z', colorscale=None, show_atoms=True
     """Slice browser for NON-ORTHOGONAL cells: go.Surface frames + slider so
     skewed slices render as true parallelograms. (The orthogonal browser uses
     go.Heatmap/Contour, which are rectilinear-only.)"""
-    bohr = 0.529177
+    bohr = BOHR_TO_ANGSTROM
     n_slices = int(cube.nvoxels[['x', 'y', 'z'].index(axis)])
     best = cube.get_best_visualization_slice(axis)
 
@@ -3372,7 +3382,7 @@ def plot_slice_browser_plotly(cube: CubeFile, axis: str = 'z', colorscale: Optio
     if log_scale is None:
         log_scale = (cube.data_type == 'density')
     
-    bohr_to_ang = 0.529177
+    bohr_to_ang = BOHR_TO_ANGSTROM
 
     # Calculate global color scale (robust, symmetric about 0 for spin and potential: slice_range)
     vmin, vmax = slice_range(cube, cube.data, log_scale, percentile_clip)
@@ -3959,7 +3969,7 @@ _ATOMIC_SYMBOL_TO_Z = {
 }
 
 
-def _add_bond_traces(fig, cube, bohr_to_ang=0.529177,
+def _add_bond_traces(fig, cube, bohr_to_ang=BOHR_TO_ANGSTROM,
                      factor=1.2, color="#3a3a3a", width=5,
                      max_bond_A=2.6, highlight_atoms=None,
                      highlight_color="#101010", highlight_width=None):

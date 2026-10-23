@@ -157,7 +157,7 @@ ORDER = ["default", "publication", "vesta", "presentation", "grayscale", "colorb
 # ---------------------------------------------------------------------------
 # How a closed-shell run's bands are drawn (1.1.6 design, Marcus 2026-10-18): single (one solid line in the
 # color pair's first color), overlay (that line with a dashed line in the second color on top, the look of a
-# spin-polarized plot) or ink (the plot's neutral ink, the 1.1.6 preview's look); auto: single when the bands
+# spin-polarized plot) or ink (the plot's neutral ink); auto: single when the bands
 # have a gap at E_F, overlay for a metal (is_metallic). A spin-polarized run always draws up solid, down dashed.
 BAND_STYLES = ("auto", "single", "overlay", "ink")
 # a band crosses E_F (a metal) when it reaches this far (eV) above and below it

@@ -1,5 +1,5 @@
-"""The transport plot's ZT view, in a real browser (1.1.6): the ZT button
-beside the quantities, a lattice κ_L (a value, then a T,kappa_L CSV in the
+"""The transport plot's ZT, in a real browser (1.1.6): ZT in the Quantity
+choice, a lattice κ_L (a value, then a T,kappa_L CSV in the
 folder) and τ typed into Plot options, the ZTₑ and ZT total curves, and the
 plotted numbers equal to what `mace analyze --extract-properties
 --kappa-lattice` stores for the same run (the extractor in this process).
@@ -97,11 +97,12 @@ def test_zt_view_shows_the_clis_numbers(app):
     drv.execute_script(U.RESET_JS)
     drv.execute_async_script("const done = arguments[1]; window.__mace.open(arguments[0]).then(() => done())", "run.SEEBECK.dat")
     H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s && s.kind === 'transport' && s.drawn", 60)
-    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tview='zt']"))
+    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tquantity='zt']"))
     H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s.drawn && s.zt && s.zt.zt_e_max", 60)
-    assert "Figure of merit ZT" == drv.execute_script("return window.__mace.plotView.el().layout.yaxis.title.text")
+    # without κ_L: ZTₑ, which has no lattice term, labeled an upper bound
+    assert "ZT<sub>e</sub> (κ<sub>L</sub> = 0, an upper bound)" == drv.execute_script("return window.__mace.plotView.el().layout.yaxis.title.text")
     assert [t["meta"] for t in traces(drv)] == ["zt_e"]
-    assert drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tview='zt']").get_attribute("aria-checked") == "true"
+    assert drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tquantity='zt']").get_attribute("aria-checked") == "true"
 
     # a value: the CLI's peak, to the last digit
     type_into(drv, "#po-kl", "1.5")
@@ -118,7 +119,7 @@ def test_zt_view_shows_the_clis_numbers(app):
     H.wait(drv, "const v = window.__mace.plotView; return v && v.state() && v.state().drawn", 30)
     tr = {t["meta"]: t for t in traces(drv)}
     assert set(tr) == {"zt_e", "zt_total"}
-    assert "electrons only" in tr["zt_e"]["name"] and "κ_L = 1.5" in tr["zt_total"]["name"] and "τ 22 fs" in tr["zt_total"]["name"]
+    assert "κ<sub>L</sub> = 0" in tr["zt_e"]["name"] and "κ<sub>L</sub> = 1.5" in tr["zt_total"]["name"] and "τ = 22 fs" in tr["zt_total"]["name"]
     ys = [y for y in tr["zt_total"]["y"] if y is not None]
     assert max(ys) == p["transport_zt_total_max_avg"]
     i = tr["zt_total"]["x"].index(p["transport_zt_total_max_mu_ev"])
@@ -151,7 +152,7 @@ def test_refusals_are_shown(app):
     drv.execute_script(U.RESET_JS)
     drv.execute_async_script("const done = arguments[1]; window.__mace.open(arguments[0]).then(() => done())", "run.SIGMA.dat")
     H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s && s.kind === 'transport' && s.drawn", 60)
-    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tview='zt']"))
+    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tquantity='zt']"))
     H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s.drawn && s.zt", 60)
     # a table that stops short of the run's 700 K: no peak, the reason, and no curve at 700 K
     type_into(drv, "#po-kl", "short.csv")
@@ -167,6 +168,6 @@ def test_refusals_are_shown(app):
     assert "positive" in state(drv)["zt"]["error"]
     assert [t["meta"] for t in traces(drv)] == ["zt_e"]
     # back to the file's own quantity
-    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tq='run.SIGMA.dat']"))
-    H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s.drawn && s.opts.view === 'quantity'", 30)
+    click(drv, drv.find_element(By.CSS_SELECTOR, ".po-tq [data-tquantity='SIGMA']"))
+    H.wait(drv, "const v = window.__mace.plotView; const s = v && v.state(); return s.drawn && s.transport.quantity === 'SIGMA'", 30)
     assert "conductivity" in drv.execute_script("return window.__mace.plotView.el().layout.yaxis.title.text")

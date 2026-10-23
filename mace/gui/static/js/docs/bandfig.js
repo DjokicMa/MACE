@@ -11,7 +11,8 @@
  *   the right margin as drawn, height: the pane's height in px (where a DOS-alone legend fits; default 420),
  *   fermiKey: an "E_F" legend entry for the dotted line (mace plotting's files,
  *   which have no note line above them) } */
-import { ENERGY_UNITS, UNIT_LABEL, legendTop, legendSide } from "../plotbase.js";
+import { ENERGY_UNITS, PHONON_UNITS, legendTop, legendSide } from "../plotbase.js";
+import * as L from "../labels.js";
 import * as K from "../kpath.js";
 import * as PX from "../plotpresets.js";
 
@@ -108,12 +109,10 @@ export function dosRange(dos, lo, hi, opts, look) {
 // Band and DOS lines keep every point (line.simplify: false, as mace plotting's): plotly simplifies at the
 // 1x layout size, so a 300 dpi export showed straight facets along curved bands (1.1.6 review M3)
 /* A Fermi shift s moves the data by -s: the energy zero is E_F + s (or E_vac + s on the vacuum scale)
-   and the dotted line, which stays put, marks E_F + s (mace plotting's matplotlib energy_axis_label) */
-export const shiftText = (shift) => (shift ? ` ${shift > 0 ? "+" : "−"} ${Math.abs(shift).toFixed(2)} eV` : "");
-export const energyTitle = (ref, shift) => {
-  const zero = ref === "vacuum" ? "E<sub>vac</sub>" : "E<sub>F</sub>";
-  return shift ? `E − (${zero}${shiftText(shift)})` : `E − ${zero}`;
-};
+   and the dotted line, which stays put, marks E_F + s (labels.js, as mace plotting labels both) */
+export const shiftText = L.shiftText;
+export const energyTitle = L.energyTitle;
+
 export function joinBands(x, bands, shift) {
   const xs = [], ys = [], idx = [];
   bands.forEach((b, k) => { for (let i = 0; i < x.length; i++) { xs.push(x[i]); ys.push(b[i] === null ? null : b[i] - shift); idx.push(k); } xs.push(null); ys.push(null); idx.push(-1); });
@@ -222,6 +221,22 @@ export function editedBand(band, edit) {
    the frame; a DOS alone: inside the plot where it covers no curve, else right of it; band + DOS: right
    of the plot. Keys are legend-only entries (meta "key-..."): a click on them hides nothing. */
 export const GROUP_TITLE = (css) => ({ size: 11, color: css("--text-2") });
+/** The window a phonon plot opens with (eV, the readers' scale): the frequencies' range with 5% around it
+ *  (a negative one, an unstable mode, stays in), never narrower than 1 meV. The DOS counts where it has states
+ *  (its grid runs to the PDOS input's upper limit, often far above the top mode; plotly_bands.phonon_window). */
+export function phononWindow(band, dos) {
+  let lo = Infinity, hi = -Infinity;
+  const take = (v) => { if (v !== null && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } };
+  if (band) for (const c of (band.up || []).concat(band.down || [])) for (const v of c) take(v);
+  if (dos) {
+    const e = dos.energy || [], cols = (dos.projections || []).flatMap((p) => [p.up, p.down]).filter((c) => c);
+    const held = e.filter((v, k) => cols.some((c) => c[k]));
+    for (const v of held.length ? held : e) take(v);
+  }
+  if (!(lo <= hi)) return [0, 0.1];
+  const pad = Math.max(0.05 * (hi - lo), 0.001);
+  return [Math.min(lo, 0) - pad, hi + pad];
+}
 /** The Spin group's keys: [{name, dash, color}] for a figure that draws both spins (o.spin: one of them) or one
  *  closed-shell set (`closed`: its words); `spin`: the pair drawn {up, down, bands} (the keys' colors). */
 export function spinKeys(spin2, o, spinDash, closed, spin = null) {
@@ -261,16 +276,26 @@ export function bandFigure(band, dos, o, env) {
   // the API's energies as they come (results.py, mace plotting's readers): E - E_F, or with a POTC run
   // E - E_vac with E_F at the vacuum shift (fermi), as mace plotting draws them; nothing is recomputed
   // here. The dotted line marks E_F; a Fermi shift s moves the data by -s, so the axis reads E - (E_F + s)
-  const ref = (band || dos).reference, ef = (band || dos).fermi || 0, shift = o.shift || 0;
+  // a phonon fort.25 (domain "phonon"): frequencies on the readers' eV scale with no Fermi level, shown in cm⁻¹ (or THz,
+  // meV); the DOS in states per unit of frequency; no E_F line, no shift, the window the frequencies' own
+  const ph = ((band || dos).domain === "phonon");
+  const ref = (band || dos).reference, ef = ph ? 0 : (band || dos).fermi || 0, shift = ph ? 0 : o.shift || 0;
   // in the chosen unit (plotkit)
-  const f = ENERGY_UNITS[o.unit] || 1, unit = UNIT_LABEL[o.unit] || "eV";
+  // a frequency unit (cm⁻¹, THz) on an electronic plot: eV, the factor and the label alike
+  const uName = ph ? (PHONON_UNITS[o.unit] ? o.unit : "cm-1") : ENERGY_UNITS[o.unit] ? o.unit : "eV";
+  const f = (ph ? PHONON_UNITS : ENERGY_UNITS)[uName] || 1, unit = L.unit(uName) || "eV";
+  const ds = ph ? 1 / f : 1;
   const tf = (y) => (y === null ? null : y * f);
-  const logE = !!o.ylog && !dos;                     // a DOS plot: Log Y is the DOS axis
+  // Plot options › Reference/Labels: the dotted E_F line (and its key), the k-point labels, the spin halves' words
+  const showEf = !ph && o.fermi_line !== false, showK = o.k_labels !== false, showSpin = o.spin_labels !== false;
+  // the energy (or frequency) axis is never logarithmic: band energies are signed, so Log Y is the DOS axis
+  // (Log DOS on a band + DOS plot) and a band plot alone has none (1.1.6; a saved ylog no longer folds |E|)
+  const logE = false;
   const lg = (ys) => (logE ? ys.map((y) => (y === null || y === 0 ? null : Math.abs(y))) : ys);
   absShown = logE;
   const grid = css("--line"), traces = [], shapes = [], annotations = [], keys = [];
   const ink = css("--plot-ink") || css("--text");
-  const yr = o.yr || [(ef + o.emin) * f, (ef + o.emax) * f];   // the window is around E_F (mace plotting's too)
+  const yr = o.yr || (ph ? phononWindow(band, dos).map((v) => v * f) : [(ef + o.emin) * f, (ef + o.emax) * f]);   // the window is around E_F (mace plotting's too)
   // E_F dotted: a dashed line would read as spin down
   const fermiLine = { color: css("--text-2"), width: 1.2, dash: "dot" };
   const lay = {
@@ -280,7 +305,7 @@ export function bandFigure(band, dos, o, env) {
     legend: legendTop(), ...(env.paper || {}),
     font: { color: css("--text"), size: 12, family: css("--font-sans") },
     modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
-    yaxis: { title: { text: `${logE ? "|" : ""}${energyTitle(ref, shift)}${logE ? "|" : ""} (${unit})` },
+    yaxis: { title: { text: `${logE ? "|" : ""}${ph ? "Frequency" : energyTitle(ref, shift)}${logE ? "|" : ""} (${unit})` },
       type: logE ? "log" : "linear", range: logE ? undefined : yr, autorange: logE ? true : undefined,
       gridcolor: grid, zeroline: false, linecolor: grid, mirror: true, showline: true,
       showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: css("--text-3"), spikedash: "dot" },
@@ -295,7 +320,7 @@ export function bandFigure(band, dos, o, env) {
     const accent = spin.up, downCol = spin.down;
     if (o.xr) lay.xaxis.range = o.xr;
     const tl = bandTickLayout(band, lay.xaxis.range, dos, env.width, env.marginR);
-    lay.xaxis.tickvals = tl["xaxis.tickvals"]; lay.xaxis.ticktext = tl["xaxis.ticktext"]; lay.margin.b = tl["margin.b"];
+    lay.xaxis.tickvals = tl["xaxis.tickvals"]; lay.xaxis.ticktext = showK ? tl["xaxis.ticktext"] : tl["xaxis.ticktext"].map(() => ""); lay.margin.b = showK ? tl["margin.b"] : 42;
     // beta over alpha, dashed (as mace plotting draws them): where the two coincide the line reads
     // alternately in both colors, so a spin-polarized run never looks closed-shell; a non-magnetic run
     // (alpha = beta within 10 meV) comes as one set and is drawn once whichever spin is chosen. The
@@ -321,7 +346,7 @@ export function bandFigure(band, dos, o, env) {
         name: "spin down (β)", showlegend: false, meta: "down", legendrank: 2,
         line: { color: downCol, width: o.width, dash: spin.dash, simplify: false }, hoverinfo: "none" });
     }
-    if (!logE) shapes.push({ type: "line", xref: "x domain", x0: 0, x1: 1, yref: "y", y0: ef * f, y1: ef * f, editable: true, name: "fermi",
+    if (!logE && showEf) shapes.push({ type: "line", xref: "x domain", x0: 0, x1: 1, yref: "y", y0: ef * f, y1: ef * f, editable: true, name: "fermi",
       line: { ...fermiLine } });
   }
   const PP = env.presets;
@@ -330,9 +355,9 @@ export function bandFigure(band, dos, o, env) {
   if (dos) {
     const ax = band ? "xaxis2" : "xaxis", xr = band ? "x2" : "x";
     const dlog = !!o.ylog;
-    lay[ax] = { domain: band ? [0.73, 1] : [0, 1], title: { text: dlog ? "|DOS| (states/eV, log)" : "DOS (states/eV)" }, gridcolor: grid,
+    lay[ax] = { domain: band ? [0.73, 1] : [0, 1], title: { text: dlog ? `|DOS| (states/${unit}, log)` : `DOS (states/${ph ? unit : "eV"})` }, gridcolor: grid,
       zeroline: true, zerolinecolor: ink, zerolinewidth: 1.2, showline: true, mirror: true, linecolor: grid,
-      type: dlog ? "log" : "linear", range: dlog ? undefined : dosRange(dos, shift + yr[0] / f, shift + yr[1] / f, o, look), autorange: dlog ? true : undefined };
+      type: dlog ? "log" : "linear", range: dlog ? undefined : dosRange(dos, shift + yr[0] / f, shift + yr[1] / f, o, look).map((v) => v * ds), autorange: dlog ? true : undefined };
     if (dlog) absShown = true;
     if (!band && o.xr) lay[ax].range = o.xr;
     // a mirrored DOS: magnitudes on both sides of zero
@@ -345,7 +370,10 @@ export function bandFigure(band, dos, o, env) {
     const fills = PX.spinFills(spin, parts.preset), nfill = PX.neutralFill(spin.bands, parts.preset);
     const ys = dos.energy.map((e) => tf(e - shift));
     const sm = (xs) => (smooth ? PX.gaussSmooth(xs, dos.energy, smooth) : xs);
-    const dx = (xs) => (o.ylog ? xs.map((v) => (v === null || v === 0 ? null : Math.abs(v))) : xs);
+    // Log DOS: a zero (a gap) is no point, and the total is not filled: plotly joins a "tozerox" fill's
+    // segments across the gap (a wedge drawn over the gap), and zero is off a log axis anyway.
+    const dx0 = (xs) => (o.ylog ? xs.map((v) => (v === null || v === 0 ? null : Math.abs(v))) : xs);
+    const dx = ph ? (xs) => dx0(xs).map((v) => (v === null ? null : v * ds)) : dx0;
     const pos = (xs) => xs.map((v) => (v === null ? null : Math.abs(v)));
     // the total first (its fill under the projections), then the projections drawn (look.hidden: the rest)
     const drawn = dos.projections.map((p, k) => [p, k]).filter(([p]) => {
@@ -363,18 +391,19 @@ export function bandFigure(band, dos, o, env) {
         traces.push({ x, y: ys, xaxis: xr, yaxis: "y", mode: "lines", type: "scatter", meta: "dos",
           name: both ? `${name} ↑` : name, legendgroup: p.label, legend: dl, showlegend: false, legendrank: 10 + k,
           line: { color: col, width: lw, dash, simplify: false },
-          fill: total ? "tozerox" : "none", fillcolor: total ? (both ? fills.up : nfill) : undefined, hoverinfo: "none" });
+          fill: total && !o.ylog ? "tozerox" : "none", fillcolor: total && !o.ylog ? (both ? fills.up : nfill) : undefined, hoverinfo: "none" });
         curves.push([x, ys]);
       }
       // spin down: mirrored (projections in their color, dashed; the total filled in spin down's color) or
       // overlaid on the right in spin down's line style
       if (both && o.spin !== "up") {
         const x = dx(sm(side === "overlaid" ? pos(downOf(dos, p)) : downOf(dos, p)));
+        const mir = total && side === "mirrored" && !o.ylog;
         traces.push({ x, y: ys, xaxis: xr, yaxis: "y", mode: "lines", type: "scatter",
           meta: "dos", name: `${name} ↓`, legendgroup: p.label, legend: dl, showlegend: false, legendrank: 10 + k,
           line: { color: dcol, width: lw, dash: dash === "solid" ? spin.dash : dash, simplify: false },
           opacity: side === "overlaid" && dash !== "solid" ? 0.65 : undefined,
-          fill: total && side === "mirrored" ? "tozerox" : "none", fillcolor: total && side === "mirrored" ? fills.down : undefined, hoverinfo: "none" });
+          fill: mir ? "tozerox" : "none", fillcolor: mir ? fills.down : undefined, hoverinfo: "none" });
         curves.push([x, ys]);
       }
     });
@@ -395,16 +424,17 @@ export function bandFigure(band, dos, o, env) {
         legendgrouptitle: i === 0 ? { text: "Projections", font: GROUP_TITLE(css) } : undefined });
     });
     // which half is which: words over a mirrored DOS
-    if (side === "mirrored" && o.spin === "both" && !dlog) {
+    if (side === "mirrored" && o.spin === "both" && !dlog && showSpin) {
       // each beside the zero line, on its own side: they never overlap in a narrow DOS panel
       const r = lay[ax].range, z = (0 - r[0]) / (r[1] - r[0]);
       annotations.push({ xref: `${xr} domain`, yref: "paper", x: z, y: 1, xanchor: "left", xshift: 3, yanchor: "bottom", showarrow: false,
         text: "<b>↑ up</b>", font: { size: 11, color: spin.up }, name: "spin-up-label" });
       annotations.push({ xref: `${xr} domain`, yref: "paper", x: z, y: 1, xanchor: "right", xshift: -3, yanchor: "bottom", showarrow: false,
         text: "<b>down ↓</b>", font: { size: 11, color: spin.down }, name: "spin-down-label" });
-      lay.margin.t = Math.max(lay.margin.t, 24);
+      // in a narrow pane the modebar (top right, on hover) would cover the words: they get the row below it
+      lay.margin.t = Math.max(lay.margin.t, (env.width || 900) < 640 ? 46 : 24);
     }
-    if (!logE) shapes.push({ type: "line", xref: `${xr} domain`, x0: 0, x1: 1, yref: "y", y0: ef * f, y1: ef * f, editable: !band, name: "fermi2",
+    if (!logE && showEf) shapes.push({ type: "line", xref: `${xr} domain`, x0: 0, x1: 1, yref: "y", y0: ef * f, y1: ef * f, editable: !band, name: "fermi2",
       line: { ...fermiLine } });
     // CRYSTAL computed the DOS between dos.window's energies only: beyond them is no data (not zero
     // states), shaded lightly and, on a DOS alone, said so
@@ -438,9 +468,9 @@ export function bandFigure(band, dos, o, env) {
   keys.unshift(...hk.spin.map((k, i) => keyOf(k, i, "spin", "Spin", "key-spin")),
     ...(hk.bands || []).map((k, i) => keyOf(k, i, "bands", "Bands", "key-band")));
   // mace plotting's files have no note line above them: the dotted line gets a legend entry of its own
-  if (env.fermiKey && !logE) {
+  if (env.fermiKey && !logE && showEf) {
     keys.push({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "lines", type: "scatter", meta: "key-fermi",
-      name: `E<sub>F</sub>${shiftText(shift)}`,
+      name: L.fermiKey(shift),
       legend: "legend", line: { ...fermiLine }, hoverinfo: "skip", legendrank: 5000 });
   }
   traces.push(...keys);

@@ -245,6 +245,10 @@ class Staged:
         self.env: Dict[str, str] = {}          # added to the CLI's environment (setup_env)
 
 
+#: the most a staged BAND/DOSS run (for a spin-locked SCF's E_F) may be, data and output together
+STAGE_FERMI_MAX = 64 * 2**20
+
+
 def stage(mode: str, calc: str, work: Path, source_path: Optional[Path], rel: Optional[str],
           cif_bytes: Optional[bytes] = None, cif_name: Optional[str] = None) -> Staged:
     """Copy what the CLI reads into ``work/tree`` (plan B2):
@@ -304,6 +308,16 @@ def stage(mode: str, calc: str, work: Path, source_path: Optional[Path], rel: Op
     f9 = find_wavefunction(source_path)
     if f9 is not None:
         (dst / f9["name"]).touch()          # an empty stand-in, never the real bytes
+    if calc in ("DOSS", "TRANSPORT"):
+        # E_F-relative ranges: a spin-locked SCF's E_F comes from a BAND or DOSS run of it
+        # (mace.utils.fermi_level.scf_fermi), so the one it would use is staged beside it
+        from mace.utils.fermi_level import sibling_property_runs
+        for dat in sibling_property_runs(source_path)[:1]:
+            out = dat.with_name(dat.name.rsplit(".", 2)[0] + ".out")
+            if dat.stat().st_size + out.stat().st_size < STAGE_FERMI_MAX:
+                for f in (dat, out):
+                    if not (dst / f.name).exists():
+                        shutil.copyfile(f, dst / f.name)
     return Staged(mode, calc, tree, rel, jrel, rel_dir or ".", f9, notes)
 
 
@@ -463,6 +477,9 @@ class Field:
         self.keys, self.gates, self.modes, self.calcs, self.unit, self.hint = tuple(keys), tuple(gates), modes, calcs, unit, hint
         self.re = re.compile(match, re.I | re.S)
 
+    def gates_for(self, mode: str, value: Any) -> Tuple[str, ...]:
+        return self.gates
+
     def rules(self, mode: str, value: Any) -> List[Dict[str, Any]]:
         if self.kind == "menu":
             r = {"match": self.match, "choose": str(value)}
@@ -473,16 +490,68 @@ class Field:
         return [r]
 
 
+METHOD_Q = r"Select method type"
+HF_METHOD_LABEL = "Hartree-Fock (HF)"
+DFT_METHOD_LABEL = "Density Functional Theory (DFT)"
+KEEP_BASIS = "Keep the parent's basis set"
+
+
+def hf_methods() -> List[str]:
+    """The Hartree-Fock variants of the CLI's own table (RHF, UHF, HF3C, HFSOL3C)."""
+    try:
+        import d12_constants as C
+        return list(C.FUNCTIONAL_CATEGORIES["HF"]["functionals"])
+    except (ImportError, KeyError):
+        return []
+
+
 class FunctionalField(Field):
-    """The functional: the CLI asks for its category, then for it."""
+    """The functional. The CLI asks for the method (Hartree-Fock or DFT), then for the functional's
+    category, then for the functional (or for the Hartree-Fock variant); the functional alone says
+    all three, so the form has this one row and the other answers are worked out from it."""
 
     def rules(self, mode: str, value: Any) -> List[Dict[str, Any]]:
-        cat = functional_category(str(value))
-        out = []
+        name = str(value)
+        if name in hf_methods():
+            return [{"match": METHOD_Q, "choose": HF_METHOD_LABEL},
+                    {"match": r"Select Hartree-Fock method", "choose": name}]
+        cat = functional_category(name)
+        out = [{"match": METHOD_Q, "choose": DFT_METHOD_LABEL}]
         if cat:
             out.append({"match": r"Select functional category", "choose": cat})
-        out.append({"match": self.match, "choose": str(value)})
+        out.append({"match": self.match, "choose": name})
         return out
+
+
+class BasisField(Field):
+    """The basis set. The CLI asks whether the parent's is kept (a follow-up), then for the type
+    (internal or external), then for the set; the set alone says all three."""
+
+    def gates_for(self, mode: str, value: Any) -> Tuple[str, ...]:
+        # a follow-up reaches the basis questions only past "use these exact settings?" (No)
+        return (N,) if mode == "opt2d12" else ()
+
+    def rules(self, mode: str, value: Any) -> List[Dict[str, Any]]:
+        name = str(value)
+        keep = FIELD["basis_keep"].match
+        if name == KEEP_BASIS:
+            return [{"match": keep, "answer": "y"}] if mode == "opt2d12" else []
+        out = [{"match": keep, "answer": "n"}] if mode == "opt2d12" else []
+        external = name in external_basis_labels() or "/" in name or name.startswith("full.basis")
+        out.append({"match": FIELD["basis_type"].match, "choose": "EXTERNAL" if external else "INTERNAL"})
+        out.append({"match": r"Select external basis set" if external else r"Select internal basis set",
+                    "choose": name})
+        return out
+
+
+def external_basis_labels() -> List[str]:
+    """The names the CLI's external basis menu gives the bundled sets (DZVP-REV2, TZVP-REV2, ...)."""
+    try:
+        import basis_library as BL
+        return [BL.FAMILY_LABELS[f] for f in ("full.basis.doublezeta", "full.basis.triplezeta",
+                                              "full.basis.triplezeta.rev2022")]
+    except (ImportError, KeyError):
+        return []
 
 
 class SmearField(Field):
@@ -518,7 +587,8 @@ FIELDS: List[Field] = [
     Field("basis_keep", "Parent's basis set", "Method", "yesno", r"Keep the basis set from the original D12\?", ["use_original_external_basis"], [N],
           ("opt2d12",)),
     Field("basis_type", "Basis set type", "Method", "menu", r"Select basis set type", ["basis_set_type"], [], ("cif2d12",)),
-    Field("basis_set", "Basis set", "Method", "menu", r"Select (internal|external) basis set", ["basis_set"], [], ("cif2d12",)),
+    BasisField("basis_set", "Basis set", "Method", "menu", r"Select (internal|external) basis set", ["basis_set"], [],
+               ("cif2d12", "opt2d12"), hint="internal or external follows from the set; a follow-up keeps its parent's"),
     Field("spin", "Spin polarized", "Method", "yesno", r"Use spin-polarized calculation\?", ["spin_polarized", "is_spin_polarized"], [N, ADV]),
     Field("dft_grid", "DFT grid", "k-points and SCF", "menu", r"Select integration grid", ["dft_grid"], [N]),
     Field("tolerance", "SCF tolerances", "k-points and SCF", "menu", r"Select (tolerance level|SCF convergence level)", ["tolerances.TOLINTEG"], [N]),
@@ -527,6 +597,15 @@ FIELDS: List[Field] = [
     Field("smearing", "Fermi smearing", "k-points and SCF", "yesno", r"Use Fermi smearing\?", ["use_smearing"], [N, ADV]),
     SmearField("smear_width", "Smearing width", "k-points and SCF", "value", r"Smearing width options|Enter smearing width",
                ["smearing_width"], [N, ADV], unit="Ha"),
+    # opt2d12's other SCF records (its "modify settings" questions): the mixing method, LEVSHIFT, SPINLOCK
+    Field("scf_method", "SCF mixing", "k-points and SCF", "menu", r"SCF method:\s.*Select method \(1-2\)",
+          ["scf_settings.method", "scf_method"], [N], ("opt2d12",), hint="DIIS, or Broyden for a difficult SCF"),
+    Field("levshift", "Level shifting (LEVSHIFT)", "k-points and SCF", "yesno", r"Use level shifting",
+          ["scf_settings.levshift"], [N], ("opt2d12",)),
+    Field("levshift_values", "LEVSHIFT ISHIFT ILOCK", "k-points and SCF", "value", r"LEVSHIFT ISHIFT ILOCK \[",
+          ["scf_settings.levshift"], [N], ("opt2d12",), hint="the shift in 0.1 Ha, then 1 to lock it (0: release)"),
+    Field("spinlock", "SPINLOCK (nα-nβ)", "k-points and SCF", "value", r"SPINLOCK value",
+          ["spinlock"], [N], ("opt2d12",), hint="0: the spin state is optimized; a number holds nα-nβ"),
     # opt2d3
     Field("band_path", "Band path", "BAND", "menu", r"Band path definition", ["path_method"], [], ("opt2d3",), ("BAND",)),
     Field("band_format", "Path format", "BAND", "menu", r"Band path format", ["path_method"], [], ("opt2d3",), ("BAND",)),
@@ -535,8 +614,36 @@ FIELDS: List[Field] = [
     Field("band_range", "Bands", "BAND", "menu", r"Band range selection", ["bands"], [], ("opt2d3",), ("BAND",)),
     Field("doss_projection", "Projections", "DOSS", "menu", r"DOS projection type", ["projection_type"], [], ("opt2d3",), ("DOSS",)),
     Field("doss_range", "Energy range", "DOSS", "menu", r"Energy/band range", ["energy_range"], [], ("opt2d3",), ("DOSS",)),
-    Field("doss_points", "Energy points", "DOSS", "value", r"Number of energy points", ["n_points"], [], ("opt2d3",), ("DOSS",)),
+    Field("doss_resolution", "Resolution", "DOSS", "menu", r"Select energy resolution", ["energy_resolution"], [],
+          ("opt2d3",), ("DOSS",), hint="the energy step of the DOS grid; each choice shows the points and step it gives "
+                                       "(all bands: the span estimated from the atoms)"),
+    Field("doss_step", "Energy step", "DOSS", "value", r"DOS energy step \(eV\)", ["energy_step_ev"], [], ("opt2d3",), ("DOSS",),
+          unit="eV"),
+    Field("doss_points", "Energy points", "DOSS", "value", r"Number of energy points", ["n_points"], [], ("opt2d3",), ("DOSS",),
+          hint="written as given, however coarse (a screening run)"),
+    # offered when a step over every band needs more than 5000 points (and E_F is known): the one-click window
+    Field("doss_window", "Window around E_F", "DOSS", "yesno", r"Use a window around E_F", ["energy_window"], [],
+          ("opt2d3",), ("DOSS",), hint="the default above 5000 points: only the energies around E_F, without the core "
+                                       "levels and the high virtual bands; No keeps every band"),
+    Field("doss_window_lo", "Window below E_F", "DOSS", "value", r"Window below E_F \(eV\)", [], [], ("opt2d3",),
+          ("DOSS",), unit="eV"),
+    Field("doss_window_hi", "Window above E_F", "DOSS", "value", r"Window above E_F \(eV\)", [], [], ("opt2d3",),
+          ("DOSS",), unit="eV"),
+    # a 1D material's default instead of the window: its bands by index (CRYSTAL needs a window's bounds in gaps)
+    Field("doss_band_index", "Bands by index", "DOSS", "yesno", r"by index instead\?", [], [],
+          ("opt2d3",), ("DOSS",), hint="a 1D material's default above 5000 points: its valence and low conduction "
+                                       "bands by index, never by energy; No keeps every band"),
+    Field("doss_conduction_bands", "Conduction bands", "DOSS", "value",
+          r"Conduction bands above the highest occupied band", ["conduction_bands"], [], ("opt2d3",), ("DOSS",),
+          hint="how far the 1D bands by index reach above the highest occupied band (--doss-conduction-bands)"),
     Field("npol", "NPOL", "DOSS", "value", r"NPOL value", ["npol"], [], ("opt2d3",), ("DOSS",)),
+    Field("transport_k", "k-point mesh", "TRANSPORT", "menu", r"Select k-point mesh", ["k_resolution"], [], ("opt2d3",),
+          ("TRANSPORT",), hint="BOLTZTRA's NEWK mesh, by k spacing along the reciprocal vectors; never coarser than the "
+                               "parent SCF's (whose mesh converges energies, not transport)"),
+    Field("transport_k_spacing", "k spacing", "TRANSPORT", "value", r"k-point spacing \(1/Å\)", ["k_spacing"], [],
+          ("opt2d3",), ("TRANSPORT",), unit="1/Å"),
+    Field("transport_is", "NEWK IS", "TRANSPORT", "value", r"NEWK shrinking factor IS", ["newk_is"], [], ("opt2d3",),
+          ("TRANSPORT",)),
     Field("orbitals_kmesh", "k points", "ORBITALS", "menu", r"Select k points \(1-4\)", ["kmesh"], [], ("opt2d3",),
           ("ORBITALS",), hint="every orbital is written at each k point of the NEWK mesh; complex k points "
                               "(IS 3 and up) are usable in 1D only"),
@@ -550,7 +657,8 @@ DERIVED_BY_CLI: Dict[str, str] = {f.id: "cli" for f in FIELDS}
 PATCH_FIELDS = {
     # opt2d12: one k-point mesh for the follow-up (the CLI's documented hand-written key)
     "k_points_for_all_files": {"modes": ("opt2d12",), "label": "k-point mesh", "section": "k-points and SCF",
-                               "hint": "written as k_points_for_all_files, the one key opt2d12 reads for a mesh"},
+                               "hint": "written as k_points_for_all_files, the one key opt2d12 reads for a mesh: "
+                                       "IS ISP (8 16), IS1 IS2 IS3 per axis, or auto (from the cell)"},
     # opt2d3 BAND: the edited k-path (Crystal_d3/d3_band_path.py), drawn by the k-path editor, not a form row
     "band_path": {"modes": ("opt2d3",), "label": "k-path", "section": "BAND", "kind": "kpath",
                   "hint": "written as band_path, the edited path opt2d3 computes (its own prompt writes the same key)"},
@@ -580,6 +688,19 @@ def functional_category(name: str) -> Optional[str]:
     return None
 
 
+def calc_groups() -> Dict[str, Any]:
+    """The calculation types of Setup and the Calculation menu, grouped and numbered as the CLI's
+    menus, each with what the file in front needs (the workflow's prerequisites:
+    mace.workflow.common.constants SETUP_CALC_GROUPS and setup_requirement)."""
+    from mace.workflow.common import constants as WC
+    groups = [{"key": key, "label": label, "cli": cli,
+               "types": [{"calc": t, "n": n, "label": words, "needs": WC.setup_requirement(t)} for t, n, words in types]}
+              for key, label, cli, types in WC.SETUP_CALC_GROUPS]
+    run = " or ".join(WC.FINISHED_RUN_TYPES)
+    return {"groups": groups, "needs": {"run": f"a finished {run} output (.out)",
+                                        "structure": "a structure (CIF), a deck (.d12) or a CRYSTAL output (.out)"}}
+
+
 def schema() -> Dict[str, Any]:
     """What the form offers beyond the questions: the functionals by
     category and the internal basis sets with the elements each covers,
@@ -590,14 +711,17 @@ def schema() -> Dict[str, Any]:
             for k, v in C.FUNCTIONAL_CATEGORIES.items()]
     cover = {k: list(v) for k, v in getattr(C, "VERIFIED_INTERNAL_BASIS_ELEMENTS", {}).items()}
     return {"modes": list(MODES), "calc_types": {k: list(v) for k, v in CALC_TYPES.items()},
-            "default_calc": DEFAULT_CALC, "functional_categories": cats,
+            "calc_groups": calc_groups(), "default_calc": DEFAULT_CALC, "functional_categories": cats,
             "internal_basis_sets": list(C.INTERNAL_BASIS_SETS), "basis_coverage": cover,
             "fields": [{"id": f.id, "label": f.label, "section": f.section, "kind": f.kind, "modes": list(f.modes),
                         "calcs": list(f.calcs) if f.calcs else None, "unit": f.unit, "hint": f.hint,
                         "how": DERIVED_BY_CLI[f.id]} for f in FIELDS],
             "patch_fields": {k: {**v, "modes": list(v["modes"])} for k, v in PATCH_FIELDS.items()},
             "derived_by_cli": DERIVED_BY_CLI, "soc": soc_schema(), "cli_hash": clirun.cli_hash(),
-            "charge_flags": charge_schema(), "charge_modes": list(CHARGE_MODES)}
+            "charge_flags": charge_schema(), "charge_modes": list(CHARGE_MODES),
+            "static_kpath": {"switch": STATIC_KPATH_SWITCH, "modes": list(STATIC_KPATH_MODES), "label": "Static k-path",
+                             "hint": "SeeK-path's path is the default and needs the seekpath package; without it the CLI "
+                                     "stops, and with this switch it writes the static table path of the space group"}}
 
 
 def known_questions(mode: str) -> List[str]:
@@ -659,7 +783,7 @@ def answer_rules(mode: str, answers: Dict[str, Any]) -> List[Dict[str, Any]]:
         f = FIELD.get(fid)
         if f is None or mode not in f.modes:
             raise SetupError(f"{fid!r} is not a {mode} setting")
-        for g in f.gates:
+        for g in f.gates_for(mode, value):
             if g not in gates:
                 gates.append(g)
         rules += f.rules(mode, value)
@@ -814,6 +938,38 @@ def _matches(field: Field, q: Question) -> bool:
     return bool(field.re.search(q.text))
 
 
+def _basis_dir_option(options: List[Dict[str, str]], want: str) -> Optional[Dict[str, str]]:
+    """The menu line of an external basis directory the JSON names: the same
+    path, or the same bundled family (a bare family name, or another
+    checkout's path to it), so a path from another machine still reads as
+    "TZVP-REV2" and not as its whole directory."""
+    try:
+        import basis_library as BL
+    except ImportError:
+        BL = None
+    norm = want.rstrip("/")
+    fam = BL.bundled_family_for(want) if BL else None
+    for o in options:
+        detail = o["text"].split(" - ", 1)[-1].strip()
+        if detail.rstrip("/") == norm:
+            return o
+        if fam and BL.bundled_family_for(detail) == fam:
+            return o
+    return None
+
+
+def _short_value(val: Any) -> str:
+    """A value as a form row shows it: a directory path cut to its last folders (the row's tooltip has all of it)."""
+    text = str(val)
+    if "/" in text and len(text) > 40:
+        try:
+            import basis_library as BL
+            return BL.display_name(text)
+        except ImportError:
+            return text
+    return text
+
+
 def _value_label(field: Field, q: Optional[Question], obj: Any) -> Tuple[Any, Optional[str]]:
     """The field's value now (from the JSON when it holds it) and the menu head it shows as."""
     val = None
@@ -821,13 +977,20 @@ def _value_label(field: Field, q: Optional[Question], obj: Any) -> Tuple[Any, Op
         val = json_value(obj, k) if obj is not None else None
         if val is not None:
             break
+    if field.id in ("doss_window", "doss_band_index") and obj is not None and (
+            json_value(obj, "all_bands") or json_value(obj, "all_bands_confirmed")):
+        return False, "No"                          # the window's opt-out (opt2d3's No, --doss-window all)
     if field.kind == "yesno":
+        if isinstance(val, (list, tuple)):          # a record's values (LEVSHIFT's ISHIFT ILOCK): there is one
+            val = bool(val)
         if isinstance(val, bool):
             return val, "Yes" if val else "No"
         if q is not None and q.default in ("y", "n"):
             return q.default == "y", "Yes" if q.default == "y" else "No"
         return val, None
     if field.kind == "value":
+        if isinstance(val, (list, tuple)):          # a record's values, as the CLI asks for them ("5 1")
+            val = " ".join(str(x) for x in val)
         if val is None and q is not None:
             val = q.default
         return val, None if val is None else str(val)
@@ -839,10 +1002,148 @@ def _value_label(field: Field, q: Optional[Question], obj: Any) -> Tuple[Any, Op
             from .answer_driver import pick
             num = pick("\n".join(f"{o['num']}: {o['text']}" for o in q.options), want)
             hit = next((o for o in q.options if o["num"] == num), None)
+        if hit is None and want and ("/" in want or "full.basis" in want or want == "stuttgart"):
+            hit = _basis_dir_option(q.options, want)
         if hit is None and q.default:
             hit = next((o for o in q.options if o["num"] == q.default), None)
-        return val, hit["head"] if hit else (str(val) if val is not None else None)
+        return val, hit["head"] if hit else (_short_value(val) if val is not None else None)
     return val, None if val is None else str(val)
+
+
+# Questions whose answer follows from another row's: the method from the functional, the type of the
+# basis set (and keeping a follow-up's) from the basis set. Their answers are still accepted
+# (the API's {"method": "HF"}); the form shows one row for each pair.
+DERIVED_ROWS = ("method", "basis_type", "basis_keep")
+# CLI questions inside the functional's pick: no row of their own (they are "Other questions" otherwise)
+_FUNCTIONAL_STEPS = re.compile(r"Select functional category|Select Hartree-Fock method|Select method type", re.I)
+
+
+def _basis_row(mode: str, qs: List[Question], survey_qs: List[Question], obj: Any, defaults_obj: Any,
+               answers: Dict[str, Any], schema_info: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The one Basis set row: internal sets (the CLI's menu for these elements, else its whole table),
+    the bundled external sets, and for a follow-up the parent's basis, kept unless another is picked."""
+    try:
+        import basis_library as BL
+    except ImportError:
+        return None
+    asked = any(re.search(FIELD[k].match, x.text, re.I) for k in ("basis_set", "basis_type", "basis_keep")
+                for x in qs + survey_qs)
+    if not asked:
+        return None
+    internal = next((x.options for x in qs + survey_qs
+                     if re.search(r"Select internal basis set", x.text, re.I) and x.options), None)
+    if internal:
+        opts = [{"head": o["head"], "text": o["text"], "num": o["num"], "group": "Internal sets (built into CRYSTAL)"}
+                for o in internal]
+    else:
+        table = (schema_info or {}).get("internal_basis_sets") or []
+        opts = [{"head": n, "text": n, "group": "Internal sets (built into CRYSTAL)"} for n in table]
+    # the CLI's external menu numbers: 1 double-zeta, 2 triple-zeta, 3 your own directory, 4 the 2022 update
+    for num, fam in (("1", "full.basis.doublezeta"), ("2", "full.basis.triplezeta"), ("4", "full.basis.triplezeta.rev2022")):
+        opts.append({"head": BL.FAMILY_LABELS[fam], "text": f"{BL.FAMILY_LABELS[fam]} - MACE's bundled {fam} library",
+                     "num": num, "group": "External sets (MACE's bundled libraries)"})
+
+    def label(o: Any) -> Optional[str]:
+        if o is None:
+            return None
+        name = json_value(o, "basis_set")
+        if not name:
+            return None
+        kind = json_value(o, "basis_set_type")
+        if kind == "EXTERNAL" or "/" in str(name) or str(name).startswith("full.basis") or str(name) == "stuttgart":
+            return BL.display_name(str(name))
+        return str(name)
+
+    if mode == "opt2d12":
+        parent = label(defaults_obj) or label(obj)
+        if parent and parent.startswith("EXTERNAL (from"):      # the CLI's word for "the deck's own records"
+            parent = None
+        opts.insert(0, {"head": KEEP_BASIS, "group": "",
+                        "text": KEEP_BASIS + (f" ({parent})" if parent else "")})
+        default = KEEP_BASIS
+        if "basis_set" in answers:
+            value = str(answers["basis_set"])
+        elif answers.get("basis_keep") in (False, "n", "no", "No", "false"):
+            value = label(obj) or KEEP_BASIS                     # the API's old answer: not kept, the CLI's default set
+        else:
+            value = KEEP_BASIS
+    else:
+        value = str(answers["basis_set"]) if "basis_set" in answers else label(obj)
+        default = label(defaults_obj)
+    f = FIELD["basis_set"]
+    full = json_value(obj, "basis_set") if obj is not None else None
+    row = {"id": "basis_set", "label": f.label, "section": f.section, "kind": "menu", "unit": "", "hint": f.hint,
+           "how": DERIVED_BY_CLI["basis_set"], "question": "Select basis set", "default": default, "value": value,
+           "raw": full, "answered": "basis_set" in answers, "options": opts}
+    if full and ("/" in str(full)):
+        row["detail"] = str(full)               # the whole path, for the tooltip
+    row["changed"] = "basis_set" in answers and str(answers["basis_set"]) != str(default)
+    return row
+
+
+# Menus whose levels are presets of d12_constants: SCF tolerances (TOLINTEG, TOLDEE) and the optimization's
+# convergence (TOLDEG, TOLDEX, TOLDEE, MAXCYCLE); each option shows its values
+PRESET_FIELDS = ("tolerance", "opt_convergence")
+
+
+def preset_values(fid: str, head: str) -> Optional[str]:
+    """'TOLINTEG: 8 8 8 9 24, TOLDEE: 9' for the SCF level named ``head`` (the optimization's for
+    opt_convergence), from d12_constants' presets; None for Custom or an unknown name."""
+    try:
+        import d12_constants as C
+    except ImportError:
+        return None
+    table, describe = ((C.SCF_TOLERANCE_PRESETS, C.describe_scf_preset) if fid == "tolerance"
+                       else (C.OPT_CONVERGENCE_PRESETS, C.describe_opt_preset))
+    want = re.sub(r"\s+", " ", str(head)).strip().lower()
+    return next((describe(level) for level, p in table.items() if p["name"].lower() == want), None)
+
+
+def option_values(fid: str, option: Dict[str, str]) -> Optional[str]:
+    """The records a level of a preset menu sets: a preset's from d12_constants, the parent's own
+    (the options opt2d12 adds when the parent's values are none of the presets) from its menu line."""
+    vals = preset_values(fid, option["head"])
+    if vals is None and option["head"] in parent_options():
+        parts = re.split(r"\s+[-–]\s+", option["text"], maxsplit=1)
+        vals = parts[1].strip() if len(parts) > 1 else None
+    return vals
+
+
+def parent_options() -> Tuple[str, ...]:
+    """The heads of opt2d12's options built from the parent's values: keeping them
+    (d12_constants.KEEP_PARENT_OPTION) and FREQ's Very tight with the parent's tighter values
+    (FREQ_TIGHTER_OPTION)."""
+    try:
+        import d12_constants as C
+    except ImportError:
+        return ()
+    return (C.KEEP_PARENT_OPTION, C.FREQ_TIGHTER_OPTION)
+
+
+def tolerances_described(tolerances: Any) -> Optional[str]:
+    """'TOLINTEG: 8 8 8 8 16, TOLDEE: 9', as opt2d12's menu prints them, or None."""
+    if not isinstance(tolerances, dict):
+        return None
+    try:
+        import d12_constants as C
+    except ImportError:
+        return None
+    return C.describe_scf_values(tolerances) or None
+
+
+def preset_named(tolerances: Any) -> Optional[str]:
+    """The name of the SCF level whose TOLINTEG and TOLDEE these are, or None."""
+    if not isinstance(tolerances, dict):
+        return None
+    try:
+        import d12_constants as C
+    except ImportError:
+        return None
+    ti = " ".join(str(tolerances.get("TOLINTEG", "")).split())
+    for p in C.SCF_TOLERANCE_PRESETS.values():
+        if ti == " ".join(p["TOLINTEG"].split()) and str(tolerances.get("TOLDEE")) == str(p["TOLDEE"]):
+            return p["name"]
+    return None
 
 
 def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Optional[List[Dict[str, Any]]],
@@ -856,31 +1157,121 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
     survey_qs = [Question(x) for x in survey]
     rows: List[Dict[str, Any]] = []
     used = set()
+    cats = (schema_info or {}).get("functional_categories") or []
+    hf_names = hf_methods()
+    forced_basis = {fn: b for c in cats for fn, b in (c.get("basis_requirements") or {}).items()}
+
+    def fn_of(o: Any, default_json: bool = False) -> Optional[str]:
+        """The functional a settings JSON (or the answers) names, Hartree-Fock variants included."""
+        if default_json or "functional" not in answers:
+            if o is None:
+                return None
+            v = json_value(o, "dft_functional") or json_value(o, "functional") or json_value(o, "hf_method")
+            if (json_value(o, "method_type") or json_value(o, "method")) == "HF":
+                v = json_value(o, "functional") or json_value(o, "hf_method") or v
+            # the D3 suffix is the dispersion row's: the row names the functional itself
+            return re.sub(r"-D3$", "", str(v), flags=re.I) if v else None
+        return str(answers["functional"])
+    now_fn = fn_of(obj)
+    is_hf = (now_fn or "") in hf_names or (not now_fn and obj is not None and
+                                          (json_value(obj, "method_type") or json_value(obj, "method")) == "HF")
+    basis_forced = forced_basis.get(re.sub(r"-D3$", "", now_fn or "", flags=re.I)) if now_fn else None
+    method_q = next((x for x in qs if re.search(METHOD_Q, x.text, re.I)), None) or \
+        next((x for x in survey_qs if re.search(METHOD_Q, x.text, re.I)), None)
     for f in FIELDS:
         if mode not in f.modes or (f.calcs and calc not in f.calcs):
+            continue
+        if f.id in DERIVED_ROWS:       # worked out from the functional or the basis set: no row of its own
+            for x in qs + survey_qs:
+                if _matches(f, x):
+                    used.add(id(x))
             continue
         q = next((x for x in qs if _matches(f, x)), None)
         if q is None:
             q = next((x for x in survey_qs if _matches(f, x)), None)
+        if q is None and f.id == "functional":
+            q = method_q               # a Hartree-Fock run never asks for a functional: its method question stands in
         if q is None:
             continue
         used.add(id(q))
-        val, label = _value_label(f, q, obj)
-        dval, dlabel = _value_label(f, q, defaults_obj)
+        # a Hartree-Fock method, and a 3c one (which sets its own basis, D3 and grid), has no D3 question and no grid to choose
+        if f.id in ("dispersion", "dft_grid") and (is_hf or basis_forced):
+            continue
+        if f.id == "basis_set":        # the merged basis row, below
+            continue
+        if f.id == "functional":
+            def lab(o: Any, jd: bool):
+                v = fn_of(o, jd)
+                return v, v
+            val, label = lab(obj, False)
+            dval, dlabel = lab(defaults_obj, True)
+            if label is None:
+                val, label = _value_label(f, q, obj)
+            if dlabel is None:
+                dval, dlabel = _value_label(f, q, defaults_obj)
+        else:
+            val, label = _value_label(f, q, obj)
+            dval, dlabel = _value_label(f, q, defaults_obj)
         row = {"id": f.id, "label": f.label, "section": f.section, "kind": f.kind, "unit": f.unit, "hint": f.hint,
                "how": DERIVED_BY_CLI[f.id], "question": q.last[-160:], "default": dlabel, "value": label,
                "raw": val, "answered": f.id in answers}
         if f.id == "functional":
-            cats = (schema_info or {}).get("functional_categories") or []
-            row["options"] = [{"head": fn, "text": fn, "group": c["name"]} for c in cats if c["key"] not in ("HF",)
-                              for fn in c["functionals"]]
+            # numbered as the CLI lists them: the place in the category's list; Hartree-Fock last, as one more family
+            row["options"] = [{"head": fn, "text": fn, "group": c["name"], "num": str(i)} for c in cats if c["key"] != "HF"
+                              for i, fn in enumerate(c["functionals"], 1)]
+            hf = next((c for c in cats if c["key"] == "HF"), None)
+            if hf:
+                row["options"] += [{"head": fn, "text": fn, "group": hf["name"], "num": str(i), "family": "hf"}
+                                   for i, fn in enumerate(hf["functionals"], 1)]
+            row["hint"] = "sets the method and the family too; Hartree-Fock variants are last"
+            if forced_basis.get(re.sub(r"-D3$", "", str(label or ""), flags=re.I)):
+                row["note"] = f"{label} sets its own basis set ({forced_basis[re.sub(r'-D3$', '', str(label), flags=re.I)]})"
         elif f.kind == "menu":
-            row["options"] = [{"head": o["head"], "text": o["text"]} for o in q.options]
+            row["options"] = [{"head": o["head"], "text": o["text"], "num": o["num"]} for o in q.options]
+            if f.id in PRESET_FIELDS:
+                # each level with the records it sets (d12_constants, the CLI's own table)
+                for o in row["options"]:
+                    vals = option_values(f.id, o)
+                    if vals:
+                        o["values"] = vals
+                if f.id == "tolerance":
+                    # the level the JSON's TOLINTEG and TOLDEE are (the menu's question default is the parent's):
+                    # a preset, an option made from the parent's values (keep them; FREQ's tighter of the
+                    # parent's and Very tight), else the values as they are
+                    tol = json_value(obj, "tolerances") if obj is not None else None
+                    named = preset_named(tol)
+                    desc = tolerances_described(tol)
+                    made = [o for o in row["options"] if o["head"] in parent_options()]
+                    hit = next((o for o in made if desc and o.get("values") == desc), None)
+                    if named and any(o["head"] == named for o in row["options"]):
+                        row["value"] = label = named
+                    elif hit:
+                        row["value"] = label = hit["head"]
+                    elif desc and any(label == o["head"] for o in made):
+                        row["value"] = label = _short_value(val)
+                cur = next((o.get("values") for o in row["options"] if o["head"] == label), None)
+                if cur:
+                    row["hint"] = f"{label}: {cur}"
+            if f.id == "scf_method":
+                # "DIIS (default - fastest convergence)", "Broyden (alternative ...)": the method's name
+                for o in row["options"]:
+                    o["head"] = re.sub(r"\s*\(.*$", "", o["head"]).strip() or o["head"]
+                heads = {o["num"]: o["head"] for o in row["options"]}
+                row["value"] = heads.get(next((o["num"] for o in q.options if o["head"] == label), None), label)
+                row["default"] = heads.get(next((o["num"] for o in q.options if o["head"] == dlabel), None), dlabel)
+                dlabel = row["default"]
         elif f.kind == "yesno":
             row["options"] = [{"head": "Yes", "text": "Yes"}, {"head": "No", "text": "No"}]
         row["changed"] = f.id in answers and (str(answers[f.id]) != str(dlabel) if f.kind != "yesno"
                                               else (answers[f.id] in (True, "y", "yes", "Yes")) != (dlabel == "Yes"))
         rows.append(row)
+    # the basis set, one row: the type (internal or external) and, for a follow-up, keeping the parent's
+    # basis follow from the set picked
+    if mode in FIELD["basis_set"].modes and not basis_forced:
+        brow = _basis_row(mode, qs, survey_qs, obj, defaults_obj, answers, schema_info)
+        if brow is not None:
+            at = max((i for i, r in enumerate(rows) if r["id"] in ("functional", "dispersion")), default=-1) + 1
+            rows.insert(at, brow)
     for key, spec in PATCH_FIELDS.items():
         if mode not in spec["modes"] or spec.get("kind") in ("kpath", "soc"):
             continue
@@ -890,7 +1281,8 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
                      "default": None, "changed": key in patches, "answered": key in patches, "unit": ""})
     # the questions no field names: "Other questions" (answerable by their own prompt). A run no field
     # covers (opt2d3 TRANSPORT, CHARGE, POTENTIAL, CHARGE+POTENTIAL) lists them before any answer.
-    named = any(mode in f.modes and (not f.calcs or calc in f.calcs) for f in FIELDS)
+    # (TRANSPORT's one field is its k mesh: its other questions are still listed before any answer)
+    named = any(mode in f.modes and (not f.calcs or calc in f.calcs) for f in FIELDS) and calc != "TRANSPORT"
     if current or not named:
         # a question asked more than once in a run (CHARGE+POTENTIAL's two blocks) is a row per ask,
         # "q:<text>#<n>", named after the block that asks it
@@ -903,25 +1295,24 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
             if h:
                 block = h[-1].strip().lower()
             if id(q) in used or not q.last or any(_matches(f, q) for f in FIELDS) or _is_gate(mode, q) \
-                    or _EDITOR_QUESTION.search(q.last):
+                    or _EDITOR_QUESTION.search(q.last) or _FUNCTIONAL_STEPS.search(q.last):
                 continue
             text = q.last[-120:]
             fid, label = "q:" + text, text.rstrip(": ")
             kind = "menu" if q.options else "yesno" if re.search(r"\[[yY]/[nN]\]", q.last) else "value"
             default, value = q.default, answers.get(fid, q.answer if q.answer else q.default)
-            if not named:
-                # these rows are the whole form: a menu is named by its heading ("Charge density
-                # type:", not "Select type (1-2) [1]:") and shows its options' names, a yes/no
-                # Yes or No, as the named fields do
-                label = _menu_heading(q) or label
-                if kind == "menu":
-                    heads = {o["num"]: o["head"] for o in q.options}
-                    default = heads.get(str(default), default)
-                    value = value if fid in answers else heads.get(str(value), value)
-                elif kind == "yesno":
-                    yn = {"y": "Yes", "n": "No"}
-                    default = yn.get(str(default).lower(), default)
-                    value = value if fid in answers else yn.get(str(value).lower(), value)
+            # a menu is named by its heading ("Frequency calculation type", "Charge density type", not
+            # "Select type (1-2) [1]:") and shows its options' names, a yes/no Yes or No, as the named
+            # fields do
+            label = _menu_heading(q) or label
+            if kind == "menu":
+                heads = {o["num"]: o["head"] for o in q.options}
+                default = heads.get(str(default), default)
+                value = value if fid in answers else heads.get(str(value), value)
+            elif kind == "yesno":
+                yn = {"y": "Yes", "n": "No"}
+                default = yn.get(str(default).lower(), default)
+                value = value if fid in answers else yn.get(str(value).lower(), value)
             if text in repeated:
                 seen[text] = seen.get(text, 0) + 1
                 fid += f"#{seen[text]}"
@@ -934,10 +1325,14 @@ def build_form(mode: str, calc: str, survey: List[Dict[str, Any]], current: Opti
                    "how": "cli", "question": q.last[-160:], "default": default, "answered": fid in answers,
                    "value": value, "changed": fid in answers, "unit": ""}
             if kind == "menu":
-                row["options"] = [{"head": o["head"], "text": o["text"]} for o in q.options]
+                row["options"] = [{"head": o["head"], "text": o["text"], "num": o["num"]} for o in q.options]
             elif kind == "yesno":
                 row["options"] = [{"head": "Yes", "text": "Yes"}, {"head": "No", "text": "No"}]
             rows.append(row)
+    # the path format is the automatic path's: a template, labels or vectors typed by hand have none
+    if mode == "opt2d3" and calc == "BAND" and "band_path" in answers \
+            and not str(answers["band_path"]).lower().startswith("automatic"):
+        rows = [r for r in rows if r["id"] != "band_format"]
     return rows
 
 
@@ -1030,7 +1425,10 @@ def run_printed(st: Staged, json_text: str, ctx=None, extra_args=()) -> Dict[str
     out = st.tree / st.out_rel
     before = {p.name: _deck_stamp(p) for p in out.iterdir() if p.is_file()} if out.is_dir() else {}
     args = batch_args(st) + list(extra_args)
-    res = clirun.run(clirun.mace_argv("--no-banner", *args), st.tree, ctx, timeout=180)
+    # the printed command is the user's own: only the static k-path switch (a workflow step's stand-in output) reaches it
+    env = {**clirun.cli_env(), **{k: "1" for k in ("MACE_STATIC_KPATH", "MACE_STAND_IN_KPATH") if st.env.get(k)}} \
+        if st.env.get("MACE_STATIC_KPATH") else None
+    res = clirun.run(clirun.mace_argv("--no-banner", *args), st.tree, ctx, timeout=180, env=env)
     decks = _decks_in(out, before)
     log = res.log.replace(str(st.tree) + os.sep, "")
     return {"code": res.returncode, "decks": [{"name": p.name, "text": p.read_text(errors="replace")} for p in decks],
@@ -1088,6 +1486,30 @@ def problems_from(log: str, source: str = "Setup", limit: int = 400) -> List[Dic
             seen.add(p["message"])
             uniq.append(p)
     return uniq[:20]
+
+
+_DOSS_OFFER = re.compile(r"(This DOS needs \d+ points for a [\d.]+ eV step over all bands \(~\d+ eV, including core "
+                         r"levels\))(?:\.\s*(No window around E_F (?:is offered|can be written): [^\n]*))?")
+
+
+def doss_window_note(form: List[Dict[str, Any]], log: str, problems: List[Dict[str, Any]]) -> None:
+    """opt2d3's warning that an all-bands DOS needs many points, on the Resolution row (its note) and in
+    Problems pointing at it; the Window around E_F row below it (a 1D material's Bands by index) is the
+    one-click choice."""
+    m = _DOSS_OFFER.search(log or "")
+    if not m:
+        return
+    banded = re.search(r"Use bands (\d+) to (\d+) by index", log or "")
+    note = m.group(1) + (f". {m.group(2)}" if m.group(2) else
+                         f": the deck covers bands {banded.group(1)} to {banded.group(2)} by index, a 1D material's "
+                         f"default (Bands by index; No keeps every band)" if banded else
+                         ": the deck covers a window around E_F (Window around E_F; No keeps every band)")
+    for row in form:
+        if row.get("id") == "doss_resolution":
+            row["note"] = note
+    if not any(p.get("field") == "doss_resolution" for p in problems):
+        problems[:] = [p for p in problems if not str(p.get("message", "")).startswith("This DOS needs")]
+        problems.append({"severity": "warning", "source": "Setup", "field": "doss_resolution", "message": note})
 
 
 def parent_refusals(path: Optional[Path]) -> Dict[str, str]:
@@ -1218,6 +1640,13 @@ def flag_args(flags: Dict[str, Any], mode: str) -> List[str]:
         if key in flags:
             out += [switch, str(flags[key])]
     return out
+
+
+# --static-kpath: opt2d3's BAND (and opt2d12's phonon dispersion) writes the static HPKOT table path of the
+# space group where the seekpath package is missing (it stops there without the switch); with the package
+# installed SeeK-path's path is computed either way
+STATIC_KPATH_SWITCH = "--static-kpath"
+STATIC_KPATH_MODES = ("opt2d3",)
 
 
 def charge_schema() -> List[Dict[str, Any]]:
@@ -1435,6 +1864,11 @@ class Request:
             raise SetupError("json_text must be the settings file's text")
         self.json_text = hj
         self.preview = body.get("preview", True) is not False
+        # --static-kpath (opt2d3, opt2d12): the static table path of the space group instead of SeeK-path's
+        self.static_kpath = body.get("static_kpath") is True
+        # a workflow step's form on a stand-in output (no real structure to run SeeK-path on): the same path,
+        # by the environment (the printed command is the user's own, without it)
+        self.stand_in_kpath = body.get("stand_in_kpath") is True
         # the CLI's own charged-system switches (--net-charge, --chemod, ...; charge_flags above)
         self.flags = charge_flags(body.get("flags"))
         self.form = body.get("form", True) is not False
@@ -1502,6 +1936,8 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     progress(0.05, "Staging the input")
     st = stage(mode, calc, work, source_path, rel, cif_bytes, cif_name)
     st.env = setup_env(req.defaults)
+    if req.stand_in_kpath:
+        st.env = {**st.env, "MACE_STATIC_KPATH": "1", "MACE_STAND_IN_KPATH": "1"}
     base_key = (src_key, mode, calc, clirun.cli_hash(), sorted(st.env.items()))
     cmd_name = {"cif2d12": "mace convert", "opt2d12": "mace opt2d12", "opt2d3": "mace opt2d3"}[mode]
 
@@ -1532,10 +1968,12 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     current = None
     asked = None
     charge = flag_args(req.flags, mode)          # the charged-system switches, on every command
+    if req.static_kpath and mode in STATIC_KPATH_MODES:
+        charge = charge + [STATIC_KPATH_SWITCH]
     if req.json_text is not None:
         final = req.json_text
         source_of_json = "hand"
-    elif req.answers or req.flags:
+    elif req.answers or req.flags or charge:
         asked = cached_ask("answers", answer_rules(mode, req.answers), 0.35, f"Answering {cmd_name}'s questions", charge)
         final = asked.get("json_text")
         current = asked.get("questions")
@@ -1574,6 +2012,8 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
         "transcript": [{"q": Question(q).last[-160:], "a": q.get("answer")} for q in (current or [])][-60:],
     }
     problems += problems_from(base_run.get("log") or "")
+    if mode == "opt2d3" and calc == "DOSS":
+        doss_window_note(result.get("form") or [], base_run.get("log") or "", problems)
     result["parent"] = parent_info(mode, st.input_rel, problems, st.tree / st.input_rel)
     if mode == "opt2d3" and st.f9:
         problems.append({"severity": "info", "source": "Setup", "field": None,

@@ -32,6 +32,9 @@
  * | (new) mace.gui.cmp.dispMode                | this browser: the OPT compare view's displacement (Δr) choice, as the plot options |
  * | (new) mace.gui.scfcard.<dirHash>.<path>    | this browser: the SCF card's scale, unit and step, as the run plot options |
  * | (new) mace.gui.kpath.presets               | this browser: saved k-path edits, offered for plots with the same segments |
+ * | (new) mace.gui.gallery.pageSize            | this browser: the Plot Gallery's last panes per page (Settings › Plots wins) |
+ * | (new) mace.gui.mech.<dirHash>.<path>       | this browser: a mechanics results document's tab and options, as the plot options |
+ * | (new) mace.gui.propunits.v1               | this browser: the Properties tab's unit preset, normalization and each row's unit |
  * | mace.gui.draft.*, mace.gui.setup.<…>       | this browser only: unsaved drafts                            |
  * | mace.gui.builder.<id>.result               | this browser only: a builder's transient result              |
  * | mace.gui.saveConfirmed.<…>                 | this browser only: "already asked before overwriting"        |
@@ -50,6 +53,9 @@ export const LOCAL_ONLY = [
   "mace.gui.cmp.dispMode",                                     // the OPT compare view's Δr choice, as the plot options
   "mace.gui.scfcard.",                                         // the SCF card's options (1.1.6), as the run plot options
   "mace.gui.kpath.presets",                                    // saved k-path edits (1.1.6), kept with the plot options
+  "mace.gui.gallery.pageSize",                                 // the Plot Gallery's last panes per page (1.1.6; Settings › Plots wins)
+  "mace.gui.mech.",                                            // a mechanics results document's tab and options (1.1.6), as the plot options
+  "mace.gui.propunits.v1",                                     // the Properties tab's unit preset, normalization and rows' units (1.1.6)
   "mace.gui.draft.", "mace.gui.setup.",                        // unsaved drafts (Setup's per-document draft too)
   "mace.gui.builder.",                                         // a builder's transient result
   "mace.gui.saveConfirmed.",                                   // the overwrite question, asked once per browser

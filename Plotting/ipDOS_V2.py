@@ -55,6 +55,16 @@ mpl.rcParams.update(
     }
 )
 
+def _labels():
+    """mace/utils/plot_labels.py (the plot labels shared with mace gui and the plotly figures)."""
+    try:
+        from mace.utils import plot_labels
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.utils import plot_labels
+    return plot_labels
+
+
 def _presets():
     """mace/plotting/presets.py (the plot styles and DOS colors shared with mace gui)."""
     try:
@@ -1025,12 +1035,10 @@ def vacuum_shift(potc_dat, potc_out):
 
 
 def energy_axis_label(vacuum, shift=0.0):
-    """The energy axis title: E - E_F, the vacuum scale, or either with a Fermi
-    shift (the same as ipBANDS_V2's)."""
-    if not shift:
-        return r"$E - E_{vac}$ (eV)" if vacuum else r"$E - E_F$ (eV)"
-    ref = r"E_{vac}" if vacuum else r"E_F"
-    return rf"$E - ({ref}{shift:+g})$ (eV)"
+    """The energy axis title, as the plotly figures' and the GUI's (plot_labels.energy_title) in
+    mathtext: E − E_F (eV), the vacuum scale, or either with a Fermi shift, E − (E_F + 0.50 eV) (eV)."""
+    L = _labels()
+    return L.mathtext(L.with_unit(L.energy_title("vacuum" if vacuum else "fermi", shift), "eV"))
 
 
 def read_doss_header(doss_file):
@@ -1167,6 +1175,7 @@ def ipDOS(
     spin_up_color=None,
     spin_down_color=None,
     band_color=None,
+    band_style=None,
     dos_smooth=None,
 ):
     """Main DOS plotting function. ``style``: the plot preset (presets.py); ``dos_colors``: the
@@ -1470,8 +1479,16 @@ def ipDOS(
     down_dash = spin_dash or P.SPIN_DOWN_DASH
     tk = _plot_tokens(style)
     ink = tk["--plot-ink"] or tk["--text"]
-    # the one-sided total of a run that is not spin-polarized in a neutral color (--band-color, the style's, else ink)
-    neutral = P.band_color(style, "band", "light", band_color, ink)
+    # the one-sided total of a run that is not spin-polarized, by the Band style as the GUI draws it
+    # (plotly_bands.look_parts; a DOS alone has no bands to call a metal, so auto is single): single the
+    # pair's first color (or --band-color), overlay the same, ink the style's neutral color
+    bstyle = P.band_style(band_style, None)
+    if bstyle == "ink":
+        neutral = P.band_color(style, "band", "light", None, ink)
+    elif bstyle == "single" and band_color and P._HEXCOLOR.match(band_color):
+        neutral = band_color.lower()
+    else:
+        neutral = spin_pair["up"]
     if dos_colors:
         # the 1.1.6 layout (the GUI's): by default only the 2-4 projections carrying most of the DOS in the
         # window; DOS colors Auto takes the style's projection colors, largest first, clear of the spin pair
@@ -1575,7 +1592,7 @@ def ipDOS(
                         color=color, fontweight="bold", fontsize=max(7, tick_pt - 2))
 
     # Fermi level line: dotted (dashed would read as spin down)
-    fermi_label = "$E_F$" if not fermi_shift else f"$E_F{fermi_shift:+g}$ eV"
+    fermi_label = _labels().mathtext(_labels().fermi_key(fermi_shift))
     plt.axhline(maxV, color=FERMI_COLOR, linestyle=P.mpl_dash("dot"), lw=1.2, label=fermi_label, zorder=100)
 
     # the energies the DOS run did not compute: shaded, labeled when there is room (no data, not zero states)
@@ -1600,7 +1617,7 @@ def ipDOS(
     comp_lines = []
     if show_composition and composition_info:
         if composition_info.get("is_conductive") and composition_info.get("fermi"):
-            comp_lines.append(f"$E_F$: {composition_info['fermi']}")
+            comp_lines.append(f"{_labels().mathtext(_labels().SYMBOLS['E_F'])}: {composition_info['fermi']}")
         else:
             if composition_info.get("cb"):
                 comp_lines.append(f"CB: {composition_info['cb']}")
@@ -1611,14 +1628,14 @@ def ipDOS(
     gap_text = None
     if band_gap_info:
         if "semimetal" in band_gap_info:
-            gap_text = f"Semimetal\n$E_g$ = {band_gap_info['semimetal']:.2f} eV"
+            gap_text = f"Semimetal\nE$_{{\\mathregular{{g}}}}$ = {band_gap_info['semimetal']:.2f} eV"
         elif "alpha" in band_gap_info and "beta" in band_gap_info:
-            gap_text = f"$E_g^\\alpha$ = {band_gap_info['alpha']:.2f} eV\n$E_g^\\beta$ = {band_gap_info['beta']:.2f} eV"
+            gap_text = f"E$_{{\\mathregular{{g}}}}^{{\\alpha}}$ = {band_gap_info['alpha']:.2f} eV\nE$_{{\\mathregular{{g}}}}^{{\\beta}}$ = {band_gap_info['beta']:.2f} eV"
         elif "gap" in band_gap_info:
             if band_gap_info["gap"] == 0.0:
                 gap_text = "Conductive"
             else:
-                gap_text = f"$E_g$ = {band_gap_info['gap']:.2f} eV"
+                gap_text = f"E$_{{\\mathregular{{g}}}}$ = {band_gap_info['gap']:.2f} eV"
 
     # the grouped legend (the GUI's Spin and Projections groups; matplotlib has no group titles, so each
     # group opens with a title row): Spin in neutral ink, the projections as color swatches, then E_F
@@ -1803,7 +1820,7 @@ def main():
             elif arg == "--no-total":
                 flag_args["show_total"] = False
             elif arg in ("--style", "--dos-colors", "--spin-dos", "--spin-style", "--output-dir", "--file",
-                         "--spin-up-color", "--spin-down-color", "--band-color") and i + 1 < len(sys.argv):
+                         "--spin-up-color", "--spin-down-color", "--band-color", "--band-style") and i + 1 < len(sys.argv):
                 flag_args[arg[2:].replace("-", "_")] = sys.argv[i + 1]
                 i += 1
             elif arg == "--energy-reference" and i + 1 < len(sys.argv):
@@ -1835,7 +1852,8 @@ def main():
     if flag_args.get("output_dir"):
         os.makedirs(FIGDIR, exist_ok=True)
     choices = {"style": list(_presets().ORDER), "dos_colors": list(_presets().DOS_MODES),
-               "spin_dos": ["auto", "mirrored", "overlaid"], "spin_style": ["dash", "dot", "dashdot", "solid"]}
+               "spin_dos": ["auto", "mirrored", "overlaid"], "spin_style": ["dash", "dot", "dashdot", "solid"],
+               "band_style": list(_presets().BAND_STYLES)}
     for k, ok in choices.items():
         if k in flag_args and flag_args[k] not in ok:
             print(f"Error: --{k.replace('_', '-')} is one of {', '.join(ok)}")
@@ -1851,6 +1869,7 @@ def main():
         print(f"No *_doss.DOSS.DAT files found in {DIR}")
         sys.exit(1)
 
+    failed = []
     for path in pathlist:
         path_in_str = str(path)
         material = path_in_str[nDIR:-ntype]
@@ -1881,6 +1900,7 @@ def main():
                 spin_up_color=flag_args.get("spin_up_color"),
                 spin_down_color=flag_args.get("spin_down_color"),
                 band_color=flag_args.get("band_color"),
+                band_style=flag_args.get("band_style"),
                 dos_smooth=flag_args.get("dos_smooth"),
             )
         except Exception as e:
@@ -1888,7 +1908,11 @@ def main():
             import traceback
 
             traceback.print_exc()
+            failed.append(material)
             continue
+    if failed:      # a failed file is a failed run (it once exited 0 and the caller drew nothing)
+        print(f"Error: {len(failed)} of {len(pathlist)} DOS file(s) failed: {', '.join(failed)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

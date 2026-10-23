@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 
 from mace.utils.imaginary_modes import imaginary, is_linear, is_molecule  # noqa: F401 (one rule with the extractor)
 
-HARTREE_EV = 27.211386245988
+from mace.constants import HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 DEFAULT_TOLINTEG = (6, 6, 6, 6, 12)
 
 
@@ -234,9 +234,6 @@ def problems(path: Path, conv: Dict[str, Any], noise_cm: float = 20.0, dim: Opti
 
 # ------------------------------------------------------------------ the metadata card (a pool job)
 _RX = {
-    "version": re.compile(r"\*\s+(CRYSTAL\d{2})\s+\*"),
-    "release": re.compile(r"\*\s+(public\s*:\s*[^*]+?)\s*\*"),
-    "procs": re.compile(r"PROCESS\s+\d+\s+OF\s+(\d+)\s+WORKING"),
     "start": re.compile(r"EEEEEEEEEE STARTING\s+DATE\s+(.+?)\s*$"),
     "end": re.compile(r"EEEEEEEEEE TERMINATION\s+DATE\s+(.+?)\s*$"),
     "telapse": re.compile(r"TELAPSE\s+([\d.]+)"),
@@ -256,12 +253,19 @@ def meta_job(ctx=None, path: str = "", **_) -> Dict[str, Any]:
     with contextlib.redirect_stdout(io.StringIO()):
         from mace.utils.property_extractor import CrystalPropertyExtractor
         from mace.completion_checker import determine_completed_subtype
+        # the card's functional, basis, version, processes and energy per atom: the
+        # registry's run_info and energy_per_atom (what the database stores)
+        from mace.properties.defs import run_info
+        from mace.utils.calc_detection import mechanics_reference_text
         x = CrystalPropertyExtractor(db_path=None, enable_tracking=False)
         comp = x._extract_computational_properties(text)
         scf = x._extract_scf_settings(text)
-        en = x._extract_energy_properties(text)
-        struct = x._extract_structural_properties(text)
-        cryst = x._extract_crystallographic_info(text)
+        # an ELASTIC/EOS/QHA run's energy and structure are its reference cell's, as the
+        # extractor reads them (mechanics_reference_text), not the last strained cell's
+        ref = mechanics_reference_text(text)
+        en = x._extract_energy_properties(ref)
+        struct = x._extract_structural_properties(ref)
+        cryst = x._extract_crystallographic_info(ref)
         lines = text.splitlines(True)
         calc_type = determine_completed_subtype(p, lines, has_opt_end=any("OPT END" in ln for ln in lines))
     if ctx is not None:
@@ -277,55 +281,35 @@ def meta_job(ctx=None, path: str = "", **_) -> Dict[str, Any]:
             return None
         return m.group(1).strip() if m else None
     tel = [float(v) for v in _RX["telapse"].findall(text[-200_000:])]
-    procs = _RX["procs"].findall(text[:400_000])
     dims = {"0": "MOLECULE", "1": "POLYMER", "2": "SLAB", "3": "CRYSTAL"}
     d = first("dim")
     n_atoms = struct.get("atoms_in_unit_cell")
     e_au = en.get("total_energy_au")
     out.update({
-        "crystal_version": " ".join(x for x in (first("version"), first("release")) if x) or None,
+        "crystal_version": run_info.crystal_version(text),
         "calc_type": calc_type, "dimensionality": dims.get(d, None) if d else None,
         "space_group": first("sg") or cryst.get("space_group_number"),
         "atoms": n_atoms, "functional": _functional(text, p), "basis": _basis(p),
         "shrink": [scf.get(k) for k in ("scf_shrink_k1", "scf_shrink_k2", "scf_shrink_k3") if scf.get(k) is not None] or None,
         "gilat": scf.get("scf_gilat_shrink"), "tolinteg": (lambda t: list(t[0]) if t else None)(_tolinteg(p)),
         "spin": "unrestricted (spin-polarized)" if re.search(r"\bUNRESTRICTED|SPIN POLARIZED|SPINLOCK", text[:400_000]) else "closed shell",
-        "mpi_processes": max(int(v) for v in procs) if procs else None,
+        "mpi_processes": run_info.mpi_processes(text),
         "started": first("start"), "ended": first("end"),
         "wall_s": max(tel) if tel else None, "cpu_s": comp.get("cpu_time_total_s"),
         "energy_au": e_au, "energy_ev": e_au * HARTREE_EV if e_au is not None else None,
-        "energy_ev_per_atom": (e_au * HARTREE_EV / n_atoms) if (e_au is not None and n_atoms) else None,
+        "energy_ev_per_atom": run_info.energy_per_atom_ev(e_au, n_atoms),
     })
     return out
 
 
 def _functional(text: str, p: Path) -> Optional[str]:
-    d12 = p.with_suffix(".d12")
-    if d12.is_file():
-        recs = [ln.strip().upper() for ln in d12.read_text(errors="replace").splitlines()[1:]]
-        if "DFT" in recs:
-            i = recs.index("DFT")
-            for r in recs[i + 1:i + 12]:
-                if r in ("ENDDFT", "END"):
-                    break
-                if r and r not in ("SPIN", "XLGRID", "LGRID", "XXLGRID", "OLDGRID", "RADIAL", "ANGULAR") and not r[0].isdigit():
-                    return r
-        if "HF" in recs or "RHF" in recs or "UHF" in recs:
-            return "HF"
-    m = re.search(r"ENERGY EXPRESSION=(.+)", text[:400_000])
-    return m.group(1).strip()[:80] if m else None
+    from mace.properties.defs.run_info import functional
+    return functional(text, p)
 
 
 def _basis(p: Path) -> Optional[str]:
-    d12 = p.with_suffix(".d12")
-    if not d12.is_file():
-        return None
-    recs = [ln.strip() for ln in d12.read_text(errors="replace").splitlines()[1:]]
-    up = [r.upper() for r in recs]
-    if "BASISSET" in up:
-        i = up.index("BASISSET")
-        return recs[i + 1] if i + 1 < len(recs) else None
-    return "custom (in the deck)"
+    from mace.properties.defs.run_info import basis
+    return basis(p)
 
 
 def card(meta: Dict[str, Any], conv: Optional[Dict[str, Any]]) -> Dict[str, Any]:

@@ -10,5 +10,6 @@ from . import cube  # noqa: F401  (import side-effect: registers cube volumetric
 from . import freq  # noqa: F401  (import side-effect: registers FREQ vibrational modes)
 from . import spectra  # noqa: F401  (import side-effect: registers IR / Raman spectra)
 from . import orbitals  # noqa: F401  (import side-effect: registers ORBITALS / Molden orbitals)
+from . import transport  # noqa: F401  (import side-effect: registers BOLTZTRA transport)
 
-__all__ = ['legacy', 'cube', 'freq', 'spectra', 'orbitals']
+__all__ = ['legacy', 'cube', 'freq', 'spectra', 'orbitals', 'transport']

@@ -75,6 +75,25 @@ MAINTAINER = ("This MACE install is not yours to change ({why}). Ask its maintai
 # nothing from the checkout it updates (its files change under it)
 HELPER = r"""
 import json, os, subprocess, sys, time
+
+
+def alive(pid):
+    # os.kill(pid, 0) would TERMINATE the process on Windows: ask the OS there (as registry.pid_alive)
+    if os.name == "nt":
+        import ctypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        h = k32.OpenProcess(0x1000, False, pid)
+        if not h:
+            return ctypes.get_last_error() == 5    # ERROR_ACCESS_DENIED: it exists
+        try:
+            code = ctypes.c_ulong()
+            return bool(k32.GetExitCodeProcess(h, ctypes.byref(code))) and code.value == 259
+        finally:
+            k32.CloseHandle(h)
+    os.kill(pid, 0)
+    return True
+
+
 cfg = json.loads(sys.argv[1])
 pid, end = cfg["wait_pid"], time.time() + 120
 while pid and time.time() < end:
@@ -82,7 +101,8 @@ while pid and time.time() < end:
         st = open("/proc/%d/status" % pid).read() if os.path.isdir("/proc") else ""
         if "State:\tZ" in st:
             break
-        os.kill(pid, 0)
+        if not alive(pid):
+            break
     except (OSError, ValueError):
         break
     time.sleep(0.2)

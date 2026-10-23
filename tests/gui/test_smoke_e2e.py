@@ -113,12 +113,16 @@ def test_clip_opt_slab_db_zen(tmp_path, request):
         drv.execute_script("const el = document.getElementById('o-frame'); el.value = String(arguments[0]); el.dispatchEvent(new Event('input'))", n - 1)
         H.wait(drv, "return window.MACE.state.frame === arguments[0]", 30, n - 1)
         assert canvas_nonblank(drv, "viewer-before") > 50
-        # a slab: the range along c is ignored
+        # a slab: since 1.1.6 a range above 1 along c repeats it at the Vacuum spacing (the Open mode: not at all)
         assert open_doc(drv, "outputs/graphene_slab_sp.out") in ("structure", "trajectory")
         drv.execute_script("window.__mace.run('view.range1')")
         time.sleep(0.6)
         n1 = drv.execute_script("return window.__mace.viewState().displayedAtoms")
         drv.execute_script("window.__mace.display.set(window.__mace.activeDoc(), {displayLo: [0, 0, 0], displayHi: [1, 1, 3]})")
+        time.sleep(0.8)
+        assert drv.execute_script("return window.__mace.viewState().displayedAtoms") == 3 * n1
+        drv.execute_script("""const s = document.getElementById('opt-vacuum-mode'); s.value = 'open';
+          s.dispatchEvent(new Event('change'));""")
         time.sleep(0.8)
         assert drv.execute_script("return window.__mace.viewState().displayedAtoms") == n1
         # the database tab

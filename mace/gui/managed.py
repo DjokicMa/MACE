@@ -340,6 +340,9 @@ class Controller:
 # ---------------------------------------------------------------- reattach
 
 def _pid_alive(pid: int) -> bool:
+    if os.name == "nt":
+        from .registry import pid_alive      # os.kill(pid, 0) would end the process on Windows
+        return pid_alive(pid)
     try:
         os.kill(pid, 0)
         return True

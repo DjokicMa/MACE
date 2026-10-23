@@ -41,7 +41,29 @@ export function confirmDirty(H, what) {
 }
 
 /* ---------------------------------------------------------------- Open Folder */
-export async function openFolder(H) {
+let quotaCache = null;
+/* Quota % and Files % beside the Home, Scratch and Research chips, from the cluster's cached quota answer
+ * (nothing is shown where there is no quota tool or no SLURM). */
+async function quotaChips(d, H) {
+  try {
+    if (!quotaCache) quotaCache = H.api("cluster/quotas").catch(() => null);
+    const q = await quotaCache;
+    if (!q || !q.rows) return;
+    const pct = (v) => (v === null || v === undefined ? "–" : Math.round(v) + "%");
+    d.querySelectorAll("#of-roots [data-root]").forEach((b) => {
+      b.querySelector(".of-quota")?.remove();
+      const path = b.dataset.root.replace(/\/$/, "");
+      const row = q.rows.find((x) => x.real && x.level !== "info" && x.space && x.real.replace(/\/$/, "") === path);
+      if (!row) return;
+      const tag = document.createElement("span");
+      tag.className = "of-quota small muted";
+      tag.textContent = ` ${pct(row.space_pct)} space, ${pct(row.files_pct)} files`;
+      tag.title = "Quota % and Files % of this space";
+      b.append(tag);
+    });
+  } catch (e) { /* the chips stay as they are */ }
+}
+export async function openFolder(H, startPath) {
   await css();
   const info = H.info() || {};
   if (!info.open_folder) {
@@ -69,6 +91,7 @@ export async function openFolder(H) {
     } catch (e) { showError(e.message); return; }
     selected = null;
     $("#of-roots", d).innerHTML = listing.roots.map((r) => `<button class="chip" data-root="${H.esc(r.path)}" title="${H.esc(r.path)}">${H.esc(r.label)}</button>`).join("");
+    quotaChips(d, H);
     const root = listing.roots.map((r) => r.path).filter((r) => listing.path === r || listing.path.startsWith(r.replace(/\/$/, "") + "/"))
       .sort((a, b) => b.length - a.length)[0] || "";
     const parts = [], rel = root ? listing.path.slice(root.length).split("/").filter(Boolean) : listing.path.split("/").filter(Boolean);
@@ -130,7 +153,8 @@ export async function openFolder(H) {
     if (!listing) return;
     open(selected ? child(selected) : listing.path);
   });
-  await list(info.root);
+  await list(startPath || info.root);
+  quotaChips(d, H);
 }
 
 /* Another tab switched the folder: say so, then reload into it. */

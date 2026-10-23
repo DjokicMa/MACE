@@ -189,18 +189,31 @@ def render(sess, fmt: str, cif_mode: str = "p1") -> bytes:
         return text.encode()
     import ase.io
     buf = io.StringIO()
+    atoms = sess.atoms
+    if not all(atoms.pbc) and fmt == "poscar":
+        # a slab, polymer or molecule: POSCAR has no pbc, so it gets a box with vacuum (1.1.6)
+        from .structures import boxed
+        atoms = boxed(atoms)
+    elif not all(atoms.pbc) and fmt in ("xyz", "extxyz"):
+        # an extended XYZ keeps the pbc: the non-periodic cell vectors are the vacuum vectors (a CRYSTAL
+        # output's 500 Å), not the drawing box, so the file opens again as the same slab, polymer or molecule
+        from .structures import vacuum_cell
+        atoms = vacuum_cell(atoms)
+    elif any(str(k).startswith("mace_") for k in (atoms.info or {})):
+        atoms = atoms.copy()
+        atoms.info = {k: v for k, v in atoms.info.items() if not str(k).startswith("mace_")}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         if fmt == "poscar":
-            ase.io.write(buf, sess.atoms, format="vasp", direct=True, sort=False)
+            ase.io.write(buf, atoms, format="vasp", direct=True, sort=False)
         elif fmt == "plainxyz":       # Export ▸ XYZ: symbols and Cartesian positions only
             try:
-                ase.io.write(buf, sess.atoms, format="xyz", plain=True)     # ase routes "xyz" to extxyz
+                ase.io.write(buf, atoms, format="xyz", plain=True)     # ase routes "xyz" to extxyz
             except TypeError:
                 buf = io.StringIO()
-                ase.io.write(buf, sess.atoms, format="xyz")                 # an ase whose "xyz" is plain already
+                ase.io.write(buf, atoms, format="xyz")                 # an ase whose "xyz" is plain already
         else:                         # "xyz" (Save As keeps the cell) and "extxyz"
-            ase.io.write(buf, sess.atoms, format="extxyz")
+            ase.io.write(buf, atoms, format="extxyz")
     return buf.getvalue().encode()
 
 
@@ -316,13 +329,11 @@ def f20_refusal(target: Path, f9: Optional[Path]) -> Optional[str]:
     return f"{target.name} already exists and is not {Path(f9).name if f9 else 'the parent .f9'}; not overwriting it"
 
 
-def save(state, sess, rel: str, fmt: str = "cif", cif_mode: str = "p1", overwrite: bool = False,
-         backup: bool = True, expected: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Save the session's structure to ``rel`` (relative to the served folder)."""
-    if fmt not in FORMATS:
-        raise ValueError(f"format must be one of {', '.join(FORMATS)}")
-    if cif_mode not in ("p1", "symmetrized"):
-        raise ValueError("CIF mode is p1 or symmetrized")
+def check_target(state, rel: str) -> Path:
+    """The save target ``rel`` resolved inside the served folder, or the refusal.
+
+    Needs nothing but the path, so a route can call it before it builds the
+    structure (which may need ase)."""
     target = state.resolve(rel, must_exist=False)
     if target == state.root or target.is_dir():
         raise ValueError(f"{rel} is a folder")
@@ -336,6 +347,17 @@ def save(state, sess, rel: str, fmt: str = "cif", cif_mode: str = "p1", overwrit
         prot = protected_reason(target)
         if prot:
             raise ProtectedOutput(prot)
+    return target
+
+
+def save(state, sess, rel: str, fmt: str = "cif", cif_mode: str = "p1", overwrite: bool = False,
+         backup: bool = True, expected: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Save the session's structure to ``rel`` (relative to the served folder)."""
+    if fmt not in FORMATS:
+        raise ValueError(f"format must be one of {', '.join(FORMATS)}")
+    if cif_mode not in ("p1", "symmetrized"):
+        raise ValueError("CIF mode is p1 or symmetrized")
+    target = check_target(state, rel)
     why = format_problem(target.name, fmt)
     if why:
         raise ValueError(why)

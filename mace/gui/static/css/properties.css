@@ -1,0 +1,59 @@
+/* The bottom panel's Properties tab (js/lazy/properties_tab.js) */
+.bottom-pane.properties.active { height: 100%; }
+.prp { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--s-2); }
+.prp-bar { flex: none; }
+.prp-where { color: var(--text-2); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 40em; }
+.prp-filter { width: 12em; height: 24px; margin-left: auto; }
+.prp-bar .anr-acts { margin-left: 0; }
+.prp-banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); font-size: var(--fs-sm);
+  padding: var(--s-1) var(--s-2); border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2); }
+.prp-banner.warn { border-color: var(--warning); }
+.prp-banner.err { border-color: var(--danger); color: var(--danger); }
+.prp-banner .tb-btn-text { height: 24px; padding: 0 var(--s-2); }
+.prp-banner .anr-cli { margin-top: 0; flex-basis: 100%; }
+.prp-body { flex: 1; min-height: 0; overflow: auto; }
+.prp-table { width: auto; }
+.prp-table th, .prp-table td { white-space: nowrap; padding: 2px var(--s-2); }
+.prp-table .prp-gh th { position: static; background: none; color: var(--text); font-weight: 600; padding-top: var(--s-2); border-bottom: 1px solid var(--border-strong); }
+.prp-table td.prp-val { text-align: right; }
+.prp-table td.prp-unit { color: var(--text-2); }
+.prp-table td.prp-key code { font-size: var(--fs-xs); color: var(--text-2); }
+.prp-table td.prp-src { color: var(--text-2); font-size: var(--fs-xs); max-width: 32em; overflow: hidden; text-overflow: ellipsis; }
+.prp-table tr.prp-gui td.prp-src { color: var(--info); }
+.prp-json { color: var(--text-2); }
+/* units: the preset and normalization at the top, a row's own unit in its Unit cell (js/lazy/prop_units.js) */
+.prp-units { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--text-2); }
+.prp-units select { height: 24px; width: auto; margin-left: var(--s-1); }
+.prp-table td.prp-unit .prp-usel { font: inherit; color: inherit; background: transparent; border: 1px solid transparent;
+  border-radius: var(--r-sm); height: 20px; padding: 0 2px; margin: -1px 0; cursor: pointer; max-width: 16em; }
+.prp-table td.prp-unit .prp-usel:hover { border-color: var(--border); background: var(--surface-2); }
+.prp-table td.prp-unit .prp-usel:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+.prp-table td.prp-unit .prp-usel.own { color: var(--accent); }
+.prp-table td.prp-unit .prp-usel option, .prp-table td.prp-unit .prp-usel optgroup { color: var(--text); background: var(--surface); }
+.prp-also { color: var(--text-2); font-size: var(--fs-xs); margin-left: var(--s-1); cursor: help; }
+.prp-view { height: 20px; padding: 0 var(--s-1); }
+.prp-foot { margin-top: var(--s-2); }
+.prp-derived { margin: var(--s-1) 0 0; padding-left: var(--s-4); font-size: var(--fs-sm); }
+.prp-derived li { margin: 1px 0; }
+.prp-st { font-weight: 600; }
+.prp-st-skipped, .prp-st-not { color: var(--text-2); font-weight: 400; }
+.prp-st-error { color: var(--danger); }
+.prp-derived .prp-addref { height: 20px; padding: 0 var(--s-1); margin-left: var(--s-1); }
+/* Add Reference… (the reference energies' picker) */
+.prp-refs { display: grid; gap: var(--s-2); }
+.prp-refs-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.prp-refs-top select { margin-left: var(--s-1); }
+.prp-refs-all { margin-left: auto; }
+.prp-ref-role { border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); margin: 0; min-width: 0; }
+.prp-ref-role legend { font-size: var(--fs-sm); padding: 0 var(--s-1); }
+.prp-ref-role .prp-ref-table { width: 100%; }
+.prp-ref-table th, .prp-ref-table td { white-space: nowrap; padding: 2px var(--s-2); font-size: var(--fs-sm); }
+.prp-ref-table td.prp-ref-run { max-width: 26em; overflow: hidden; text-overflow: ellipsis; }
+.prp-ref-table td.prp-ref-check { max-width: 30em; overflow: hidden; text-overflow: ellipsis; }
+.prp-ref-table tr.prp-ref-refuse td { color: var(--text-2); }
+.prp-ref-table .prp-coef { width: 6em; height: 22px; }
+.prp-st-ok { color: var(--success); }
+.prp-st-warn { color: var(--warning); }
+.prp-st-refuse { color: var(--danger); }
+.prp-refs-cli { white-space: pre-wrap; word-break: break-all; }
+#prp-refs .dlg-foot .prp-grow { flex: 1; }

@@ -111,8 +111,12 @@ def test_build_preview_submit_full_electronic(app):
     sel = H.wait(drv, "return document.querySelector(\".wfb-form[data-step='SP_2'] select[data-field='functional']\")", 120)
     form = drv.execute_script("return document.querySelector('.wfb-form').innerText")
     assert "inherited from OPT (step 1)" in form
-    locked = drv.execute_script("return document.querySelectorAll('.wfb-form .su-row.locked').length")
-    assert locked > 3
+    locked = drv.execute_script("return [...document.querySelectorAll('.wfb-form .su-row.locked')].map((r) => r.dataset.row)")
+    # nothing an SP step has is locked: the DFT grid, the SCF rows, spin polarization and the k-point mesh
+    # (the last row that stayed locked) are each inherited and can be overridden
+    assert locked == [], locked
+    assert drv.execute_script("return document.querySelector(\".wfb-form .su-row[data-row='k_points_for_all_files'] input\").value") \
+        == "12 24"
     from selenium.webdriver.support.ui import Select
     Select(sel).select_by_value("PBE0")
     H.wait(drv, "const s = window.__maceWfBuilder.state(); const f = s.forms.SP_2; return f && !s.formBusy.SP_2 && "

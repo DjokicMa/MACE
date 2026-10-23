@@ -105,7 +105,7 @@ def test_band_publication_runs_with_the_folder_window(app):
         res = _wait_task(base, res["task"]["id"])
     else:
         assert st == 200, res
-    assert res["command"].endswith("--format png --e-lower=-1 --e-upper=1"), res["command"]
+    assert "--format png --e-lower=-1 --e-upper=1" in res["command"], res["command"]      # (then every default, as the folder has a mace-folder.toml)
     png = next(n for n in res["images"] if n.endswith(".png"))
     st, _, served = U.req(base, "api/plot-image?" + urllib.parse.urlencode({"key": res["key"], "name": png}))
     assert st == 200
@@ -120,9 +120,28 @@ def test_band_publication_runs_with_the_folder_window(app):
     q = urllib.parse.urlencode({"path": rel, "format": "svg", "emin": "-3", "emax": "2"})
     st, _, res = U.req(base, f"api/plot?{q}")
     res = _wait_task(base, res["task"]["id"]) if st == 202 else res
-    assert res["command"].endswith("--e-lower=-3 --e-upper=2")
+    assert "--e-lower=-3 --e-upper=2" in res["command"]
     st, _, err = U.req(base, "api/plot?" + urllib.parse.urlencode({"path": rel, "emin": "2", "emax": "1"}))
     assert st == 400
+    U.no_errors(drv)
+
+
+def test_publication_and_cli_command_take_the_reference_and_label_switches(app):
+    """Reference › Fermi is named (auto would take the vacuum scale with POTC files), and the Fermi-line and
+    k-label switches turned off reach Publication Figure and Copy CLI Command."""
+    drv, base, root, downloads, tmp = app
+    rel = "bands/" + _band_files()[0].name
+    drv.execute_script("window.__mace.closeAll()")
+    assert U.open_doc(drv, rel) == "plot"
+    H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.data && s.drawn", 60)
+    drv.execute_script("window.__mace.plotView.setOpt({fermi_line: false, k_labels: false}, 'test')")
+    H.wait(drv, "const s = window.__mace.plotView.state(); return s && s.data && s.drawn && s.opts.k_labels === false", 60)
+    cli = drv.execute_script("return window.__mace.plotView.cliText()")
+    r = drv.execute_async_script("const done = arguments[0]; window.__mace.plotView.publication().then(done, (e) => done({error: String(e)}))")
+    assert "error" not in r, r
+    for text in (cli, r["command"]):
+        words = shlex.split(text.split("\n")[-1])
+        assert "--energy-reference=fermi" in words and "--no-fermi-line" in words and "--no-k-labels" in words, text
     U.no_errors(drv)
 
 

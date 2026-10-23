@@ -199,7 +199,10 @@ def test_per_document_range_reload_and_reopen(fresh):
     clean(drv, "real/agte.cif", "real/tipbo3.cif")
     open_doc(drv, "real/agte.cif")
     open_doc(drv, "real/tipbo3.cif")
-    quick(drv, "3")
+    # 3x3x3 from the Cells picker's presets (1.1.6: it replaced the 1/2/3 quick buttons)
+    from selenium.webdriver.support.ui import Select
+    Select(expand(drv, "range").find_element("css selector", ".cells-preset")).select_by_value("3,3,3")
+    time.sleep(0.5)
     assert drv.find_element("id", "tb-range-label").text == "3×3×3"
     # the override dot shows on the changed control only
     dots = drv.execute_script("return [...document.querySelectorAll('#inspector [data-key=range] .ovr-dot')].map((d) => d.dataset.unset)")

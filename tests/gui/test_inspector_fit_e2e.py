@@ -120,8 +120,11 @@ def check_x(drv, what):
         time.sleep(0.15)
         p = probe(drv)
         assert p["inBar"] and not p["bad"], (what, frac, p)
+        # 1.1.6: Calculation Setup's header sits under the Inspector | Setup tabs (they scroll away in the Inspector)
         assert drv.execute_script("const i = document.getElementById('inspector'), b = i.querySelector('.panel-hide').closest('.insp-bar, .su-head');"
-                                  " return Math.abs(b.getBoundingClientRect().top - i.getBoundingClientRect().top) <= 1.5"), (what, frac)
+                                  " const t = i.querySelector(':scope > .insp-tabs'), top = i.getBoundingClientRect().top;"
+                                  " const under = t && Math.abs(t.getBoundingClientRect().top - top) <= 1.5 ? t.getBoundingClientRect().bottom : top;"
+                                  " return Math.abs(b.getBoundingClientRect().top - top) <= 1.5 || Math.abs(b.getBoundingClientRect().top - under) <= 1.5"), (what, frac)
     drv.execute_script("document.getElementById('inspector').scrollTop = 0")
     return p
 
@@ -172,7 +175,7 @@ QUANTITY = """
 const insp = document.getElementById('inspector'), ir = insp.getBoundingClientRect();
 return [...insp.querySelectorAll('.po-tq button')].map((b) => { const r = b.getBoundingClientRect();
   const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-  return {label: b.textContent, inside: r.left >= ir.left - 0.5 && r.right <= ir.right + 0.5 && r.width > 0, hit: !!e && b.contains(e)}; });
+  return {label: b.textContent, html: b.innerHTML, inside: r.left >= ir.left - 0.5 && r.right <= ir.right + 0.5 && r.width > 0, hit: !!e && b.contains(e)}; });
 """
 
 
@@ -186,12 +189,14 @@ def test_transport_quantities_fit_and_the_csv_beside_the_run(app):
                        " i.scrollTop += r.getBoundingClientRect().top - i.getBoundingClientRect().top - 60")
     time.sleep(0.2)
     rows = drv.execute_script(QUANTITY)
-    assert [r["label"] for r in rows] == ["Seebeck", "σ", "σS", "κ₀", "TDF", "ZT"]
+    # κ₀ and κₑ are typeset with real subscripts (labels.js SYMBOLS: κ<sub>0</sub>), as the plot's labels
+    assert [r["label"] for r in rows] == ["S", "σ", "σS", "κ0", "TDF", "PF", "κe", "ZT", "L", "σ/τ", "PF/τ"]
+    assert rows[3]["html"] == "κ<sub>0</sub>" and rows[6]["html"] == "κ<sub>e</sub>"
     assert all(r["inside"] and r["hit"] for r in rows), rows
     assert not drv.execute_script("const i = document.getElementById('inspector'); return i.scrollWidth > i.clientWidth + 1")
     check_x(drv, "transport plot options")
     # ZT with a κ_L CSV named as it sits beside the run (c/kappa.csv)
-    drv.execute_script("document.querySelector(\"#inspector .po-tq [data-tview='zt']\").click()")
+    drv.execute_script("document.querySelector(\"#inspector .po-tq [data-tquantity='zt']\").click()")
     H.wait(drv, "const s = window.__mace.plotView.state(); return s.drawn && s.zt && s.zt.zt_e_max", 60)
     drv.execute_script("window.__mace.plotView.setOpt({kl: 'kappa.csv'}, 'κ_L')")
     H.wait(drv, "const s = window.__mace.plotView.state(); return s.drawn && s.zt && (s.zt.zt_total_max || s.zt.error)", 60)

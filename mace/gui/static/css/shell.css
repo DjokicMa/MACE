@@ -237,6 +237,9 @@ html.pane-side #overlay-layer { zoom: 1; --ovz: 1; }
 .dp-slide output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
 .dp-est.warn { color: var(--warning, #b45309); }
 .dp-boundary { justify-content: flex-start !important; }
+/* the polyhedra's controls under their checkbox, indented as its children */
+.dp-poly { margin-left: var(--s-3); padding-left: var(--s-2); border-left: 1px solid var(--border); }
+.dp-poly-centers { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px var(--s-2); }
 .ovr-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); cursor: pointer; flex: none; }
 .ovr-dot:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: 2px; }
 .insp-body .card { border: 0; box-shadow: none; padding: 0; margin: 0 0 var(--s-3); background: none; }

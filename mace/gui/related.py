@@ -146,7 +146,7 @@ def _props_geometry(path: Path) -> Optional[Dict[str, Any]]:
 
 def _cube_geometry(path: Path) -> Optional[Dict[str, Any]]:
     """A Gaussian cube's own atoms and cell (Bohr in the file), read from its header only."""
-    bohr = 0.529177210903
+    from mace.constants import BOHR_TO_ANGSTROM as bohr
     try:
         with open(path, errors="replace") as fh:
             head = [fh.readline() for _ in range(6)]

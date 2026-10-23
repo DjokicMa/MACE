@@ -20,10 +20,10 @@
 
 /* the document a panel refers to: "Atoms · NaCl.cif", "Inspector · NaCl.cif" */
 .bottom-tabs > .pc-doc { margin-left: auto; align-self: center; flex: 0 1 auto; min-width: 0; max-width: 50%; padding-left: var(--s-4);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 400 var(--fs-xs)/1 var(--font-sans); }
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 400 var(--fs-xs)/1.4 var(--font-sans); }
 .insp-bar-title:has(+ .pc-doc) { flex: none; }
 .insp-bar > .pc-doc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--text-3); font: 400 var(--fs-xs)/1 var(--font-sans); }
+  color: var(--text-3); font: 400 var(--fs-xs)/1.4 var(--font-sans); }
 
 /* a structure borrowed from the run a plot, spectrum or volume came from: read-only, and said so */
 .bottom-pane.atoms .pc-from { display: flex; align-items: center; gap: var(--s-2) var(--s-3); flex-wrap: wrap; padding: var(--s-1) var(--s-3);
@@ -33,3 +33,57 @@
 .pc-from .pc-from-proj { flex-basis: 100%; color: var(--text-3); }
 .pc-ro .kv td.num { font-variant-numeric: tabular-nums; }
 .pc-ro .pc-ro-src { overflow-wrap: anywhere; }
+
+/* 1.1.6: a file name's underscores ("Inspector · NaCl_opt.out") sit below the baseline: the labels above
+ * clip at their own line box (overflow: hidden), so it is 1.4, not 1, tall */
+
+/* ---------------------------------------------------------------- the Inspector column's tabs (js/inspector_tiers.js)
+ * Inspector | Setup on top (they scroll away; the Inspector's own header stays); Basic | Advanced at the right */
+.insp-tabs { display: flex; align-items: center; gap: var(--s-2); min-height: 34px;
+  padding: var(--s-1) var(--s-2); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.insp-tabs-list { display: flex; gap: 2px; flex: 1; min-width: 0; }
+.insp-tab { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 26px; padding: 0 var(--s-3); border: 1px solid transparent;
+  border-radius: var(--r-md); background: none; color: var(--text-2); font: 600 var(--fs-sm)/1.4 var(--font-sans); cursor: pointer; white-space: nowrap; }
+.insp-tab .i { width: 14px; height: 14px; }
+.insp-tab:hover { background: var(--surface-3); color: var(--text); }
+.insp-tab[aria-selected="true"] { background: var(--surface); border-color: var(--border); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.insp-tab[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.insp-tier button { min-height: 24px; padding: 0 var(--s-2); font-size: var(--fs-xs); }
+/* Setup fills the rest of the column */
+#inspector > .insp-tabs + .setup { height: auto; flex: 1 1 0; min-height: 0; }
+#inspector:has(> .setup) > .insp-tabs { flex: none; }
+
+/* Basic hides what is tagged advanced; a section that hid some ends with a button that shows them */
+#inspector[data-insp-tier="basic"] [data-tier="advanced"] { display: none !important; }
+.tier-more { display: block; margin: var(--s-2) 0 0 auto; padding: 2px var(--s-2); border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--accent); font: 500 var(--fs-xs)/1.4 var(--font-sans); cursor: pointer; }
+.tier-more:hover { background: var(--accent-soft); }
+.tier-more::before { content: "+ "; }
+
+/* ---------------------------------------------------------------- the N × M × L cells picker (js/cells_picker.js) */
+.cells-pick { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-1) var(--s-2); }
+.cells-pick .cells-k { min-width: 4.5em; }
+.cells-in { display: inline-flex; align-items: center; gap: 2px; }
+.cells-in .cells-n { width: 3.4em; padding: 2px 2px 2px var(--s-1); text-align: center; font-variant-numeric: tabular-nums; }
+.cells-in .cells-n:disabled { opacity: .55; }
+.cells-x { color: var(--text-3); font-size: var(--fs-sm); }
+.cells-link { font: 600 var(--fs-sm)/1 var(--font-mono); }
+.cells-link[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.cells-preset { width: auto; max-width: 7.5em; }
+.cells-dlg { display: grid; gap: var(--s-3); min-width: 280px; }
+
+/* ---------------------------------------------------------------- the activity bar (js/activity_prefs.js) */
+.shell.no-activity { grid-template-columns: 0 var(--w-explorer) 4px minmax(0, 1fr) 4px var(--w-inspector); }
+.shell.no-activity.no-explorer { grid-template-columns: 0 0 0 minmax(0, 1fr) 4px var(--w-inspector); }
+.shell.no-activity.no-inspector { grid-template-columns: 0 var(--w-explorer) 4px minmax(0, 1fr) 0 0; }
+.shell.no-activity.no-explorer.no-inspector { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0; }
+.shell.no-activity > .activity { display: none; }
+.activity .icon-btn.act-dragging { opacity: .45; }
+.activity .icon-btn.act-drop { box-shadow: inset 0 2px 0 var(--accent); }
+
+/* the classic 2×2×2 checkbox stays for the scripts that set it; the cells picker (Range) replaced it on screen */
+label:has(> #opt-super) { display: none !important; }
+
+/* 1.1.6: the right editor group's bottom panel has its own × (shell.js paneBottomX), shown where the
+ * pane hides the window's panel controls */
+html.pane-side.pane-bottom #bottom > .panel-hide.pane-x { display: grid; }

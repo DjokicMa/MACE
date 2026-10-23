@@ -74,6 +74,7 @@ function render() {
   const counts = {};
   SCHEMA.forEach((r) => { if (matchRow(r, q)) counts[r.section] = (counts[r.section] || 0) + 1; });
   if (q && "keyboard shortcuts keymap keybindings".includes(q)) counts.keyboard = 1;
+  if (q && "ml potentials mlip machine learning mace-torch mace-mpa chgnet environment install weights".includes(q)) counts.mlip = 1;
   nav.querySelectorAll("[data-sec]").forEach((b) => {
     const k = b.dataset.sec;
     b.classList.toggle("active", !q && k === section);
@@ -96,6 +97,13 @@ function render() {
     pane.innerHTML = `<h3 class="set-h">${H.esc(title)}</h3><div id="cluster-defaults-host"><p class="muted">Loading…</p></div>`;
     import("./cluster_defaults.js").then((m) => m.mount(pane.querySelector("#cluster-defaults-host"), H)).catch((e) => {
       const host = pane.querySelector("#cluster-defaults-host"); if (host) host.textContent = `The cluster defaults did not load: ${e.message}`; });
+    return;
+  }
+  if (section === "mlip") {
+    // the ML environment and weights, installed through mace mlip install's code (mlip_setup.js)
+    pane.innerHTML = `<h3 class="set-h">${H.esc(title)}</h3><div id="mlip-host"><p class="muted">Loading…</p></div>`;
+    import("./mlip_setup.js").then((m) => m.mount(pane.querySelector("#mlip-host"), H)).catch((e) => {
+      const host = pane.querySelector("#mlip-host"); if (host) host.textContent = `ML potentials did not load: ${e.message}`; });
     return;
   }
   if (section === "keyboard") {
@@ -384,6 +392,7 @@ function onClick(e) {
   if (act.dataset.act === "export") chooser("export");
   else if (act.dataset.act === "export-go") exportProfile();
   else if (act.dataset.act === "palette-editor") H.elementColors();
+  else if (act.dataset.act === "calculate-bonds") H.run("build.calculateBonds");
   else if (act.dataset.act === "import") pane.querySelector("#set-import").click();
   else if (act.dataset.act === "import-go") applyImport();
   else if (act.dataset.act === "reset-all") chooser("reset");

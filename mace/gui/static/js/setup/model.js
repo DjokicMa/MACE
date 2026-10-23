@@ -35,6 +35,29 @@ export function modeOf(doc, info) {
   return { mode: null, why: "kind" };
 }
 
+/** The calculation type's entry in setup/schema calc_groups (the workflow's prerequisites,
+ * mace/workflow/common/constants.py SETUP_CALC_GROUPS), or null. */
+export function calcEntry(groups, calc) {
+  for (const g of (groups && groups.groups) || []) for (const t of g.types) if (t.calc === calc) return t;
+  return null;
+}
+
+/** Why this document cannot be set up for `calc`, "" when it can (Calculation Setup's types and
+ * the Calculation menu alike). info: {dirty, frame, freq, optOpen} (optOpen: an optimization
+ * without OPT END - CONVERGED). A type that reads a computed run needs a finished OPT or SP output. */
+export function calcBlocked(groups, calc, doc, info) {
+  const t = calcEntry(groups, calc), needs = (groups && groups.needs) || {};
+  if (!t) return "Not a calculation type of Setup";
+  const mo = modeOf(doc, info);
+  if (!mo.mode) return `Needs ${needs.structure || "a structure, a deck or an output"}`;
+  if (t.needs !== "run") return "";
+  const what = `Needs ${needs.run || "a finished OPT or SP output (.out)"}`;
+  if (!mo.out) return `${what}; this is ${mo.deck ? "a deck" : "a structure"}`;
+  if (info && info.freq) return `${what}; this is a FREQ run`;
+  if (info && info.optOpen) return `${what}; this optimization has not converged (no OPT END - CONVERGED)`;
+  return "";
+}
+
 /** The CLI mode for a follow-up's calculation type. */
 export function followMode(calc, calcTypes) {
   return (calcTypes.opt2d3 || []).includes(calc) ? "opt2d3" : "opt2d12";
@@ -50,6 +73,8 @@ export function request(st, source, docId, preview) {
   const body = { source, calc_type: st.calc, answers: { ...st.answers }, patches: { ...st.patches },
     preview: !!preview, doc: String(docId), wait: 0.3 };
   if (st.hand !== null && st.hand !== undefined) body.json_text = st.hand;
+  // --static-kpath (BAND): kept with the other switches so undo, redo and a reopened draft carry it
+  if (st.mode === "opt2d3" && st.flags && st.flags.static_kpath) body.static_kpath = true;
   return body;
 }
 
@@ -71,6 +96,14 @@ export function applyEdit(st, field, value) {
   }
   st.hand = null;
   return `${field.label} ${was ?? "default"} → ${value === null ? "default" : value}`;
+}
+
+/** A menu option as a row shows it: the number the CLI gives it first ("3 - Hybrid"), so "option 3" in the CLI,
+ * the docs and a saved answer means the same line here. An option with no number shows its name. */
+export function optionLabel(o) {
+  // a preset level shows the values it sets ("2 - Tight (TOLINTEG: 8 8 8 9 24, TOLDEE: 9)")
+  const v = o && o.values ? ` (${o.values})` : "";
+  return (o && o.num !== undefined && o.num !== null && o.num !== "" ? `${o.num} - ${o.head}` : String(o.head)) + v;
 }
 
 export function isDefault(field, value) {

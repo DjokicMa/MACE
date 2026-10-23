@@ -11,7 +11,9 @@ and Open Folder's "Scratch" chip agree (/api/info.scratch).
 * ``allowed_roots(cli_roots, env)``: ``--root DIR`` (repeatable) or
   ``MACE_GUI_ROOTS`` (os.pathsep list) replace the defaults; ``--root none``
   or ``MACE_GUI_ROOTS=`` (set, empty) turn Open Folder off (returns None).
-  The defaults are your home folder and the scratch roots.
+  The defaults are your home folder, the scratch roots and the research
+  spaces you can use (``research_roots``: your groups' folders under /mnt/research on
+  MSU's HPCC).
 
 Standard library only.
 """
@@ -100,6 +102,19 @@ def scratch_roots(env: Optional[Mapping[str, str]] = None,
     return out
 
 
+def research_roots(env: Optional[Mapping[str, str]] = None) -> List[Path]:
+    """The shared research spaces you can enter (mace.cluster.research): a
+    folder per group you belong to under /mnt/research, plus [quota]
+    research_paths. Empty where there are none; never raises."""
+    try:
+        from mace.cluster import config as cluster_config
+        from mace.cluster import research
+        cfg = cluster_config.load()
+        return [Path(s["real"]) for s in research.usable_spaces(cfg)]
+    except Exception:
+        return []
+
+
 def parse_roots(value: str) -> List[str]:
     return [x for x in value.split(os.pathsep) if x.strip()]
 
@@ -118,7 +133,7 @@ def allowed_roots(cli_roots: Optional[Sequence[str]] = None,
             return None
     else:
         home = e.get("HOME") or os.path.expanduser("~")
-        return _dedupe([Path(home)] + scratch_roots(e))
+        return _dedupe([Path(home)] + scratch_roots(e) + research_roots(e))
     return _dedupe([Path(os.path.expanduser(str(r))) for r in raw])
 
 
@@ -140,6 +155,8 @@ def root_label(p: Path, env: Optional[Mapping[str, str]] = None) -> str:
         return "Home"
     if p in scratch_roots(e):
         return "Scratch"
+    if p in research_roots(e):
+        return f"Research: {p.name}"
     return p.name or str(p)
 
 

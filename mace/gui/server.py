@@ -216,7 +216,8 @@ DENY_CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-sr
             "form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
 # POST routes that do not act on the served folder (a stale page may still use them)
 ROOT_FREE_POSTS = {"open-folder", "session/touch", "shutdown", "login-code", "diagnostics", "settings", "profile", "palettes",
-                   "managed/attach", "managed/ping", "managed/detach", "managed/stop", "update/check", "update/choose"}
+                   "managed/attach", "managed/ping", "managed/detach", "managed/stop", "update/check", "update/choose",
+                   "mlip/plan", "mlip/install", "mlip/record", "mlip/fetch"}
 
 
 class GuiState:
@@ -486,8 +487,17 @@ class GuiState:
                 return
             raise saving.ProtectedOutput(why)
 
+    def out_dir(self, path: Path) -> Path:
+        """A folder the server (or a CLI it runs) is about to write into, with
+        its symlinks resolved: inside the root and not hidden, or PermissionError."""
+        real = self.resolve(self.rel_new(path) or ".", must_exist=False)
+        self.rel_new(real)
+        return real
+
     def list_files(self) -> Dict[str, Any]:
         from . import roots as gui_roots
+        from ..examples_suite import hydrate_for_root     # the bundled example suite: unpack on first listing
+        hydrate_for_root(self.root)
         files: List[Dict[str, Any]] = []
         truncated = False
 
@@ -520,11 +530,15 @@ class GuiState:
                     if resolved != self.root and self.root not in resolved.parents:
                         continue
                     st = p.stat()
+                    sub = filekind.f25_sub(p) if kind == "f25" else ""
+                    # a phonon run's band or DOS fort.25 (Add Phonon DOS… / Add Phonon Bands… list only these)
+                    phonon = sub in ("BAND", "DOSS") and filekind.f25_phonon(p)
                 except OSError:
                     continue
                 files.append({"path": p.relative_to(self.root).as_posix(),
                               "name": p.name, "kind": kind, "size": st.st_size,
-                              "mtime": st.st_mtime, "mtime_ns": str(int(st.st_mtime_ns))})
+                              "mtime": st.st_mtime, "mtime_ns": str(int(st.st_mtime_ns)),
+                              **({"sub": sub} if sub else {}), **({"domain": "phonon"} if phonon else {})})
 
         walk(self.root, 0)
         self.note_names(*(f["path"] for f in files[:2000]))
@@ -541,7 +555,9 @@ class GuiState:
         if path is None or not path.is_file():
             return None
         ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        if ctype.startswith("text/") or ctype in ("application/javascript",):
+        if path.suffix == ".webmanifest":       # the web app manifest; not in every Python's table
+            ctype = "application/manifest+json"
+        if ctype.startswith("text/") or ctype in ("application/javascript", "application/manifest+json"):
             ctype += "; charset=utf-8"
         key = (name, gz)
         with self.lock:
@@ -993,6 +1009,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return self._json(out)
             if route in ("volume", "volume/grid", "volume/slice"):
                 return _volume_get(self, route, query)
+            if route == "volume/plane":
+                from . import volume as gui_volume_plane
+                return gui_volume_plane.plane_route(self, query)
+            if route in ("anim/caps", "anim/result"):
+                from . import animexport
+                return animexport.get_route(self, route, query)
             if route in ("orbitals", "orbitals/grid"):
                 from . import orbitals as gui_orbitals
                 return gui_orbitals.get_route(self, route, query)
@@ -1133,7 +1155,7 @@ class GuiHandler(BaseHTTPRequestHandler):
                 p = st.resolve(self._q(query, "path"))
                 kind = self._q(query, "kind") or plots.kind_of(p) or classify(p.name)
                 if kind not in plots.KINDS:
-                    return self._error(400, f"{p.name} is not a BAND, DOSS, IRSPEC or RAMSPEC data file")
+                    return self._error(400, f"{p.name} is not a BAND, DOSS, IRSPEC, RAMSPEC or BOLTZTRA data file")
                 fmt = self._q(query, "format", "") or ""
                 if fmt and fmt not in plots.FORMATS:
                     raise ValueError(f"format is one of {', '.join(plots.FORMATS)}")
@@ -1155,10 +1177,23 @@ class GuiHandler(BaseHTTPRequestHandler):
                 env = gui_folderprefs.cli_env(st.root)
                 explicit = env.get(gui_folderprefs.F.ENV, "none") != "none"
                 look = plots.look_args(kind, lambda k: self._q(query, k), explicit)
+                # a transport plot: its quantity, component, temperature, x axis, κ_L and τ on screen
+                # (--quantity ...; a κ_L table inside the folder is copied along)
+                extra = []
+                if kind == "transport":
+                    flags, extra = plots.transport_args(lambda k: self._q(query, k),
+                                                        lambda name: _beside_then_root(st, p, name))
+                    extra = [f for f in extra if filekind.rel_inside(st, f) is not None]
+                    look = look + flags
+                # band + DOS from two folders (Add DOS…, Add Band…): the other half, inside the served folder
+                partner = st.resolve(self._q(query, "partner")) if self._q(query, "partner") else None
+                if partner is not None and (kind not in plots.PAIR_KINDS or not partner.is_file()):
+                    raise ValueError("partner is the band or DOS file of a kind=bandos (or phbandos) plot")
                 t = cli_task(st, "plot", f"Plot {p.name} with mace plotting",
                              lambda ctx: plots.render(p, kind, st.disk, ctx, fmt, band_path, ewin, env,
                                                       shift, eref, look, explicit,
-                                                      inside=lambda f: filekind.rel_inside(st, f) is not None),
+                                                      inside=lambda f: filekind.rel_inside(st, f) is not None,
+                                                      extra_files=extra, partner=partner),
                              client=self.headers.get("X-Mace-Client"))
                 return gui_tasks.answer(self, st.tasks, t, 0.3 if self._q(query, "detach") == "1" else 600)
             if route == "spectrum":
@@ -1209,7 +1244,18 @@ class GuiHandler(BaseHTTPRequestHandler):
                 p = st.resolve(self._q(query, "path"))
                 if not p.is_file():
                     raise FileNotFoundError(st.rel(p))
-                data = results.transport_data(p)
+                # the quantity (a file of the run beside it, or one derived from them: pf, kappa_e, zt,
+                # lorenz, sigma_tau, pf_tau; default the file's own), and for ZT the lattice κ_L (a value,
+                # or a T,kappa_L CSV inside the folder) and τ: mace.utils.transport_plot, as mace plotting
+                kl = self._q(query, "kappa_l", "").strip() or None
+                if kl is not None:
+                    try:
+                        float(kl)
+                    except ValueError:
+                        kl = str(_beside_then_root(st, p, kl))
+                data = results.transport_data(p, self._q(query, "quantity", "").strip() or None, kl,
+                                              self._q(query, "tau_fs", "").strip() or None,
+                                              inside=lambda f: filekind.rel_inside(st, f) is not None)
                 data["path"] = st.rel(p)
                 data["siblings"] = {k: r for k, v in data["siblings"].items()
                                     if (r := filekind.rel_inside(st, p.with_name(v))) is not None}
@@ -1220,6 +1266,14 @@ class GuiHandler(BaseHTTPRequestHandler):
                     raise FileNotFoundError(st.rel(p))
                 data = _stable_parse(p, lambda: results.bz_data(p, inside=lambda f: filekind.rel_inside(st, f) is not None))
                 return self._json({**data, "path": st.rel(p)})
+            if route == "kpath":
+                # the k-path a band structure was computed along (the Inspector's Brillouin zone section): its
+                # deck's segments, ISS and k points, or a fort.25's / BAND.DAT's own records
+                p = st.resolve(self._q(query, "path"))
+                if not p.is_file():
+                    raise FileNotFoundError(st.rel(p))
+                info = results.kpath_info(p, inside=lambda f: filekind.rel_inside(st, f) is not None)
+                return self._json({"path": st.rel(p), "found": info is not None, **(info or {})})
             if route == "transport-zt":
                 # ZTₑ and, with a lattice κ_L (a value in W/(m·K), or a T,kappa_L CSV inside the
                 # folder), the total ZT: the numbers of `mace analyze --kappa-lattice` (results.transport_zt)
@@ -1239,12 +1293,28 @@ class GuiHandler(BaseHTTPRequestHandler):
             if route in ("bands", "dos"):
                 p = st.resolve(self._q(query, "path"))
                 kind = "band" if route == "bands" else "dos"
-                data = _stable_parse(p, lambda: results.band_data(p) if kind == "band" else results.dos_data(p))
+                # a fort.25: its domain (auto, electronic, phonon) and which of its runs (1-based; none: the last)
+                f25kw = {"domain": self._q(query, "domain", "") or "auto",
+                         "run": int(self._q(query, "run", "") or 0) - 1 if int(self._q(query, "run", "") or 0) > 0 else -1}
+                # and the energy zero: auto (the vacuum scale with the run's POTC files), fermi or vacuum
+                reference = self._q(query, "reference", "") or "auto"
+                if reference not in ("auto", "fermi", "vacuum"):
+                    raise ValueError("reference is one of auto, fermi, vacuum")
+                data = _stable_parse(p, lambda: results.band_data(p, reference, **f25kw) if kind == "band" else results.dos_data(p, reference, **f25kw))
                 # the run's other half only when it is inside the served folder (a symlink out is not offered)
                 other = results.partner(p, kind)
                 data["path"] = st.rel(p)
                 data["partner"] = filekind.rel_inside(st, other)
                 return self._json(data)
+            if route == "bandos-pair":
+                # a band file and a DOS file of one system in two folders (Add DOS…, Add Band…): the same formula
+                # (else refused), cell and E_F (else warned; the DOS then drawn on the band run's E_F)
+                band, dos = st.resolve(self._q(query, "band")), st.resolve(self._q(query, "dos"))
+                for f in (band, dos):
+                    if not f.is_file():
+                        raise FileNotFoundError(st.rel(f))
+                data = results.pair_check(band, dos, inside=lambda f: filekind.rel_inside(st, f) is not None)
+                return self._json({**data, "band_path": st.rel(band), "dos_path": st.rel(dos)})
             if route == "plot-image":
                 f = plots.cached_file(st.disk.root, self._q(query, "key", ""),
                                       self._q(query, "name", ""))
@@ -1314,6 +1384,24 @@ class GuiHandler(BaseHTTPRequestHandler):
             if route.startswith("workflow/"):
                 from . import workflow_routes
                 return workflow_routes.handle(self, "GET", route, query)
+            if route.startswith("calc/"):
+                from . import calc_routes            # the Calculators panel (mace calc)
+                return calc_routes.handle(self, "GET", route, query)
+            if route.startswith("mlip/"):
+                from . import mlip_routes            # Settings › ML potentials (mace mlip install)
+                return mlip_routes.handle(self, "GET", route, query)
+            if route.startswith("analysis/"):
+                from . import analysis_routes      # Analysis › Structure Analysis (mace analyze)
+                return analysis_routes.handle(self, "GET", route, query)
+            if route.startswith("phonopy/"):
+                from . import phonopy_routes          # the Phonopy dialog (1.1.6)
+                return phonopy_routes.handle(self, "GET", route, query)
+            if route.startswith("elastic/") or route.startswith("tau/"):
+                from . import mechanics_routes        # mechanical properties, transport tau (1.1.6)
+                return mechanics_routes.handle(self, "GET", route, query)
+            if route.startswith("properties/"):
+                from . import properties_routes       # the bottom panel's Properties tab (1.1.6)
+                return properties_routes.handle(self, "GET", route, query)
             if route.startswith("test/") and st.test_hooks:
                 if route == "test/gate":
                     return self._json(compute.GATE.stats())
@@ -1587,8 +1675,9 @@ class GuiHandler(BaseHTTPRequestHandler):
         from mace import __version__
         st = self.state
         from .paths import root_aliases
+        from .helplinks import docs_ref
         return {"version": __version__, "root": str(st.root), "home": _home(), "aliases": root_aliases(),
-                "hostname": socket.gethostname(),
+                "hostname": socket.gethostname(), "docs_ref": docs_ref(__version__),
                 "docs": str(Path(__file__).resolve().parents[2] / "docs" / "gui.md"),
                 "plotly": plotly_js() is not None, "static": st.version,
                 "heartbeat": HEARTBEAT_S, "tunnel": getattr(st, "tunnel", ""), "dir_hash": st.dir_hash,
@@ -1599,6 +1688,8 @@ class GuiHandler(BaseHTTPRequestHandler):
                 "cpu_limit_s": _cpu_limit(), "cpu": getattr(st, "cpu_state", None),
                 "slurm": getattr(st, "slurm_state", None) if os.environ.get("MACE_GUI_SLURM") else None,
                 "roots": _roots_list(st), "start_dir": str(st.start_dir),
+                # 1.1.6: the Inspector's detail where the user has not chosen one (basic unless set)
+                "inspector_tier": os.environ.get("MACE_GUI_INSPECTOR_TIER") or None,
                 "resources": resources.report(gui_settings.load(), st.cache_used())}
 
     def _read_json_body(self) -> Dict[str, Any]:
@@ -1676,6 +1767,9 @@ class GuiHandler(BaseHTTPRequestHandler):
                 return _preflight_route(self, body)
             if route in ("volume/combine", "volume/mep_range", "volume/save", "volume/check"):
                 return _volume_post(self, route, body)
+            if route in ("anim/start", "anim/frame", "anim/encode", "anim/render", "anim/cancel"):
+                from . import animexport
+                return animexport.post_route(self, route, body)
             if route == "orbitals/save":
                 from . import orbitals as gui_orbitals
                 return gui_orbitals.post_route(self, route, body)
@@ -1810,6 +1904,24 @@ class GuiHandler(BaseHTTPRequestHandler):
             if route.startswith("workflow/"):
                 from . import workflow_routes
                 return workflow_routes.handle(self, "POST", route, body)
+            if route.startswith("calc/"):
+                from . import calc_routes
+                return calc_routes.handle(self, "POST", route, body)
+            if route.startswith("mlip/"):
+                from . import mlip_routes
+                return mlip_routes.handle(self, "POST", route, body)
+            if route.startswith("analysis/"):
+                from . import analysis_routes
+                return analysis_routes.handle(self, "POST", route, body)
+            if route.startswith("phonopy/"):
+                from . import phonopy_routes
+                return phonopy_routes.handle(self, "POST", route, body)
+            if route.startswith("elastic/") or route.startswith("tau/"):
+                from . import mechanics_routes
+                return mechanics_routes.handle(self, "POST", route, body)
+            if route.startswith("properties/"):
+                from . import properties_routes
+                return properties_routes.handle(self, "POST", route, body)
             if route.startswith("test/") and st.test_hooks:
                 if route == "test/parse_cache/clear":
                     with st.parse_cache.lock:
@@ -2253,7 +2365,7 @@ def _time_limit(value) -> float:
 def _internal(atoms) -> Dict[str, Any]:
     return {"cell": atoms.cell.array, "frac": atoms.get_scaled_positions(wrap=False),
             "cart": atoms.positions, "numbers": [int(n) for n in atoms.numbers],
-            "pbc": [True, True, True]}
+            "pbc": [bool(x) for x in atoms.pbc]}
 
 
 def _undo_limit() -> int:
@@ -2330,7 +2442,11 @@ def _from_structure(st, body: Dict[str, Any]):
     if any(not 1 <= n <= 103 for n in numbers):
         raise ValueError("atomic numbers must be 1 to 103")
     from ase import Atoms
-    atoms = Atoms(numbers=numbers, cell=cell, scaled_positions=frac, pbc=True)
+    pbc = body.get("pbc")
+    pbc = [bool(x) for x in pbc] if isinstance(pbc, list) and len(pbc) == 3 else [True, True, True]
+    atoms = Atoms(numbers=numbers, cell=cell, scaled_positions=frac, pbc=pbc)
+    if not all(pbc):                       # a slab, polymer or molecule's draft (1.1.6)
+        atoms.info.update(structures.nonperiodic_info(body))
     label = str(body.get("label") or f"Restored {name}")[:120]
     sess = st.sessions.add(_session(atoms, Path(name).stem if "." in name else name, body, label))
     meta = body.get("meta")
@@ -2494,10 +2610,12 @@ def _edit_route_inner(handler, route: str, body: Dict[str, Any]):
             before = sess.atoms.copy()
             symprec = sess.symprec
         try:
-            res = gui_clean.clean(before, keep_symmetry=bool(body.get("keep_symmetry", True)),
+            res = gui_clean.clean(before, keep_symmetry=bool(body.get("keep_symmetry", True)) and all(before.pbc),
                                   relax_cell=bool(body.get("relax_cell", False)),
                                   symprec=max(symprec, 1e-5),
-                                  time_limit=_time_limit(body.get("time_limit", 10)))
+                                  time_limit=_time_limit(body.get("time_limit", 10)),
+                                  bond_rule=structures.bond_rule(body.get("bonds")),
+                                  bonds_held=gui_clean.check_bonds_held(body.get("bonds_held")))
         finally:
             with sess.lock:
                 sess.busy = False
@@ -2513,7 +2631,7 @@ def _edit_route_inner(handler, route: str, body: Dict[str, Any]):
             except editor.StaleRev as exc:
                 return _stale(handler, sess, exc)
         before_p = structures._payload(before.cell.array, before.get_scaled_positions(wrap=False),
-                                       before.positions, before.numbers, (True, True, True),
+                                       before.positions, before.numbers, tuple(bool(x) for x in before.pbc),
                                        {"kind": "edit", "path": "before Clean"})
         return handler._json({"structure": payload, "before": before_p,
                               "comparison": comparison,
@@ -3491,7 +3609,7 @@ def _freq_route(handler, query):
         nd = {len(v) for v in parsed["displacements"].values()}
         return {"path": st.rel(p), "modes": parsed["modes"], "structure": gui_cache.pack(geo),
                 "n_atoms": n, "mode_atoms": max(nd) if nd else 0, "section_bytes": parsed["section_bytes"],
-                "n_frames": idx.n_steps, "dim": idx.dim, "gamma": bool(parsed.get("gamma", True)),
+                "n_frames": idx.n_steps, "dim": idx.dim, "gamma": bool(parsed.get("gamma", True)), "born": bool(parsed.get("born")),
                 "imaginary": [m for m in parsed["modes"] if m["imaginary"]]}
     hit = st.parse_cache.get(key)
     if hit is not None:
@@ -3575,13 +3693,15 @@ def _volume_get(handler, route, query):
         return gui_tasks.answer(handler, st.tasks, t, 120)
     p = _cube_path(st, q("path"))
     quality = q("quality", "medium")
-    if quality not in ("low", "medium", "high"):
-        raise ValueError("quality is low, medium or high")
-    key = gui_cache.file_key(p, ("volume", quality))
+    # 1.1.6: the mesh presets' grid (Publication) and the Advanced knobs; the cache key holds what was asked
+    from . import volume as gui_volume
+    kn = gui_volume.mesh_knobs(quality, q("points", None), q("upsample", None))
+    extra = () if q("points", None) is None and q("upsample", None) is None else (kn["points"], kn["upsample"])
+    key = gui_cache.file_key(p, ("volume", quality) + extra)
     hit = st.parse_cache.get(key)
     if hit is not None and st.parse_cache.get(("volgrid", hit["token"])) is not None:
         return handler._json({**hit["meta"], "path": st.rel(p)})
-    t = st.tasks.submit("volume", f"Reading {p.name}", "volume.load", {"path": str(p), "quality": quality},
+    t = st.tasks.submit("volume", f"Reading {p.name}", "volume.load", {"path": str(p), "quality": quality, **kn},
                         client=handler.headers.get("X-Mace-Client"), finish=_volume_finish(st, key))
     return gui_tasks.answer(handler, st.tasks, t, float(q("wait", "0.3")))
 
@@ -3634,10 +3754,10 @@ def _volume_post(handler, route, body):
     names = [x.name for x in paths]
     if route == "volume/combine":
         quality = str(body.get("quality") or "medium")
-        if quality not in ("low", "medium", "high"):
-            raise ValueError("quality is low, medium or high")
+        from . import volume as gui_volume
+        kn = gui_volume.mesh_knobs(quality, body.get("points"), body.get("upsample"))
         t = st.tasks.submit("volume", "Volume difference", "volume.combine",
-                            {"paths": [str(x) for x in paths], "coefficients": coefs, "quality": quality, "names": names},
+                            {"paths": [str(x) for x in paths], "coefficients": coefs, "quality": quality, "names": names, **kn},
                             client=client, finish=_volume_finish(st, None))
         return gui_tasks.answer(handler, st.tasks, t, float(body.get("wait", 0.3)))
     # volume/save: a new .CUBE beside the first operand's folder or where named; never over a file
@@ -4017,8 +4137,8 @@ def _supercell_matrix(params):
 def _supercell_estimate(src, params):
     import numpy as np
     m = _supercell_matrix(params)
-    if not all(src.atoms.pbc):          # a slab or polymer: along its periodic directions only
-        builders.check_periodic(m, src.atoms.pbc)
+    if not all(src.atoms.pbc):          # a slab or polymer: along its periodic directions (or at a vacuum spacing)
+        builders.check_supercell(m, src.atoms.pbc, params.get("vacuum"))
     det = int(round(np.linalg.det(m)))
     n = det * len(src.atoms)
     if n > MAX_BUILD_ATOMS:
@@ -4139,7 +4259,8 @@ BUILD_KINDS: Dict[str, BuildKind] = {
                         lambda src, params: f"{str(params.get('kind') or 'vacancy').title()} in {src.label}"),
     "slab": BuildKind("slab", _slab_estimate, _slab_args,
                       lambda src, params: f"Slab ({_hkl_text(_slab_args(src, params)['hkl'])}), {int(params.get('layers', 5))} layers of {src.label}"),
-    "supercell": BuildKind("supercell", _supercell_estimate, lambda src, params: {"matrix": _supercell_matrix(params).tolist()},
+    "supercell": BuildKind("supercell", _supercell_estimate, lambda src, params: {"matrix": _supercell_matrix(params).tolist(),
+                                                                                   "vacuum": params.get("vacuum")},
                            _supercell_title),
     # fake_n: the size the build pretends to have (the frame's tests: the pool path on a small cell)
     "identity": BuildKind("identity", lambda src, params: {"n": int(params.get("fake_n") or len(src.atoms)),
@@ -4204,8 +4325,16 @@ def _finish_build(st, raw, src, kind, params, open_as, client) -> Dict[str, Any]
         if k in raw:
             out[k] = raw[k]
     pbc = tuple(raw.get("pbc", (True, True, True)))
-    if n <= editor.MAX_ATOMS and all(pbc):
-        atoms = Atoms(numbers=[int(z) for z in raw["numbers"]], cell=raw["cell"], scaled_positions=raw["frac"], pbc=True)
+    if n <= editor.MAX_ATOMS:                # slabs, polymers and molecules edit too (1.1.6)
+        atoms = Atoms(numbers=[int(z) for z in raw["numbers"]], cell=raw["cell"], scaled_positions=raw["frac"],
+                      pbc=[bool(x) for x in pbc])
+        if not all(pbc):
+            kept = {k: v for k, v in (src.atoms.info or {}).items() if str(k).startswith("mace_")}
+            kept = kept or structures.nonperiodic_info(src.payload or {})
+            ri = raw.get("info") or {}
+            if ri.get("repeats"):        # a supercell repeated along a non-periodic axis: its new period there
+                kept = structures.repeated_info(kept, ri["repeats"], ri.get("spacing") or [None, None, None])
+            atoms.info.update(kept)
         sess = st.sessions.add(editor.EditSession(atoms, name, float(open_as.get("symprec", 1e-3)), label=label,
                                                   locked=bool(open_as.get("locked", False)), undo_limit=_undo_limit(),
                                                   wrap=bool(open_as.get("wrap", False))))
@@ -4221,7 +4350,7 @@ def _finish_build(st, raw, src, kind, params, open_as, client) -> Dict[str, Any]
     st.ledger.enforce()
     out.update({"held": hid, "structure": packed, "view_only": True,
                 "reason": (f"Editing is limited to {editor.MAX_ATOMS} atoms; this one has {n:,}" if n > editor.MAX_ATOMS
-                           else "Editing needs a 3D periodic cell")})
+                           else "This structure opens view-only")})
     return out
 
 
@@ -4452,6 +4581,7 @@ def _clean_route(handler, body: Dict[str, Any]):
     method = str(body.get("method") or "springs")
     try:
         kind = core.method_kind(method)
+        held = gui_clean.check_bonds_held(body.get("bonds_held"))      # Clean › Bonds held
     except ValueError as exc:
         return handler._json({"error": str(exc)}, 400)
     with sess.lock:
@@ -4486,15 +4616,18 @@ def _clean_route(handler, body: Dict[str, Any]):
     except (TypeError, ValueError):
         return handler._json({"error": "charge and uhf are whole numbers"}, 400)
     if kind == "springs" and len(before) <= INLINE_MAX:
-        if not gui_clean.bonded_pairs(before):
+        if held != "none" and not gui_clean.held_bonds(before, held, structures.bond_rule(body.get("bonds"))):
             return handler._json({"nothing_to_clean": True, "session": sess.id, "rev": rev,
-                                  "message": "nothing to clean: no bonded pairs (an all-metal cell or a lone atom; "
-                                             "the spring model draws no metal-metal bonds)"})
+                                  "message": gui_clean.NOTHING})
     d = core.defaults_for(method)
     limit = _clean_time_limit(body.get("time_limit", d["time_limit"]), method)
+    per = tuple(bool(x) for x in before.pbc)      # a slab, polymer or molecule: no space group to keep (1.1.6)
     args = {"cell": before.cell.array, "frac": before.get_scaled_positions(wrap=False), "numbers": before.numbers,
-            "keep_symmetry": body.get("keep_symmetry", True) is not False, "relax_cell": bool(body.get("relax_cell")),
-            "symprec": symprec, "time_limit": limit, "method": method, "charge": charge, "uhf": uhf}
+            "pbc": per, "keep_symmetry": body.get("keep_symmetry", True) is not False and all(per),
+            "relax_cell": bool(body.get("relax_cell")),
+            "symprec": symprec, "time_limit": limit, "method": method, "charge": charge, "uhf": uhf,
+            # the document's bond rule (Build › Calculate Bonds…): the springs hold the bonds its viewer draws
+            "bonds": body.get("bonds") if isinstance(body.get("bonds"), dict) else None, "bonds_held": held}
     if kind != "springs":
         tol = body.get("symmetrize_tol")
         args["symmetrize_tol"] = float(tol) if tol not in (None, "", False) else None
@@ -4525,12 +4658,12 @@ def _clean_route(handler, body: Dict[str, Any]):
 
     def finish(raw):
         from ase import Atoms
-        after = Atoms(numbers=raw["numbers"], cell=raw["cell"], scaled_positions=raw["frac"], pbc=True)
+        after = Atoms(numbers=raw["numbers"], cell=raw["cell"], scaled_positions=raw["frac"], pbc=list(per))
         comparison = structures.compare(_internal(before), _internal(after))
         rep = raw["report"]
         pre = raw.get("preopt") or {}
-        g0 = structures._gated_symmetry(before.cell.array, before.get_scaled_positions(), before.numbers, (True, True, True))
-        g1 = structures._gated_symmetry(after.cell.array, after.get_scaled_positions(), after.numbers, (True, True, True))
+        g0 = structures._gated_symmetry(before.cell.array, before.get_scaled_positions(), before.numbers, per)
+        g1 = structures._gated_symmetry(after.cell.array, after.get_scaled_positions(), after.numbers, per)
         changed = [r for r in comparison["bonds"] if abs(r["delta"]) > 0.01]
         steps = f"{rep['steps']} step{'' if rep['steps'] == 1 else 's'}"
         n_changed = sum(r["count"] for r in changed)
@@ -4552,10 +4685,10 @@ def _clean_route(handler, body: Dict[str, Any]):
                                        f"Clean Geometry ({ran_label}, {steps}, max shift "
                                        f"{comparison['max_displacement']:.3f} Å)")}
         before_p = structures._payload(before.cell.array, before.get_scaled_positions(wrap=False), before.positions,
-                                       before.numbers, (True, True, True), {"kind": "edit", "path": "before Clean"},
+                                       before.numbers, per, {"kind": "edit", "path": "before Clean"},
                                        symmetry_data=g0)
         after_p = structures._payload(after.cell.array, after.get_scaled_positions(wrap=False), after.positions,
-                                      after.numbers, (True, True, True), {"kind": "edit", "path": "Clean proposal"},
+                                      after.numbers, per, {"kind": "edit", "path": "Clean proposal"},
                                       symmetry_data=g1)
         out = {"proposal_id": pid, "session": sess.id, "base_rev": rev, "proposal": gui_cache.pack(after_p),
                "before": gui_cache.pack(before_p), "comparison": comparison, "changed_bonds": changed,
@@ -4642,7 +4775,7 @@ def _open_parsed(st, data: Dict[str, Any], name: str, label: str, fmt: str, clie
         meta.update(_clean_meta(extra_meta))
     n = len(data["numbers"])
     out = {"format": fmt, "format_name": structures.FORMAT_NAMES.get(fmt, fmt), "n": n, "name": stem}
-    if n <= editor.MAX_ATOMS and all(data["pbc"]) and n:
+    if n <= editor.MAX_ATOMS and n:          # slabs, polymers and molecules edit too (1.1.6)
         try:
             atoms = editor.atoms_from_payload(data)
         except editor.EditError:
@@ -4666,7 +4799,7 @@ def _open_parsed(st, data: Dict[str, Any], name: str, label: str, fmt: str, clie
     out.update({"held": hid, "structure": packed, "view_only": True,
                 "reason": (data.get("symmetry") or {}).get("note") if data.get("no_cell") else
                 (f"Editing is limited to {editor.MAX_ATOMS} atoms; this one has {n:,}" if n > editor.MAX_ATOMS
-                 else "Editing needs a 3D periodic cell")})
+                 else "It holds ghost or dummy atoms, which the editor cannot carry")})
     return out
 
 
@@ -4674,7 +4807,9 @@ def _save_route(handler, body: Dict[str, Any]):
     """POST /api/structure/save: the one save path (see saving.py)."""
     st = handler.state
     if not body.get("session") and isinstance(body.get("source"), dict) and body["source"].get("held"):
-        # a view-only built structure (no session): Save As writes it like any other
+        # a view-only built structure (no session): Save As writes it like any other.
+        # The path is refused before the structure is built (which may need ase).
+        saving.check_target(st, str(body.get("path") or ""))
         src = _source(st, body["source"])
         sl = _SessLike(src.atoms, src.name, doc_meta=src.meta)
         out = saving.save(st, sl, str(body.get("path") or ""), str(body.get("format") or "cif"),
@@ -4768,9 +4903,11 @@ def _legend(st, body: Dict[str, Any]) -> Dict[str, Any]:
     if colors is not None and not isinstance(colors, dict):
         raise ValueError("colors must be an object of element: '#rrggbb'")
     files = [st.resolve(x if x else ".") for x in paths] if paths is not None else None
+    # {element: pattern}: the print patterns the drawn structure's atoms carry (js/viewport/print_patterns.js)
     res = EL.legend(files, symbols=symbols, fmt=str(body.get("format") or "svg"), palette=body.get("palette") or None,
                     colors=colors, options=body.get("options") or {}, recursive=bool(body.get("recursive")),
-                    inside=lambda f: filekind.rel_inside(st, f) is not None)   # a folder's walk stays in the folder
+                    inside=lambda f: filekind.rel_inside(st, f) is not None,   # a folder's walk stays in the folder
+                    patterns=body.get("patterns") or None)
     root = st.root
 
     def rel(f: str) -> str:

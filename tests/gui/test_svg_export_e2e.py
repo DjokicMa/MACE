@@ -85,6 +85,63 @@ def test_one_circle_per_drawn_atom_and_valid_svg(fresh):
     U.no_errors(drv)
 
 
+def test_print_patterns_are_svg_pattern_tiles(fresh):
+    """Settings › Viewport › Print patterns: the SVG carries a <pattern> per element and a patterned disc over
+    each atom (the view's layer, as the PNG export draws it)."""
+    drv = fresh[0]
+    U.open_doc(drv, "structures/MgO.cif")
+    drv.execute_script("window.__mace.settings.set('viewport.printPatterns', 'all')")
+    try:
+        n = drv.execute_script("return window.__mace.viewState().displayedAtoms")
+        r = export(drv)
+        assert "error" not in r, r
+        root, c = circles(r["text"])
+        pats = root.findall(f".//{SVG}pattern")
+        assert len(pats) == 2 and all(p.get("id").startswith("pp-") for p in pats)
+        over = [e for e in c if (e.get("fill") or "").startswith("url(#pp-")]
+        assert len(over) == n and len(c) == 2 * n
+    finally:
+        drv.execute_script("window.__mace.settings.set('viewport.printPatterns', 'off')")
+    assert not ET.fromstring(export(drv)["text"]).findall(f".//{SVG}pattern")
+    U.no_errors(drv)
+
+
+def test_legend_swatches_carry_the_atoms_print_patterns(fresh):
+    """The element legend (drawn by the server) puts each element's print pattern on its swatch: in the
+    exported SVG's legend corner and in Export Element Legend of the structure."""
+    drv = fresh[0]
+    U.open_doc(drv, "structures/MgO.cif")
+    drv.execute_script("window.__mace.settings.set('viewport.printPatterns', 'all')")
+    try:
+        H.wait(drv, "const p = window.__macePatterns; const s = p && p.stateOf('viewer-main'); return s && s.patterned > 0", 30)
+        m = drv.execute_script("return window.__macePatterns.mapFor(window.MACE.state.viewers['viewer-main'])")
+        assert set(m) == {"Mg", "O"}, m
+        r = export(drv, legend="top-left")
+        assert "error" not in r, r
+        root = ET.fromstring(r["text"])
+        corner = root.find(f".//{SVG}g[@id='legend-corner']")
+        assert corner is not None
+        for sym, pid in m.items():
+            fills = [e.get("fill") or "" for e in corner.find(f".//{SVG}g[@id='legend-{sym}']") if e.tag != f"{SVG}text"]
+            assert any(f.startswith(f"url(#lg-pp-{pid}-") for f in fills), (sym, fills)
+        assert {p.get("id").split("-")[2] for p in corner.iter(f"{SVG}pattern")} == set(m.values())
+        # the atoms' own tiles are the same patterns
+        assert {p.get("id").split("-")[1] for p in root.iter(f"{SVG}pattern") if p.get("id").startswith("pp-")} == set(m.values())
+        # Export Element Legend of the open structure: the same swatches
+        drv.execute_script("window.__leg = null; window.__maceExportHook = (t, kind) => { if (kind === 'svg') window.__svg = t; else window.__leg = t; };"
+                           "window.__mace.run('file.exportLegend')")
+        H.wait(drv, "const d = document.getElementById('legend-dialog'); return !!(d && d.open && d.dataset.ready)", 30)
+        drv.execute_script("document.querySelector('#legend-dialog [data-v=\"export\"]').click()")
+        text = H.wait(drv, "return window.__leg", 30)
+        for sym, pid in m.items():
+            assert f"url(#lg-pp-{pid}-" in text.split(f'id="legend-{sym}"')[1].split("</g>")[0], sym
+    finally:
+        drv.execute_script("window.__mace.settings.set('viewport.printPatterns', 'off')")
+    r = export(drv, legend="top-left")
+    assert "error" not in r and "lg-pp-" not in r["text"], r
+    U.no_errors(drv)
+
+
 def test_perspective_is_refused(fresh):
     drv = fresh[0]
     U.open_doc(drv, "structures/MgO.cif")

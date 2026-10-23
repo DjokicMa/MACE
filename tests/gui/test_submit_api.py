@@ -4,6 +4,7 @@ with the recording shim (read-only SLURM queries reach the fake SLURM, state
 changes are recorded), equals what the real run then submits, and equals
 what a shell user's `mace submit` does in a twin folder."""
 import json
+import re
 import os
 import shutil
 import sqlite3
@@ -58,14 +59,24 @@ def test_preview_equals_real(srv, tmp_path, case, options):
     real_calls = _sbatch_and_control(srv.calls())
     # the preview recorded the same state changes the real run made (ids normalized)
     assert sorted(norm(a, srv.root) for a in prev["intercepted"]) == sorted(norm(a, srv.root) for a in real_calls)
-    # the preview's job scripts are the real ones
+    # the preview's job scripts are the real ones (a --progress step folder is named after the
+    # workflow, whose id the real run minted again)
     for rel, text in prev["scripts"].items():
-        assert norm(text, srv.root) == norm((srv.root / rel).read_text(), srv.root), rel
+        (real,) = [srv.root / rel] if (srv.root / rel).exists() else \
+            srv.root.glob(re.sub(r"workflow_\d{8}_\d{6}_[0-9a-f]{4}", "*", rel))
+        assert norm(text, srv.root) == norm(real.read_text(), srv.root), rel
+    if case == "progress":
+        assert all("/workflow_outputs/" in rel for rel in prev["scripts"]) and not list(d.glob("*.sh"))
     # ... and a shell user's `mace submit` in a twin folder writes the same scripts and calls
     twin = tmp_path / "twin"
     shutil.copytree(srv.root / folder, twin / folder)
     for p in (twin / folder / "decks").glob("*"):
         if p.suffix not in (".d12",):
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+    # the twin starts from the decks alone: the real run's materials.db (its job ids are the ones
+    # the twin's fresh fake SLURM hands out again) and queue locks are not the shell user's
+    for p in (twin / folder).glob("*"):
+        if p.name != "decks":
             shutil.rmtree(p) if p.is_dir() else p.unlink()
     fake2 = SU.FakeSlurm(tmp_path / "fs2")
     args = prev["argv"][0][1:]
@@ -223,6 +234,30 @@ def test_conflicts_finished_wavefunction_queued(srv):
     assert st == 200 and res["code"] == 0 and srv.calls("sbatch")
     assert (d / "m.f9").exists()                     # copied for history, never moved
     srv.fake.remove_record("7001")
+
+
+def test_progress_needs_no_overwrite_and_leaves_the_decks_folder(srv):
+    """Then run the rest of a workflow (--progress): each deck runs in its
+    workflow's step folder, so a finished output or an edited job script
+    beside a deck needs no tick and is left as it is; the finished OPT is
+    not run again, its SP goes out instead."""
+    data = Path(__file__).resolve().parents[1] / "data" / "existing_calcs"
+    d = srv.root / "d23p" / "decks"
+    d.mkdir(parents=True)
+    for name in ("dia_opt.d12", "dia_opt.out", "dia_opt.sh", "fresh_opt.d12", "fresh_opt.sh"):
+        shutil.copy2(data / name, d / name)
+    before = {p.name: p.read_bytes() for p in d.iterdir()}
+    srv.clear_calls()
+    st, prev = srv.preview(["d23p/decks"], options={"progress": "opt_sp", "overwrite_sh": True})
+    assert st == 200 and prev["code"] == 0, prev.get("cli_log")
+    assert "--overwrite-sh" not in prev["command"]
+    assert not prev["needs"]["overwrite"] and not prev["conflicts"]["finished"] and not prev["existing_scripts"]
+    assert prev["n_jobs"] == 2 and "Finished already, not run again: dia_opt.d12" in prev["cli_log"]
+    assert all("/workflow_outputs/" in w for w in prev["job_writes"]), prev["job_writes"]
+    st, res = srv.run(prev["preview_id"])
+    assert st == 200 and res["code"] == 0 and res["script_drift"] == [], res
+    assert len(srv.calls("sbatch")) == 2
+    assert {p.name: p.read_bytes() for p in d.iterdir() if p.is_file()} == before
 
 
 def test_rows_sbatch_refused_are_not_queued(tmp_path):

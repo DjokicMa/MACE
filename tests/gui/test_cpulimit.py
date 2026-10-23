@@ -255,8 +255,8 @@ def test_ml_worker_restarts_before_the_limit(monkeypatch):
                 pass
         from mace.preopt import detect, mlip_client, proc, registry
         monkeypatch.setattr(mlip_client, "WorkerProcess", FakeWP)
-        monkeypatch.setattr(registry, "get", lambda mid: {"id": mid})
-        monkeypatch.setattr(detect, "configured_python", lambda: sys.executable)
+        monkeypatch.setattr(registry, "get", lambda mid, scope=None: {"id": mid})     # (scope: 1.1.6, mace calc)
+        monkeypatch.setattr(detect, "configured_python", lambda model=None: sys.executable)
         monkeypatch.setattr(detect, "weights_status", lambda m: {"status": "bundled"})
         monkeypatch.setattr(proc, "mem_available_gb", lambda: 16.0)
 

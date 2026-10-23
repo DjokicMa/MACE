@@ -1,0 +1,16 @@
+{
+  "name": "MACE",
+  "short_name": "MACE",
+  "description": "MACE GUI: Mendoza Automated CRYSTAL Engine",
+  "id": "/mace-gui/",
+  "start_url": "../../",
+  "scope": "../../",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#ffffff",
+  "icons": [
+    {"src": "brand/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "brand/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "brand/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}

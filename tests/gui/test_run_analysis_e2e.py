@@ -75,6 +75,9 @@ def open_run(drv, rel):
         except StaleElementReferenceException:
             time.sleep(0.5)
     H.wait(drv, "return document.querySelectorAll('#o-energy circle.pt, #o-energy path.pt').length >= 2", 60)
+    # the Timeline draws the run before its document is the active one (the editor loads beside it):
+    # the menus and commands follow the active document
+    H.wait(drv, "const d = window.__mace.doc(); return !!d && d.path === arguments[0]", 30, rel)
 
 
 def open_analysis(drv):
@@ -216,6 +219,53 @@ def test_cell_tab_equals_the_parser(app):
     assert vol["y"] == [p["cell"]["volume"] for p in conv["points"]]
 
 
+def test_cell_values_segment_highlights_the_choice(app):
+    """Absolute | % from first: the clicked one is the checked (highlighted) one, and a tab or
+    document switch draws the remembered choice (before the fix Absolute stayed checked)."""
+    drv = app[0]
+    open_run(drv, "runs/1_dia_opt_rev1.out")
+    open_analysis(drv)
+    tab(drv, "cell")
+    seg = "#runplot-host .rp-tabopts [data-cellmode]"
+
+    def checked():
+        return drv.execute_script(f"return [...document.querySelectorAll('{seg}')].map((b) => [b.dataset.cellmode, b.getAttribute('aria-checked'),"
+                                  " getComputedStyle(b).backgroundColor])")
+
+    def pick(mode):
+        drv.find_element("css selector", f"{seg}[data-cellmode={mode}]").click()
+        H.wait(drv, "return window.__mace.runView.state().opts.cell.relTo === arguments[0]", 10, mode)
+        H.wait(drv, "return /% from first/.test(JSON.stringify(window.__mace.runView.figure().layout.yaxis.title)) === arguments[0]", 10, mode == "first")
+
+    try:
+        c = checked()
+        assert [m[:2] for m in c] == [["absolute", "true"], ["first", "false"]], c
+        pick("first")
+        c = checked()
+        assert [m[:2] for m in c] == [["absolute", "false"], ["first", "true"]], c
+        assert c[0][2] != c[1][2], c          # the highlight moved with it
+        # another tab and back: the segment is drawn again from the remembered choice
+        tab(drv, "energy")
+        tab(drv, "cell")
+        assert [m[:2] for m in checked()] == [["absolute", "false"], ["first", "true"]]
+        # another run and back (the options are kept per run): the same
+        open_run(drv, "runs/dia_copy.out")
+        open_run(drv, "runs/1_dia_opt_rev1.out")
+        open_analysis(drv)
+        if drv.execute_script("return window.__mace.runView.state().tab") != "cell":
+            tab(drv, "cell")
+        assert [m[:2] for m in checked()] == [["absolute", "false"], ["first", "true"]]
+        pick("absolute")
+        c = checked()
+        assert [m[:2] for m in c] == [["absolute", "true"], ["first", "false"]], c
+        assert c[0][2] != c[1][2], c
+    finally:
+        # leave the run's remembered choice as the other tests expect it
+        if drv.execute_script(f"const b = document.querySelector('{seg}[data-cellmode=absolute]'); return !!b && b.getAttribute('aria-checked') !== 'true'"):
+            drv.find_element("css selector", f"{seg}[data-cellmode=absolute]").click()
+    U.no_errors(drv)
+
+
 def test_convergence_tsv_equals_the_cli(app):
     drv, base, root = app[0], app[1], app[2]
     open_run(drv, "runs/1_dia_opt_rev1.out")
@@ -246,7 +296,7 @@ def test_compare_runs_per_atom(app):
     from selenium.webdriver.support.ui import Select
     Select(drv.find_element("css selector", "#cmp-run-pick")).select_by_value(f"runs/{other}")
     drv.find_element("css selector", "#compare-runs [data-v=ok]").click()
-    H.wait(drv, "const s = window.__mace.runView.state(); return s && s.other && s.drawn", 60)
+    H.wait(drv, "const s = window.__mace.runView && window.__mace.runView.state(); return s && s.other && s.drawn", 60)
     s = drv.execute_script("return window.__mace.runView.state()")
     assert s["opts"]["energy"]["per"] == "atom"
     lay = drv.execute_script("return window.__mace.runView.figure().layout")

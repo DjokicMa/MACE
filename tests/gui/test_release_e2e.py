@@ -53,7 +53,7 @@ def fresh(app):
 def test_favicon_and_menu_bar_logo(fresh):
     drv = fresh[0]
     icons = drv.execute_script("return [...document.querySelectorAll('link[rel=icon]')].map((l) => [l.getAttribute('href'), l.type, l.sizes.value])")
-    assert [i[0].rsplit("/", 1)[1] for i in icons] == ["icon.svg", "favicon-32.png", "favicon-16.png"]
+    assert [i[0].rsplit("/", 1)[1] for i in icons] == ["icon.svg", "favicon-32.png", "favicon-16.png", "icon-192.png"]
     for href, _, _ in icons:
         st = drv.execute_async_script("const d = arguments[1]; fetch(arguments[0]).then((r) => d(r.status), () => d(0))", href)
         assert st == 200, href
@@ -95,7 +95,10 @@ def test_help_documentation_opens_the_guide_for_this_version(fresh):
     H.wait(drv, "return document.querySelector('#docs[open]') !== null")
     link, local = drv.execute_script("return [document.getElementById('docs-link').href, document.getElementById('docs-local').textContent]")
     from mace import __version__
-    assert link == f"https://github.com/DjokicMa/MACE/blob/v{__version__}/docs/gui.md"
+    from mace.gui.helplinks import docs_ref
+    # a ref that exists on GitHub: the release tag only for a tagged final release, else main
+    assert link == f"https://github.com/DjokicMa/MACE/blob/{docs_ref(__version__)}/docs/gui.md"
+    assert docs_ref(__version__) in ("main", f"v{__version__}")
     assert local.endswith("/docs/gui.md") and (H.REPO_ROOT / "docs" / "gui.md").samefile(local)
     for h in drv.window_handles:            # the new tab it opened (no network needed for the test)
         if h != main:

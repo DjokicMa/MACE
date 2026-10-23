@@ -39,7 +39,15 @@
 .su-calc.grouped { flex-direction: column; flex-wrap: nowrap; }
 .su-calc-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .su-calc-row + .su-calc-row { border-top: 1px solid var(--border); }
-.su-calc-row:nth-child(2) { border-top-color: var(--border-strong); }
+/* the two groups of Calculation › Regular / Properties Calculations, each named over its rows: opt2d12's runs
+   (SP ... CPHF, Phonopy) above the properties of a run's wavefunction (opt2d3) */
+.su-calc-cap { padding: 2px var(--s-2); font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-2); }
+.su-calc-cap span { font-weight: 400; color: var(--text-3); font-family: var(--font-mono); }
+.su-calc-cap + .su-calc-row, .su-calc-row + .su-calc-cap { border-top: 1px solid var(--border); }
+.su-calc-row + .su-calc-cap { border-top-color: var(--border-strong); }
+/* each group's numbers, as its CLI menu prints them (opt2d12's 1 SP ... 7 CPHF, opt2d3's 1 BAND ... 7 ORBITALS) */
+.su-calc button[data-n]::before { content: attr(data-n) "\00a0"; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.su-calc button[data-n][aria-checked="true"]::before { color: inherit; opacity: 0.75; }
 .su-calc-row button { min-width: 0; padding: 0 var(--s-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .su-calc button.prop { color: var(--text-3); }
 .su-calc button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); }
@@ -86,13 +94,13 @@
 .su-switch input:checked { background: var(--accent); }
 .su-switch input:checked::after { transform: translateX(12px); }
 .su-switch input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.su-meta { grid-area: m; display: flex; align-items: center; gap: var(--s-2); min-height: 16px; }
+.su-meta { grid-area: m; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-2); min-height: 16px; }
 .su-badge { font-size: var(--fs-xs); color: var(--text-3); }
 .su-badge.changed { color: var(--accent); font-weight: 600; }
 .su-badge.parent { color: var(--text-3); }
 .su-reset { border: 0; background: none; padding: 0; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .su-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
-.su-h { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.35; overflow-wrap: anywhere; }
+.su-h { flex: 1 1 14em; min-width: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.35; overflow-wrap: anywhere; }
 .su-h:empty { display: none; }
 .su-meta .su-badge::after { content: ""; }
 .su-meta .su-h:not(:empty)::before { content: "· "; }
@@ -192,3 +200,17 @@ pre.deck .ctx { color: var(--text-2); }
   row-gap: 3px; padding: var(--s-2) 0; border-radius: var(--r-sm); }
 .cf-row + .cf-row { border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent); }
 .cf-row.changed .su-l { color: var(--text); font-weight: 600; }
+
+/* 4 ELASTIC ... 7 CPHF and Phonopy (js/setup/modules.js): their own form, in the rows above */
+.su-mod-checks { flex-wrap: wrap; gap: var(--s-1) var(--s-3); }
+.su-mod-dim { gap: var(--s-1); color: var(--text-3); }
+.su-mod-dim input { flex: 0 1 4.5em !important; }
+.su-mod-state.bad { color: var(--danger); }
+.su-mod-state:empty { display: none; }
+.su-mod-log { margin-top: var(--s-2); font-size: var(--fs-sm); }
+.su-mod-log > summary { cursor: pointer; color: var(--text-2); }
+.su-mod-pre { margin: var(--s-1) 0 0; max-height: 220px; overflow: auto; padding: var(--s-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg); font: var(--fs-xs)/1.4 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.su-mod-write .su-saved-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+.su-mod-write .su-cmd { margin-top: var(--s-2); }
+.su-mod-write [hidden], .su-mod [hidden] { display: none; }

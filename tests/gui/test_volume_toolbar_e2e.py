@@ -60,6 +60,30 @@ def write_bulk_cube(path):
     path.write_text("\n".join(lines) + "\n")
 
 
+def write_face_cube(path, signed=False, n=20, a=8.0):
+    """A 3D-periodic CRYSTAL-style cube whose density crosses the cell's faces: atoms on and near
+    them, the Gaussians summed over the neighboring images, and the closing plane (n + 1 planes
+    over the cell, as CRYSTAL writes ECH3). ``signed``: the second atom's lobe is negative (a spin)."""
+    import itertools
+    atoms = [(0.02, 0.5, 0.5), (0.5, 0.97, 0.03), (0.6, 0.4, 0.99)]
+    f = np.stack(np.meshgrid(*[np.arange(n + 1) / n] * 3, indexing="ij"), -1)
+    rho = np.zeros((n + 1,) * 3)
+    for i, at in enumerate(atoms):
+        for img in itertools.product((-1, 0, 1), repeat=3):
+            rho += (-1.0 if signed and i == 1 else 1.0) * np.exp(-(((f - np.array(at) - img) * a) ** 2).sum(-1) / 1.2)
+    kind = "Spin density" if signed else "Charge density"
+    lines = [f" {kind} - 3D GRID - GAUSSIAN CUBE FORMAT face",
+             "  {:.8f}  {:.8f}  {:.8f}  90.000000  90.000000  90.000000".format(a, a, a),
+             "{:5d}  0.000000  0.000000  0.000000".format(len(atoms))]
+    lines += ["{:5d}  {:.6f}  {:.6f}  {:.6f}".format(n + 1, *[a / n if j == k else 0.0 for j in range(3)]) for k in range(3)]
+    lines += ["    6  6.000000  {:.6f}  {:.6f}  {:.6f}".format(*(np.array(at) * a)) for at in atoms]
+    for i in range(n + 1):
+        for j in range(n + 1):
+            row = rho[i, j]
+            lines += [" ".join("{:.5E}".format(x) for x in row[k:k + 6]) for k in range(0, n + 1, 6)]
+    path.write_text("\n".join(lines) + "\n")
+
+
 @pytest.fixture(scope="module", params=["chromium", "firefox"])
 def app(request, tmp_path_factory):
     tmp = tmp_path_factory.mktemp("voltoolbar")
@@ -71,6 +95,9 @@ def app(request, tmp_path_factory):
         shutil.copyfile(CORPUS / f"{MOL}_DENS.CUBE", root / "vol" / "mol_DENS.CUBE")
         shutil.copyfile(CORPUS / f"{MOL}_POT.CUBE", root / "vol" / "mol_POT.CUBE")
     write_bulk_cube(root / "vol" / "bulk_DENS.cube")
+    write_face_cube(root / "vol" / "face_DENS.cube")
+    write_face_cube(root / "vol" / "face_SPIN.cube", signed=True)
+    write_face_cube(root / "vol" / "face_POT.cube", signed=True)
     proc, base, _ = H.start_server(root, tmp / "xdg", MACE_GUI_TEST_HOOKS="1", MACE_GUI_MAX_WORKERS="2")
     try:
         drv = H.browser(request.param, width=1280, height=800)
@@ -305,6 +332,101 @@ def test_bulk_cube_range_repeats_all_three_axes_and_fits(drv):
             # every cell is on screen (the camera follows the range)
             o = on_screen(drv)
             assert o["n"] == 2 * n ** 3 and o["bad"] == 0, (along, n, o)
+    assert not H.errors(drv), H.errors(drv)
+
+
+def seams(drv):
+    """The drawn surfaces' triangles merged by position, and their edges used by one triangle only that
+    lie by an inner face of the display range (a seam between cells) or inside a cell (a hole), and the
+    vertices two cells share drawn in two colors."""
+    return drv.execute_script(f"""const v = {VV}, L = window.__mace.activeDoc().meta.lattice, D = window.__mace.volumeView.state().display;
+      const R = D.range, cells = Array.isArray(R) ? R : R.hi.map((x, k) => x - R.lo[k]), o = D.box.origin;
+      const inv = (M) => {{ const [a, b, c] = M, d = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        return [[b[1] * c[2] - b[2] * c[1], -(a[1] * c[2] - a[2] * c[1]), a[1] * b[2] - a[2] * b[1]],
+          [-(b[0] * c[2] - b[2] * c[0]), a[0] * c[2] - a[2] * c[0], -(a[0] * b[2] - a[2] * b[0])],
+          [b[0] * c[1] - b[1] * c[0], -(a[0] * c[1] - a[1] * c[0]), a[0] * b[1] - a[1] * b[0]]].map((r) => r.map((x) => x / d)); }};
+      const Li = inv(L), grid = new Map(), pts = [], edges = new Map();
+      const near = [-1, 0, 1].flatMap((i) => [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((k) => [i, j, k])));
+      // a vertex two cells share has one color too (a potential's colors read across the faces)
+      const cols = [];
+      let colorMismatch = 0;
+      const vid = (p, c) => {{
+        const q = p.map((x) => Math.round(x * 1e3));
+        for (const d of near) {{
+          const h = grid.get(q.map((x, k) => x + d[k]).join(","));
+          if (h !== undefined && Math.hypot(pts[h][0] - p[0], pts[h][1] - p[1], pts[h][2] - p[2]) < 1e-4) {{
+            if (Math.max(...c.map((x, k) => Math.abs(x - cols[h][k]))) > 1e-3) colorMismatch++;
+            return h;
+          }}
+        }}
+        grid.set(q.join(","), pts.length); pts.push(p); cols.push(c); return pts.length - 1;
+      }};
+      let triangles = 0;
+      for (const s of v.shapes) for (const g of (s && s.geo && s.geo.geometryGroups) || []) {{
+        const P = g.vertexArray, F = g.faceArray, C = g.colorArray;
+        for (let f = 0; f + 2 < g.faceidx; f += 3) {{
+          triangles++;
+          const t = [0, 1, 2].map((j) => {{ const i = 3 * F[f + j]; return vid([P[i], P[i + 1], P[i + 2]], C ? [C[i], C[i + 1], C[i + 2]] : [0, 0, 0]); }});
+          for (const [a, b] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {{ const k = a < b ? a + "_" + b : b + "_" + a; edges.set(k, (edges.get(k) || 0) + 1); }}
+        }}
+      }}
+      const r = {{ triangles, seam: 0, hole: 0, outer: 0, cells, colorMismatch }};
+      for (const [k, n] of edges) {{
+        if (n !== 1) continue;
+        const [a, b] = k.split("_").map(Number), mid = [0, 1, 2].map((j) => (pts[a][j] + pts[b][j]) / 2 - o[j]);
+        const f = [0, 1, 2].map((j) => mid[0] * Li[0][j] + mid[1] * Li[1][j] + mid[2] * Li[2][j]);
+        if (f.some((x, j) => Math.abs(x) < 0.1 || Math.abs(x - cells[j]) < 0.1)) r.outer++;
+        else if (f.some((x) => Math.abs(x - Math.round(x)) < 0.1)) r.seam++;
+        else r.hole++;
+      }}
+      return r;""")
+
+
+def test_cube_surfaces_join_across_the_cells_of_a_supercell(drv):
+    """1.1.6 (Marcus on HPCC): a cube's surfaces did not connect in a supercell, a gap at every cell
+    boundary. A density and a spin whose lobes cross the cell's faces, at 2x2x2: every triangle edge by
+    an inner face is shared (no seam), at each mesh quality and in flat shading, for both signs, and
+    the density colored by a potential has one color where two cells meet."""
+    import importlib.util
+    def pick(id_, value):
+        e = H.wait(drv, f"return document.getElementById('{id_}')", 10)
+        drv.execute_script("arguments[0].value = arguments[1]; arguments[0].dispatchEvent(new Event('change', {bubbles: true}))", e, value)
+
+    for path, levels in (("vol/face_DENS.cube", 1), ("vol/face_SPIN.cube", 2)):
+        open_vol(drv, path)
+        run(drv, "view.range2")
+        H.wait(drv, "return window.__mace.volumeView.state().surfaces === arguments[0]", 30, 8 * levels)
+        assert drv.execute_script("return window.__mace.activeDoc().meta.wrap") == [True, True, True]
+        presets = ("draft", "standard", "high", "publication") if levels == 1 else ("standard",)
+        for preset in presets:
+            pick("vo-quality", preset)
+            H.wait(drv, "const s = window.__mace.volumeView.state(); return s.mesh.quality === arguments[0] && !s.mesh.loading && s.surfaces === arguments[1]",
+                   120, preset, 8 * levels)
+            time.sleep(0.3)
+            r = seams(drv)
+            assert r["cells"] == [2, 2, 2] and r["triangles"] > 1000 and r["seam"] == 0 and r["hole"] == 0, (path, preset, r)
+        if levels == 1 and importlib.util.find_spec("scipy"):
+            # Color by Potential: the potential read across the faces (no pale seam where the mesh passes the grid)
+            drv.execute_script("document.querySelector('#volume-host [data-act=mep]').click()")
+            sel = H.wait(drv, "return document.querySelector('#cube-pick')", 10)
+            drv.execute_script("arguments[0].value = 'vol/face_POT.cube'", sel)
+            drv.execute_script("document.getElementById('cube-ok').click()")
+            H.wait(drv, "const s = window.__mace.volumeView.state(); return s.color === 'vol/face_POT.cube' && s.vmin !== null && s.surfaces === 8", 90)
+            time.sleep(0.3)
+            r = seams(drv)
+            assert r["seam"] == 0 and r["hole"] == 0 and r["colorMismatch"] == 0, (path, "potential colors", r)
+        pick("vo-shading", "flat")
+        H.wait(drv, "return window.__mace.volumeView.state().surfaces > 0", 10)
+        time.sleep(0.3)
+        r = seams(drv)
+        assert r["seam"] == 0 and r["hole"] == 0, (path, "flat", r)
+        for style in ("edges", "points", "wireframe", "solid"):
+            pick("vo-style", style)
+            H.wait(drv, "return window.__mace.volumeView.state().surfaces > 0", 10)
+        pick("vo-shading", "smooth")
+        run(drv, "view.range1")
+        drv.execute_script("window.__mace.closeAll()")
+        time.sleep(0.3)
     assert not H.errors(drv), H.errors(drv)
 
 

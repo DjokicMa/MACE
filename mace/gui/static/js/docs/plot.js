@@ -13,6 +13,7 @@ import { createBZ } from "../bz_view.js";
 import * as BF from "./bandfig.js";
 import { cliCommand } from "./clicmd.js";
 import { robustRange } from "../maprange.js";
+import * as L from "../labels.js";
 
 const MERGE_MS = 800;
 
@@ -82,12 +83,17 @@ export function createPlotView(host, optsHost, H) {
   const DEFAULTS = {
     bands: { emin: -6, emax: 6, shift: 0, spin: "both", width: 1.5, hidden: null, kpath: null,
       // the plot's own style (Plot options › Style; null: Settings), by the presets.py STYLE_OPTIONS names
-      style: null, spin_colors: null, spin_up_color: null, spin_down_color: null, band_color: null, band_style: null, spin_down_style: null, dos_colors: null, dos_spin: null, dos_total: null, dos_smooth: null },
+      style: null, spin_colors: null, spin_up_color: null, spin_down_color: null, band_color: null, band_style: null, spin_down_style: null, dos_colors: null, dos_spin: null, dos_total: null, dos_smooth: null,
+      // Reference and Labels (the toolbar's menus): the energy zero (null: auto), the dotted E_F line, the k-point labels and the spin words;
+      // a fort.25: electronic or phonon (null: from the run) and which of its runs (null: the last)
+      reference: null, fermi_line: true, k_labels: true, spin_labels: true, f25_domain: null, f25_run: null },
     spectrum: { xmin: null, xmax: null, normalize: false, component: "total", average: false, width: 1.5, style: null },
-    // BOLTZTRA transport data (plan E8): the temperature block and the tensor component shown
-    // view "zt": the figure of merit ZTₑ and, with a lattice κ_L (kl: W/(m·K) or a T,kappa_L CSV in the
-    // folder) the total ZT, at the run's relaxation time or tau (fs): the numbers of mace analyze --kappa-lattice
-    transport: { T: null, component: "avg", width: 1.5, view: "quantity", kl: "", tau: null, style: null },
+    // BOLTZTRA transport data (plan E8): the quantity (null: the opened file's own; another file of the run
+    // beside it, or one derived from them: pf, kappa_e, zt, lorenz, sigma_tau, pf_tau), the temperature (a
+    // value, or "all"), the tensor component, the x axis (mu or carriers), and for PF, κₑ and ZT a relaxation
+    // time tau (fs) and for ZT a lattice κ_L (kl: W/(m·K) or a T,kappa_L CSV in the folder): the numbers and
+    // curves of mace plotting --transport (mace.utils.transport_plot); ZT's peaks are mace analyze's
+    transport: { quantity: null, T: null, component: "avg", x: "mu", width: 1.5, kl: "", tau: null, style: null },
     // Compare Convergence (plan E12 fallback): energy per atom above the lowest final energy of the set
     convergence: { width: 1.6, log: false, style: null },
     // a fort.25 2D map (plan E6): which map (density, spin), log scale, contour count, contour style (null: the
@@ -143,10 +149,13 @@ export function createPlotView(host, optsHost, H) {
   function reset(d) { setOpt(d, defaultsFor(d), "Reset plot options"); }
 
   /* ------------------------------------------------------------ data */
+  // the options the data are read with (the energy zero, a fort.25's domain and run): a change reads them again
+  const dataKey = (d) => { const o = d.opts || {}; return JSON.stringify([o.reference || null, o.f25_domain || null, o.f25_run || null, o.pair || null]); };
+  const staleData = (d) => !!(d.data && d.dataKey && d.dataKey !== dataKey(d) && (d.kind === "band" || d.kind === "dos"));
   async function fetchData(d) {
     if (d.data) return d.data;
     if (d.kind === "transport") {
-      d.data = { transport: await api("transport?" + q({ path: d.path })) };
+      await fetchTransport(d);
       return d.data;
     }
     if (d.kind === "map") {
@@ -170,24 +179,128 @@ export function createPlotView(host, optsHost, H) {
       if (d.opts && d.opts.average && d.data.group) d.data.average = await api("spectrum?" + q({ path: d.path, average: 1 })).catch(() => null);
       return d.data;
     }
-    const first = await api((d.kind === "dos" ? "dos" : "bands") + "?" + q({ path: d.path }));
+    const o = d.opts || {}, extra = { ...(o.reference ? { reference: o.reference } : {}), ...(o.f25_domain ? { domain: o.f25_domain } : {}), ...(o.f25_run ? { run: o.f25_run } : {}) };
+    d.dataKey = dataKey(d);
+    const first = await api((d.kind === "dos" ? "dos" : "bands") + "?" + q({ path: d.path, ...extra }));
     let band = d.kind === "dos" ? null : first, dos = d.kind === "dos" ? first : null;
-    if (first.partner) {
+    // the other half: Add DOS… / Add Band… (o.pair, from any folder), else the same run's beside the file
+    const other = o.pair || first.partner;
+    let pair = null;
+    if (other) {
       try {
-        const other = await api((d.kind === "dos" ? "bands" : "dos") + "?" + q({ path: first.partner }));
-        if (d.kind === "dos") band = other; else dos = other;
-      } catch (e) { /* the partner is optional */ }
+        const half = await api((d.kind === "dos" ? "bands" : "dos") + "?" + q({ path: other, ...extra }));
+        if (d.kind === "dos") band = half; else dos = half;
+      } catch (e) { if (o.pair) pair = { path: o.pair, error: e.message }; }
     }
-    d.data = { band, dos };
+    if (o.pair && band && dos) {
+      try { pair = await pairData(d, band, dos, extra); } catch (e) { pair = { path: o.pair, error: e.message }; }
+      if (pair.error) { if (d.kind === "dos") band = null; else dos = null; }
+      else ({ band, dos } = pair.halves);
+    }
+    d.data = { band, dos, pair };
     return d.data;
+  }
+
+  /* ------------------------------------------------------------ band + DOS from two folders (1.1.6) */
+  /* Add DOS… on a band plot, Add Band… on a DOS plot: the other half of the same system from any folder of the
+     served one, checked by the server (bandos-pair: the same formula, else refused; the cell and E_F, else
+     warned), on one energy zero: the vacuum scale only when both halves have it, and the DOS moved onto the
+     band run's E_F when the two differ (mace plotting --band-dos --partner draws the same). The pairing is a
+     plot option (pair: the other file's path), so it is kept per document, undone and reset as the others. */
+  const isF25 = (p) => /\.f25$|(^|\/)fort\.25$/i.test(p || "");
+  const halfKind = (f) => (f.kind === "band" || f.kind === "dos" ? f.kind : f.kind === "f25" ? (f.sub === "BAND" ? "band" : f.sub === "DOSS" ? "dos" : null) : null);
+  const dirOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+  /** ``to`` relative to the folder ``from`` (both served paths): what --partner names in the folder of the file. */
+  function relPath(from, to) {
+    const a = from ? from.split("/") : [], b = to.split("/");
+    let k = 0;
+    while (k < a.length && k < b.length - 1 && a[k] === b[k]) k++;
+    return [...a.slice(k).map(() => ".."), ...b.slice(k)].join("/");
+  }
+  async function pairData(d, band, dos, extra) {
+    const bandPath = d.kind === "dos" ? d.opts.pair : d.path, dosPath = d.kind === "dos" ? d.path : d.opts.pair;
+    const check = await api("bandos-pair?" + q({ band: bandPath, dos: dosPath }));
+    if (check.error) return { path: d.opts.pair, error: check.error, check };
+    // one energy zero: a POTC run beside one half only puts that half on the vacuum scale, so both are read on E_F
+    if (band.reference !== dos.reference) {
+      const fx = { ...extra, reference: "fermi" };
+      [band, dos] = await Promise.all([api("bands?" + q({ path: bandPath, ...fx })), api("dos?" + q({ path: dosPath, ...fx }))]);
+    }
+    // on E_F the DOS moves onto the band run's E_F when the two runs' differ (the vacuum scale is one already)
+    const s = band.reference === "fermi" && dos.reference === "fermi" ? Number(check.dos_shift) || 0 : 0;
+    if (s) dos = { ...dos, energy: dos.energy.map((e) => e + s) };
+    return { path: d.opts.pair, check, shift: s, halves: { band, dos } };
+  }
+  /* A phonon dispersion and a phonon DOS pair the same way (Add Phonon DOS…, Add Phonon Bands…): only with each other
+     (the server refuses an electronic half and another supercell), on zero frequency and the plot's one unit. */
+  const pairWords = (d) => isPhonon(d)
+    ? { band: "Phonon Bands", dos: "Phonon DOS", bandText: "phonon dispersion", dosText: "phonon DOS", fig: "dispersion + DOS" }
+    : { band: "Band", dos: "DOS", bandText: "band structure", dosText: "DOS", fig: "band + DOS" };
+  /** The toolbar's Add DOS… / Add Band… (or Remove DOS / Remove Band once added), next to Log Y; a phonon plot's
+   *  Add Phonon DOS… / Add Phonon Bands…. */
+  function pairButtons() {
+    if (!doc || !isBandDos(doc) || !doc.data) return [];
+    const band = doc.data.band, dos = doc.data.dos, w = pairWords(doc), other = doc.kind === "dos" ? w.band : w.dos;
+    if (doc.opts.pair) return [{ key: "unpair", label: `Remove ${other}`, title: `Draw ${doc.title} alone, without ${doc.opts.pair.split("/").pop()}` }];
+    if (doc.kind === "band" && band && !dos) return [{ key: "pair", label: `Add ${w.dos}…`, title: `Add the ${w.dosText} of this system from another folder: one ${w.fig} figure` }];
+    if (doc.kind === "dos" && dos && !band) return [{ key: "pair", label: `Add ${w.band}…`, title: `Add the ${w.bandText} of this system from another folder: one ${w.fig} figure` }];
+    return [];
+  }
+  /** The other half's candidates: every DOS (or band) file of the served folder, the same material first, then
+   * the nearest folders. */
+  function pairCandidates(d) {
+    const want = d.kind === "dos" ? "band" : "dos", ph = isPhonon(d);
+    const mat = (p) => p.split("/").pop().replace(/\.(BAND|DOSS)\.DAT$|\.f25$|_band\.dat$|_doss\.dat$/i, "")
+      .replace(/[._]phonon[._](band|dos|doss)$/i, "").replace(/[._](band|doss)$/i, "").toLowerCase();
+    const me = mat(d.path), home = dirOf(d.path).split("/");
+    const near = (p) => { const s = dirOf(p).split("/"); let k = 0; while (k < s.length && k < home.length && s[k] === home[k]) k++; return k; };
+    // a phonon plot lists the phonon runs' files (the listing's domain), an electronic one the others
+    return (H.files ? H.files() || [] : []).filter((f) => f.path !== d.path && halfKind(f) === want && (f.domain === "phonon") === ph)
+      .map((f) => ({ path: f.path, name: f.name || f.path.split("/").pop(), dir: dirOf(f.path), same: mat(f.path) === me, near: near(f.path) }))
+      .sort((a, b) => (b.same - a.same) || (b.near - a.near) || a.path.localeCompare(b.path));
+  }
+  function pickPair() {
+    const d = doc, w = pairWords(d), want = d.kind === "dos" ? w.bandText : w.dosText;
+    if (!H.dialog) return;
+    const list = pairCandidates(d);
+    const body = document.createElement("div");
+    body.className = "pv-pair";
+    body.innerHTML = `<p class="muted small">The ${want} of the same system from another folder, drawn with ${esc(d.title)} as one ${w.fig} figure
+      ${isPhonon(d) ? "on one frequency axis (checked: the same formula and supercell; the cell, else a warning)"
+        : "(checked: the same formula; the cell and the Fermi level, else a warning)"}.</p>
+      <input type="search" class="pv-pair-q" placeholder="Filter files" aria-label="Filter files">
+      <div class="pv-pair-list" role="listbox" aria-label="${esc(want)} files"></div><p class="pv-pair-msg" role="alert"></p>`;
+    const dlg = H.dialog({ id: "plot-pair", title: `Add ${d.kind === "dos" ? w.band : w.dos}`, body });
+    const box = body.querySelector(".pv-pair-list"), msg = body.querySelector(".pv-pair-msg");
+    const show = (f) => {
+      const shown = list.filter((x) => !f || x.path.toLowerCase().includes(f.toLowerCase()));
+      box.innerHTML = shown.length ? shown.map((x) => `<button type="button" role="option" class="pv-pair-item" data-pair="${esc(x.path)}" title="${esc(x.path)}">` +
+        `<span class="pv-pair-name">${esc(x.name)}</span><span class="pv-pair-dir muted">${esc(x.dir || ".")}</span></button>`).join("")
+        : `<p class="muted small">No ${want} file${f ? " matches" : " in this folder"}.</p>`;
+    };
+    show("");
+    body.querySelector(".pv-pair-q").addEventListener("input", (e) => show(e.target.value.trim()));
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-pair]");
+      if (!b || doc !== d) return;
+      msg.textContent = "Checking…";
+      try {
+        const bandPath = d.kind === "dos" ? b.dataset.pair : d.path, dosPath = d.kind === "dos" ? d.path : b.dataset.pair;
+        const chk = await api("bandos-pair?" + q({ band: bandPath, dos: dosPath }));
+        if (chk.error) { msg.textContent = chk.error; return; }
+        dlg.close();
+        setOpt(d, { pair: b.dataset.pair }, `Add ${want} ${b.dataset.pair.split("/").pop()}`);
+        for (const w of chk.warnings || []) toast(w, "warning");
+      } catch (err) { msg.textContent = err.message; }
+    });
   }
 
   /* ------------------------------------------------------------ figures */
   const PAL = (css = cssVar) => BF.PAL(css);
   // what the energy axis reads: E - E_F, or E - E_vac with a POTC run (the API's reference)
   // the readout's energy: E − E_F, or with a Fermi shift E − (E_F + s) as the axis title (bandfig.js energyTitle)
-  const eLabel = (d) => BF.energyTitle(((d.data && (d.data.band || d.data.dos)) || {}).reference, (d.opts && d.opts.shift) || 0)
-    .replace(/<sub>(.*?)<\/sub>/g, "_$1");
+  // (a textContent: the markup as text, L.plain)
+  const eLabel = (d) => isPhonon(d) ? "ω" : L.plain(BF.energyTitle(((d.data && (d.data.band || d.data.dos)) || {}).reference, (d.opts && d.opts.shift) || 0));
   const kLabel = BF.kLabel;
 
   /* the user's defaults for a plot's style (Settings › Appearance › Plot style, Settings › Plots), by the
@@ -282,7 +395,7 @@ export function createPlotView(host, optsHost, H) {
     const o = d.opts, css = tokenOf("spectra"), pal = PAL(css), grid = css("--line");
     const traces = [];
     const list = o.average && d.data.average ? [d.data.average] : d.data.spectra;
-    const fx = PK.WAVENUMBER_UNITS[o.unit] || 1, ul = PK.UNIT_LABEL[o.unit] || "cm⁻¹";
+    const fx = PK.WAVENUMBER_UNITS[o.unit] || 1, ul = L.unit(PK.WAVENUMBER_UNITS[o.unit] ? o.unit : "cm-1");   // cm<sup>−1</sup> (labels.js)
     d.absShown = false;
     const shown = new Set();
     list.forEach((s, k) => {
@@ -304,7 +417,7 @@ export function createPlotView(host, optsHost, H) {
       legend: PK.legendSide(), ...paper(),
       font: { color: css("--text"), size: 12, family: css("--font-sans") },
       modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
-      xaxis: { title: { text: `${o.unit === "cm-1" || !o.unit ? "Wavenumber" : "Energy"} (${ul})` },
+      xaxis: { title: { text: L.withUnit(o.unit === "cm-1" || !o.unit ? "Wavenumber" : "Energy", ul) },
         type: o.xlog ? "log" : "linear",
         range: o.xr || (o.xlog ? undefined : [(o.xmin ?? Math.min(...d.data.spectra[0].x)) * fx, (o.xmax ?? Math.max(...d.data.spectra[0].x)) * fx]),
         autorange: o.xlog && !o.xr ? true : undefined, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: false },
@@ -333,11 +446,11 @@ export function createPlotView(host, optsHost, H) {
           const w = (f - t0.x[lo]) / ((t0.x[hi] - t0.x[lo]) || 1);
           return t0.y[lo] + w * (t0.y[hi] - t0.y[lo]);
         };
-        const unit = d.kind === "ir" ? " km/mol" : "";
+        const unit = d.kind === "ir" ? ` ${L.unit("km/mol")}` : "";
         traces.push({ x: d.data.peaks.map((p) => p.freq * fx), y: d.data.peaks.map((p) => at(p.freq * fx)), mode: "markers", type: "scatter",
           name: "modes", meta: "peaks", showlegend: false, customdata: d.data.peaks.map((p) => p.mode),
           marker: { size: 7, color: css("--accent"), line: { width: 1, color: css("--surface") } },
-          text: d.data.peaks.map((p) => `Mode ${p.mode} · ${p.freq.toFixed(1)} cm⁻¹ · ${p.irrep || ""} · ${d.kind === "ir" ? "IR" : "Raman"} ${p.intens.toFixed(1)}${unit}${p.degeneracy > 1 ? ` (degenerate ×${p.degeneracy})` : ""}`),
+          text: d.data.peaks.map((p) => `Mode ${p.mode} · ${p.freq.toFixed(1)} ${L.unit("cm-1")} · ${p.irrep || ""} · ${d.kind === "ir" ? "IR" : "Raman"} ${p.intens.toFixed(1)}${unit}${p.degeneracy > 1 ? ` (degenerate ×${p.degeneracy})` : ""}`),
           hovertemplate: "%{text}<extra>click: animate</extra>" });
         lay.hovermode = "closest";
       }
@@ -374,8 +487,9 @@ export function createPlotView(host, optsHost, H) {
       zauto: false, zmin: zr[0], zmax: zr[1], autocontour: false,
       contours: { coloring: cstyle === "lines" ? "lines" : "heatmap", showlines: cstyle !== "filled", start: zr[0], end: zr[1], size: step },
       line: { width: cstyle === "lines" ? 1.2 : 0.6, ...(darkLines && cstyle === "both" ? { color: "rgba(0,0,0,0.55)" } : {}) },
-      colorbar: { title: { text: log ? `log₁₀ (${m.unit || ""})` : m.unit || "" }, thickness: 12 },
-      hovertemplate: `%{x:.3f}, %{y:.3f} Å: ${log ? "10^%{z:.3f}" : "%{z:.4g}"}<extra>${esc(m.label)}</extra>` };
+      // the colorbar names the quantity and its unit, as mace plotting's cube slices (plot markup: labels.js)
+      colorbar: { title: { text: `${log ? `${L.SYMBOLS.log10} ` : ""}${L.html(m.label)}${m.unit ? `<br>(${m.unit})` : ""}` }, thickness: 12 },
+      hovertemplate: `%{x:.3f}, %{y:.3f} Å: ${log ? "10<sup>%{z:.3f}</sup>" : "%{z:.4g}"}${m.unit ? ` ${m.unit}` : ""}<extra>${L.html(m.label)}</extra>` };
     return { traces: [trace], layout: { margin: { l: 56, r: 14, t: 10, b: 44 }, ...paper(),
       font: { color: css("--text"), size: 12, family: css("--font-sans") },
       xaxis: { title: { text: "along AB (Å)" }, scaleanchor: "y", constrain: "domain", showgrid: false },
@@ -405,57 +519,99 @@ export function createPlotView(host, optsHost, H) {
       yaxis: { title: { text: "ΔE per atom (meV)" }, type: o.log ? "log" : "linear", gridcolor: grid, showline: true, mirror: true, linecolor: grid } } };
   }
 
-  /* BOLTZTRA data: one quantity per file against the chemical potential, one temperature at a time */
-  function transportFigure(d) {
-    const t = d.data.transport, o = d.opts, css = tokenOf("band"), pal = PAL(css), grid = css("--line");
-    const block = t.blocks.find((b) => b.T === o.T) || t.blocks[0];
-    const comps = o.component === "all" ? ["xx", "yy", "zz"].filter((k) => block[k]) : [block[o.component] ? o.component : "avg"];
-    const traces = comps.map((c, k) => ({ x: block.mu, y: block[c], mode: "lines", type: "scatter",
-      name: c === "avg" ? "(xx + yy + zz) / 3" : c, line: { color: pal[k % pal.length], width: o.width },
-      hovertemplate: `%{x:.3f} eV: %{y:.4g} ${esc(t.unit)}<extra>${esc(c)}</extra>` }));
-    const lay = { margin: { l: 70, r: 14, t: 10, b: 44, autoexpand: false }, showlegend: traces.length > 1, hovermode: "x unified", legend: PK.legendTop(),
-      ...paper(), font: { color: css("--text"), size: 12, family: css("--font-sans") },
-      xaxis: { title: { text: t.x === "energy" ? "Energy (eV)" : "Chemical potential μ (eV)" }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid },
-      yaxis: { title: { text: `${t.label} (${t.unit})` }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid } };
-    return { traces, layout: lay, legendBase: { t: 10, r: 14 } };
-  }
-
-  /* ZT of a transport run (view "zt"): read again when κ_L or τ changed */
-  const ztKey = (o) => JSON.stringify([String(o.kl || "").trim(), o.tau ?? null]);
-  const isZt = (d) => d && d.kind === "transport" && d.opts && d.opts.view === "zt";
-  const staleZt = (d) => isZt(d) && d.data && d.data.transport && (!d.data.zt || d.data.ztKey !== ztKey(d.opts));
-  async function fetchZt(d) {
-    const o = d.opts, key = ztKey(o), kl = String(o.kl || "").trim();
-    d.data.ztError = null;
-    try {
-      d.data.zt = await api("transport-zt?" + q({ path: d.path, kappa_l: kl, tau_fs: o.tau ?? "" }));
-    } catch (e) {
-      // a κ_L or τ MACE refuses: say why, and show ZTₑ alone
-      d.data.ztError = e.message;
-      try { d.data.zt = await api("transport-zt?" + q({ path: d.path })); } catch (e2) { d.data.zt = null; d.data.ztError = e2.message; }
+  /* BOLTZTRA data: any quantity the run's files give (the file's own, its siblings', or derived from them),
+   * read again when the quantity, κ_L or τ changed. A refusal (a κ_L or τ MACE refuses, files on different
+   * grids) is shown in the options with what can be drawn: ZTₑ for a refused κ_L, else the file's own quantity */
+  const trQuantity = (o) => (o && (o.quantity || (o.view === "zt" ? "zt" : null))) || null;
+  const trKey = (o) => JSON.stringify([trQuantity(o), trQuantity(o) === "zt" ? String(o.kl || "").trim() : "", o.tau ?? null]);
+  const staleTr = (d) => d && d.kind === "transport" && d.data && d.data.transport && d.data.trKey !== trKey(d.opts);
+  async function fetchTransport(d) {
+    const o = d.opts || {}, key = trKey(o), qn = trQuantity(o);
+    const get = (quantity, kl, tau) => api("transport?" + q({ path: d.path, quantity: quantity || "", kappa_l: kl || "", tau_fs: tau ?? "" }));
+    let t = null, err = null;
+    try { t = await get(qn, qn === "zt" ? String(o.kl || "").trim() : "", o.tau); }
+    catch (e) {
+      err = e.message;
+      // ZTₑ alone for a κ_L or τ refused; else the file's own quantity, else the first of the run that draws
+      const tries = (qn === "zt" ? [["zt"]] : []).concat([[null], ["SEEBECK"], ["SIGMA"], ["KAPPA"], ["SIGMAS"]]);
+      for (const [qq] of tries) { try { t = await get(qq); break; } catch (e2) { /* the next */ } }
+      if (!t) throw e;
     }
-    d.data.ztKey = key;
+    d.data = { ...(d.data || {}), transport: t, trError: err, trKey: key };
   }
   const fmtZt = (m) => (m ? `${m.value.toPrecision(4)} (${m.temperature_k} K, μ ${m.mu_ev.toFixed(3)} eV)` : "");
-
-  /* the figure of merit against μ at one temperature: ZTₑ (electrons only) and the total with κ_L */
-  function ztFigure(d) {
-    const z = d.data.zt, o = d.opts, css = tokenOf("band"), pal = PAL(css), grid = css("--line");
-    const traces = [];
-    if (z) {
-      const block = z.blocks.find((b) => b.T === o.T) || z.blocks[0];
-      traces.push({ x: block.mu, y: block.zt_e, mode: "lines", type: "scatter", meta: "zt_e", connectgaps: false,
-        name: "ZTₑ (electrons only)", line: { color: pal[0], width: o.width, dash: "dash" },
-        hovertemplate: "%{x:.3f} eV: ZTₑ %{y:.4g}<extra></extra>" });
-      if (block.zt_total) traces.push({ x: block.mu, y: block.zt_total, mode: "lines", type: "scatter", meta: "zt_total", connectgaps: false,
-        name: `ZT total, ${z.kappa_l_label}${z.kappa_l_label.includes("from") ? ` (${Number(block.kappa_l).toPrecision(4)} at ${block.T} K)` : ""}, τ ${z.tau_fs} fs`,
-        line: { color: pal[1], width: o.width },
-        hovertemplate: "%{x:.3f} eV: ZT %{y:.4g}<extra></extra>" });
+  // the menu's quantities: the run's files, then the ones derived from them (mace.utils.transport_plot.QUANTITIES)
+  const TQ_RAW = ["SEEBECK", "SIGMA", "SIGMAS", "KAPPA", "TDF"], TQ_DERIVED = ["pf", "kappa_e", "zt", "lorenz", "sigma_tau", "pf_tau"];
+  // the Quantity buttons (their markup drawn by L.html, as the plot's labels: labels.js)
+  const TQ_SHORT = { SEEBECK: "S", SIGMA: "σ", SIGMAS: "σS", KAPPA: L.SYMBOLS.kappa_0, TDF: "TDF", pf: "PF", kappa_e: L.SYMBOLS.kappa_e, zt: "ZT", lorenz: "L", sigma_tau: "σ/τ", pf_tau: "PF/τ" };
+  const TQ_TITLE = { SEEBECK: "Seebeck coefficient (SEEBECK.dat)", SIGMA: "Electrical conductivity (SIGMA.dat)", SIGMAS: "σS as CRYSTAL writes it, −σ·S (SIGMAS.dat)",
+    KAPPA: "Zero-field thermal coefficient κ₀ (KAPPA.dat)", TDF: "Transport distribution function against energy (TDF.dat)", pf: "Power factor S²σ",
+    kappa_e: "Electronic thermal conductivity κₑ = κ₀ − TσS²", zt: "Figure of merit ZT = S²σT/(κₑ + κ_L); without κ_L, ZTₑ (κ_L = 0), an upper bound",
+    lorenz: "Lorenz number L = κₑ/(σT), with Sommerfeld's L₀", sigma_tau: "σ/τ at the run's relaxation time", pf_tau: "PF/τ = S²σ/τ at the run's relaxation time" };
+  const compLabel = (t, c) => (c === "avg" ? t.avg_label : c);
+  /* the curves of mace.utils.transport_plot.traces (mace plotting --transport draws the same): one temperature or
+     all, one component or all three, against μ or the carrier concentration (p- and n-type apart), ZT's ZTₑ bound
+     with a κ_L, the Lorenz number's L₀ line */
+  const ZT_E_KEY = `${L.SYMBOLS.ZT_e} (${L.SYMBOLS.kappa_L} = 0)`;     // transport_plot.ZT_E_KEY
+  function transportTraces(t, o) {
+    const all = String(o.T) === "all" && t.blocks[0].T !== null;
+    const blocks = t.blocks[0].T === null ? t.blocks.slice(0, 1) : all ? t.blocks : [t.blocks.find((b) => b.T === o.T) || t.blocks[0]];
+    let comps = o.component === "all" ? t.components.slice() : [o.component === "avg" || t.components.includes(o.component) ? o.component || "avg" : "avg"];
+    if (all && comps.length > 1) comps = ["avg"];
+    const carriers = o.x === "carriers" && t.x !== "energy", ztTotal = t.quantity === "zt" && !t.upper_bound;
+    const out = [];
+    let k = 0;
+    for (const b of blocks) {
+      for (const c of comps) {
+        const base = blocks.length > 1 ? `${b.T} K` : comps.length > 1 ? compLabel(t, c) : null;
+        const series = [[b[c], "data", ztTotal ? `ZT (${t.kappa_l_label}, τ = ${t.tau_fs} fs)` : null]];
+        if (ztTotal && b.bound && b.bound[c]) series.push([b.bound[c], "bound", ZT_E_KEY]);
+        for (const [y, role, what] of series) {
+          if (ztTotal && role === "data" && b.refused) continue;
+          const name = what ? (base ? `${base} · ${what}` : what) : base || compLabel(t, c);
+          const dash = role === "bound" ? "dash" : "solid", meta = t.quantity === "zt" ? (role === "bound" || !ztTotal ? "zt_e" : "zt_total") : role;
+          if (carriers) {
+            const vol = t.dim === 3 ? b.volume_cm3 : null;
+            for (const [sign, kind, d2] of [[1, "p-type", dash], [-1, "n-type", role === "bound" ? "dot" : "dash"]]) {
+              const xs = [], ys = [];
+              b.carriers.forEach((n, i) => { if (n * sign > 0) { xs.push(vol ? Math.abs(n) / vol : Math.abs(n)); ys.push(y[i]); } });
+              if (xs.length) out.push({ name: `${name}, ${kind}`, x: xs, y: ys, color: k, dash: d2, role, meta });
+            }
+          } else out.push({ name, x: b.mu, y, color: k, dash, role, meta });
+        }
+        k += 1;
+      }
     }
-    const lay = { margin: { l: 70, r: 14, t: 10, b: 44, autoexpand: false }, showlegend: true, hovermode: "x unified", legend: PK.legendTop(),
+    if (t.reference && out.length) {
+      const xs = out.flatMap((c) => c.x);
+      out.push({ name: t.reference.label, x: [Math.min(...xs), Math.max(...xs)], y: [t.reference.value, t.reference.value], color: null, dash: "dot", role: "reference", meta: "reference" });
+    }
+    return out;
+  }
+  const trNote = (t) => `${L.html(t.label)} from BOLTZTRA (${t.blocks[0].T === null ? "against energy" : `${t.blocks.length} temperature${t.blocks.length === 1 ? "" : "s"}`}), read with the database extractor's own reader`;
+  /* ZT with κ_L: the y axis spans the total, so the dashed ZTₑ bound (no lattice term: it runs up where κₑ is
+     tiny, in the gap) does not flatten it (transport_plot.y_range) */
+  const trYRange = (t, curves) => {
+    if (t.quantity !== "zt" || t.upper_bound) return null;
+    const ys = curves.filter((c) => c.role === "data").flatMap((c) => c.y).filter((v) => v !== null && Number.isFinite(v));
+    return ys.length && Math.max(...ys) > 0 ? [0, 1.08 * Math.max(...ys)] : null;
+  };
+  // the axis titles: transport_plot.x_title, y_title (plot markup: labels.js)
+  const trXTitle = (t, o) => (t.x === "energy" ? L.withUnit("Energy", "eV") : o.x === "carriers" ? (t.dim === 3 ? L.withUnit("Carrier concentration |n|", "cm-3") : "Carriers per cell |N|")
+    : L.withUnit("Chemical potential μ", "eV"));
+  const trYTitle = (t) => (t.quantity === "zt" ? (t.upper_bound ? `${L.SYMBOLS.ZT_e} (${L.SYMBOLS.kappa_L} = 0, an upper bound)` : "Figure of merit ZT") : L.withUnit(t.label, t.unit));
+  function transportFigure(d) {
+    const t = d.data.transport, o = d.opts, css = tokenOf("band"), pal = PAL(css), grid = css("--line");
+    const unit = t.unit ? ` ${L.html(t.unit)}` : "";
+    const curves = transportTraces(t, o), yr = trYRange(t, curves);
+    const traces = curves.map((c) => ({ x: c.x, y: c.y, mode: "lines", type: "scatter", name: c.name, meta: c.meta, connectgaps: false,
+      line: c.role === "reference" ? { color: css("--text-3") || grid, width: 1, dash: "dot" } : { color: pal[c.color % pal.length], width: o.width, dash: c.dash },
+      hovertemplate: c.role === "reference" ? `${L.html(c.name)}<extra></extra>` : `%{x:.4g}: %{y:.4g}${unit}<extra>${L.html(c.name)}</extra>` }));
+    const carriers = o.x === "carriers" && t.x !== "energy";
+    const lay = { margin: { l: 70, r: 14, t: 10, b: 44, autoexpand: false }, showlegend: traces.length > 1, hovermode: carriers ? "closest" : "x unified", legend: PK.legendTop(),
       ...paper(), font: { color: css("--text"), size: 12, family: css("--font-sans") },
-      xaxis: { title: { text: "Chemical potential μ (eV)" }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid },
-      yaxis: { title: { text: "Figure of merit ZT" }, rangemode: "tozero", gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid } };
+      xaxis: { title: { text: trXTitle(t, o) }, type: carriers ? "log" : "linear", exponentformat: "power", gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: !carriers, zerolinecolor: grid },
+      yaxis: { title: { text: trYTitle(t) }, ...(yr ? { range: yr } : t.quantity === "zt" ? { rangemode: "tozero" } : {}), exponentformat: "power", gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid } };
     return { traces, layout: lay, legendBase: { t: 10, r: 14 } };
   }
 
@@ -467,17 +623,26 @@ export function createPlotView(host, optsHost, H) {
   async function redraw() {
     if (!doc || !doc.data) return;
     if (staleModes(doc)) { const d = doc; d.data = null; try { await fetchData(d); } catch (e) { toast(e.message, "error"); return; } if (doc !== d) return; note(d); }
-    if (staleZt(doc)) { const d = doc; await fetchZt(d); if (doc !== d) return; renderOptions(); }
+    if (staleData(doc)) { const d = doc; d.data = null; try { await fetchData(d); } catch (e) { toast(e.message, "error"); return; } if (doc !== d) return; note(d); renderOptions(); if (kit) kit.refresh(); }
+    if (staleTr(doc)) {
+      const d = doc;
+      try { await fetchTransport(d); } catch (e) { toast(e.message, "error"); return; }
+      if (doc !== d) return;
+      // the subtitle names the quantity drawn (its one note: the label's markup kept, L.html)
+      const line = $(".pv-note-line");
+      if (line) line.innerHTML = `${trNote(d.data.transport)}<span class="pv-beyond"></span>`;
+      renderOptions();
+    }
     if (building) { again = true; return; }        // one figure at a time: the latest options win
     building = true;
     el.dataset.drawn = "";
     try {
       await loadPlotly();
       if (!window.Plotly) throw new Error("plotly is not installed in this Python; pip install plotly");
-      const fig = doc.kind === "map" ? mapFigure(doc) : doc.kind === "convergence" ? convergenceFigure(doc) : doc.kind === "transport" ? (isZt(doc) ? ztFigure(doc) : transportFigure(doc)) : doc.kind === "ir" || doc.kind === "raman" ? spectrumFigure(doc) : bandFigure(doc);
+      const fig = doc.kind === "map" ? mapFigure(doc) : doc.kind === "convergence" ? convergenceFigure(doc) : doc.kind === "transport" ? transportFigure(doc) : doc.kind === "ir" || doc.kind === "raman" ? spectrumFigure(doc) : bandFigure(doc);
       // another document, or other subplots (a band plot after a band+DOS one): a new figure, not an update;
       // plotly's react cannot add a second x axis to an existing figure
-      const sig = `${doc.path}${isZt(doc) ? "|zt" : ""}|${Object.keys(fig.layout).filter((k) => /^[xy]axis/.test(k)).sort().join(",")}`;
+      const sig = `${doc.path}${doc.kind === "transport" ? `|${doc.data.transport.quantity}|${doc.opts.x}` : ""}|${Object.keys(fig.layout).filter((k) => /^[xy]axis/.test(k)).sort().join(",")}`;
       const config = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d"], edits: { shapePosition: true } };
       // Settings › Appearance › Plot style (app.js styleFigure): the screen and the PNG/SVG exports alike
       if (H.styleFigure) H.styleFigure(fig.traces, fig.layout, familyOf(doc), (doc.opts && doc.opts.style) || null, surfaceOf(doc));
@@ -503,6 +668,7 @@ export function createPlotView(host, optsHost, H) {
       bind();
       chips();
       el.dataset.drawn = doc.path;
+      beyondNote();
       performance.mark("plot:drawn");
     } catch (e) { $(".pv-note").classList.remove("one"); $(".pv-note").textContent = e.message; } finally {
       building = false;
@@ -515,6 +681,10 @@ export function createPlotView(host, optsHost, H) {
     const parts = [];
     if (doc.kind !== "ir" && doc.kind !== "raman" && o.shift) parts.push(`<span class="pv-chip" title="Fermi shift (drag the dotted line; Plot options)">E<sub>F</sub> ${o.shift > 0 ? "+" : "−"} ${Math.abs(o.shift).toFixed(2)} eV</span>`);
     if (doc.absShown) parts.push(`<span class="pv-chip" title="A log axis cannot show zero or negative values">|value| shown</span>`);
+    // a band + DOS pair from two folders: the other file, and why it is not drawn or how it was aligned
+    const pr = doc.data && doc.data.pair;
+    if (pr && pr.error) parts.push(`<span class="pv-chip warn" title="${esc(pr.error)}">${esc(pr.path.split("/").pop())} not drawn</span>`);
+    else if (pr) parts.push(`<span class="pv-chip" title="${esc([pr.path, ...((pr.check && pr.check.warnings) || []), ...((pr.check && pr.check.notes) || [])].join("\n"))}">with ${esc(relPath(dirOf(doc.path), pr.path))}${pr.shift ? ` · DOS ${pr.shift > 0 ? "+" : "−"}${Math.abs(pr.shift).toFixed(2)} eV` : ""}</span>`);
     c.innerHTML = parts.join("");
   }
 
@@ -633,10 +803,20 @@ export function createPlotView(host, optsHost, H) {
   const writePresets = (p) => { try { localStorage.setItem(PRESETS, JSON.stringify(p)); } catch (e) { /* private */ } };
   const fits = (preset, computed) => K.visible(preset).length > 0 && preset.every((s) => computed.some((c) =>
     (K.canonical(c.from) === K.canonical(s.from) && K.canonical(c.to) === K.canonical(s.to)) || (K.canonical(c.from) === K.canonical(s.to) && K.canonical(c.to) === K.canonical(s.from))));
+  const bzOf = (d) => {
+    const band = d.data && d.data.band;
+    // another band file (Add Band… picked another one, or removed it): its own zone and path facts
+    if (d.bz && (!band || d.bzPath !== band.path)) { d.bz.destroy(); d.bz = null; d.kinfo = null; }
+    if (!d.bz && band && band.path) {
+      d.bz = createBZ({ api, path: band.path, onHover: (i) => KE.hoverFromBZ("plot", i), onSelect: (i) => KE.selectFromBZ("plot", i) });
+      d.bzPath = band.path;
+    }
+    return d.bz || null;
+  };
   function kpathEditor(kh) {
     const d = doc, band = d.data.band, computed = pathSegments(band);
-    if (!d.bz && band.path) d.bz = createBZ({ api, path: band.path, onHover: (i) => KE.hoverFromBZ("plot", i), onSelect: (i) => KE.selectFromBZ("plot", i) });
-    KE.render(kh, { id: "plot", mode: "display", computed, segs: d.opts.kpath, icon, bz: d.bz, onPreview: plotPreview,
+    // the zone view sits in the Inspector's Brillouin zone section (every tier); the strip drives it
+    KE.render(kh, { id: "plot", mode: "display", computed, segs: d.opts.kpath, icon, bz: bzOf(d), bzSlot: false, onPreview: plotPreview,
       // a zoom along k belongs to the old path: the edited one starts unzoomed
       onChange: (segs, label) => { if (doc === d) setOpt(d, { kpath: segs, xr: null }, label); },
       presets: {
@@ -646,6 +826,54 @@ export function createPlotView(host, optsHost, H) {
         remove: (name) => { const p = readPresets(); delete p[name]; writePresets(p); renderOptions(); },
       } });
   }
+  /* ------------------------------------------------------------ Inspector › Brillouin zone (1.1.6)
+     A band plot (a BAND.DAT, a band fort.25, a phonon run's fort.25) shows the zone of the run's cell (its .out:
+     a slab's 2D, a polymer's 1D zone) with the path it was computed along, its high-symmetry points labeled,
+     and the path's facts: the segments with their k, the ISS (shrinking factor) and the k points, read from the
+     run's .d3, else the fort.25's or the BAND.DAT's own records (GET api/kpath); a phonon run's ISS from the
+     FREQCALC BANDS of its .d12. The zone view is the k-path editor's (bz_view.js); an edited path is drawn. */
+  const frac = (x) => { const v = Math.round(x * 1e4) / 1e4; return String(v === 0 ? 0 : v); };
+  const kText = (k) => (k ? k.map(frac).join(" ") : "");
+  function bzSegs(d) {
+    const band = d.data.band, info = d.kinfo && d.kinfo.found ? d.kinfo : null, named = pathSegments(band);
+    if (d.opts.kpath) return d.opts.kpath;
+    const withK = info && info.segments.every((s) => s.k_from && s.k_to) ? info.segments : null;
+    if (withK && named && named.length === withK.length) return withK.map((s, i) => ({ ...named[i], k_from: s.k_from, k_to: s.k_to }));
+    return withK || named || [];
+  }
+  function bzSection(slot, facts) {
+    const d = doc, band = d.data.band, bz = bzOf(d);
+    if (bz && slot) { bz.attach(slot); bz.update(bzSegs(d)); }
+    if (!d.kinfo && band.path) {
+      d.kinfo = { loading: true };
+      api("kpath?" + q({ path: band.path })).then((r) => { d.kinfo = r; }, (e) => { d.kinfo = { error: e.message }; })
+        .then(() => { if (doc === d) { const f = optsHost.querySelector(".po-kinfo"); if (f) kFacts(f); if (d.bz && !d.opts.kpath) d.bz.update(bzSegs(d)); } });
+    }
+    if (facts) kFacts(facts);
+  }
+  function kFacts(el) {
+    const d = doc, band = d.data.band, info = d.kinfo || {};
+    const segs = bzSegs(d), named = pathSegments(band) || [];
+    const lab = (l) => (l ? K.display(l) : "?");
+    // the path as the plot's ticks read (U|K: a jump)
+    const path = (band.labels || []).map((l) => String(l).split("|").map((x) => esc(x)).join(" | ")).join(" → ");
+    const rows = [["Path", path || "—"]];
+    if (info.found) {
+      rows.push(["Segments", String(info.lines ?? segs.length)], ["k points", info.points != null ? String(info.points) : "—"],
+        ["ISS (shrinking factor)", info.iss != null ? String(info.iss) : "—"], ["From", esc(info.source)]);
+    } else if (info.loading) rows.push(["From", "reading…"]);
+    else rows.push(["From", esc(info.error || "the plot's tick labels (no .d3, fort.25 records or BAND.DAT header)")]);
+    if (d.opts.kpath) rows.push(["Drawn", "the path as edited (k-path editor, Advanced)"]);
+    const list = (info.found ? info.segments : []).map((s, i) => {
+      const n = named[i] || s, a = s.k_from ? ` <span class="muted">(${kText(s.k_from)})</span>` : s.ints ? ` <span class="muted">(${s.ints[0].join(" ")})</span>` : "";
+      const b = s.k_to ? ` <span class="muted">(${kText(s.k_to)})</span>` : s.ints ? ` <span class="muted">(${s.ints[1].join(" ")})</span>` : "";
+      return `<li>${lab(n.from)}${a} → ${lab(n.to)}${b}</li>`;
+    }).join("");
+    el.innerHTML = `<dl class="po-kfacts">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>` +
+      (list ? `<ol class="po-ksegs" aria-label="Path segments">${list}</ol>` +
+        (info.iss == null && info.segments.some((s) => s.ints) ? `<p class="po-note">The segment ends are integers of the run's ISS, which its fort.25 does not record (the .d3 or .d12 beside it does).</p>` : "") : "");
+  }
+
   optsHost.addEventListener("keydown", (e) => {
     // Mod+Z in the k-path editor is the plot's undo (the other controls keep their own, a text field's)
     if (!doc || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || !e.target.closest(".po-kpath") || e.target.matches("input")) return;
@@ -763,25 +991,36 @@ export function createPlotView(host, optsHost, H) {
     return groups;
   }
   const styleControl = (pick) => { for (const g of styleControls()) for (const c of g.ctrls) if (pick(c)) return c; return null; };
-  function styleSection() {
+  /* the Plot options panel's sections: one <details> each (the toolbar's menus of the same names), open or shut as the
+     user left them; the niche ones carry data-tier="advanced" (the Inspector's Basic/Advanced tabs) */
+  const catOpen = {};
+  const sec = (key, title, body, opts = {}) => (body ? `<details class="po-cat" data-cat="${key}"${(catOpen[key] ?? opts.open ?? false) ? " open" : ""}${opts.adv ? ' data-tier="advanced"' : ""}><summary>${esc(title)}</summary>${body}</details>` : "");
+  optsHost.addEventListener("toggle", (e) => { const d = e.target.closest && e.target.closest("details.po-cat"); if (d) catOpen[d.dataset.cat] = d.open; }, true);
+  // style controls that only matter once the basics are set
+  const ADV_CTRL = new Set(["po-bg", "po-bgc", "po-spinup", "po-spindn", "po-bandm", "po-bandc", "po-bdash", "po-dtotal", "po-dsmooth", "po-dsigma"]);
+  function styleSection(which = "") {
     const pp = H.presets ? H.presets() : null;
     if (!pp || !doc) return "";
     const sel = (c) => `<label class="po-row" for="${c.id}"><span>${esc(c.label)}</span><select id="${c.id}">` +
       `<option value=""${c.value === null || c.value === undefined ? " selected" : ""}>Settings (${esc(c.settings)})</option>` +
       c.choices.map(([v, t]) => `<option value="${esc(v)}"${c.value === v ? " selected" : ""}>${esc(t)}</option>`).join("") + "</select></label>";
     const tip = (c) => (c.title ? ` title="${esc(c.title)}"` : "");
-    const ctrl = (c) => c.type === "select" ? sel(c)
+    const adv = (c, html) => (ADV_CTRL.has(c.id) ? `<div data-tier="advanced">${html}</div>` : html);
+    const ctrl0 = (c) => c.type === "select" ? sel(c)
       : c.type === "color" ? `<label class="po-row" for="${c.id}"${tip(c)}><span>${esc(c.label)}</span><input id="${c.id}" type="color" value="${esc(c.current)}"></label>`
       : c.type === "toggle" ? `<label class="chk po-row"${tip(c)}><input type="checkbox" id="${c.id}"${c.current ? " checked" : ""}> ${esc(c.label)}</label>`
       : num(c.id, c.label, c.current, c.unit, c.step);
-    let h = `<div class="po-style" role="group" aria-label="Style"><div class="po-h">Style</div>`;
-    for (const g of styleControls()) {
+    const ctrl = (c) => adv(c, ctrl0(c));
+    const want = STYLE_GROUPS[which] || null;
+    let h = `<div class="po-style" role="group" aria-label="${which === "traces" ? "Traces" : "Style"}">${which ? "" : '<div class="po-h">Style</div>'}`;
+    for (const g of styleControls().filter((x) => !want || want.includes(x.key))) {
       h += `<div class="po-sgroup" role="group" aria-label="${esc(g.head)}" data-group="${g.key}">` +
         (g.key === "plot" ? "" : `<div class="po-h po-sub">${esc(g.head)}</div>`) + g.ctrls.map(ctrl).join("") + "</div>";
     }
+    if (which === "traces" && !want.some((k) => styleControls().some((x) => x.key === k))) return "";
     const own = styleNames().some((n) => doc.opts[n] !== null && doc.opts[n] !== undefined);
-    h += `<div class="po-acts"><button class="tb-btn-text" data-po="default"${own ? "" : " disabled"} title="Save this plot's style as the default of every plot (Settings)">Make This the Default</button></div></div>`;
-    return h;
+    if (which !== "traces") h += `<div class="po-acts"><button class="tb-btn-text" data-po="default"${own ? "" : " disabled"} title="Save this plot's style as the default of every plot (Settings)">Make This the Default</button></div>`;
+    return h + "</div>";
   }
   /* one style control's new value (the Inspector's input or the Style menu's pick): one undoable option change */
   function styleApply(c, v) {
@@ -810,13 +1049,19 @@ export function createPlotView(host, optsHost, H) {
     setOpt(doc, clear, "Style saved as the default");
     toast("This plot's style is the default now (Settings)", "success");
   }
-  /* the toolbar's Style ▾ menu: the same controls (styleControls), one pick at a time; a color opens the
-     system color picker, a number its choices */
-  function styleMenu() {
+  /* the toolbar's style menus: the same controls (styleControls), one pick at a time; a color opens the
+     system color picker, a number its choices. A band or DOS plot splits them by what they change: Style (the
+     plot style, background and color pair) and Traces (the band and DOS lines); Reference and Labels are popovers
+     (catPop), Axes & Ranges the shared Plot Options popover with the energy window added (extraAxes). Another
+     plot has the one Style menu. */
+  const STYLE_GROUPS = { style: ["plot", "colors"], traces: ["bands", "dos"] };
+  function styleMenu(cat = "") {
     if (!doc) return [];
+    const want = STYLE_GROUPS[cat] || null;
     const items = [];
-    styleControls().forEach((g, k) => {
+    styleControls().filter((g) => !want || want.includes(g.key)).forEach((g, k) => {
       if (k) items.push("-", { head: g.head, group: g.key });
+      else if (g.key !== "plot") items.push({ head: g.head, group: g.key });
       for (const c of g.ctrls) {
         if (c.type === "select" || c.type === "number") {
           if (c.type === "number" || g.key !== "plot" || c !== g.ctrls[0]) items.push({ head: c.label });
@@ -827,9 +1072,82 @@ export function createPlotView(host, optsHost, H) {
       }
     });
     if (!items.length) return items;
-    items.push("-", { v: "settings", label: "Follow Settings" });
-    if (cliKind(doc)) items.push({ v: "cli", label: "Copy CLI Command" });
+    if (!cat || cat === "style") {
+      items.push("-", { v: "settings", label: "Follow Settings" });
+      if (cliKind(doc)) items.push({ v: "cli", label: "Copy CLI Command" });
+    }
     return items;
+  }
+  /* the toolbar's categories of a band or DOS plot (plotkit: one button each) */
+  function categories() {
+    if (!doc || !isBandDos(doc) || !doc.data || (!doc.data.band && !doc.data.dos)) return [];
+    const keys = styleControls().map((g) => g.key), phonon = isPhonon(doc);
+    const out = [{ key: "style", label: "Style", type: "menu", title: "Plot style, background and color pair" }];
+    if (keys.includes("bands") || keys.includes("dos")) out.push({ key: "traces", label: "Traces", type: "menu", title: "The band and DOS lines: band style, β line, DOS projections, spin layout, total, smoothing" });
+    out.push({ key: "ref", label: "Reference", type: "pop", title: phonon ? "Frequency units and the fort.25 options" : "Fermi shift, energy zero and the Fermi level line" });
+    out.push({ key: "labels", label: "Labels", type: "pop", title: "k-point labels and the spin words over the DOS" });
+    return out;
+  }
+  const isPhonon = (d) => !!(d && d.data && ((d.data.band && d.data.band.domain === "phonon") || (d.data.dos && d.data.dos.domain === "phonon")));
+  const ERW = { auto: "Auto (vacuum with the POTC files, else the Fermi level)", fermi: "Fermi level", vacuum: "Vacuum (needs the POTC files)" };
+  /* Reference ▾: the energy zero. A Fermi shift moves it (also by dragging the dotted line); Fermi level or
+     vacuum overrides Auto (mace plotting --fermi-shift, --energy-reference); the dotted line can be left out */
+  function refPop() {
+    const o = doc.opts, er = (doc.data && (doc.data.band || doc.data.dos)) || {}, f25 = /\.f25$|(^|\/)fort\.25$/i.test(doc.path || "");
+    const opt = (v, t, dis) => `<option value="${v}"${(o.reference || "auto") === v ? " selected" : ""}${dis ? " disabled" : ""}>${esc(t)}</option>`;
+    let h = "";
+    if (isPhonon(doc)) {
+      h += `<p class="po-note">Phonon frequencies: the axis unit is in Units ▾ (cm⁻¹, THz, meV).</p>`;
+    } else {
+      h += `<label class="pk-row"><span>Fermi shift</span><input type="number" step="0.01" id="pr-shift" value="${o.shift ?? 0}" aria-label="Fermi shift (eV)"><span class="po-u">eV</span></label>` +
+        `<label class="pk-row"><span>Energy zero</span><select id="pr-ref" aria-label="Energy zero">${opt("auto", ERW.auto)}${opt("fermi", ERW.fermi)}${opt("vacuum", ERW.vacuum, !er.has_potc)}</select></label>` +
+        `<label class="pk-row"><input type="checkbox" id="pr-fl"${o.fermi_line !== false ? " checked" : ""}> Dotted Fermi level line</label>`;
+    }
+    if (f25) {
+      h += `<div class="pk-row" data-tier="advanced"><span>fort.25 holds</span><select id="pr-dom" aria-label="fort.25 data">${[["", "Read from the run"], ["electronic", "Electronic (energies)"], ["phonon", "Phonon (frequencies)"]]
+        .map(([v, t]) => `<option value="${v}"${(o.f25_domain || "") === v ? " selected" : ""}>${t}</option>`).join("")}</select></div>`;
+      const n = er.n_runs || 1;
+      if (n > 1) h += `<label class="pk-row" data-tier="advanced"><span>Run</span><select id="pr-run" aria-label="Run of the fort.25">${Array.from({ length: n }, (_, k) =>
+        `<option value="${k + 1}"${(o.f25_run || n) === k + 1 ? " selected" : ""}>${k + 1} of ${n}${k + 1 === n ? " (last)" : ""}</option>`).join("")}</select></label>`;
+    }
+    return h;
+  }
+  function refChange(t) {
+    if (!doc) return false;
+    const d = doc;
+    if (t.id === "pr-shift") { const v = Number(t.value); setOpt(d, { shift: Number.isFinite(v) ? v : 0 }, `Fermi shift ${t.value || 0}`, "opt:shift"); return true; }
+    if (t.id === "pr-ref") { setOpt(d, { reference: t.value === "auto" ? null : t.value }, `Energy zero ${ERW[t.value] ? ERW[t.value].split(" (")[0] : t.value}`); return true; }
+    if (t.id === "pr-fl") { setOpt(d, { fermi_line: t.checked }, t.checked ? "Fermi level line" : "No Fermi level line"); return true; }
+    if (t.id === "pr-dom") { setOpt(d, { f25_domain: t.value || null }, `fort.25 as ${t.value || "the run says"}`); return true; }
+    if (t.id === "pr-run") { const n = Number(t.value); const last = ((d.data && (d.data.band || d.data.dos)) || {}).n_runs || 1; setOpt(d, { f25_run: n === last ? null : n }, `Run ${n}`); return true; }
+    return false;
+  }
+  function labelsPop() {
+    const o = doc.opts, band = doc.data && doc.data.band, dos = doc.data && doc.data.dos;
+    let h = "";
+    if (band) h += `<label class="pk-row"><input type="checkbox" id="pl-k"${o.k_labels !== false ? " checked" : ""}> k-point labels under the bands</label>`;
+    if (dos) h += `<label class="pk-row"><input type="checkbox" id="pl-s"${o.spin_labels !== false ? " checked" : ""}> “up” and “down” over a mirrored DOS</label>`;
+    return h || `<p class="po-note">Nothing to label.</p>`;
+  }
+  function labelsChange(t) {
+    if (!doc) return false;
+    if (t.id === "pl-k") { setOpt(doc, { k_labels: t.checked }, t.checked ? "k-point labels" : "No k-point labels"); return true; }
+    if (t.id === "pl-s") { setOpt(doc, { spin_labels: t.checked }, t.checked ? "Spin labels" : "No spin labels"); return true; }
+    return false;
+  }
+  const catPop = (key) => key === "ref" ? { html: doc ? refPop() : "", change: refChange } : { html: doc ? labelsPop() : "", change: labelsChange };
+  /* Axes & Ranges ▾ (the Plot Options popover): the energy window leads it */
+  function extraAxes() {
+    if (!doc || !isBandDos(doc)) return null;
+    const o = doc.opts, ph = isPhonon(doc);
+    const f = (id, lab, v) => `<label class="pk-row"><span>${lab}</span><input type="number" step="0.5" data-e="${id}" value="${v ?? ""}" aria-label="${lab}"><span class="po-u">${ph ? "eV" : "eV"}</span></label>`;
+    return { html: ph ? "" : f("emin", "Energy from", o.emin) + f("emax", "Energy to", o.emax),
+      change: (t) => {
+        if (!t.dataset.e) return false;
+        const v = t.value === "" ? defaultsFor(doc)[t.dataset.e] : Number(t.value);
+        setOpt(doc, { [t.dataset.e]: v }, `Energy ${t.dataset.e === "emin" ? "from" : "to"} ${t.value || "default"}`, `opt:${t.dataset.e}`);
+        return true;
+      } };
   }
   function pickColor(c) {
     document.getElementById("pk-colorpick")?.remove();
@@ -857,15 +1175,27 @@ export function createPlotView(host, optsHost, H) {
     else styleApply(c, val);
   }
   /* Copy CLI Command (clicmd.js): mace plotting with this plot's file, window, energy zero, unit and look */
-  const cliKind = (d) => (!d || !d.data ? null : d.data.band && d.data.dos ? "bandos" : d.data.band ? "band" : d.data.dos ? "dos"
-    : d.kind === "ir" || d.kind === "raman" ? (d.source === "modes" ? null : d.kind) : null);
+  const cliKind = (d) => (!d || !d.data ? null : d.data.band && d.data.dos ? (isPhonon(d) ? "phbandos" : "bandos") : d.data.band ? "band" : d.data.dos ? "dos"
+    : d.kind === "ir" || d.kind === "raman" ? (d.source === "modes" ? null : d.kind) : d.kind === "transport" && d.data.transport ? "transport" : null);
+  /* a transport plot's options as mace plotting --transport takes them (the quantity, temperature and x axis always named) */
+  function transportOpts(d) {
+    const t = d.data.transport, o = d.opts, qn = t.quantity;
+    return { quantity: qn, component: o.component || "avg", temperature: t.blocks[0].T === null ? null : String(o.T) === "all" ? "all" : (o.T ?? t.blocks[0].T),
+      x: t.x === "energy" ? null : o.x || "mu", kappa_l: qn === "zt" && !t.upper_bound ? String(o.kl || "").trim() : "",
+      tau_fs: ["pf", "kappa_e", "zt"].includes(qn) && o.tau !== null && o.tau !== undefined ? o.tau : null };
+  }
   function cliText(d = doc) {
     const kind = cliKind(d);
     if (!kind) throw new Error("no mace plotting command draws this plot");
-    const er = d.data.band || d.data.dos, file = kind === "dos" ? d.data.dos.name : kind === "band" || kind === "bandos" ? d.data.band.name : d.title;
-    return cliCommand({ kind, file, emin: d.opts.emin, emax: d.opts.emax, shift: d.opts.shift || 0,
-      reference: er && er.reference === "vacuum" ? "vacuum" : "fermi", unit: d.opts.unit || "eV", look: lookNow(d),
-      kpath: kind !== "dos" && d.opts.kpath ? d.opts.kpath : null,
+    if (kind === "transport") return cliCommand({ kind, file: d.data.transport.name, look: lookNow(d), transport: transportOpts(d) });
+    const er = d.data.band || d.data.dos;
+    let file = kind === "dos" ? d.data.dos.name : kind === "band" || kind === "bandos" || kind === "phbandos" ? d.data.band.name : d.title, partner = null;
+    // a band + DOS pair from two folders: run in the opened file's folder, the other half relative to it
+    if ((kind === "bandos" || kind === "phbandos") && d.opts.pair && d.data.pair && !d.data.pair.error) { file = d.path.split("/").pop(); partner = relPath(dirOf(d.path), d.opts.pair); }
+    return cliCommand({ kind, file, partner, emin: d.opts.emin, emax: d.opts.emax, shift: d.opts.shift || 0,
+      reference: isPhonon(d) ? "auto" : er && er.reference === "vacuum" ? "vacuum" : "fermi", unit: d.opts.unit || "eV", look: lookNow(d),
+      menus: menuArgs(d.opts),
+      kpath: kind !== "dos" && d.opts.kpath ? d.opts.kpath : null, logDos: !!d.opts.ylog,
       // with a mace-folder.toml its [plots] and [units] values would replace any default left out
       explicit: !!(H.folderFile && H.folderFile()) });
   }
@@ -884,7 +1214,7 @@ export function createPlotView(host, optsHost, H) {
         `<label class="po-row" for="po-crange"><span>Color range</span><select id="po-crange">${[["robust", "Auto (1st–99th percentile)"], ["full", "Full (min to max)"], ["custom", "Custom"]].map(([v, t]) =>
           `<option value="${v}"${(o.crange || "robust") === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` +
         (o.crange === "custom" ? num("po-zmin", "Color from", o.zmin, o.log ? "log₁₀" : "", "any") + num("po-zmax", "Color to", o.zmax, o.log ? "log₁₀" : "", "any") : "");
-      if (M) { const m = M.maps[o.which || 0]; h += `<p class="po-h">${esc(m.label)}: min ${m.min.toPrecision(4)} · max ${m.max.toPrecision(4)} (${esc(m.unit || M.unit)})</p>`; }
+      if (M) { const m = M.maps[o.which || 0]; h += `<p class="po-h">${esc(m.label)}: min ${m.min.toPrecision(4)} · max ${m.max.toPrecision(4)} (${L.html(m.unit || M.unit)})</p>`; }
       h += styleSection() + resetButton();
       optsHost.innerHTML = h;
       return;
@@ -900,32 +1230,32 @@ export function createPlotView(host, optsHost, H) {
     if (doc.kind === "transport") {
       const t = doc.data && doc.data.transport;
       if (t) {
-        const Q = { SEEBECK: "Seebeck", SIGMA: "σ", SIGMAS: "σS", KAPPA: "κ₀", TDF: "TDF" }, zt = o.view === "zt";
-        // ZT needs the run's Seebeck, σ and κ₀ files
-        const canZt = ["SEEBECK", "SIGMA", "KAPPA"].every((k) => t.siblings[k]) && t.quantity !== "TDF";
-        // on a row of its own: six choices do not fit beside the label at the default Inspector width
-        h += `<div class="po-row po-stack"><span>Quantity</span><span class="segment po-tq" role="radiogroup" aria-label="Quantity">${Object.keys(Q).filter((k) => t.siblings[k]).map((k) =>
-          `<button role="radio" aria-checked="${k === t.quantity && !zt}" data-tq="${esc(t.siblings[k])}">${Q[k]}</button>`).join("")}${canZt
-          ? `<button role="radio" aria-checked="${zt}" data-tview="zt" title="Figure of merit: ZTₑ, and the total ZT with a lattice κ_L">ZT</button>` : ""}</span></div>`;
-        if (t.blocks.length > 1 || t.blocks[0].T !== null) h += `<label class="po-row" for="po-temp"><span>Temperature</span><select id="po-temp">${t.blocks.map((b) =>
-          `<option value="${b.T}"${(o.T ?? t.blocks[0].T) === b.T ? " selected" : ""}>${b.T} K</option>`).join("")}</select></label>`;
-        if (zt) {
-          const z = doc.data.zt;
-          h += `<label class="po-row" for="po-kl"><span>Lattice κ_L</span><input id="po-kl" type="text" spellcheck="false" autocomplete="off" value="${esc(o.kl || "")}" placeholder="value or .csv beside the run" title="The lattice thermal conductivity in W/(m·K): one value, or a CSV file with T,kappa_L rows (interpolated linearly, never extrapolated), named as it sits beside the run (else from the served folder)"><span class="po-u">W/(m·K)</span></label>`;
-          h += num("po-tau", "Relaxation time τ", o.tau, "fs", "1").replace('placeholder="auto"', `placeholder="${z && z.tau_run_fs ? `${z.tau_run_fs} (the run's)` : "the run's"}"`);
-          h += num("po-width", "Line width", o.width, "px", "0.2");
-          if (doc.data.ztError) h += `<p class="po-note po-err" role="alert">${esc(doc.data.ztError)}</p>`;
-          if (z) {
-            h += `<p class="po-note">ZTₑ peak (electrons only): ${esc(fmtZt(z.zt_e_max))}</p>`;
-            if (z.zt_total_max) h += `<p class="po-note">ZT total peak: ${esc(fmtZt(z.zt_total_max))}, κ_L ${Number(z.zt_total_max.kappa_l).toPrecision(4)} W/(m·K), τ ${z.tau_fs} fs (${esc(z.tau_source)})</p>`;
-            else if (z.refused) h += `<p class="po-note po-err" role="alert">${esc(z.refused)}</p>`;
-            else if (!z.kappa_l_source && !doc.data.ztError) h += `<p class="po-note">Enter κ_L for the total ZT = S²σT/(κₑ + κ_L). σ and κ₀ are at the run's relaxation time (RELAXTIM); the total depends on it.</p>`;
-          }
-        } else {
-          h += `<label class="po-row" for="po-tcomp"><span>Component</span><select id="po-tcomp">${[["avg", "Average of the diagonal"], ["xx", "xx"], ["yy", "yy"], ["zz", "zz"], ["all", "xx, yy, zz"]].map(([v, l]) =>
-            `<option value="${v}"${o.component === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
-          h += num("po-width", "Line width", o.width, "px", "0.2");
-        }
+        // the Quantity choice, as a density volume offers its run's potential: every quantity of the run, those its
+        // files beside it do not allow grayed with the reason (on rows of their own: eleven do not fit beside the label)
+        const btn = (k) => { const why = t.available[k]; return `<button role="radio" aria-checked="${k === t.quantity}" data-tquantity="${k}"${why ? ` aria-disabled="true"` : ""} title="${esc(why ? `${TQ_TITLE[k]}: ${why}` : TQ_TITLE[k])}">${TQ_SHORT[k]}</button>`; };
+        h += `<div class="po-row po-stack"><span>Quantity</span><span class="segment po-tq" role="radiogroup" aria-label="Quantity from the files">${TQ_RAW.map(btn).join("")}</span>`
+          + `<span class="segment po-tq" role="radiogroup" aria-label="Derived quantity">${TQ_DERIVED.map(btn).join("")}</span></div>`;
+        if (t.blocks[0].T !== null) h += `<label class="po-row" for="po-temp"><span>Temperature</span><select id="po-temp">${t.blocks.map((b) =>
+          `<option value="${b.T}"${String(o.T ?? t.blocks[0].T) === String(b.T) ? " selected" : ""}>${b.T} K</option>`).join("")}<option value="all"${String(o.T) === "all" ? " selected" : ""}>All temperatures</option></select></label>`;
+        const comps = [["avg", `Average ${t.avg_label.replace(/ /g, "")}`], ...t.components.map((c) => [c, c])];
+        if (t.components.length > 1 && String(o.T) !== "all") comps.push(["all", t.components.join(", ")]);
+        h += `<label class="po-row" for="po-tcomp"><span>Component</span><select id="po-tcomp">${comps.map(([v, l]) =>
+          `<option value="${v}"${(o.component || "avg") === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+        if (t.x !== "energy") h += `<label class="po-row" for="po-tx"><span>Against</span><select id="po-tx">${[["mu", "μ (eV)"], ["carriers", t.dim === 3 ? "Carriers (cm⁻³)" : "Carriers per cell"]].map(([v, l]) =>
+          `<option value="${v}"${(o.x || "mu") === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+        if (t.quantity === "zt") h += `<label class="po-row" for="po-kl"><span>Lattice κ<sub>L</sub></span><input id="po-kl" type="text" spellcheck="false" autocomplete="off" value="${esc(o.kl || "")}" placeholder="value or .csv beside the run" title="The lattice thermal conductivity in W/(m·K): one value, or a CSV file with T,kappa_L rows (interpolated linearly, never extrapolated), named as it sits beside the run (else from the served folder)"><span class="po-u">W/(m·K)</span></label>`;
+        if (["pf", "kappa_e", "zt"].includes(t.quantity)) h += num("po-tau", "Relaxation time τ", o.tau, "fs", "1").replace('placeholder="auto"', `placeholder="${t.tau_run_fs ? `${t.tau_run_fs} (the run's)` : "the run's"}"`);
+        h += num("po-width", "Line width", o.width, "px", "0.2");
+        if (doc.data.trError) h += `<p class="po-note po-err" role="alert">${esc(doc.data.trError)}</p>`;
+        if (t.quantity === "zt") {
+          h += `<p class="po-note">ZT<sub>e</sub> peak (electrons only, κ<sub>L</sub> = 0): ${esc(fmtZt(t.zt_e_max))}</p>`;
+          if (t.zt_total_max) h += `<p class="po-note">ZT total peak: ${esc(fmtZt(t.zt_total_max))}, κ<sub>L</sub> ${Number(t.zt_total_max.kappa_l).toPrecision(4)} W/(m·K), τ ${t.tau_fs} fs (${esc(t.tau_fs !== t.tau_run_fs ? `given; the run used ${t.tau_run_fs} fs` : t.tau_source)})</p>`;
+          else if (t.refused) h += `<p class="po-note po-err" role="alert">${esc(t.refused)}</p>`;
+          else if (t.upper_bound && !doc.data.trError) h += `<p class="po-note">ZT<sub>e</sub> has no lattice term, so it is an upper bound: enter κ<sub>L</sub> for ZT = S<sup>2</sup>σT/(κ<sub>e</sub> + κ<sub>L</sub>). σ and κ<sub>0</sub> are at the run's relaxation time (RELAXTIM); the total depends on it.</p>`;
+          const blk = t.blocks.find((b) => b.T === o.T) || t.blocks[0];
+          if (blk.refused && String(o.T) !== "all") h += `<p class="po-note po-err" role="alert">${esc(blk.refused)}</p>`;
+        } else if (t.tau_fs !== null && t.tau_fs !== undefined) h += `<p class="po-note">τ = ${t.tau_fs} fs (${esc(t.tau_source)})</p>`;
+        for (const n of t.notes || []) h += `<p class="po-note">${esc(n)}</p>`;
       }
       h += styleSection() + `<div class="po-acts"><button class="tb-btn-text" data-po="reset">${icon("rotate-ccw")}<span>Reset Plot Options</span></button></div>`;
       optsHost.innerHTML = h;
@@ -934,18 +1264,40 @@ export function createPlotView(host, optsHost, H) {
     if (!sp) {
       const band = doc.data && doc.data.band, dos = doc.data && doc.data.dos;
       const spin = (band && band.spin_polarized) || (dos && dos.spin_polarized);
-      h += num("po-emin", "Energy from", o.emin, "eV") + num("po-emax", "Energy to", o.emax, "eV") +
-        num("po-shift", "Fermi shift", o.shift, "eV", "0.01") + num("po-width", "Line width", o.width, "px", "0.2");
-      if (spin) h += `<div class="po-row"><span>Spin</span><span class="segment po-spin" role="radiogroup" aria-label="Spin">${["both", "up", "down"].map((s) =>
+      const ph = isPhonon(doc);
+      let axes = ph ? `<p class="po-note">Phonon frequencies; pick the unit in Units ▾.</p>` : num("po-emin", "Energy from", o.emin, "eV") + num("po-emax", "Energy to", o.emax, "eV");
+      axes += `<div data-tier="advanced">${num("po-width", "Line width", o.width, "px", "0.2")}</div>`;
+      if (spin) axes += `<div class="po-row"><span>Spin</span><span class="segment po-spin" role="radiogroup" aria-label="Spin">${["both", "up", "down"].map((s) =>
         `<button role="radio" aria-checked="${o.spin === s}" data-spin="${s}">${s === "both" ? "Both" : s === "up" ? "α" : "β"}</button>`).join("")}</span></div>`;
-      if (band && pathSegments(band)) h += `<div class="po-kpath"></div>`;
+      h += sec("axes", "Axes & ranges", axes, { open: true });
+      const er = (doc.data && (band || dos)) || {};
+      if (!ph) {
+        const rf = num("po-shift", "Fermi shift", o.shift, "eV", "0.01") +
+          `<div data-tier="advanced"><label class="po-row" for="po-ref"><span>Energy zero</span><select id="po-ref">${[["auto", "Auto"], ["fermi", "Fermi level"], ["vacuum", "Vacuum"]]
+            .map(([v, t]) => `<option value="${v}"${(o.reference || "auto") === v ? " selected" : ""}${v === "vacuum" && !er.has_potc ? " disabled" : ""}>${t}</option>`).join("")}</select></label></div>` +
+          `<label class="chk po-row"><input type="checkbox" id="po-fl"${o.fermi_line !== false ? " checked" : ""}> Dotted Fermi level line</label>`;
+        h += sec("ref", "Fermi & reference", rf, { open: true });
+      }
+      let lb = "";
+      if (band) lb += `<label class="chk po-row"><input type="checkbox" id="po-klabels"${o.k_labels !== false ? " checked" : ""}> k-point labels</label>`;
+      if (dos) lb += `<label class="chk po-row"><input type="checkbox" id="po-sl"${o.spin_labels !== false ? " checked" : ""}> “up” and “down” over a mirrored DOS</label>`;
+      h += sec("labels", "Labels", lb, { adv: true });
+      if (band && pathSegments(band)) h += sec("path", "k-path", `<div class="po-kpath"></div>`, { adv: true, open: true });
+      // the zone and the path it was computed along (every tier), the k-path editor's view: see bzSection
+      if (band) h += sec("bz", "Brillouin zone", `<div class="po-bz"></div><div class="po-kinfo"></div>`, { open: true });
       // DOS colors (Settings › Plots, this plot's own choice over it) and the projections that mode draws, by their legend names
       if (dos) {
         // hidden: this plot's own list, or by default all but the 2-4 projections carrying the DOS (bandfig.js dosLook)
         const look = dosLook(dos, tokenOf("band"), o);
-        h += `<div class="po-proj"><div class="po-h">Projections</div>${look.lines.filter((l) => l.show).map((l) =>
-          `<label class="chk"><input type="checkbox" data-proj="${esc(l.label)}"${look.hidden.includes(l.label) ? "" : " checked"}> ${esc(l.name)}</label>`).join("")}</div>`;
+        h += sec("proj", "Projections", `<div class="po-proj">${look.lines.filter((l) => l.show).map((l) =>
+          `<label class="chk"><input type="checkbox" data-proj="${esc(l.label)}"${look.hidden.includes(l.label) ? "" : " checked"}> ${esc(l.name)}</label>`).join("")}</div>`, { open: true });
       }
+      h += sec("style", "Style", styleSection("style"), { open: true }) + sec("traces", "Traces", styleSection("traces"), { open: true });
+      optsHost.innerHTML = h + resetButton();
+      if (band) bzSection(optsHost.querySelector(".po-bz"), optsHost.querySelector(".po-kinfo"));
+      const khb = optsHost.querySelector(".po-kpath");
+      if (khb) kpathEditor(khb);
+      return;
     } else {
       h += num("po-xmin", "Wavenumber from", o.xmin, "cm⁻¹", "10") + num("po-xmax", "Wavenumber to", o.xmax, "cm⁻¹", "10") +
         num("po-width", "Line width", o.width, "px", "0.2") +
@@ -974,6 +1326,11 @@ export function createPlotView(host, optsHost, H) {
     if (!doc) return;
     const t = e.target, o = doc.opts;
     const v = (x) => (x === "" ? null : Number(x));
+    if (t.id === "po-ref") { setOpt(doc, { reference: t.value === "auto" ? null : t.value }, `Energy zero ${t.value}`); return; }
+    if (t.id === "po-fl") { setOpt(doc, { fermi_line: t.checked }, t.checked ? "Fermi level line" : "No Fermi level line"); return; }
+    // (po-kl is the transport view's κ_L field: the k-point labels box has its own id)
+    if (t.id === "po-klabels") { setOpt(doc, { k_labels: t.checked }, t.checked ? "k-point labels" : "No k-point labels"); return; }
+    if (t.id === "po-sl") { setOpt(doc, { spin_labels: t.checked }, t.checked ? "Spin labels" : "No spin labels"); return; }
     const map = { "po-emin": ["emin", "Energy from"], "po-emax": ["emax", "Energy to"], "po-shift": ["shift", "Fermi shift"],
       "po-width": ["width", "Line width"], "po-xmin": ["xmin", "Wavenumber from"], "po-xmax": ["xmax", "Wavenumber to"] };
     if (map[t.id]) { const [k, l] = map[t.id]; const val = v(t.value); setOpt(doc, { [k]: k === "shift" || k === "width" ? (val ?? defaultsFor(doc)[k]) : val }, `${l} ${t.value || "auto"}`, `opt:${k}`); }
@@ -992,7 +1349,8 @@ export function createPlotView(host, optsHost, H) {
     }
     else if (t.id === "po-crange") setOpt(doc, { crange: t.value }, `Color range ${t.value}`);
     else if (t.id === "po-zmin" || t.id === "po-zmax") setOpt(doc, { [t.id === "po-zmin" ? "zmin" : "zmax"]: v(t.value) }, `Color ${t.id === "po-zmin" ? "from" : "to"} ${t.value || "auto"}`, `opt:${t.id}`);
-    else if (t.id === "po-temp") setOpt(doc, { T: Number(t.value) }, `Temperature ${t.value} K`);
+    else if (t.id === "po-temp") setOpt(doc, { T: t.value === "all" ? "all" : Number(t.value) }, t.value === "all" ? "All temperatures" : `Temperature ${t.value} K`);
+    else if (t.id === "po-tx") setOpt(doc, { x: t.value }, t.value === "carriers" ? "Against the carrier concentration" : "Against μ");
     else if (t.id === "po-mlog") setOpt(doc, { log: t.checked }, t.checked ? "Logarithmic scale" : "Linear scale");
     else if (t.id === "po-mcont") setOpt(doc, { contours: Math.max(2, Math.min(60, Number(t.value) || 20)) }, `Contours ${t.value}`);
     else if (t.id === "po-mstyle") setOpt(doc, { contour_style: t.value || null }, `Contour style ${t.value || "of the plot style"}`);
@@ -1016,11 +1374,11 @@ export function createPlotView(host, optsHost, H) {
     }
   });
   optsHost.addEventListener("click", (e) => {
-    const tv = e.target.closest("[data-tview]");
-    if (tv && doc && tv.getAttribute("aria-checked") !== "true") { setOpt(doc, { view: "zt" }, "Figure of merit ZT"); return; }
-    const tq = e.target.closest("[data-tq]");
-    if (tq && doc && doc.opts.view === "zt" && tq.dataset.tq === doc.path) { setOpt(doc, { view: "quantity" }, "Quantity"); return; }
-    if (tq && doc && tq.getAttribute("aria-checked") !== "true" && H.openPath) { H.openPath(tq.dataset.tq); return; }
+    // a transport quantity: in this document (its sibling files and the derived ones), as a volume colors by potential;
+    // one the run's files do not allow says why
+    const tq = e.target.closest("[data-tquantity]");
+    if (tq && doc && tq.getAttribute("aria-disabled") === "true") { toast(tq.title, "info"); return; }
+    if (tq && doc && tq.getAttribute("aria-checked") !== "true") { const k = tq.dataset.tquantity; setOpt(doc, { quantity: k, view: undefined }, TQ_TITLE[k] || k); return; }
     const s = e.target.closest("[data-spin]");
     if (s && doc) { setOpt(doc, { spin: s.dataset.spin }, `Spin ${s.dataset.spin}`); return; }
     const b = e.target.closest("[data-po]");
@@ -1039,9 +1397,16 @@ export function createPlotView(host, optsHost, H) {
     get name() { return doc ? stemOf(doc) : "plot"; },
     host: el,
     get features() {
-      if (doc && isOwn(doc)) return { logY: false, logX: false, units: null, range: false, width: false, png: true, svg: true, image: true, csv: true, pub: false, style: true, cli: false };
-      return { logY: true, logX: !!doc && isSpec(doc), units: doc && isSpec(doc) ? "wavenumber" : "energy", range: true, width: true,
-        png: true, svg: true, image: true, csv: true, pub: !(doc && doc.source === "modes"), style: true, cli: !!cliKind(doc) };
+      // a transport plot: mace plotting --transport draws it (Publication Figure, Copy CLI Command)
+      if (doc && isOwn(doc)) { const tr = doc.kind === "transport"; return { logY: false, logX: false, units: null, range: false, width: false, png: true, svg: true, image: true, csv: true, pub: tr, style: true, cli: tr }; }
+      const bd = !!doc && isBandDos(doc) && !!doc.data && !!(doc.data.band || doc.data.dos);
+      // Log Y is a DOS axis: a band plot alone has none (its energies are signed), a band + DOS plot's is Log DOS
+      const both = bd && !!doc.data.band && !!doc.data.dos, bandOnly = bd && !!doc.data.band && !doc.data.dos;
+      return { logY: !bandOnly, logX: !!doc && isSpec(doc),
+        ...(both ? { logYLabel: "Log DOS", logYTitle: "Logarithmic DOS axis (the band energies stay linear)" } : {}),
+        units: doc && isSpec(doc) ? "wavenumber" : isPhonon(doc) ? "phonon" : "energy", range: true, width: true,
+        png: true, svg: true, image: true, csv: true, pub: !(doc && doc.source === "modes"), style: true, cli: !!cliKind(doc),
+        ...(bd ? { moreLabel: "Axes & Ranges", moreTitle: "Energy window, axis ranges, line width and Reset Zoom" } : {}) };
     },
     get: () => (doc ? doc.opts : {}),
     set: (patch, label) => doc && setOpt(doc, patch, label),
@@ -1049,7 +1414,10 @@ export function createPlotView(host, optsHost, H) {
     table: () => tableOf(doc),
     png: () => image("png"), svg: () => image("svg"), image: () => exportImage(),
     pub: () => publication(),
-    styleMenu: () => styleMenu(), styleSet: (v) => styleSet(v), cli: () => cliText(),
+    styleMenu: (cat) => styleMenu(cat), styleSet: (v) => styleSet(v), cli: () => cliText(),
+    categories: () => categories(), catPop: (key) => catPop(key), extra: () => extraAxes(),
+    buttons: () => pairButtons(),
+    button: (key) => { if (!doc) return; if (key === "pair") pickPair(); else if (key === "unpair") { const w = pairWords(doc); setOpt(doc, { pair: null }, `Remove ${doc.kind === "dos" ? w.bandText : w.dosText}`); } },
     resetZoom: () => { if (window.Plotly && el.layout) { el.__sig = null; redraw(); } },
   }, { toast, download, icon });
   /* the plot's look as the plot task's parameters (plots.py look_args: the presets.py STYLE_OPTIONS names,
@@ -1063,28 +1431,45 @@ export function createPlotView(host, optsHost, H) {
     }
     return out;
   }
+  /** {domain, run, fermi_line, k_labels, spin_labels} as the plot task reads them (plots.look_args): only what is
+   * not the default (auto, the last run, on). */
+  const menuArgs = (o) => ({ ...(o.f25_domain ? { domain: o.f25_domain } : {}), ...(o.f25_run ? { run: o.f25_run } : {}),
+    ...(o.fermi_line === false ? { fermi_line: 0 } : {}), ...(o.k_labels === false ? { k_labels: 0 } : {}),
+    ...(o.spin_labels === false ? { spin_labels: 0 } : {}) });
   async function publication() {
     // the edited k-path goes with it: mace plotting --band-path draws the same path (formatting is all it adds)
     // what is on screen: the band structure and its DOS when both are shown (mace plotting --band-dos)
-    const both = !!(doc.data && doc.data.band && doc.data.dos), kind = both ? "bandos" : null;
+    const both = !!(doc.data && doc.data.band && doc.data.dos), kind = both ? (isPhonon(doc) ? "phbandos" : "bandos") : null;
     const edit = (doc.kind === "band" || both) && doc.opts.kpath ? { band_path: JSON.stringify(doc.opts.kpath) } : {};
     // the window on screen (Settings' or the folder's, or the one typed in Plot options): --e-lower/--e-upper
     const win = (doc.kind === "band" || doc.kind === "dos") && Number.isFinite(Number(doc.opts.emin)) && Number.isFinite(Number(doc.opts.emax))
       ? { emin: Number(doc.opts.emin), emax: Number(doc.opts.emax) } : {};
-    // and its energy zero: the Fermi shift (dragged or typed; --fermi-shift) and, with a POTC run, the
-    // vacuum scale the API drew (--energy-reference vacuum; the server copies the POTC files along)
-    // with a mace-folder.toml the server passes every value, the defaults too (plots.py explicit), as Copy
-    // CLI Command writes them: the file's [plots] values must not replace what the screen shows; the screen's
-    // Fermi reference is then named, as auto would take the file's energy_reference
-    const folderFile = !!(H.folderFile && H.folderFile());
+    // and its energy zero: the Fermi shift (dragged or typed; --fermi-shift) and the reference drawn, always
+    // named (--energy-reference fermi|vacuum; the server copies the POTC files along): auto would take the
+    // vacuum scale whenever the POTC files are there, and a mace-folder.toml's energy_reference. With a
+    // mace-folder.toml the server passes every value, the defaults too (plots.py explicit), as Copy CLI
+    // Command writes them: the file's [plots] values must not replace what the screen shows
     const er = doc.data && (doc.data.band || doc.data.dos);
     const ref = (doc.kind === "band" || doc.kind === "dos") && er
       ? { ...(Number(doc.opts.shift) ? { shift: Number(doc.opts.shift) } : {}),
-          ...(er.reference === "vacuum" ? { reference: "vacuum" } : folderFile ? { reference: "fermi" } : {}) } : {};
+          ...(isPhonon(doc) ? {} : { reference: er.reference === "vacuum" ? "vacuum" : "fermi" }) } : {};
+    // a fort.25's domain and run (--f25-domain, --f25-run) and the Reference and Labels menus' switches
+    const menus = doc.kind === "band" || doc.kind === "dos" ? menuArgs(doc.opts) : {};
     // and its look (Settings › Appearance › Plot style, Plots): the same preset, DOS colors and spin styling
     const look = lookOf(doc);
     const unit = (doc.kind === "band" || doc.kind === "dos") && doc.opts.unit && doc.opts.unit !== "eV" ? { unit: doc.opts.unit } : {};
-    const r = await apiTask("plot?" + q({ path: doc.path, format: "svg", detach: 1, ...(kind ? { kind } : {}), ...edit, ...win, ...ref, ...unit, ...look }), undefined, null, { get: true });
+    // Log Y on a DOS, Log DOS on a band + DOS plot (--log-dos: the DOS axis only)
+    if (doc.opts.ylog && doc.data && doc.data.dos) look.log_dos = 1;
+    // a band + DOS pair from two folders (Add DOS…, Add Band…): its other half (mace plotting --partner)
+    const partner = both && doc.opts.pair && doc.data.pair && !doc.data.pair.error ? { partner: doc.opts.pair } : {};
+    // a transport plot: its quantity, temperature, component, x axis, κ_L and τ (mace plotting --transport)
+    let tr = {};
+    if (doc.kind === "transport" && doc.data && doc.data.transport) {
+      const t = transportOpts(doc);
+      tr = { kind: "transport", quantity: t.quantity, component: t.component, ...(t.temperature !== null ? { temperature: t.temperature } : {}),
+        ...(t.x ? { x: t.x } : {}), ...(t.kappa_l ? { kappa_l: t.kappa_l } : {}), ...(t.tau_fs !== null ? { tau_fs: t.tau_fs } : {}) };
+    }
+    const r = await apiTask("plot?" + q({ path: doc.path, format: "svg", detach: 1, ...(kind ? { kind } : {}), ...partner, ...edit, ...win, ...ref, ...menus, ...unit, ...look, ...tr }), undefined, null, { get: true });
     const svg = r.images.find((n) => n.endsWith(".svg"));
     if (!svg) throw new Error("mace plotting made no SVG: " + (r.log || "").slice(-300));
     const res = await api("plot-image?" + q({ key: r.key, name: svg }), { blob: true });
@@ -1111,16 +1496,17 @@ export function createPlotView(host, optsHost, H) {
       for (const r of d.data.convergence.runs) r.energies.forEach((e, i) => rows.push([r.name, i + 1, e ?? "", r.n_atoms, r.status || ""]));
       return { columns: ["run", "geometry", "energy_au", "n_atoms", "status"], rows };
     }
-    if (isZt(d) && d.data.zt) {
-      const z = d.data.zt;
-      for (const b of z.blocks) b.mu.forEach((m, i) => rows.push([m, b.T, b.zt_e[i] ?? "", b.zt_total ? b.zt_total[i] ?? "" : ""]));
-      return { columns: ["mu_eV", "T_K", "zt_electronic", "zt_total"], rows };
-    }
     if (d.kind === "transport") {
-      // one block per temperature, all with the same columns (the first block's)
-      const t = d.data.transport, cols = ["avg", "xx", "yy", "zz"].filter((k) => t.blocks[0][k]);
-      for (const b of t.blocks) b.mu.forEach((m, i) => rows.push([m, b.T ?? "", ...cols.map((c) => (b[c] ? b[c][i] : ""))]));
-      return { columns: [t.x === "energy" ? "energy_eV" : "mu_eV", "T_K", ...cols.map((c) => `${t.quantity.toLowerCase()}_${c}`)], rows };
+      // one block per temperature, all with the same columns (the first block's), in the plot's units; the carriers
+      // per cell (and per cm³ for a 3D run); ZT with κ_L its ZTₑ bound too
+      const t = d.data.transport, cols = ["avg", ...t.components], name = t.quantity.toLowerCase();
+      const bound = t.blocks.some((b) => b.bound), vol = t.dim === 3 && t.blocks[0].volume_cm3, tdf = t.x === "energy";
+      for (const b of t.blocks) b.mu.forEach((m, i) => rows.push([m, ...(tdf ? [] : [b.T, b.carriers[i], ...(vol ? [b.carriers[i] / b.volume_cm3] : [])]),
+        ...cols.map((c) => (b[c] ? b[c][i] ?? "" : "")), ...(bound ? cols.map((c) => (b.bound && b.bound[c] ? b.bound[c][i] ?? "" : "")) : [])]));
+      // the unit in its plain name (plot_labels.UNITS: uV/K, W/(m K)), a dot for a space: the header stays ASCII
+      const u = t.unit_name ? `_${t.unit_name.replace(/ /g, ".")}` : "";
+      return { columns: [tdf ? "energy_eV" : "mu_eV", ...(tdf ? [] : ["T_K", "carriers_per_cell", ...(vol ? ["carriers_cm-3"] : [])]),
+        ...cols.map((c) => `${name}_${c}${u}`), ...(bound ? cols.map((c) => `zt_electronic_${c}`) : [])], rows };
     }
     if (isSpec(d)) {
       const s = d.data.spectra[0], cols = Object.keys(s.columns), fx = PK.WAVENUMBER_UNITS[d.opts.unit] || 1;
@@ -1129,14 +1515,16 @@ export function createPlotView(host, optsHost, H) {
       s.x.forEach((x, i) => rows.push([x * fx, ...(wl ? [wl[i]] : []), ...cols.map((c) => s.columns[c][i])]));
       return { columns: [`${d.opts.unit === "cm-1" ? "wavenumber" : "energy"}_${u}`, ...(wl ? ["wavelength_nm"] : []), ...cols], rows };
     }
-    const { dos } = d.data, band = bandView(d), shift = d.opts.shift || 0, f = PK.ENERGY_UNITS[d.opts.unit] || 1, u = d.opts.unit || "eV";
+    const { dos } = d.data, band = bandView(d), ph = isPhonon(d), shift = ph ? 0 : d.opts.shift || 0;
+    const pu = ph ? (PK.PHONON_UNITS[d.opts.unit] ? d.opts.unit : "cm-1") : PK.ENERGY_UNITS[d.opts.unit] ? d.opts.unit : "eV";
+    const f = (ph ? PK.PHONON_UNITS : PK.ENERGY_UNITS)[pu] || 1, u = pu || "eV";
     if (band) {
-      const cols = ["path", ...band.up.map((_, k) => `band${k + 1}${band.spin_polarized ? "_up" : ""}_${u}`), ...(band.down || []).map((_, k) => `band${k + 1}_down_${u}`)];
+      const cols = ["path", ...band.up.map((_, k) => `${ph ? "mode" : "band"}${k + 1}${band.spin_polarized ? "_up" : ""}_${u}`), ...(band.down || []).map((_, k) => `band${k + 1}_down_${u}`)];
       band.x.forEach((x, i) => { if (x !== null) rows.push([x, ...band.up.map((b) => (b[i] - shift) * f), ...(band.down || []).map((b) => (b[i] - shift) * f)]); });
       if (!dos) return { columns: cols, rows };
       return { columns: cols, rows };
     }
-    const cols = [`energy_${u}`, ...dos.projections.flatMap((p) => (dos.spin_polarized ? [`${p.label}_up`, `${p.label}_down`] : [p.label]))];
+    const cols = [`${ph ? "frequency" : "energy"}_${u}`, ...dos.projections.flatMap((p) => (dos.spin_polarized ? [`${p.label}_up`, `${p.label}_down`] : [p.label]))];
     dos.energy.forEach((e, i) => rows.push([(e - shift) * f, ...dos.projections.flatMap((p) => (dos.spin_polarized ? [p.up[i], p.down[i]] : [p.up[i]]))]));
     return { columns: cols, rows };
   }
@@ -1146,6 +1534,22 @@ export function createPlotView(host, optsHost, H) {
     const s = d.data.spectra[0];
     const why = s.dampfac ? "the run's DAMPFAC" : s.fwhm === 8 ? "CRYSTAL's default" : "set here";
     return `Broadened from ${s.n_active} ${d.kind === "ir" ? "IR" : "Raman"}-active modes (${esc(s.shape_label)}, FWHM ${s.fwhm} cm⁻¹, ${why})`;
+  }
+  /* the bands more than ±25 eV from E_F are not loaded: said when the window (or the Fermi shift) reaches past
+     them, and again whenever it changes (mace plotting and Copy CLI Command draw them) */
+  function beyondNote() {
+    const d = doc, span = $(".pv-note .pv-beyond");
+    if (!d || !span) return;
+    const band = d.data && d.data.band;
+    let text = "";
+    if (band && band.n_beyond > 0 && !isPhonon(d)) {
+      const W = Number(band.window_ev) || 25, sh = Number(d.opts.shift) || 0;
+      if (Number(d.opts.emin) + sh < -W || Number(d.opts.emax) + sh > W)
+        text = ` · ${band.n_beyond} band${band.n_beyond === 1 ? "" : "s"} more than ${W} eV from E<sub>F</sub> not loaded (mace plotting draws them)`;
+    }
+    // CRYSTAL wrote no Fermi level (a spin-locked SCF): where the plot's E_F is from (mace.utils.fermi_level)
+    if (band && band.fermi_note && !isPhonon(d)) text = ` · <span class="pv-fermi">${esc(band.fermi_note)}</span>` + text;
+    if (span.innerHTML !== text) span.innerHTML = text;
   }
   function note(d) {
     if (d.source !== "modes" || !d.data) return;
@@ -1170,6 +1574,10 @@ export function createPlotView(host, optsHost, H) {
       try {
         await fetchData(d);
         if (doc !== d) return;
+        // a phonon fort.25 reads in cm⁻¹ unless the plot's own unit is one of the frequency units; electronic
+        // data (another run picked, or the domain switched back) leaves a frequency unit for eV
+        if (isPhonon(d) && !PK.PHONON_UNITS[d.opts.unit]) d.opts.unit = "cm-1";
+        else if (!isPhonon(d) && d.data && (d.data.band || d.data.dos) && !PK.ENERGY_UNITS[d.opts.unit]) d.opts.unit = "eV";
         const { band, dos } = d.data || {};
         const notes = [], help = [];
         if (d.data && d.data.map) {
@@ -1178,7 +1586,8 @@ export function createPlotView(host, optsHost, H) {
           notes.push(`${d.data.convergence.runs.length} runs: energy per atom at each geometry, from the outputs' own energies, above the lowest final energy of the set`);
         } else if (d.data && d.data.transport) {
           const t = d.data.transport;
-          notes.push(`${esc(t.label)} from BOLTZTRA (${t.blocks.length} temperature${t.blocks.length === 1 ? "" : "s"}), read with the database extractor's own reader`);
+          notes.push(trNote(t));
+          help.push(...notes, "Plot options › Quantity: the run's files beside this one and what they give (ZT, power factor, Lorenz number, ...)");
         } else if (band || dos) {
           const files = [band && band.name, dos && dos.name].filter(Boolean);
           setTitle(files.join("  +  "));
@@ -1191,15 +1600,16 @@ export function createPlotView(host, optsHost, H) {
           if (band && band.truncated) notes.push(`the ${band.up.length} bands nearest E<sub>F</sub> of ${band.n_bands}`);
           // the bands more than ±25 eV from E_F are not loaded: say so when the window reaches past them
           // (mace plotting and Copy CLI Command draw them)
-          if (band && band.n_beyond > 0) {
-            const W = Number(band.window_ev) || 25, sh = Number(d.opts.shift) || 0;
-            if (Number(d.opts.emin) + sh < -W || Number(d.opts.emax) + sh > W)
-              notes.push(`${band.n_beyond} band${band.n_beyond === 1 ? "" : "s"} more than ${W} eV from E<sub>F</sub> not loaded (mace plotting draws them)`);
-          }
+          // (kept up to date when the window or the Fermi shift changes: beyondNote, in redraw)
           notes.push((band || dos).reference === "vacuum" ? "vacuum scale · dotted = E<sub>F</sub>, drag to shift" : "dotted = Fermi level, drag to shift");
           if (band && band.spin_identical) help.push(`α and β agree within ${meV} meV, so one set of bands is drawn`);
           if (dos && dos.spin_polarized) help.push("DOS: ↑ to the right, ↓ mirrored to the left (total hatched)");
           if (dos && dos.window) help.push(`DOS computed from ${dos.window[0].toFixed(2)} to ${dos.window[1].toFixed(2)} eV${dos.edge_pileup ? " (its edge bin, the states beyond it, is left out)" : ""}`);
+          // a band-index DOS (a 1D material's default) that stops below E_F + 15 eV (mace.utils.doss_reach)
+          if (dos && dos.reach_note) {
+            notes.push(`DOS ends at E<sub>F</sub>${dos.window ? `+${dos.window[1].toFixed(1)}` : ""} eV (bands by index; the help says how to reach higher)`);
+            help.unshift(dos.reach_note);
+          }
           if ((band || dos).reference === "vacuum") help.push("energies on the vacuum scale (POTC run found); the dotted line is E_F");
           help.push("dragging the dotted line shifts the energy reference");
         } else if (d.data && d.data.spectra) {
@@ -1211,11 +1621,12 @@ export function createPlotView(host, optsHost, H) {
         const drag = "Drag to zoom, double-click to reset; Mod+Z undoes an option.";
         // one line for every plot's subtitle: what does not fit is in the help icon's tooltip, with the guidance
         if (!help.length) help.push(...notes);
-        const tip = esc(`${help.join(" · ")}. ${drag}`.replace(/<\/?sub>/g, (t) => (t === "<sub>" ? "_" : "")).replace(/<[^>]+>/g, ""));
+        const tip = esc(L.plain(`${help.join(" · ")}. ${drag}`));        // a title attribute: the markup as text
         $(".pv-note").classList.add("one");
-        $(".pv-note").innerHTML = `<span class="pv-note-line">${notes.join(" · ")}</span>`
+        $(".pv-note").innerHTML = `<span class="pv-note-line">${notes.join(" · ")}<span class="pv-beyond"></span></span>`
           + `<span class="pv-help" data-help tabindex="0" role="img" title="${tip}" aria-label="${tip}">${icon("circle-help")}</span>`;
         renderOptions();
+        if (kit) kit.refresh();           // a band or DOS plot's categories (Style, Traces, Reference, Labels) follow its data
         await redraw();
       } catch (e) {
         if (e.data && e.data.still_writing) {
@@ -1246,9 +1657,11 @@ export function createPlotView(host, optsHost, H) {
     state: () => doc && { kind: doc.kind, source: doc.source || "file", opts: { ...doc.opts }, pos: doc.pos, hist: doc.hist.length, data: !!doc.data,
       drawn: el.dataset.drawn === doc.path && !building, peaks: doc.data && doc.data.peaks ? doc.data.peaks.length : 0,
       out: doc.data ? doc.data.out || null : null, fwhm: doc.data && doc.data.spectra ? doc.data.spectra[0].fwhm || null : null,
-      zt: isZt(doc) && doc.data && doc.data.zt ? { key: doc.data.ztKey, error: doc.data.ztError, refused: doc.data.zt.refused,
-        zt_e_max: doc.data.zt.zt_e_max, zt_total_max: doc.data.zt.zt_total_max, tau_fs: doc.data.zt.tau_fs,
-        kappa_l_source: doc.data.zt.kappa_l_source } : null },
+      transport: doc.kind === "transport" && doc.data && doc.data.transport ? { quantity: doc.data.transport.quantity, available: doc.data.transport.available,
+        error: doc.data.trError, upper_bound: doc.data.transport.upper_bound, tau_fs: doc.data.transport.tau_fs, tau_source: doc.data.transport.tau_source } : null,
+      zt: doc.kind === "transport" && doc.data && doc.data.transport && doc.data.transport.quantity === "zt" ? { key: doc.data.trKey, error: doc.data.trError,
+        refused: doc.data.transport.refused, zt_e_max: doc.data.transport.zt_e_max, zt_total_max: doc.data.transport.zt_total_max,
+        tau_fs: doc.data.transport.tau_fs, kappa_l_source: doc.data.transport.kappa_l_source } : null },
     figure: () => (el.data ? { traces: el.data.map((t) => ({ name: t.name, meta: t.meta, n: (t.x || []).length })), layout: el.layout } : null),
     setOpt: (patch, label) => doc && setOpt(doc, patch, label),
     /** Publication Figure… (mace plotting's SVG, downloaded); the task's result. */

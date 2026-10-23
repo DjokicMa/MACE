@@ -80,8 +80,14 @@ def spin_pair(config: Dict[str, Any]) -> Dict[str, str]:
 
 def _opts(config: Dict[str, Any]) -> Dict[str, Any]:
     from . import plotly_bands as PB
-    return PB.opts_for(config.get("e_lower", -6.0), config.get("e_upper", 6.0), config.get("fermi_shift", 0.0),
-                       config.get("units") or "eV")
+    o = PB.opts_for(config.get("e_lower", -6.0), config.get("e_upper", 6.0), config.get("fermi_shift", 0.0),
+                    config.get("units") or "eV")
+    for key in ("fermi_line", "k_labels", "spin_labels"):          # --no-fermi-line, --no-k-labels, --no-spin-labels
+        if config.get(key) is False:
+            o[key] = False
+    if config.get("log_dos"):            # --log-dos: the DOS axis only (the GUI's Log Y / Log DOS)
+        o["ylog"] = True
+    return o
 
 
 def _out_dir(data_file: Path, output_dir) -> Path:
@@ -118,13 +124,21 @@ def _write(fig: Dict[str, Any], out_dir: Path, stem: str, fmts: List[str], dpi: 
     return made
 
 
+def _f25_kw(config: Dict[str, Any]) -> Dict[str, Any]:
+    """band_data/dos_data's fort.25 options (--f25-domain, --f25-run: 1-based, the last by default)."""
+    return {"domain": config.get("f25_domain") or "auto", "run": int(config["f25_run"]) - 1 if config.get("f25_run") else -1}
+
+
 def _band(path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     from mace.gui import results
     from . import plotly_bands as PB
     # every band in the requested window (the Fermi shift moves it), no cap (the GUI's 400 is a browser cost)
     shift = float(config.get("fermi_shift") or 0.0)
     lo, hi = sorted((float(config.get("e_lower", -6)), float(config.get("e_upper", 6))))
-    band = results.band_data(path, config.get("energy_reference") or "auto", window=(lo + shift, hi + shift))
+    band = results.band_data(path, config.get("energy_reference") or "auto", window=(lo + shift, hi + shift),
+                             **_f25_kw(config))
+    if band.get("fermi_note"):
+        print(f"  {Path(path).name}: {band['fermi_note']}")
     if config.get("band_path"):
         import sys
         plotting = Path(__file__).resolve().parents[2] / "Plotting"
@@ -142,7 +156,7 @@ def _band(path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _dos(path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     from mace.gui import results
-    return results.dos_data(path, config.get("energy_reference") or "auto")
+    return results.dos_data(path, config.get("energy_reference") or "auto", **_f25_kw(config))
 
 
 def _say_spin(band=None, dos=None) -> None:
@@ -157,13 +171,21 @@ def _say_spin(band=None, dos=None) -> None:
         print(f"  DOS: {state}; projections {names}")
 
 
+from . import f25  # noqa: E402  (the fort.25 names)
+
+
 def band_stem(path: Path) -> str:
-    """The name ipBANDS_V2 gives a band figure: fe_band.BAND.DAT -> fe (fe.BANDS.png)."""
+    """The name ipBANDS_V2 gives a band figure: fe_band.BAND.DAT -> fe (fe.BANDS.png); a fort.25
+    (fe_band.f25) the same."""
+    if f25.is_f25_name(path.name):
+        return re.sub(r"[._]band$", "", f25._stem(path), flags=re.IGNORECASE)
     name = re.sub(r"[._]band\.band\.dat$", "", path.name, flags=re.IGNORECASE)
     return name.replace(".BAND.DAT", "").replace("_band.dat", "")
 
 
 def dos_stem(path: Path) -> str:
+    if f25.is_f25_name(path.name):
+        return re.sub(r"[._]doss$", "", f25._stem(path), flags=re.IGNORECASE)
     return path.name.replace("_doss.DOSS.DAT", "").replace(".DOSS.DAT", "").replace("_doss.dat", "")
 
 
@@ -173,9 +195,15 @@ def material_of(band_path: Path) -> str:
     return results._material(stem, "_band")
 
 
+def phonon_material_of(band_path: Path) -> str:
+    """The material of a phonon dispersion file: diamond_phonon_band.f25 -> diamond (diamond.PHONON_BAND_DOS.png)."""
+    return re.sub(r"[._]phonon$", "", material_of(band_path), flags=re.IGNORECASE)
+
+
 def plot(kind: str, files: List[str], config: Dict[str, Any], output_dir=None) -> List[str]:
     """Draw each file with plotly: kind "band" ({stem}.BANDS.fmt), "dos" ({material}.DOSS.fmt) or
-    "bandos" (a band file and its DOS, {material}.BAND_DOS.fmt)."""
+    "bandos" (a band file and its DOS, {material}.BAND_DOS.fmt; a phonon dispersion and its phonon DOS,
+    {material}.PHONON_BAND_DOS.fmt). ``config["phonon"]`` (--phonon-band-dos): phonon pairs only."""
     from . import plotly_bands as PB
     fmts = formats_of(config, "plotly")
     look = look_of_config(config)
@@ -198,31 +226,76 @@ def plot(kind: str, files: List[str], config: Dict[str, Any], output_dir=None) -
                 fig = PB.figure(None, dos, look, o, size=_size("dos", config))
                 made += _write(fig, _out_dir(path, output_dir), f"{dos_stem(path)}.DOSS", fmts, config.get("dpi"))
             else:
-                band_file, dos_file = pair_of(path)
+                band_file, dos_file = pair_of(path, config.get("partner"))
                 if band_file is None or dos_file is None:
                     print(f"    No {'DOS' if band_file else 'band structure'} of the same run beside it "
                           f"(a band + DOS figure needs both): skipped")
                     outcome.failed(path.name, "no band or DOS partner of the same run")
                     continue
                 print(f"    with {(dos_file if band_file == path else band_file).name}")
+                check = check_pair(band_file, dos_file) if config.get("partner") else {"dos_shift": 0.0}
+                if check is None:
+                    outcome.failed(path.name, "not the same system as --partner")
+                    continue
                 band, dos = _band(band_file, config), _dos(dos_file, config)
+                phonon = band.get("domain") == "phonon"
+                if phonon != (dos.get("domain") == "phonon"):
+                    raise ValueError(f"{band_file.name} and {dos_file.name}: electronic bands and phonons are never one figure")
+                if config.get("phonon") and not phonon:
+                    raise ValueError(f"{band_file.name} is an electronic band structure: --phonon-band-dos draws a phonon "
+                                     f"dispersion with its phonon DOS (--band-dos draws bands with their DOS)")
+                if config.get("partner") and band.get("reference") != dos.get("reference"):
+                    # one energy zero (as mace gui): the vacuum scale only when both halves have their POTC files
+                    print("    Note: only one half has its POTC files: both are drawn on E_F")
+                    fx = {**config, "energy_reference": "fermi"}
+                    band, dos = _band(band_file, fx), _dos(dos_file, fx)
+                if check["dos_shift"] and band.get("reference") == "fermi" and dos.get("reference") == "fermi":
+                    dos = {**dos, "energy": [e + check["dos_shift"] for e in dos["energy"]]}
                 _say_spin(band, dos)
                 fig = PB.figure(band, dos, look, o, size=_size("bandos", config))
-                made += _write(fig, _out_dir(path, output_dir), f"{material_of(band_file)}.BAND_DOS", fmts, config.get("dpi"))
+                stem = f"{phonon_material_of(band_file)}.PHONON_BAND_DOS" if phonon else f"{material_of(band_file)}.BAND_DOS"
+                made += _write(fig, _out_dir(path, output_dir), stem, fmts, config.get("dpi"))
         except Exception as e:      # one bad file does not stop the others (the run exits non-zero, outcome)
             print(f"    Error: {e}")
             outcome.failed(path.name, str(e))
     return made
 
 
-def pair_of(path: Path) -> Tuple[Optional[Path], Optional[Path]]:
-    """(band file, DOS file) of the run of ``path`` (either of them)."""
+def check_pair(band_file: Path, dos_file: Path) -> Optional[Dict[str, Any]]:
+    """--partner: mace gui's check of a band file and a DOS file from two folders (results.pair_check),
+    printed; None when they are not one system."""
     from mace.gui import results
+    r = results.pair_check(band_file, dos_file)
+    if r["error"]:
+        print(f"    Error: {r['error']}")
+        return None
+    for w in r["warnings"]:
+        print(f"    Warning: {w}")
+    for n in r["notes"]:
+        print(f"    Note: {n}")
+    return r
+
+
+def pair_of(path: Path, partner=None) -> Tuple[Optional[Path], Optional[Path]]:
+    """(band file, DOS file) of the run of ``path`` (either of them); ``partner`` (--partner): the other
+    half from another folder, else the file of the same run beside it."""
+    from mace.gui import results
+    from . import f25
     name = path.name
+    if partner:
+        partner = Path(partner).resolve()
+        is_dos = name.endswith(results.DOS_SUFFIXES) or (f25.is_f25_name(name) and f25.plot_kind(path) == "dos")
+        return (partner, path) if is_dos else (path, partner)
     if name.endswith(results.BAND_SUFFIXES):
         return path, results.partner(path, "band")
     if name.endswith(results.DOS_SUFFIXES):
         return results.partner(path, "dos"), path
+    if f25.is_f25_name(name):                # a fort.25 and the other half, an f25 or a DAT
+        kind = f25.plot_kind(path)
+        if kind == "band":
+            return path, results.partner(path, "band")        # (a phonon run's file: itself, it holds both)
+        if kind == "dos":
+            return results.partner(path, "dos"), path
     return None, None
 
 

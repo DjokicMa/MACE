@@ -177,7 +177,9 @@ export function createEditing(E, S) {
   function moved(ed, indices, dfFor, wrap) {
     const s = ed.structure, frac = s.frac.map((f) => f.slice());
     for (const [i, df] of indices.map((i) => [i, dfFor(i)])) for (let k = 0; k < 3; k++) frac[i][k] += df[k];
-    if (wrap) for (const i of indices) for (let k = 0; k < 3; k++) { let x = frac[i][k] - Math.floor(frac[i][k] + 1e-12); if (Math.abs(x - 1) < 1e-12) x = 0; frac[i][k] = x; }
+    // wrapped along the periodic directions only: a slab's c, a molecule's box are not a period (1.1.6)
+    const per = s.pbc || [true, true, true];
+    if (wrap) for (const i of indices) for (let k = 0; k < 3; k++) { if (!per[k]) continue; let x = frac[i][k] - Math.floor(frac[i][k] + 1e-12); if (Math.abs(x - 1) < 1e-12) x = 0; frac[i][k] = x; }
     return frac;
   }
   /** Where a Sym move takes each atom of the orbits of `picked`; null when an

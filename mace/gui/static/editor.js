@@ -133,7 +133,9 @@ async function classicClean() {
   setStatus("Clean running…");
   try {
     const r = await E().editing.request(d, "clean", "edit/clean",
-      () => ({ keep_symmetry: $("#c-sym").checked, relax_cell: $("#c-cell").checked }), { changes: true, payloadKey: "structure" });
+      () => ({ keep_symmetry: $("#c-sym").checked, relax_cell: $("#c-cell").checked,
+        bonds: window.__mace && window.__mace.bondValues ? window.__mace.bondValues() : undefined,
+        bonds_held: window.__mace && window.__mace.cleanBondsHeld ? window.__mace.cleanBondsHeld() : undefined }), { changes: true, payloadKey: "structure" });
     if (!r) return;
     if (r.nothing_to_clean) { setStatus(r.message); return; }
     lastClean = r;

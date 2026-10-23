@@ -133,7 +133,8 @@ class Connect:
 def outer_ssh(w):
     """The fake ssh that connect started (its argv names the gateway or the node)."""
     recs = [json.loads(f.read_text()) for f in w["log"].glob("*.json")]
-    outer = [r for r in recs if "fakegw" in " ".join(r["argv"])]
+    # not the node probe beside it (its remote command is "bash -s")
+    outer = [r for r in recs if "fakegw" in " ".join(r["argv"]) and r["argv"][-1:] != ["bash -s"]]
     return outer[-1]
 
 

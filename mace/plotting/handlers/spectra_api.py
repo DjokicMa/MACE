@@ -29,6 +29,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from mace.utils import plot_labels as L
+
 SINGLE_CRYSTAL_LABELS = ['xx', 'xy', 'xz', 'yy', 'yz', 'zz']
 SINGLE_CRYSTAL_COLORS = ['steelblue', 'darkorange', 'seagreen',
                          'mediumpurple', 'crimson', 'black']   # zz: black, not goldenrod (beside xy's darkorange)
@@ -170,7 +172,7 @@ def _save(plt, fig, out_prefix: str, suffix: str, formats) -> List[str]:
 def _decorate(ax, title, ylabel='Intensity', invert=False):
     """Axis labels, title and grid. ``invert``: high wavenumbers on the left, as IR is
     customarily drawn; Raman spectra read left to right, low to high (as the GUI draws both)."""
-    ax.set_xlabel('Wavenumber (cm$^{-1}$)')
+    ax.set_xlabel(L.mathtext(L.with_unit('Wavenumber', 'cm-1')))     # plot_labels, as the GUI's spectra
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     if invert:

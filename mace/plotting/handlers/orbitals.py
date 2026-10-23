@@ -21,7 +21,7 @@ from .. import outcome
 from ..registry import PlotKind, PlotterEntry, register
 from . import cube as cube_handler
 
-HARTREE_EV = 27.211386245988
+from mace.constants import HARTREE_TO_EV as HARTREE_EV  # noqa: E402
 _DEFAULT_CELLS = {0: (1, 1, 1), 1: (3, 1, 1), 2: (2, 2, 1), 3: (1, 1, 1)}
 
 
@@ -263,7 +263,11 @@ def plot_orbitals(files: List[str], config: Dict[str, Any], output_dir: str = ".
                 outcome.failed(rep.name, "fails the orthonormality check")
                 continue
         else:
-            print(f"  Self-check passed (max |C^H S C - 1| = {max(kd.check.values()):.1e}).")
+            # over the spins drawn (a refused one is named on the next line, with its own value)
+            ok = [v for s, v in kd.check.items() if s not in kd.failed_spins] or list(kd.check.values())
+            print(f"  Self-check passed (max |C^H S C - 1| = {max(ok):.1e}).")
+        if kd.spin_note():
+            print(f"  {kd.spin_note()}.")
         choice = dict(config)
         if config.get("interactive"):
             choice = _ask_run_choices(run, kd, config)

@@ -1,6 +1,6 @@
 /* The structure viewer's camera (spec §2.1, §6): orbit as a trackball on
  * the view quaternion (or, Settings › Viewport › Rotation, as a turntable,
- * optionally in whole angle steps), pan in screen space, zoom toward the
+ * optionally in whole angle steps, Ctrl held inverting the snap), pan in screen space, zoom toward the
  * cursor or the view center, view
  * along a direction with a defined "up", 90°/15° turns, framing, and the
  * projection matrix the picker, box and lasso use (calibrated from 3Dmol's
@@ -25,10 +25,16 @@ const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
  *   angle snap (15/30/45/90°): the drag's horizontal and vertical turns are
  *         summed from where it began and applied in whole steps. */
 export const ANGLE_STEPS = [15, 30, 45, 90];
+/** Custom (1.1.6): Angle snap "custom" snaps by Settings › Viewport › Custom angle (viewport.snapStep, any
+ *  angle up to 180°); custom is that angle (15° unset), the step Ctrl snaps by while the snap is off. */
 export function rotationPrefs(get) {
-  const step = Number(get("viewport.angleSnap"));
-  return { mode: get("viewport.rotation") === "axes" ? "axes" : "free", step: ANGLE_STEPS.includes(step) ? step : 0 };
+  const snap = get("viewport.angleSnap"), step = Number(snap), own = Number(get("viewport.snapStep"));
+  const custom = Number.isFinite(own) && own > 0 && own <= 180 ? own : 15;
+  return { mode: get("viewport.rotation") === "axes" ? "axes" : "free",
+    step: ANGLE_STEPS.includes(step) ? step : snap === "custom" ? custom : 0, custom };
 }
+/** The prefs with the snap inverted (Ctrl held during a drag): a snapping drag turns freely, a free one snaps by custom. */
+export const invertedSnap = (p) => ({ ...p, step: p.step > 0 ? 0 : (p.custom || 15) });
 /** The model's "up" for a turntable at orientation q: the kept one while its image is still vertical on
  *  screen (no roll since), else the model direction that is up on screen now. */
 export function turntableUp(q, up) {
@@ -76,8 +82,9 @@ export function nearestAxisView(q, cell) {
 
 export function createCamera(v, hooks = {}) {
   let cal = null, anim = 0, radius = 10;
-  // a drag in a snapping or turntable mode: its start, the px moved since, and the turntable's up
-  let drag = null, up = null;
+  // a drag in a snapping or turntable mode: its start, the px moved since, and the turntable's up;
+  // turnFrom: the orientation any orbit drag began at (the live readout's reference)
+  let drag = null, up = null, turnFrom = null;
   const prefs = () => (hooks.rotation ? hooks.rotation() : { mode: "free", step: 0 });
   const el = () => v.getCanvas();
   const rect = () => el().getBoundingClientRect();
@@ -154,13 +161,15 @@ export function createCamera(v, hooks = {}) {
      * (dy, dx, 0); with roll, about the view axis instead (Shift). In the
      * turntable or with an angle snap the drag is summed from its start
      * (endOrbit closes it) and the orientation computed from there. */
-    orbit(dx, dy, roll = false) {
+    orbit(dx, dy, roll = false, invert = false) {
       stopAnim();
-      const view = getView(), q = view.slice(4, 8), p = prefs();
+      const view = getView(), q = view.slice(4, 8), p = invert ? invertedSnap(prefs()) : prefs();
+      if (!turnFrom) turnFrom = q;
       if (p.mode !== "free" || p.step) {
-        if (!drag || drag.roll !== roll) {
+        // Ctrl pressed or let go mid-drag (invert): the rest of the drag is summed from where the view is
+        if (!drag || drag.roll !== roll || drag.invert !== invert) {
           if (p.mode === "axes") up = turntableUp(q, up);
-          drag = { q0: q, dx: 0, dy: 0, roll };
+          drag = { q0: q, dx: 0, dy: 0, roll, invert, step: p.step };
         }
         drag.dx += dx; drag.dy += dy;
         const target = roll ? G.qmul(G.qaxis(Z, snapAngle(-drag.dx * DEG_PER_PX, p.step)), drag.q0)
@@ -168,6 +177,7 @@ export function createCamera(v, hooks = {}) {
         setView([...view.slice(0, 4), ...target]);
         return;
       }
+      drag = null;
       let dq;
       if (roll) dq = G.qaxis([0, 0, 1], -dx * DEG_PER_PX);
       else {
@@ -178,7 +188,19 @@ export function createCamera(v, hooks = {}) {
       setView([...view.slice(0, 4), ...G.qmul(dq, q)]);
     },
     /** The drag ended: the next one starts from the view as it is. */
-    endOrbit() { drag = null; },
+    endOrbit() { drag = null; turnFrom = null; },
+    /** The live readout of an orbit drag, from where it began: {total (deg), parts: [{name, deg}] (a summed
+     *  drag: the horizontal and vertical turns, or the in-plane one), step}; null between drags. */
+    orbitReadout() {
+      if (!turnFrom) return null;
+      const r = G.qmul(getView().slice(4, 8), G.qconj(turnFrom));
+      const total = (2 * Math.acos(Math.min(1, Math.abs(r[3]))) * 180) / Math.PI;
+      let parts = null;
+      if (drag && drag.roll) parts = [{ name: "In-plane", deg: snapAngle(-drag.dx * DEG_PER_PX, drag.step) }];
+      else if (drag) parts = [{ name: "Horizontal", deg: snapAngle(drag.dx * DEG_PER_PX, drag.step) },
+        { name: "Vertical", deg: snapAngle(drag.dy * DEG_PER_PX, drag.step) }];
+      return { total, parts, step: drag ? drag.step : 0 };
+    },
     /** Move the model with the pointer: (dx, dy) px in screen space. */
     pan(dx, dy) {
       stopAnim();
@@ -213,6 +235,12 @@ export function createCamera(v, hooks = {}) {
       if (p.mode === "axes" && axis === "y") up = turntableUp(q, up);
       const target = turnOrientation(q, axis, deg, { mode: p.mode, up });
       if (!animate) { setView([...view.slice(0, 4), ...target]); return Promise.resolve(); }
+      return animateTo(target);
+    },
+    /** Turn the model by deg about a model-space axis through the view's center (the Rotate tool's typed turn). */
+    turnModel(axis, deg, animate = true) {
+      const view = getView(), target = G.qmul(view.slice(4, 8), G.qaxis(axis, deg));
+      if (!animate || reduced()) { setView([...view.slice(0, 4), ...target]); return Promise.resolve(); }
       return animateTo(target);
     },
     /** Center on these model points and zoom so they fill the view. */

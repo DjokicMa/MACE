@@ -219,10 +219,12 @@ def test_closed_shell_band_color_reaches_bands_and_dos_total(drv):
     time.sleep(0.3)
     f = drv.execute_script(FIG)
     assert f["band"] == "#12ab34" and f["dos"] == "#12ab34", f
-    drv.find_element("css selector", "#plot-host .pk-style").click()
-    H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
-    menu = drv.execute_script("return [...document.querySelectorAll('.pk-menu [data-v]')].map((b) => b.dataset.v)")
-    drv.execute_script("document.querySelector('.pk-menu').close()")
+    menu = []
+    for cat in ("style", "traces"):          # Style ▾ (the color pair) and Traces ▾ (the band lines)
+        drv.find_element("css selector", f"#plot-host .pk-cat[data-cat={cat}]").click()
+        H.wait(drv, "return !!document.querySelector('.pk-menu')", 5)
+        menu += drv.execute_script("return [...document.querySelectorAll('.pk-menu [data-v]')].map((b) => b.dataset.v)")
+        drv.execute_script("document.querySelector('.pk-menu').close()")
     assert "bandm:auto" in menu and "bandc" in menu and "bstyle:overlay" in menu and any(v.startswith("spin:") for v in menu), menu
     colors = drv.execute_script("return [...document.querySelectorAll('.po-style [data-group=\"colors\"] [id]')].map((i) => i.id)")
     assert colors == ["po-spinc"], colors

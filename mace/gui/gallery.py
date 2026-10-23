@@ -31,7 +31,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mace.plotting import gallery as G
 
-MAX_PATHS = G.MAX_ITEMS
+MAX_PATHS = G.MAX_ITEMS         # panes per page by default (the CLI's --max default too)
+SELECT_MAX = 5000               # files in a selection (paths): paged, so far more than a page
+PAGE_SIZES = (25, 50, 100, 200, 500)
+PAGE_MAX = 500
 DB_MATERIALS_MAX = 5000
 _PANES: "OrderedDict[Tuple, Dict[str, Any]]" = OrderedDict()
 _PANES_MAX = 64
@@ -64,11 +67,12 @@ def _rel_or_none(st, p: Optional[Path]) -> Optional[str]:
         return None
 
 
-def _paths(st, rels: Any) -> List[Path]:
+def _paths(st, rels: Any, limit: int = 0) -> List[Path]:
+    limit = limit or SELECT_MAX
     if not isinstance(rels, list) or not rels:
         raise ValueError("paths is a list of files")
-    if len(rels) > MAX_PATHS:
-        raise ValueError(f"at most {MAX_PATHS} files")
+    if len(rels) > limit:
+        raise ValueError(f"at most {limit} files")
     return [st.resolve(str(r)) for r in rels]
 
 
@@ -124,6 +128,21 @@ def _inside(st):
     return lambda p: rel_inside(st, p) is not None
 
 
+def _page_args(body: Dict[str, Any]) -> Tuple[int, int]:
+    """(page size, page) of a collect request: ``page_size`` panes per page (default 200, at most 500)
+    and ``page`` from 1."""
+    try:
+        size = int(body.get("page_size") or MAX_PATHS)
+        page = int(body.get("page") or 1)
+    except (TypeError, ValueError):
+        raise ValueError("page and page_size are whole numbers")
+    if not 1 <= size <= PAGE_MAX:
+        raise ValueError(f"page_size is from 1 to {PAGE_MAX}")
+    if page < 1:
+        raise ValueError("page is from 1")
+    return size, page
+
+
 def collect(st, body: Dict[str, Any]) -> Dict[str, Any]:
     kind = _kind(body.get("kind"))
     src = body.get("source") or {}
@@ -148,34 +167,31 @@ def collect(st, body: Dict[str, Any]) -> Dict[str, Any]:
         label = f"{len(wanted)} materials of {db.name}"
     else:
         raise ValueError("the source is a folder, a selection (paths), a batch or a database query (db)")
-    cap = MAX_PATHS
+    cap, page = _page_args(body)
     if wanted is not None:
         got = G.collect(inputs, kind, cap=G.SCAN_CAP, inside=_inside(st))
         caps = G.captions(got["items"], db=db, stop=st.root)
         keep = [p for p, r in zip(got["items"], caps["rows"]) if r["material_id"] in wanted]
-        total = len(keep)
-        items = keep[:cap]
-        msg = None
-        if total > cap:
-            msg = (f"Showing the first {cap} of {total} files. Narrow the set (a subfolder, a selection or a "
-                   "database filter) to see the others.")
-        if not items:
-            msg = (f"No {G.LABELS[kind].lower()} files below {st.rel(db.parent) or 'this folder'} belong to the "
-                   f"{len(wanted)} materials of this query.")
-        got = {"items": items, "total": total, "capped": total > cap, "message": msg}
+        got = G._paged(keep, len(keep), cap, page, kind)
+        if not got["items"]:
+            got["message"] = (f"No {G.LABELS[kind].lower()} files below {st.rel(db.parent) or 'this folder'} belong to the "
+                              f"{len(wanted)} materials of this query.")
     else:
-        got = G.collect(inputs, kind, cap=cap, inside=_inside(st))
+        got = G.collect(inputs, kind, cap=cap, inside=_inside(st), page=page)
     items = got["items"]
     rels = [st.rel(p) for p in items]
-    caps = G.captions(items, db=db, stop=st.root, rel=lambda p: st.rel(p))
+    caps = G.captions(items, db=db, stop=st.root, rel=lambda p: st.rel(p), start=got["offset"] + 1)
     return {"kind": kind, "label": G.LABELS[kind], "source_label": label,
             "items": [{"path": r, "name": p.name, "title": t} for r, p, t in zip(rels, items, G.titles(items))],
             "total": got["total"], "capped": got["capped"], "cap": cap, "message": got["message"],
+            "page": got["page"], "pages": got["pages"], "page_size": cap, "offset": got["offset"],
+            "page_sizes": list(PAGE_SIZES),
             "captions": {**caps, "databases": [_rel_or_none(st, Path(d)) or Path(d).name for d in caps["databases"]]},
             "ewindow": list(G.EWINDOW), "max_cols": G.MAX_COLS,
             "cli_inputs": [_short(st, i) for i in inputs] if typ != "db" else rels,
             "command": "mace " + " ".join(_quote(a) for a in G.command(kind, [_short(st, i) for i in inputs] if typ != "db"
-                                                                      else rels, 3, f"gallery_{kind}.svg"))}
+                                                                      else rels, 3, f"gallery_{kind}.svg",
+                                                                      page=got["page"], page_size=cap))}
 
 
 def _short(st, p: Path) -> str:
@@ -240,6 +256,10 @@ def _spin_look(body: Dict[str, Any]) -> Dict[str, Any]:
             if not (isinstance(v, str) and presets._HEXCOLOR.match(v)):
                 raise ValueError(f"{k} is a #rrggbb color")
             out[k] = v.lower()
+    bstyle = str(body.get("band_style") or "auto")
+    if bstyle not in presets.BAND_STYLES:
+        raise ValueError("band_style is one of " + ", ".join(presets.BAND_STYLES))
+    out["band_style"] = bstyle
     dash = str(body.get("spin_down_style") or "dash")
     if dash not in ("dash", "dot", "dashdot", "solid"):
         raise ValueError("spin_down_style is dash, dot, dashdot or solid")
@@ -251,7 +271,7 @@ def export_job(st, body: Dict[str, Any], ctx) -> Dict[str, Any]:
     """``mace plotting --gallery`` in a cache folder; the figure's name."""
     from . import clirun
     kind = _kind(body.get("kind"))
-    paths = _paths(st, body.get("paths"))
+    paths = _paths(st, body.get("paths"), PAGE_MAX)
     fmt = str(body.get("format") or "svg")
     if fmt not in G.FIGURE_FORMATS:
         raise ValueError(f"the format is one of {', '.join(G.FIGURE_FORMATS)}")
@@ -310,8 +330,12 @@ def export_job(st, body: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 def csv_text(st, body: Dict[str, Any]) -> str:
-    paths = _paths(st, body.get("paths"))
-    caps = G.captions(paths, db=_db_of(st, body), stop=st.root, rel=lambda p: st.rel(p))
+    paths = _paths(st, body.get("paths"), PAGE_MAX)
+    try:
+        start = max(0, int(body.get("offset") or 0)) + 1
+    except (TypeError, ValueError):
+        start = 1
+    caps = G.captions(paths, db=_db_of(st, body), stop=st.root, rel=lambda p: st.rel(p), start=start)
     return G.captions_csv(caps["rows"])
 
 
@@ -329,7 +353,7 @@ def handle(handler, method: str, route: str, arg):
     if method == "POST" and route == "gallery/export":
         from . import tasks as gui_tasks
         kind = _kind(arg.get("kind"))
-        n = len(_paths(st, arg.get("paths")))
+        n = len(_paths(st, arg.get("paths"), PAGE_MAX))
         if str(arg.get("format") or "svg") not in G.FIGURE_FORMATS:
             raise ValueError(f"the format is one of {', '.join(G.FIGURE_FORMATS)}")
         _ewin(lambda k: arg.get(k))

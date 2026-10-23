@@ -83,6 +83,9 @@
 .wfv-kv { border-collapse: collapse; font-size: var(--fs-sm); }
 .wfv-kv th, .wfv-kv td { padding: 2px var(--s-3) 2px 0; text-align: left; vertical-align: top; }
 .wfv-kv th { color: var(--text-2); font-weight: 500; white-space: nowrap; }
+.wfv-tau { margin: var(--s-3) 0; }
+.wfv-tau h4 { margin: 0 0 var(--s-2); font-size: var(--fs-sm); }
+.wfv-tau p { margin: var(--s-1) 0; }
 .wfv-risk { color: var(--warning); }
 .wfv-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
 .wfv-hint { margin: 0; }

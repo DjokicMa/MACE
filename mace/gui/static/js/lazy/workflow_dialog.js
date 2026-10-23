@@ -10,6 +10,7 @@
  * set here) and has a Reset. Loaded on first use. */
 import { loadCss } from "./lazy_util.js";
 import * as M from "../setup/model.js";
+import { MODULE_FIELDS, MODULE_FLAGS, MODULE_LISTS, MODULE_VOIGT } from "../setup/modules.js";
 
 const SECTIONS = [
   { id: "inputs", title: "Structures", sub: "What to calculate" },
@@ -37,6 +38,17 @@ const DEBOUNCE_MS = 500;
 const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const stepKey = (seq, i) => `${seq[i]}_${i + 1}`;
 const baseOf = (t) => String(t).replace(/\d+$/, "");
+const D12_STEPS = ["OPT", "SP", "FREQ"];
+// an ELASTIC, EOS, QHA or CPHF step's module block as the spec gets it: PRINT on unless it was unticked
+// (print: false), as the CLI's questions, the planner and Calculation Setup have it; PIEZOCP, QHA and CPHF have no PRINT
+const MODULE_STEPS = ["ELASTIC", "EOS", "QHA", "CPHF"], NO_PRINT = ["PIEZOCP", "QHA", "CPHF"];
+function moduleOut(calc, mod) {
+  const m = JSON.parse(JSON.stringify(mod || {}));
+  const mode = String(m.mode || (calc === "ELASTIC" ? "ELASTCON" : calc)).toUpperCase();
+  if (m.print === false || NO_PRINT.includes(mode)) delete m.print;
+  else m.print = true;
+  return m;
+}
 const dirOf = (p) => (String(p).includes("/") ? String(p).slice(0, String(p).lastIndexOf("/")) : "");
 // spin-orbit coupling (1.1.6): a draft step's choices, as the CLI's settings-file keys (soc, soc_ecp, soc_basis, smear)
 const socOn = (s) => !!(s && s.soc && s.soc.soc === true);
@@ -73,6 +85,7 @@ export async function open(H, { targets = [], clone = null } = {}) {
     forms: {}, formBusy: {}, formError: {}, formSeq: {}, formStep: null,
     preview: null, previewing: false, previewError: "", stale: true, defSeq: 0, prevSeq: 0,
     running: false, runError: "", ticks: {},
+    visited: new Set([0]),            // the sections looked at: a check mark on Settings or Resources means you were there
   };
   const d = document.createElement("dialog");
   d.id = "wfb-dialog";
@@ -107,9 +120,19 @@ export async function open(H, { targets = [], clone = null } = {}) {
       if (k === keys()[0] && state.inputs && state.inputs.type === "cif") {
         if (Object.keys(s.answers || {}).length) o.answers = { ...s.answers };
         if (Object.keys(s.patches || {}).length) o.patches = { ...s.patches };
+      } else if (k !== keys()[0] && D12_STEPS.includes(baseOf(seq()[keys().indexOf(k)])) && Object.keys(s.answers || {}).length) {
+        // a later SCF step: the form's answers (basis set, SCF convergence, ...); the server asks the CLI what they change
+        o.answers = { ...s.answers };
       }
       if (s.settings_text) o.settings_text = s.settings_text;
       if (s.method) o.method = s.method;
+      // a TAU step's options, a TRANSPORT step's relaxation time (mace/workflow/tau_step.py)
+      if (s.tau && Object.keys(s.tau).length) o.tau = { ...s.tau };
+      // an ELASTIC, EOS, QHA or CPHF step's module block (the spec's elastic_settings)
+      const calc = baseOf(seq()[keys().indexOf(k)]);
+      if (MODULE_STEPS.includes(calc)) { const m = moduleOut(calc, s.module); if (Object.keys(m).length) o.module = m; }
+      else if (s.module && Object.keys(s.module).length) o.module = JSON.parse(JSON.stringify(s.module));
+      if (s.relaxation_time !== undefined && s.relaxation_time !== null && s.relaxation_time !== "default") o.relaxation_time = s.relaxation_time;
       if (socOn(s)) o.soc = socPatches(s);
       const res = {};
       for (const [rk, v] of Object.entries(s.resources || {})) if (v !== "" && v !== null && v !== undefined) res[rk] = v;
@@ -124,6 +147,22 @@ export async function open(H, { targets = [], clone = null } = {}) {
     return { inputs: state.inputs ? { type: state.inputs.type, files: state.inputs.files } : null,
       label: state.draft.label || "", template: state.draft.template, sequence: seq(), steps, execution: ex };
   }
+  /** The chain with a step put in or taken out: the other steps keep their settings under their new keys
+   * (SP_3 -> SP_2). ``to(j)`` is old step j's new index, or null when it goes. */
+  function rechain(s, old, to) {
+    const steps = {}, moved = {};
+    old.forEach((t, j) => {
+      const n = to(j);
+      if (n === null) return;
+      const from = stepKey(old, j), k = stepKey(s, n);
+      moved[from] = k;
+      if (state.draft.steps[from]) steps[k] = state.draft.steps[from];
+    });
+    state.draft.sequence = s; state.draft.template = null; state.draft.steps = steps; state.forms = {};
+    state.formStep = moved[state.formStep] || null;
+  }
+  function insertStep(i, type) { const old = [...seq()], s = [...old]; s.splice(i, 0, type); rechain(s, old, (j) => (j < i ? j : j + 1)); }
+  function removeStep(i) { const old = [...seq()], s = [...old]; s.splice(i, 1); rechain(s, old, (j) => (j === i ? null : j < i ? j : j - 1)); }
   function changed(what) {
     if (what === "inputs" || what === "chain") autoLabel();
     state.stale = true;
@@ -227,7 +266,7 @@ export async function open(H, { targets = [], clone = null } = {}) {
   /** A later SCF step: the functional and dispersion as the form shows them, when either was changed. */
   function methodOf(r, s) {
     const a = s.answers || {};
-    if (!Object.keys(a).length) return null;
+    if (!("functional" in a) && !("dispersion" in a)) return null;     // only other settings were changed: the method stays the parent's
     const f = (r.form || []).find((x) => x.id === "functional"), disp = (r.form || []).find((x) => x.id === "dispersion");
     const fn = a.functional || (f && f.value);
     if (!fn) return null;
@@ -256,16 +295,14 @@ export async function open(H, { targets = [], clone = null } = {}) {
   function canSubmit() {
     const p = state.preview;
     if (!p || state.stale || state.previewing || state.running) return false;
-    if (p.code || (p.blocked || []).length || caps.network || p.network) return false;
-    return !(p.needs && p.needs.overwrite && !state.ticks.overwrite);
+    return !(p.code || (p.blocked || []).length || caps.network || p.network);
   }
   async function submit() {
     if (!canSubmit()) return;
     state.running = true; state.runError = "";
     render();
     try {
-      const r = await S.apiTask("workflow/run", { root_gen: rootGen(), preview_id: state.preview.preview_id,
-        confirm_overwrite: !!state.ticks.overwrite });
+      const r = await S.apiTask("workflow/run", { root_gen: rootGen(), preview_id: state.preview.preview_id });
       state.running = false;
       if (r.code) {
         state.runError = `The CLI exited with ${r.code}${r.error ? `: ${r.error}` : ""}`;
@@ -294,7 +331,7 @@ export async function open(H, { targets = [], clone = null } = {}) {
   function done(i) {
     if (i === 0) return !!state.inputs;
     if (i === 1) return !!state.inputs && seq().length > 0;
-    if (i === 2 || i === 3) return !!state.inputs && !!state.defaults && !state.defaultsError;
+    if (i === 2 || i === 3) return state.visited.has(i) && !!state.inputs && !!state.defaults && !state.defaultsError;
     return !!state.preview && !state.stale && !state.preview.code;
   }
   function renderNav() {
@@ -361,13 +398,13 @@ export async function open(H, { targets = [], clone = null } = {}) {
       (for example the single point (SP) starts from the optimized structure of OPT).</p>`;
     html += `<div class="wfb-label">Start from a ready-made chain</div><div class="wfb-chips" role="radiogroup" aria-label="Ready-made chains">${temps.map((x) =>
       `<button type="button" role="radio" class="wfb-chip${state.draft.template === x.name ? " on" : ""}" aria-checked="${state.draft.template === x.name}" data-template="${esc(x.name)}" title="${esc(x.help)}">
-        <b>${esc(x.sequence.join(" → "))}</b><span class="small muted">${esc(x.help)}</span></button>`).join("")}</div>`;
+        <b>${x.num ? `${esc(x.num)} - ` : ""}${esc(x.sequence.join(" → "))}</b><span class="small muted">${esc(x.help)}</span></button>`).join("")}</div>`;
     if (state.defaultsError) html += `<p class="sub-line bad" role="alert" data-part="chain-error">This chain cannot run: ${esc(state.defaultsError)}</p>`;
     html += `<div class="wfb-label">Your chain${state.draft.template ? "" : " (custom)"}</div><ol class="wfb-chain">${cur.map((s, i) => {
       const k = stepKey(cur, i);
       const par = state.defaults && state.defaults.steps && state.defaults.steps[k] ? state.defaults.steps[k].parent : null;
       return `<li class="wfb-node"><span class="wfb-node-n">${i + 1}</span><span class="wfb-node-t"><b>${esc(s)}</b>
-        <span class="small muted">${esc((t[baseOf(s)] || {}).name || "")}${i === 0 ? " · first step" : par ? ` · from ${esc(par.replace(/_\d+$/, ""))}` : ""}</span></span>
+        <span class="small muted">${esc((t[baseOf(s)] || {}).name || "")}${i === 0 ? " · first step" : par ? ` · from ${esc(par.replace(/_\d+$/, ""))}` : ""}${baseOf(s) === "TAU" ? ` · ${state.forms[k] && state.forms[k].n_runs ? esc(plural(state.forms[k].n_runs, "strained SP")) : "4 strained SPs per axis"}` : ""}</span></span>
         ${i > 0 || cur.length > 1 ? `<button type="button" class="icon-btn sm" data-remove="${i}" aria-label="Remove ${esc(s)}" title="Remove this step">${icon("x")}</button>` : ""}</li>`;
     }).join(`<li class="wfb-arrow" aria-hidden="true">${icon("chevron-right")}</li>`)}</ol>`;
     const next = nextTypes(cur);
@@ -400,6 +437,11 @@ export async function open(H, { targets = [], clone = null } = {}) {
     return out;
   }
 
+  // the Spin polarized row's value in a later step's badge: the spin treatment, not Yes/No; a row that names
+  // its inherited value in the deck's own words (the k-point mesh: "SHRINK 8 16") shows those
+  const spinWord = (f, v) => (f.id === "spin" && (v === "Yes" || v === "No") ? (v === "Yes" ? "spin-polarized" : "closed shell")
+    : f.default_label && v !== undefined && v !== null && String(v) === String(f.default) ? f.default_label : v);
+
   function fieldRow(k, r, f) {
     const s = stepOf(k);
     const id = `wfb-f-${k}-${f.id}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
@@ -413,17 +455,30 @@ export async function open(H, { targets = [], clone = null } = {}) {
       else if (answered) badge = { kind: "changed", text: `changed from the workflow default (was ${was ?? "—"})` };
       else badge = { kind: "default", text: "workflow default" };
     } else if (!editable) badge = { kind: "parent", text: `inherited from ${stepName(r.parent)} (each structure's own)` };
-    else if (f.changed || answered) badge = { kind: "changed", text: `changed from ${follow ? "the step before" : "default"} (was ${f.default ?? "—"})` };
-    else badge = follow ? { kind: "parent", text: `inherited from ${stepName(r.parent)}` } : { kind: "default", text: "default" };
+    else if (f.changed || answered) badge = { kind: "changed", text: `changed from ${follow ? "the step before" : "default"} (was ${follow ? spinWord(f, f.default) ?? "—" : f.default ?? "—"})` };
+    else if (follow) {
+      // the parent step's value (shown for the first structure); a deck start's structures each keep their own
+      const pv = spinWord(f, f.default ?? f.value);
+      const own = state.inputs && state.inputs.type === "d12" ? `, each structure's own; ${r.material_id || "the first"}'s` : "";
+      badge = { kind: "parent", text: `inherited from ${stepName(r.parent)}${pv !== undefined && pv !== null && pv !== "" ? ` (${own ? own + ": " : ""}${pv})` : own ? ` (${own.slice(2)})` : ""}` };
+    } else badge = { kind: "default", text: "default" };
     let ctl;
     const dis = editable ? "" : " disabled";
     if (f.kind === "menu") {
       const cur = answered ? String(s.answers[f.id]) : f.value;
-      const opts = f.options || [];
+      // a later step keeps its parent's method (Hartree-Fock or DFT): the Hartree-Fock variants are the first step's choice
+      const opts = (f.options || []).filter((o) => !(r.mode === "opt2d12" && o.family === "hf"));
+      // a SOC step: no internal basis set (a SOC deck needs explicit basis input), only the functionals the
+      // two-component SCF takes (CRYSTAL23 manual ch. 6)
+      const sg = r.soc_group || {}, socNow = r.mode === "opt2d12" && sg.applies && socOn(s);
+      const keepInternal = sg.basis && sg.basis.parent_kind === "INTERNAL";
+      const offWhy = (o) => !socNow ? "" : f.id === "basis_set" && (/^Internal/.test(o.group || "") || (o.head === "Keep the parent's basis set" && keepInternal))
+        ? "a spin-orbit (SOC) deck needs an external basis set" : f.id === "functional" && sg.functionals && !sg.functionals.includes(o.head)
+          ? "no two-component form in CRYSTAL23 (manual ch. 6)" : "";
       const groups = new Map();
       for (const o of opts) { const g = o.group || ""; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(o); }
       const optHtml = [...groups.entries()].map(([g, os]) => {
-        const inner = os.map((o) => `<option value="${esc(o.head)}"${o.head === cur ? " selected" : ""} title="${esc(o.text)}">${esc(o.head)}</option>`).join("");
+        const inner = os.map((o) => { const why = o.head === cur ? "" : offWhy(o); return `<option value="${esc(o.head)}"${o.head === cur ? " selected" : ""}${why ? " disabled" : ""} title="${esc(why || o.text)}">${esc(M.optionLabel(o))}</option>`; }).join("");
         return g ? `<optgroup label="${esc(g)}">${inner}</optgroup>` : inner;
       }).join("");
       const missing = cur && !opts.some((o) => o.head === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
@@ -433,12 +488,15 @@ export async function open(H, { targets = [], clone = null } = {}) {
       ctl = `<span class="su-switch"><input type="checkbox" role="switch" id="${id}" data-field="${esc(f.id)}" aria-checked="${on}"${on ? " checked" : ""}${dis}><span aria-hidden="true">${on ? "Yes" : "No"}</span></span>`;
     } else {
       const v = answered ? s.answers[f.id] : (f.value ?? "");
-      ctl = `<input id="${id}" class="mono" data-field="${esc(f.id)}" value="${esc(v)}" spellcheck="false" autocomplete="off"${dis}>`;
+      // values the row offers besides typing one (the k-point mesh: auto, the inherited mesh)
+      const sug = editable && (f.suggestions || []).length ? `${id}-dl` : "";
+      ctl = `<input id="${id}" class="mono" data-field="${esc(f.id)}" value="${esc(v)}" spellcheck="false" autocomplete="off"${sug ? ` list="${sug}"` : ""}${dis}>`
+        + (sug ? `<datalist id="${sug}">${f.suggestions.map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist>` : "");
     }
     return `<div class="su-row${badge.kind === "changed" ? " changed" : ""}${editable ? "" : " locked"}" data-row="${esc(f.id)}">
       <label for="${id}" class="su-l">${esc(f.label)}</label><div class="su-ctl">${ctl}${f.unit ? `<span class="su-unit">${esc(f.unit)}</span>` : ""}</div>
       <div class="su-meta"><span class="su-badge ${badge.kind}">${esc(badge.text)}</span>${badge.kind === "changed" && editable ? `<button type="button" class="su-reset" data-reset="${esc(f.id)}" aria-label="Reset ${esc(f.label)}">Reset</button>` : ""}
-      <span class="su-h">${esc(f.hint || "")}</span></div></div>`;
+      <span class="su-h">${esc(f.hint || "")}</span>${f.note ? `<span class="su-h warn" data-part="field-note">${esc(f.note)}</span>` : ""}</div></div>`;
   }
 
   function secSettings() {
@@ -450,9 +508,11 @@ export async function open(H, { targets = [], clone = null } = {}) {
       Leave a step as it is to use the defaults (the first step) or to keep the settings of the step it is built from (later steps).</p>`;
     html += `<div class="wfb-split"><ul class="wfb-steplist" role="list">${ks.map((x) => {
       const s = state.draft.steps[x] || {};
-      const ch = !!(s.settings_text || s.method || socOn(s));
+      const ch = !!(s.settings_text || s.method || socOn(s) || Object.keys(s.answers || {}).length || Object.keys(s.tau || {}).length
+        || Object.keys(s.module || {}).length
+        || (s.relaxation_time !== undefined && s.relaxation_time !== null && s.relaxation_time !== "default"));
       const o = defs[x] ? defs[x].settings_origin : "";
-      const word = ch ? "changed" : x === ks[0] ? (state.inputs && state.inputs.type === "d12" ? "your decks" : "defaults") : (/opt2d3/.test(o) ? "defaults" : "inherited");
+      const word = ch ? "changed" : x === ks[0] ? (state.inputs && state.inputs.type === "d12" ? "your decks" : "defaults") : (/opt2d3|TAU/.test(o) ? "defaults" : "inherited");
       return `<li><button type="button" class="wfb-stepbtn${x === k ? " on" : ""}" data-form="${esc(x)}" aria-current="${x === k}">
         <b>${esc(stepName(x))}</b><span class="su-badge ${ch ? "changed" : "default"}">${esc(word)}</span></button></li>`;
     }).join("")}</ul><div class="wfb-form" data-step="${esc(k)}">`;
@@ -467,18 +527,24 @@ export async function open(H, { targets = [], clone = null } = {}) {
       if (!state.formBusy[k] && !state.formError[k]) setTimeout(() => loadForm(k), 0);
     } else {
       for (const w of ((defs[k] || {}).warnings || [])) html += `<p class="sub-line warn" data-part="soc-warning">${esc(w)}</p>`;
-      if (r.mode === "deck") {
+      if (r.mode === "tau") {
+        html += tauForm(k, r);
+      } else if (r.mode === "module") {
+        html += moduleForm(k, r);
+      } else if (r.mode === "deck") {
         html += `<p class="wfb-note2">${icon("info")}<span>${esc(r.note || "")} Change a deck in Calculation Setup or in the editor before starting the workflow.</span></p>
           <details class="wfb-det"><summary>${esc(r.deck_name)}</summary><pre class="wfb-pre mono">${esc(r.deck || "")}</pre></details>`;
         html += socGroup(k, r);
       } else {
         const cmd = r.mode === "cif2d12" ? "mace convert" : r.mode === "opt2d12" ? "mace opt2d12" : "mace opt2d3";
         if (r.mode === "opt2d12") html += `<p class="wfb-note2">${icon("info")}<span>${esc(stepName(k))} starts from each structure's ${esc(stepName(r.parent))} result and keeps its settings.
-          You can change the method here; everything else stays as the structure's own ${esc(r.parent.replace(/_\d+$/, ""))} had it.</span></p>`;
+          Each setting below says “inherited” and shows ${esc(stepName(r.parent))}'s value; change one to override it for this step only (Reset goes back to the inherited value).
+          You can change the method, the basis set, the DFT grid, the SCF settings and the k-point mesh${r.editable && r.editable.includes("opt_type") ? ", and the optimization type and convergence," : r.editable && r.editable.includes("freq_template") ? ", and the frequency settings," : ""} here; everything else stays as the structure's own ${esc(r.parent.replace(/_\d+$/, ""))} had it.</span></p>`;
         else if (r.standin) html += `<p class="wfb-note2">${icon("info")}<span>Shown for ${esc(r.material_id)}, from a stand-in of its ${esc(stepName(r.parent))} output (no step has run yet).
-          The same settings apply to every structure.</span></p>`;
+          The same settings apply to every structure.${r.static_kpath_note ? " " + esc(r.static_kpath_note) : ""}</span></p>`;
         else html += `<p class="wfb-note2">${icon("info")}<span>The settings the workflow converts every CIF with (${esc(cmd)}), shown for ${esc(r.material_id)}.
           They start from the workflow's defaults; what you change here is all that differs.</span></p>`;
+        html += relaxGroup(k, r);
         // a later SCF step: the menus the CLI asks on the way to a field (functional category) are not fields of their own
         const shown = (r.form || []).filter((f) => !(r.mode === "opt2d12" && String(f.id).startsWith("q:")));
         for (const [name, rows] of M.sections(shown)) {
@@ -493,6 +559,104 @@ export async function open(H, { targets = [], clone = null } = {}) {
       }
     }
     html += `</div></div>`;
+    return html;
+  }
+
+  /** TRANSPORT's Relaxation time group: CRYSTAL's 10 fs, a value, or τ from a TAU step before it. */
+  function relaxGroup(k, r) {
+    const g = r.relaxation;
+    if (!g) return "";
+    const s = stepOf(k), id = `wfb-rt-${k}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const v = g.value === "auto" ? "auto" : typeof s.relaxation_time === "number" ? "fixed" : "default";
+    const help = v === "auto" ? `τ from ${stepName(g.tau_step)}: strained single points of the SP, fitted to the deformation potential. When τ cannot be computed (a metal, failed runs, no effective mass) TRANSPORT runs with 10 fs and the reason is recorded.`
+      : v === "fixed" ? "A τ you know (from mace tau fit, or a measured mobility). σ and κ scale with τ; the Seebeck coefficient does not."
+        : "CRYSTAL's default RELAXTIM. σ and κ scale with τ; the Seebeck coefficient does not.";
+    return `<div class="su-sec" data-sec="relaxation"><div class="wfb-sec-h">Relaxation time</div><div class="su-rows">
+      <div class="su-row${v === "default" ? "" : " changed"}"><label class="su-l" for="${id}">RELAXTIM</label><div class="su-ctl">
+        <select id="${id}" data-relax="mode">${[["default", "Default (10 fs)"], ["fixed", "Fixed"], ["auto", "From deformation potentials"]].map(([x, l]) =>
+          `<option value="${x}"${x === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+        ${v === "fixed" ? `<input id="${id}-fs" class="mono" data-relax="fs" value="${esc(s.relaxation_time)}" aria-label="Relaxation time in fs" spellcheck="false"><span class="su-unit">fs</span>` : ""}</div>
+        <div class="su-meta"><span class="su-badge ${v === "default" ? "default" : "changed"}">${v === "default" ? "default" : v === "auto" ? "automatic" : "set here"}</span><span class="su-h">${esc(help)}</span></div></div></div></div>`;
+  }
+
+  /** A TAU step's settings: what it runs, its options (each with its default) and what it is missing. */
+  function tauForm(k, r) {
+    const s = stepOf(k), o = r.options || {}, d = r.defaults || {}, set = s.tau || {};
+    const id = (x) => `wfb-tau-${x}-${k}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const row = (f, label, ctl, hint) => `<div class="su-row${f in set ? " changed" : ""}" data-row="tau-${f}"><label class="su-l" for="${id(f)}">${esc(label)}</label><div class="su-ctl">${ctl}</div>
+      <div class="su-meta"><span class="su-badge ${f in set ? "changed" : "default"}">${f in set ? "changed" : "default"}</span>${f in set ? `<button type="button" class="su-reset" data-tau-reset="${f}" aria-label="Reset ${esc(label)}">Reset</button>` : ""}<span class="su-h">${esc(hint)}</span></div></div>`;
+    const txt = (f, v) => `<input id="${id(f)}" class="mono" data-tau="${f}" value="${esc(v)}" spellcheck="false" autocomplete="off">`;
+    let html = r.refusal ? `<p class="sub-line bad" role="alert">${esc(r.refusal)}</p>`
+      : `<p class="wfb-note2">${icon("info")}<span>${esc(plural(r.n_runs, "strained single point"))} per structure (${esc((r.axes || []).join(", "))}: ${esc(r.axes_reason || "")}), shown for ${esc(r.material_id)}.
+        They run ${(r.masses || []).length ? `beside ${esc(r.masses.join(" and "))} ` : ""}with the SP's resources and 1.5× its time limit; when all have finished, E1, C and the masses give τ${r.transport ? ` for ${esc(stepName(r.transport))}` : ""}.</span></p>`;
+    if (!r.transport) html += `<p class="sub-line warn">No TRANSPORT step after this one: τ is computed and saved (tau_summary.json), nothing runs with it.</p>`;
+    if (!(r.masses || []).length && o.m_star === "auto") html += `<p class="sub-line warn" data-part="tau-masses">The effective masses come from BAND and DOSS, and this chain has neither: τ falls back to ${esc(o.fallback_fs)} fs.
+      <button type="button" class="tb-btn-text sm" data-add-masses="1">Add BAND and DOSS</button> or set m* below.</p>`;
+    html += `<div class="su-sec" data-sec="tau"><div class="wfb-sec-h">Relaxation time (deformation potentials)</div><div class="su-rows">`;
+    html += row("carrier", "Carrier", `<select id="${id("carrier")}" data-tau="carrier">${[["auto", "Auto (electrons unless MACE knows the doping)"], ["electron", "Electrons"], ["hole", "Holes"]].map(([x, l]) =>
+      `<option value="${x}"${o.carrier === x ? " selected" : ""}>${l}</option>`).join("")}</select>`, "RELAXTIM is one number: τ of this carrier along the first axis. Every carrier and axis is saved.");
+    html += row("axes", "Axes", txt("axes", o.axes === "auto" ? "auto" : (o.axes || []).join(" ")), "auto: from the symmetry (x for cubic; x z for tetragonal or hexagonal), or x y z");
+    html += row("strains", "Strains", txt("strains", (o.strains || []).join(" ")), "fractions (0.01 is 1%), the unstrained run is added");
+    html += row("m_star", "m*", txt("m_star", o.m_star), "auto: from the workflow's BAND and DOSS runs, or a mass in mₑ");
+    html += row("fallback_fs", "Fallback τ", `${txt("fallback_fs", o.fallback_fs)}<span class="su-unit">fs</span>`, "used when τ cannot be computed, with the reason recorded");
+    html += row("strict", "Hold TRANSPORT", `<span class="su-switch"><input type="checkbox" role="switch" id="${id("strict")}" data-tau="strict" aria-checked="${!!o.strict}"${o.strict ? " checked" : ""}><span aria-hidden="true">${o.strict ? "Yes" : "No"}</span></span>`,
+      "when τ falls back or the E1 fit is poor (R² < 0.9), TRANSPORT is not run");
+    return html + `</div></div>`;
+  }
+
+  /** An ELASTIC, EOS, QHA or CPHF step: the module block (Calculation Setup's module fields, the CLI's
+   * --elastic-settings keys), each field with its default, and the deck mace opt2d12 writes from a stand-in. */
+  function moduleForm(k, r) {
+    const s = stepOf(k), set = s.module || {};
+    const mode = (r.modes || []).find((m) => m.mode === r.module) || (r.modes || [])[0] || { keys: [], mode: r.module };
+    const keys = new Set(mode.keys || []);
+    const id = (x) => `wfb-mod-${x}-${k}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const isSet = (f) => (f === "relax" ? "nuchess" in set || "clampion" in set : f in set);
+    const row = (f, label, ctl, hint) => `<div class="su-row${isSet(f) ? " changed" : ""}" data-row="mod-${f}"><label class="su-l" for="${id(f)}">${esc(label)}</label><div class="su-ctl">${ctl}</div>
+      <div class="su-meta"><span class="su-badge ${isSet(f) ? "changed" : "default"}">${isSet(f) ? "changed" : f === "print" ? "MACE default" : "CRYSTAL default"}</span>${isSet(f) ? `<button type="button" class="su-reset" data-mod-reset="${f}" aria-label="Reset ${esc(label)}">Reset</button>` : ""}<span class="su-h">${esc(hint)}</span></div></div>`;
+    const shown = (v) => (Array.isArray(v) ? v.map((x) => (Array.isArray(x) ? x.join(" ") : x)).join(Array.isArray(v[0]) ? "; " : " ") : v ?? "");
+    let html = `<p class="wfb-note2">${icon("info")}<span>${esc(stepName(k))} starts from each structure's ${esc(stepName(r.parent))} result: mace opt2d12 writes the ${esc(baseOf(r.calc_type))} deck
+      with its geometry, functional, basis set and SCF settings (SCF TOLDEE at least ${esc(r.toldee)}, MAXCYCLE at least 200). Nothing is built from this step. Shown for ${esc(r.material_id)}, from a stand-in of its ${esc(stepName(r.parent))} output.</span></p>`;
+    if (r.refusal) html += `<p class="sub-line bad" role="alert" data-part="module-refusal">${esc(r.refusal)}</p>`;
+    html += `<div class="su-sec" data-sec="module"><div class="wfb-sec-h">${esc(mode.title || r.module)}</div><div class="su-rows">`;
+    if ((r.modes || []).length > 1) {
+      html += row("mode", "Module", `<select id="${id("mode")}" data-modf="mode">${r.modes.map((m, i) =>
+        `<option value="${esc(m.mode)}"${m.mode === r.module ? " selected" : ""}>${i + 1} - ${esc(m.title)}</option>`).join("")}</select>`, "ELASTCON when not changed");
+    }
+    if (mode.what) html += `<p class="su-note su-mod-what">${icon("info")}<span>${esc(mode.what.charAt(0).toUpperCase() + mode.what.slice(1))}. ${esc(mode.manual || "")}.${mode.pcrystal_only ? " Runs with Pcrystal only (not MPPcrystal)." : ""}</span></p>`;
+    const relaxable = keys.has("nuchess") || keys.has("clampion");
+    for (const [key, label0, kind, ph0] of MODULE_FIELDS) {
+      // RESTART continues one run from its own info file: not a workflow step's setting
+      if (key === "restart" || !(key === "relax" ? relaxable : keys.has(key))) continue;
+      let label = label0, ph = ph0;
+      if (mode.mode === "CPHF" && key === "maxcycle") { label = "SC-CP iterations (MAXCYCLE)"; ph = "100"; }
+      if (mode.mode === "CPHF" && key === "tolalpha") ph = "3 (CPHF)";
+      if (mode.mode === "CPHF" && key === "fmixing") ph = "no mixing";
+      if (key === "stepsize" && mode.step !== undefined) ph = String(mode.step);
+      let ctl;
+      if (kind === "deform") {
+        const on = Array.isArray(set.deform) ? set.deform : [];
+        ctl = `<span class="su-mod-checks" role="group" id="${id(key)}" data-deform="1">${MODULE_VOIGT.map((v, i) =>
+          `<label class="su-check"><input type="checkbox" data-modf="deform" data-d="${i}"${on[i] ? " checked" : ""}> ${v}</label>`).join("")}</span>`;
+      } else if (kind === "relax") {
+        const cur = set.nuchess ? "nuchess" : set.clampion ? "clampion" : "opt";
+        ctl = `<select id="${id(key)}" data-modf="relax">${[["opt", "Optimize atoms in each strained cell (default)"], ["nuchess", "Internal-strain Hessian (NUCHESS, recommended)"],
+          ["clampion", "Clamped ions (CLAMPION)"]].map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+      } else {
+        ctl = `<input id="${id(key)}" class="mono" data-modf="${key}" data-kind="${kind}" value="${esc(shown(set[key]))}" placeholder="${esc(ph)}" spellcheck="false" autocomplete="off">`;
+      }
+      html += row(key, label, ctl, kind === "deform" ? ph : "");
+    }
+    for (const [key, label] of MODULE_FLAGS) {
+      if (!keys.has(key)) continue;
+      const on = key === "print" ? set.print !== false : !!set[key];         // PRINT: on unless unticked
+      html += row(key, label, `<span class="su-switch"><input type="checkbox" role="switch" id="${id(key)}" data-modf="${key}" data-kind="flag" aria-checked="${on}"${on ? " checked" : ""}><span aria-hidden="true">${on ? "Yes" : "No"}</span></span>`, "");
+    }
+    html += `</div></div><p class="wfb-note2" data-part="module-describe">${icon("info")}<span>${esc(r.describe || "")}</span></p>`;
+    const n = Object.keys(set).length;
+    html += `<div class="wfb-row">${n ? `<button type="button" class="tb-btn-text sm" data-mod-reset="*">Reset ${plural(n, "change")}</button>` : ""}
+      ${state.formBusy[k] ? `<span class="spinner sm"></span><span class="muted small">Updating…</span>` : ""}</div>`;
+    if (r.deck) html += `<details class="wfb-det"><summary>Projected ${esc(stepName(k))} deck for ${esc(r.material_id || "the first structure")}</summary><pre class="wfb-pre mono">${esc(r.deck)}</pre></details>`;
     return html;
   }
 
@@ -531,6 +695,7 @@ export async function open(H, { targets = [], clone = null } = {}) {
     html += row("route", "Spin-orbit ECP", `<select id="${id("route")}" data-soc="route"${dis || off}${(st || unread.length) && on ? ` aria-describedby="${swhy}"` : ""}>${SOC_ROUTES.filter((o) => o.v === "basis" ? (g.soc_basis_families || []).length : (g.ecp_forms || []).includes(o.v))
       .map((o) => `<option value="${o.v}"${o.v === route ? " selected" : ""}${o.v === "stutsc" && st && st.all && route !== "stutsc" ? " disabled" : ""}>${esc(stLabel(o))}</option>`).join("")}</select>`,
       on && route !== "inpsoc", "INPSOC (default)", 'written as "soc_ecp" or "soc_basis"', true);
+    if (on && g.basis && g.basis.note) html += `<p class="wfb-soc-why sm" data-part="soc-basis">${icon("info")}<span>${esc(g.basis.note)}</span></p>`;
     if ((st || unread.length) && on) html += `<p class="wfb-soc-why sm" id="${swhy}">${(st ? st.refused : []).map((x) => `${esc(x.symbol)}: ${esc(x.why)}`)
       .concat(unread.map((u) => `STUTSC not checked: ${esc(u.why)}`)).join("<br>")}</p>`;
     html += row("guess", "Starting guess", `<select id="${id("guess")}" data-soc="guess" aria-describedby="${g.applies ? rwhy : why}"${dis || off}><option value="" selected>From scratch</option>${(g.guesses || []).map((x) =>
@@ -553,7 +718,21 @@ export async function open(H, { targets = [], clone = null } = {}) {
   function socEdit(t) {
     const k = state.formStep, s = stepOf(k);
     const v = s.soc = s.soc || {};
-    if (t.dataset.soc === "soc") { if (t.checked) v.soc = true; else s.soc = null; }
+    if (t.dataset.soc === "soc") {
+      const gb = ((state.forms[k] || {}).soc_group || {}).basis;
+      if (t.checked) {
+        v.soc = true;
+        // the SOC deck's basis, as the server works it out from the step's (inherited) basis: an internal set
+        // becomes its external library, and the heavy atoms take the official SOC set when it covers them
+        s.answers = s.answers || {};
+        if (gb && gb.basis_set && !s.answers.basis_set) { s.answers.basis_set = gb.basis_set; s.socAuto = true; }
+        if (gb && gb.soc_basis && !v.soc_ecp && !v.soc_basis) v.soc_basis = gb.soc_basis;
+      } else {
+        s.soc = null;
+        if (s.socAuto && s.answers) delete s.answers.basis_set;
+        s.socAuto = false;
+      }
+    }
     else if (t.dataset.soc === "route") {
       delete v.soc_ecp; delete v.soc_basis;
       if (t.value === "stutsc") v.soc_ecp = "stutsc";
@@ -617,7 +796,8 @@ export async function open(H, { targets = [], clone = null } = {}) {
     html += `<div class="wfb-label">Submitting</div><div class="wfb-opts">
       <label class="tog"><input type="checkbox" data-ex="array"${ex.array ? " checked" : ""}><span>Submit the first step as a job array (one SLURM job with a task per structure)</span></label>
       <label class="f inline">At most <input class="field num" type="number" min="1" data-ex="max_running" value="${esc(ex.max_running || "")}"${ex.array ? "" : " disabled"} aria-label="Array tasks running at once"> array tasks running at once</label>
-      <label class="f inline">Keep at most <input class="field num" type="number" min="1" data-ex="max_jobs" value="${esc(ex.max_jobs || "")}" placeholder="all" aria-label="Jobs queued at most" title="Empty: the workflow shares your queue budget with every other (mace queue)"> of this workflow's jobs queued</label></div>`;
+      <label class="f inline">Keep at most <input class="field num" type="number" min="1" data-ex="max_jobs" value="${esc(ex.max_jobs || "")}" placeholder="all" aria-label="Jobs queued at most" title="Empty: the workflow shares your queue budget with every other (mace queue)"> of this workflow's jobs queued</label>
+      <label class="tog"><input type="checkbox" data-ex="auto_progression"${ex.auto_progression === false ? "" : " checked"}><span>Start each next step by itself when the step before finishes (off: every finished step waits until you start the next from the Workflows view, “Process now”)</span></label></div>`;
     return html;
   }
   /** The built-in account kept where MACE could not check membership, off MSU HPCC: since 1.1.5 only
@@ -648,13 +828,19 @@ export async function open(H, { targets = [], clone = null } = {}) {
     if (!p) { setTimeout(() => { if (!state.previewing && !state.preview) preview(); }, 0); return html; }
     const n = p.n_jobs || 0;
     const later = seq().slice(1);
-    html += `<p class="wfb-summary">${state.running ? "Submitting…" : `Submit sends <b>${plural(n, "job")}</b> now: ${esc(seq()[0])} for ${esc(((p.inputs || {}).materials || []).map((m) => m.material_id).join(", "))}.`}
+    // what goes out now, by step: a deck that finished already sends its next step
+    const byType = {};
+    for (const f of p.first_step || []) (byType[f.calc_type || seq()[0]] = byType[f.calc_type || seq()[0]] || []).push(f.material_id);
+    const what = Object.keys(byType).length ? Object.entries(byType).map(([t, ms]) => `${esc(t)} for ${esc(ms.join(", "))}`).join("; ")
+      : `${esc(seq()[0])} for ${esc(((p.inputs || {}).materials || []).map((m) => m.material_id).join(", "))}`;
+    html += `<p class="wfb-summary">${state.running ? "Submitting…" : `Submit sends <b>${plural(n, "job")}</b> now: ${what}.`}
       ${later.length ? ` When a structure's job finishes, its next step (${esc(later.join(", "))}) is submitted by itself.` : ""}</p>`;
+    if ((p.inputs || {}).type === "d12") html += `<p class="muted small" data-part="step-folders">Each deck runs in its own folder under workflow_outputs/; the decks, outputs and job scripts in ${esc(p.folder_rel || "this folder")} are left as they are.</p>`;
+    for (const f of p.finished || []) html += `<p class="sub-line" data-part="finished">${esc(f.deck)} finished already (${esc(f.out_rel)}): it is not run again, and its next step starts from that output.</p>`;
     if ((p.blocked || []).length) html += `<p class="sub-line bad" role="alert" data-part="blocked">${esc(p.blocked.join(", "))} already ${p.blocked.length === 1 ? "has" : "have"} unfinished steps in a workflow in this folder.
       Wait for them, or cancel that workflow, before starting these structures again.</p>`;
     if (p.code) html += `<p class="sub-line bad" role="alert">The CLI refused this workflow${p.refused ? `: ${esc(p.refused)}` : ""}.</p><pre class="sub-log">${esc((p.cli_log || "").split("\n").slice(-30).join("\n"))}</pre>`;
     for (const w of p.warnings || []) html += `<p class="sub-line warn">${esc(w)}</p>`;
-    if (p.needs && p.needs.overwrite) html += `<label class="tog"><input type="checkbox" data-tick="overwrite"${state.ticks.overwrite ? " checked" : ""}><span>Overwrite finished results of these decks</span></label>`;
     if (state.runError) html += `<p class="sub-line bad" role="alert" data-part="run-error">${esc(state.runError)}</p>`;
     html += `<div class="wfb-label">The commands Submit runs</div><p class="muted small">In ${esc(p.folder_rel || "this folder")}. You can run them yourself in a terminal; the plan's name gets the time you submit.</p>
       <div class="wfb-cmds">${(p.commands || []).map((c, i) => `<div class="wfb-cmd"><code class="mono" data-part="command-${i}">${esc(c)}</code><button type="button" class="tb-btn-text sm" data-copy="${esc(c)}">Copy</button></div>`).join("")}</div>`;
@@ -662,13 +848,14 @@ export async function open(H, { targets = [], clone = null } = {}) {
     for (const f of p.first_step || []) {
       const r = f.resources || {};
       const line = [r.ntasks && `${r.ntasks} cores`, r.mem && `${r.mem} memory`, r.mem_per_cpu && `${r.mem_per_cpu} per core`, r.walltime && `time limit ${r.walltime}`, r.partition && `partition ${r.partition}`, r.account ? `account ${r.account}` : "SLURM's default account"].filter(Boolean).join(", ");
-      html += `<details class="wfb-det" data-first="${esc(f.material_id)}"><summary><b>${esc(f.material_id)}</b> · ${esc(seq()[0])} · <span class="muted">${esc(line)}</span>${f.array ? ' <span class="chip">job array</span>' : ""}</summary>
+      html += `<details class="wfb-det" data-first="${esc(f.material_id)}"><summary><b>${esc(f.material_id)}</b> · ${esc(f.calc_type || seq()[0])} · <span class="muted">${esc(line)}</span>${f.array ? ' <span class="chip">job array</span>' : ""}</summary>
         ${f.deck_text ? `<div class="wfb-label sm">Deck ${esc(f.deck_name)}</div><pre class="wfb-pre mono">${esc(f.deck_text)}</pre>` : ""}
         <div class="wfb-label sm">Job script</div><pre class="wfb-pre mono">${esc(f.script_text || "")}</pre></details>`;
     }
     if ((p.projected || []).length) {
       html += `<div class="wfb-label">Later steps: projected for ${esc(p.projected[0].material_id)}</div><p class="muted small">MACE writes these when the step before finishes, from its real output.
         Here the engine wrote them from a stand-in output, so the structure and anything read from the output are placeholders; the settings and job resources are the ones the workflow uses.</p>`;
+      for (const n of p.projected_notes || []) html += `<p class="muted small" data-part="projected-note">${esc(n)}</p>`;
       for (const s of p.projected) {
         const r = s.resources || {};
         const line = [r.ntasks && `${r.ntasks} cores`, r.mem && `${r.mem} memory`, r.mem_per_cpu && `${r.mem_per_cpu} per core`, r.walltime && `time limit ${r.walltime}`].filter(Boolean).join(", ");
@@ -712,6 +899,7 @@ export async function open(H, { targets = [], clone = null } = {}) {
   function go(i) {
     if (i < 0 || i >= SECTIONS.length || (i > 0 && !state.inputs)) return;
     state.sec = i;
+    state.visited.add(i);
     if (i >= 2 && !state.defaults && !state.defaultsBusy) loadDefaults();
     render();
     sec.scrollTop = 0;
@@ -739,19 +927,24 @@ export async function open(H, { targets = [], clone = null } = {}) {
       const t = (meta.templates || []).find((x) => x.name === b.dataset.template);
       if (t) { state.draft.template = t.name; state.draft.sequence = [...t.sequence]; state.draft.steps = {}; state.forms = {}; changed("chain"); render(); }
     } else if (b.dataset.remove !== undefined) {
-      const i = Number(b.dataset.remove);
-      const old = [...seq()], s = [...old];
-      s.splice(i, 1);
       // the other steps keep their settings and resources: the steps after it move up one key (SP_3 -> SP_2)
-      const steps = {}, moved = {};
-      old.forEach((t, j) => {
-        if (j === i) return;
-        const from = stepKey(old, j), to = stepKey(s, j < i ? j : j - 1);
-        moved[from] = to;
-        if (state.draft.steps[from]) steps[to] = state.draft.steps[from];
-      });
-      state.draft.sequence = s; state.draft.template = null; state.draft.steps = steps; state.forms = {};
-      state.formStep = moved[state.formStep] || null;
+      removeStep(Number(b.dataset.remove));
+      changed("chain"); render();
+    } else if (b.dataset.modReset) {
+      const k = state.formStep, s = stepOf(k), f = b.dataset.modReset;
+      if (f === "*" || f === "mode") s.module = {};
+      else if (f === "relax") { delete (s.module || {}).nuchess; delete (s.module || {}).clampion; delete (s.module || {}).hessnum2; }
+      else delete (s.module || {})[f];
+      changed("settings"); loadForm(k);
+    } else if (b.dataset.tauReset) {
+      const k = state.formStep, s = stepOf(k);
+      delete (s.tau || {})[b.dataset.tauReset];
+      changed("settings"); loadForm(k);
+    } else if (b.dataset.addMasses) {
+      // BAND and DOSS right after the SP the TAU step strains: the masses for its fit
+      const r = state.forms[state.formStep] || {};
+      let at = Number(String(r.parent || "").split("_").pop());
+      for (const t of ["BAND", "DOSS"]) if (!seq().some((x) => baseOf(x) === t)) insertStep(at++, t);
       changed("chain"); render();
     } else if (b.dataset.formRetry) {
       loadForm(b.dataset.formRetry);
@@ -802,12 +995,16 @@ export async function open(H, { targets = [], clone = null } = {}) {
       s.answers = s.answers || {};
       const v = f.kind === "yesno" ? (t.checked ? "Yes" : "No") : t.value.trim();
       // back to the value the step has with nothing changed: no answer at all
-      const plain = r.mode === "cif2d12" ? String((r.base_values || {})[f.id] ?? "") === String(v) : M.isDefault(f, v);
+      // (a hand-written row left empty, the k-point mesh, is back to the inherited value too)
+      const plain = r.mode === "cif2d12" ? String((r.base_values || {})[f.id] ?? "") === String(v) : M.isDefault(f, v) || (f.how === "patch" && v === "");
       if (plain) delete s.answers[f.id]; else s.answers[f.id] = v;
       if (!Object.keys(s.answers).length) { s.method = null; s.settings_text = null; }
       changed("settings"); loadForm(k); return;
     }
     if (t.dataset.soc) { socEdit(t); return; }
+    if (t.dataset.relax) { relaxEdit(t); return; }
+    if (t.dataset.tau) { tauEdit(t); return; }
+    if (t.dataset.modf) { moduleEdit(t); return; }
     if (t.dataset.res) { resEdit(t); return; }
     if (t.dataset.ex) {
       const ex = state.draft.execution || (state.draft.execution = {});
@@ -816,6 +1013,71 @@ export async function open(H, { targets = [], clone = null } = {}) {
     }
     if (t.dataset.tick) { state.ticks[t.dataset.tick] = t.checked; renderFoot(); }
   });
+  /** TRANSPORT's relaxation time: from deformation potentials puts a TAU step right before it, the other
+   * choices take that TAU step out again. */
+  function relaxEdit(t) {
+    const k = state.formStep, s = stepOf(k), r = state.forms[k] || {}, g = r.relaxation || {};
+    if (t.dataset.relax === "fs") {
+      const v = Number(t.value);
+      s.relaxation_time = Number.isFinite(v) && v > 0 ? v : "default";
+      changed("settings"); render(); return;
+    }
+    const tauAt = g.tau_step ? Number(g.tau_step.split("_").pop()) - 1 : -1;
+    if (t.value === "auto") {
+      s.relaxation_time = "auto";
+      if (tauAt < 0) {
+        const n = seq().filter((x) => baseOf(x) === "TAU").length;
+        insertStep(keys().indexOf(k), n ? `TAU${n + 1}` : "TAU");
+      }
+    } else {
+      s.relaxation_time = t.value === "fixed" ? 10 : "default";
+      if (tauAt >= 0) removeStep(tauAt);
+    }
+    changed("chain"); render();
+  }
+  /** A TAU step's option: kept only when it differs from the default. */
+  function tauEdit(t) {
+    const k = state.formStep, s = stepOf(k), r = state.forms[k] || {};
+    const f = t.dataset.tau;
+    let v = t.type === "checkbox" ? t.checked : t.value.trim();
+    // an emptied field is the default again (not 0 fs, no strains or no axes)
+    if (v !== "") {
+      if (f === "strains") v = v.split(/[\s,]+/).filter(Boolean).map(Number);
+      else if (f === "axes" && v !== "auto") v = v.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      else if (f === "fallback_fs") v = Number(v);
+      else if (f === "m_star" && v !== "auto") v = Number(v);
+    }
+    s.tau = s.tau || {};
+    if (v === "" || JSON.stringify(v) === JSON.stringify((r.defaults || {})[f])) delete s.tau[f]; else s.tau[f] = v;
+    changed("settings"); loadForm(k);
+  }
+  /** An ELASTIC, EOS, QHA or CPHF step's module field: kept only when set (empty is CRYSTAL's default). */
+  function moduleEdit(t) {
+    const k = state.formStep, s = stepOf(k), f = t.dataset.modf;
+    const m = s.module = s.module || {};
+    if (f === "mode") {
+      // another module reads other sub-keywords: its fields start from CRYSTAL's defaults
+      s.module = t.value === "ELASTCON" ? {} : { mode: t.value };
+    } else if (f === "deform") {
+      const fl = [...t.closest("[data-deform]").querySelectorAll("[data-d]")].map((c) => (c.checked ? 1 : 0));
+      if (fl.some(Boolean)) m.deform = fl; else delete m.deform;
+    } else if (f === "relax") {
+      delete m.nuchess; delete m.clampion;
+      if (t.value === "nuchess") m.nuchess = true; else if (t.value === "clampion") { m.clampion = true; delete m.hessnum2; }
+    } else if (f === "print") {
+      if (t.checked) delete m.print; else m.print = false;             // on by default: only "off" is kept
+    } else if (t.dataset.kind === "flag") {
+      if (t.checked) m[f] = true; else delete m[f];
+    } else {
+      const v = t.value.trim();
+      if (v === "") delete m[f];
+      else if (f === "seismdir") m[f] = v.split(";").map((y) => y.trim().split(/[\s,]+/)).filter((y) => y.length === 3);
+      else if (MODULE_LISTS.includes(f)) m[f] = v.split(/[\s,]+/);
+      else if ((t.dataset.kind === "int" || t.dataset.kind === "float") && Number.isFinite(Number(v))) m[f] = Number(v);
+      else m[f] = v;
+    }
+    changed("settings"); loadForm(k);
+  }
   function resEdit(t) {
     const k = t.closest("tr").dataset.step, s = stepOf(k);
     s.resources = s.resources || {};

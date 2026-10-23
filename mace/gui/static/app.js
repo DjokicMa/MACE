@@ -17,7 +17,7 @@ window.addEventListener("unhandledrejection", (e) => window.__maceErrors.push(St
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 const HARTREE_MEV = 27211.386245988;
-const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "band", dos: "dos", ir: "IR", raman: "Ram",
+const KIND_LABEL = { cif: "CIF", d12: "d12", d3: "d3", out: "out", band: "BAND", dos: "DOS", ir: "IR", raman: "Ram",
   db: "db", json: "json", image: "img", html: "html", freq: "FREQ",
   // kinds hidden before plan E1, and the content chips of outputs and logs
   cube: "cube", orbitals: "orb", xyz: "xyz", poscar: "vasp", mol: "mol", pdb: "pdb", gen: "gen", fort34: "f34", f25: "f25",
@@ -160,6 +160,10 @@ function syncSurfaces() {
   // Settings › Appearance › Plot style (tokens.css): the publication series and ink, by the plot surface's lightness
   attr(root, "data-plot-style", setting("plots.style", "default") !== "default" ? String(setting("plots.style", "default")) : "");
   attr(root, "data-plot-tone", p === "light" || p === "dark" ? p : scheme);
+  // the title bar of MACE's app window (and of an installed MACE) takes the menu bar's color, the
+  // theme's --surface; until this runs, index.html's theme-color guesses from the system's scheme
+  const surface = getComputedStyle(root).getPropertyValue("--surface").trim();
+  if (surface) document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.removeAttribute("media"); m.content = surface; });
 }
 /* Settings › Appearance › Plot style (1.1.6): a preset per plot family (mace/plotting/presets.py,
  * js/plotpresets.js, which the shell installs as window.MACE_PRESETS): "plots.style" is the preset of
@@ -449,15 +453,32 @@ function isJobLog(f) {
   const r = roleInfo(f);
   return !!f && (r ? r.role === "joblog" : false);
 }
-/** The explorer chip: the calculation type an output's own lines give, "log" for a job log, else the kind. */
+/** The explorer chip: the calculation type an output's own lines give, "log" for a job log, else the kind.
+ * 1.1.6: short tags that fit the chip: plot data is BAND, DOS or MAP (outlined: click to plot), and the
+ * text output of a properties run is "out" (dashed: its data files beside it hold the results). */
 function chipOf(f) {
   const r = roleInfo(f);
   if (r && r.role === "joblog") return { cls: "joblog", label: "log", tip: "Job log (no CRYSTAL banner): opens as text" };
   if (r && (r.role === "crystal_out" || r.role === "properties_out") && r.calc) {
-    const cls = r.calc === "FREQ" ? "freq" : r.role === "properties_out" ? "props" : "out";
-    return { cls, label: KIND_LABEL[r.calc] || r.calc,
-      tip: `${r.role === "properties_out" ? "Properties output" : "CRYSTAL output"} · ${r.calc} (from the output's own lines)` };
+    // a properties run's text says "out": it holds the log, not the results (the .DAT, .f25, cubes and .dat do)
+    if (r.role === "properties_out") {
+      const data = r.calc === "BAND" ? " Open the .BAND.DAT or .f25 beside it to plot." : r.calc === "DOSS" ? " Open the .DOSS.DAT or .f25 beside it to plot." : "";
+      return { cls: "props out-text", label: "out", tip: `Properties output · ${r.calc} (log text only).${data}` };
+    }
+    // an ELASTIC, EOS, QHA or CPHF run opens as its results document (tables and plots): outlined, as plot data
+    if (["ELASTIC", "EOS", "QHA", "CPHF"].includes(r.calc))
+      return { cls: "out plot-data", label: r.calc, tip: `CRYSTAL output · ${r.calc}: click to open its results (tables and plots)` };
+    const cls = r.calc === "FREQ" ? "freq" : "out";
+    return { cls, label: KIND_LABEL[r.calc] || r.calc, tip: `CRYSTAL output · ${r.calc} (from the output's own lines)` };
   }
+  // plot data: BAND/DOSS .DAT files and fort.25 blocks are outlined: clicking them draws the figure
+  if (f.kind === "f25" && (f.sub === "BAND" || f.sub === "DOSS"))
+    return { cls: `${f.sub === "BAND" ? "band" : "dos"} plot-data`, label: KIND_LABEL[f.sub === "BAND" ? "band" : "dos"],
+      tip: `fort.25 ${f.sub === "BAND" ? "band structure" : "DOS"} data: click to plot` };
+  if (f.kind === "f25" && f.sub === "MAPN") return { cls: "f25 plot-data", label: "MAP", tip: "fort.25 2D map data: click to plot" };
+  if (f.kind === "band" || f.kind === "dos")
+    return { cls: `${f.kind} plot-data`, label: KIND_LABEL[f.kind],
+      tip: `${f.kind === "band" ? "Band structure" : "DOS"} data (${f.kind === "band" ? "BAND" : "DOSS"}.DAT): click to plot` };
   const k = f.kind === "out" && isFreq(f.path) ? "freq" : f.kind;
   return { cls: k, label: KIND_LABEL[k] || k, tip: "" };
 }
@@ -521,7 +542,8 @@ async function openFile(path, cached) {
     return { kind: await loadOut(path, t), data: t };
   }
   // plot documents draw in js/docs/plot.js (the shell opens them there)
-  if (["band", "dos", "ir", "raman", "image", "html", "transport"].includes(f.kind)) { showTab("results"); return { kind: "plot" }; }
+  if (["band", "dos", "ir", "raman", "image", "html", "transport"].includes(f.kind)
+    || (f.kind === "f25" && (f.sub === "BAND" || f.sub === "DOSS"))) { showTab("results"); return { kind: "plot" }; }
   if (f.kind === "db") { showTab("db"); await window.MACE.openDb(path); return { kind: "db" }; }
   throw new Error(`${f.name}: no view for this kind of file`);
 }
@@ -902,7 +924,9 @@ function displayAtoms(s, o) {
 function bondsFor(atoms, s, scale) {
   // drawn bonds use Settings' tolerance; the server's bond table keeps its own 1.2
   scale = scale || num("bondTolerance", 0) || s.bond_scale || 1.2;
-  const radii = s.radii, metal = s.metal || [], metalMetal = setting("bondMetalMetal", false) === true;
+  const radii = s.radii, metal = s.metal || [];
+  // a structure of metals only (an alloy) keeps its metal-metal bonds (geom/core.js metalMetalBonds)
+  const metalMetal = setting("bondMetalMetal", false) === true || (metal.length > 0 && metal.every(Boolean));
   const n = atoms.length, bonds = atoms.map(() => []);
   if (n > 4000) return bonds;
   for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
@@ -1109,11 +1133,14 @@ function addModel(v, s, atoms, o) {
 
 /* The drawn box: a periodic axis spans n cells; a non-periodic one (a SLAB
  * has no c) spans the atoms, plus vacuum padding on each side if asked. */
-function cellBox(s, n = 1) {
-  const pad = ($("#opt-vacuum") && $("#opt-vacuum").checked) ? 4.0 : 0;
+function cellBox(s, n = 1, purpose = "draw") {
+  // a slab, polymer or molecule: the box of its Vacuum mode (1.1.6, js/viewport/vacuum.js)
+  const vb = window.MACE && window.MACE.vacuumBox ? window.MACE.vacuumBox(s, n, purpose) : null;
+  if (vb) return vb;
+  const pad = 0;
   let o = (s.origin || [0, 0, 0]).slice();
   const C = s.cell.map((r, k) => {
-    if (s.pbc[k]) return mul(r, n);
+    if (s.pbc[k]) return mul(r, Array.isArray(n) ? n[k] : n);     // n: cells along a, b, c (1.1.6), or one count
     const u = mul(r, 1 / norm(r));
     o = sub(o, mul(u, pad));
     return add(r, mul(u, 2 * pad));
@@ -1124,7 +1151,8 @@ function drawCell(v, s, color, radius = 0.025, n = 1, dashed = false) {
   const { o, C } = cellBox(s, n);
   const corners = [[0, 0, 0], C[0], C[1], C[2], add(C[0], C[1]), add(C[0], C[2]), add(C[1], C[2]), add(add(C[0], C[1]), C[2])].map((p) => add(p, o));
   const edges = [[0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 4], [2, 6], [3, 5], [3, 6], [4, 7], [5, 7], [6, 7]];
-  edges.forEach(([a, b]) => v.addCylinder({ start: xyz(corners[a]), end: xyz(corners[b]), radius,
+  // an Open vacuum axis has no wall: its edges have no length (as the structure view, viewport/scene.js)
+  edges.forEach(([a, b]) => norm(sub(corners[a], corners[b])) > 1e-6 && v.addCylinder({ start: xyz(corners[a]), end: xyz(corners[b]), radius,
     color, fromCap: 1, toCap: 1, dashed, dashLength: 0.25, gapLength: 0.18 }));
   return corners;
 }
@@ -1132,21 +1160,23 @@ function drawCell(v, s, color, radius = 0.025, n = 1, dashed = false) {
 /* a, b, c just past the far end of each cell vector (the edges that leave
  * the origin corner), so each letter reads as the label of its edge. */
 function axisLabels(v, s, n = 1) {
-  const cols = [cssVar("--axis-a"), cssVar("--axis-b"), cssVar("--axis-c")];
+  // the 3D view's tokens (vpVar): a forced White/Black background keeps the labels legible
+  const cols = [vpVar("--axis-a"), vpVar("--axis-b"), vpVar("--axis-c")];
   const { o, C } = cellBox(s, n);
   ["a", "b", "c"].forEach((name, k) => {
     if (!s.pbc[k]) return;
     const end = add(o, C[k]), len = norm(C[k]) || 1;
     const pos = add(end, mul(C[k], Math.min(1.1, 0.25 * len) / len));
     v.addLabel(name, { position: xyz(pos), fontColor: cols[k], fontSize: 14, bold: true,
-      inFront: true, showBackground: true, backgroundColor: cssVar("--surface"),
+      inFront: true, showBackground: true, backgroundColor: vpVar("--surface"),
       backgroundOpacity: 0.8, borderThickness: 0, alignment: "center" });
   });
 }
 
 function structOpts() {
   return { cell: $("#opt-cell").checked, boundary: $("#opt-boundary").checked,
-    supercell: $("#opt-super").checked, labels: $("#opt-labels").checked, ...effDraw($("#opt-style").value, $("#opt-bonds").checked) };
+    // the document's display range (Inspector › Range & boundary; the old 2×2×2 box is hidden since 1.1.6)
+    supercell: (window.MACE.rangeN ? window.MACE.rangeN() : 1) === 2, labels: $("#opt-labels").checked, ...effDraw($("#opt-style").value, $("#opt-bonds").checked) };
 }
 
 function drawStructure(keepView = false) {
@@ -1198,7 +1228,7 @@ function redrawViews() {
 function fitPoints(s, atoms, n = 1) {
   const pts = atoms.map((a) => a.cart);
   if (s && s.cell) {
-    const { o, C } = cellBox(s, n);
+    const { o, C } = cellBox(s, n, "fit");     // a 500 Å vacuum frames the atoms
     for (const i of [0, 1]) for (const j of [0, 1]) for (const k of [0, 1])
       pts.push(add(o, add(add(mul(C[0], i), mul(C[1], j)), mul(C[2], k))));
   }
@@ -1209,7 +1239,7 @@ function fitPoints(s, atoms, n = 1) {
  * pivotOf); before that module is here, the middle of the fitted points. */
 function pivotFor(s, atoms, n = 1, pts = null) {
   const cart = atoms.map((a) => a.cart);
-  if (window.MACE.pivotOf && s) return window.MACE.pivotOf(s.cell ? s : { ...s, pbc: [false, false, false] }, { lo: [0, 0, 0], hi: [n, n, n] }, cart);
+  if (window.MACE.pivotOf && s) return window.MACE.pivotOf(s.cell ? s : { ...s, pbc: [false, false, false] }, { lo: [0, 0, 0], hi: Array.isArray(n) ? n : [n, n, n] }, cart);
   if (s && s.cell && s.pbc && s.pbc.every(Boolean)) {
     const { o, C } = cellBox(s, n);
     return add(o, mul(add(add(C[0], C[1]), C[2]), 0.5));
@@ -1237,7 +1267,10 @@ function fitView(v, s, atoms, n = 1, pts = null, opts = {}) {
     // the view's center is the rotation center
     { const view = v.getView(); v.setView([-pivot[0], -pivot[1], -pivot[2], ...view.slice(3)]); }
     const el = v.getCanvas ? v.getCanvas() : null;
-    const w = el ? el.clientWidth : 0, h = el ? el.clientHeight : 0;
+    // the size modelToScreen projects to, once painted: a layout change (Side by side halves the pane, a pane
+    // shown again after Overlay) resizes the viewer there, while the canvas element can still report its old size
+    if (!opts.tilt && v.paintNow) v.paintNow();
+    const w = v.WIDTH || (el ? el.clientWidth : 0), h = v.HEIGHT || (el ? el.clientHeight : 0);
     if (opts.tilt) {
       // the Phase 1-3 zoom too: a sphere around the points, about 1.6 Å of margin
       const c = mul(pts.reduce((t, p) => add(t, p), [0, 0, 0]), 1 / pts.length);
@@ -1267,6 +1300,7 @@ function fitView(v, s, atoms, n = 1, pts = null, opts = {}) {
       }
     }
     v.render();
+    if (opts.done) opts.done();
   };
   if (v.visible && !v.visible()) { v.pendingFit = doFit; return; }
   v.pendingFit = null;   // a fit queued while hidden is for an older structure
@@ -1762,15 +1796,45 @@ $("#o-info").addEventListener("keydown", (e) => {
 });
 
 const drawCellBox = (...a) => drawCell(...a), fitViewBox = (...a) => fitView(...a), fitPointsBox = (...a) => fitPoints(...a);
+/* The run's fitted view follows its pane's size until the user moves it, as the
+ * structure viewport's does (js/editor/main.js watchFit): a run opened first is
+ * fitted before the bottom panel takes its height, which left atoms outside the
+ * shorter canvas. */
+let optFit = null, optRefitFrame = 0;
+function optFitted(v) {
+  const el = document.getElementById("viewer-before");
+  if (!el) return;
+  optFit = { w: el.clientWidth, h: el.clientHeight, view: v.getView() };
+  if (el.dataset.followsSize || !window.ResizeObserver) return;
+  el.dataset.followsSize = "1";
+  new ResizeObserver(() => {
+    cancelAnimationFrame(optRefitFrame);
+    optRefitFrame = requestAnimationFrame(() => {
+      const vb = state.viewers["viewer-before"], w = el.clientWidth, h = el.clientHeight;
+      if (!optFit || !vb || !vb.visible() || !state.traj || !(w > 0 && h > 0) || (w === optFit.w && h === optFit.h)) return;
+      if (vb.getView().some((x, k) => Math.abs(x - optFit.view[k]) > 1e-7)) { optFit = null; return; }   // the user moved it
+      if (state.layout !== "side") state.refit = true;   // Side by side fits on every draw
+      drawOpt();
+    });
+  }).observe(el);
+}
 function drawOpt() {
   const t = state.traj, c = state.cmp;
   if (!t || !c) return;
   const s0 = t.frames[0], s1 = t.frames[state.frame];
-  // a molecule (no periodic direction, plan E2/E10): it has no unit cell, so none is drawn or fitted
+  // a molecule (no periodic direction, plan E2/E10): it has no unit cell, only its Vacuum mode's box
   const periodic = (s) => !!(s && s.pbc && s.pbc.some(Boolean));
+  // a slab, polymer or molecule: the structure view's box (its Vacuum mode, viewport/vacuum.js) around each
+  // frame's drawn atoms, never CRYSTAL's dummy vectors (1.1.6)
+  const vacBox = (s) => !!(s && s.cell && s.pbc && !s.pbc.every(Boolean) && window.MACE.vacuumBox && window.MACE.vacuumBox(s));
   // the toolbar's Show Unit Cell, Show Bonds and the atom style apply here too
   const showCell = !$("#opt-cell") || $("#opt-cell").checked;
-  const drawCell = (v, s, ...rest) => (periodic(s) && showCell ? drawCellBox(v, s, ...rest) : null);
+  // each drawn box's corners on its viewer (cellCorners: the tests read them, as arrowCount)
+  const drawCell = (v, s, ...rest) => {
+    const c = (periodic(s) || vacBox(s)) && showCell ? drawCellBox(v, s, ...rest) : null;
+    if (c) v.cellCorners.push(c);
+    return c;
+  };
   // its fit: the atoms' box widened by 1.6 A, so the balls of a small molecule are not cut by the edges
   const fitPoints = (s, atoms, n = 1) => {
     if (periodic(s)) return fitPointsBox(s, atoms, n);
@@ -1778,10 +1842,15 @@ function drawOpt() {
       hi = [0, 1, 2].map((k) => Math.max(...P.map((p) => p[k])) + 1.6);
     const out = P.slice();
     for (const i of [lo[0], hi[0]]) for (const j of [lo[1], hi[1]]) for (const k of [lo[2], hi[2]]) out.push([i, j, k]);
+    if (vacBox(s) && showCell) {
+      const { o, C } = cellBox(s, n, "fit");
+      for (const i of [0, 1]) for (const j of [0, 1]) for (const k of [0, 1]) out.push(add(o, add(add(mul(C[0], i), mul(C[1], j)), mul(C[2], k))));
+    }
     return out;
   };
   const fitView = (v, s, atoms, n = 1, pts = null, opts = {}) =>
-    fitViewBox(v, periodic(s) ? s : { ...s, cell: null }, atoms, n, pts || fitPoints(s, atoms, n), opts);
+    fitViewBox(v, periodic(s) ? s : { ...s, cell: null }, atoms, n, pts || fitPoints(s, atoms, n),
+      v.viewerId === "viewer-before" ? { ...opts, done: () => optFitted(v) } : opts);
   if (!s0 || !s1) return;                      // a step still loading
   const side = state.layout === "side";
   const showArrows = $("#o-arrows").checked, ghost = $("#o-ghost").checked;
@@ -1797,11 +1866,13 @@ function drawOpt() {
       `${s1.formula ? `, ${s1.formula}` : ""}. The Timeline and Atoms tabs in the bottom panel list the values.`);
   }
   const keep = vb.getModel() ? vb.getView() : null;
-  [vb, side ? viewer("viewer-after") : null].forEach((v) => v && (v.removeAllModels(), v.removeAllShapes(), v.removeAllLabels(), v.arrowCount = 0));
-  const atoms0 = c.before_cart.map((p, i) => ({ i, cart: p, image: false }));
+  [vb, side ? viewer("viewer-after") : null].forEach((v) => v && (v.removeAllModels(), v.removeAllShapes(), v.removeAllLabels(), v.arrowCount = 0, v.cellCorners = []));
+  // 1.1.6: Display Range (whole cells, n1×n2×n3: window.__mace.optCells) repeats both geometries, each with its own cell
+  const cells = (window.__mace && window.__mace.optCells && window.__mace.optCells()) || [1, 1, 1];
+  const atoms0 = repeatCells(c.before_cart.map((p, i) => ({ i, cart: p, image: false })), s0, cells);
   const s0w = { ...s0, cart: c.before_cart };
   const s1u = { ...s1, cart: c.after_unwrapped_cart };
-  const atoms1 = s1u.cart.map((p, i) => ({ i, cart: p, image: false }));
+  const atoms1 = repeatCells(s1u.cart.map((p, i) => ({ i, cart: p, image: false })), s1, cells);
   const base = effDraw(($("#opt-style") && $("#opt-style").value) || "ballstick", !$("#opt-bonds") || $("#opt-bonds").checked);
   const muted = cssVar("--muted"), accent = cssVar("--accent");
   renderLegend(c);
@@ -1809,9 +1880,9 @@ function drawOpt() {
     const ca = cssVar("--cmp-a"), cb = cssVar("--cmp-b");
     tint(addModel(vb, s0w, atoms0, base), s0w, (a) => mixHex(elementColor(s0w.symbols[a.serial - 1]), ca, 0.7), base);
     tint(addModel(vb, s1u, atoms1, base), s1u, (a) => mixHex(elementColor(s1u.symbols[a.serial - 1]), cb, 0.7), base);
-    drawCell(vb, s0, ca, 0.02, 1, true);
-    drawCell(vb, s1, cb, 0.03);
-    if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1, atoms0.concat(atoms1));
+    drawCell(vb, s0w, ca, 0.02, cells, true);
+    drawCell(vb, s1u, cb, 0.03, cells);
+    if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1u, atoms0.concat(atoms1), cells);
     state.refit = false;
     vb.render();
     return;
@@ -1820,9 +1891,9 @@ function drawOpt() {
     const L = dispSet(c).list.map((d) => d.length);
     const lo = Math.min(...L), hi = Math.max(...L);
     tint(addModel(vb, s1u, atoms1, base), s1u, (a) => seqColor(hi > lo ? (L[a.serial - 1] - lo) / (hi - lo) : 0), base);
-    drawCell(vb, s1, accent, 0.03);
-    if (showArrows) arrows(vb, atoms1, c, scale);
-    if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1, atoms1);
+    drawCell(vb, s1u, accent, 0.03, cells);
+    if (showArrows) arrowsCells(vb, atoms1, c, scale);
+    if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1u, atoms1, cells);
     state.refit = false;
     vb.render();
     return;
@@ -1830,13 +1901,13 @@ function drawOpt() {
   if (side) {
     const va = viewer("viewer-after");
     if (!va) return;
-    addModel(vb, s0w, atoms0, base); drawCell(vb, s0, muted, 0.03);
-    addModel(va, s1u, atoms1, base); drawCell(va, s1, accent, 0.03);
-    if (showArrows) arrows(va, atoms1, c, scale);
-    const pts = fitPoints(s0, atoms0).concat(fitPoints(s1, atoms1));
+    addModel(vb, s0w, atoms0, base); drawCell(vb, s0w, muted, 0.03, cells);
+    addModel(va, s1u, atoms1, base); drawCell(va, s1u, accent, 0.03, cells);
+    if (showArrows) arrowsCells(va, atoms1, c, scale);
+    const pts = fitPoints(s0w, atoms0, cells).concat(fitPoints(s1u, atoms1, cells));
     // one rotation center for both (the views are linked): the selected frame's
-    const pivot = pivotFor(periodic(s1) ? s1 : { ...s1, cell: null }, atoms1, 1, pts);
-    fitView(vb, s0, atoms0, 1, pts, { pivot }); fitView(va, s1, atoms1, 1, pts, { pivot });
+    const pivot = pivotFor(periodic(s1) ? s1 : { ...s1, cell: null }, atoms1, cells, pts);
+    fitView(vb, s0w, atoms0, cells, pts, { pivot }); fitView(va, s1u, atoms1, cells, pts, { pivot });
     if (!vb.linked) { vb.linkViewer(va); va.linkViewer(vb); vb.linked = true; }
     vb.render(); va.render();
     return;
@@ -1850,12 +1921,12 @@ function drawOpt() {
       for (const sub of Object.values(st)) { delete sub.colorscheme; sub.colorfunc = (a) => mixHex(elementColor(s0w.symbols[a.serial - 1]), "#ffffff", lift); }
       gm.setStyle({}, st);
     }
-    drawCell(vb, s0, muted, 0.02, 1, true);
+    drawCell(vb, s0w, muted, 0.02, cells, true);
   }
   if (!state.soloGhost) addModel(vb, s1u, atoms1, base);   // soloGhost: a test hook (the ghost contrast check)
-  drawCell(vb, s1, accent, 0.03);
-  if (showArrows && !state.soloGhost) arrows(vb, atoms1, c, scale);
-  if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1, atoms0.concat(atoms1));
+  drawCell(vb, s1u, accent, 0.03, cells);
+  if (showArrows && !state.soloGhost) arrowsCells(vb, atoms1, c, scale);
+  if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1u, atoms0.concat(atoms1), cells);
   state.refit = false;
   vb.render();
 }
@@ -1974,6 +2045,25 @@ function setLook(look) {
 }
 function cycleLook() { setLook(LOOKS[(LOOKS.indexOf(state.layout) + 1) % LOOKS.length]); }
 
+/* 1.1.6: the optimization view's repeated cells (Display Range n1×n2×n3): the run's atoms (the home
+ * cell first), then each image, shifted by whole lattice vectors of that geometry's own cell */
+function repeatCells(atoms, s, cells) {
+  if (!s || !s.cell || !s.pbc || !cells || cells.every((n) => n === 1)) return atoms;
+  const out = atoms.slice();
+  for (let a = 0; a < cells[0]; a++) for (let b = 0; b < cells[1]; b++) for (let k = 0; k < cells[2]; k++) {
+    if (!a && !b && !k) continue;
+    const t = add(add(mul(s.cell[0], a), mul(s.cell[1], b)), mul(s.cell[2], k));
+    atoms.forEach((x) => out.push({ i: x.i, cart: add(x.cart, t), image: true, shift: [a, b, k] }));
+  }
+  return out;
+}
+/* every cell's arrows: arrows() per block of the run's atoms (repeatCells keeps them in blocks) */
+function arrowsCells(v, atomsAt, c, scale) {
+  const n = c.before_cart.length;
+  let count = 0;
+  for (let o = 0; o + n <= atomsAt.length; o += n) { arrows(v, atomsAt.slice(o, o + n), c, scale); count += v.arrowCount; }
+  v.arrowCount = count;
+}
 function arrows(v, atomsAt, c, scale) {
   v.arrowCount = 0;                 // how many were drawn (the tests read it; the cell's edges are shapes too)
   dispSet(c).list.forEach((d, i) => {

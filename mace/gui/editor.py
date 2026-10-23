@@ -1,6 +1,9 @@
 """Structure editor sessions for the GUI (P1 and symmetry-aware edits).
 
-A session holds an ``ase.Atoms`` (3D periodic) and its undo/redo history.
+A session holds an ``ase.Atoms`` and its undo/redo history. A slab, polymer or
+molecule (1.1.6) keeps its ``pbc``: along a non-periodic direction the cell
+vector is only a drawing box, so nothing wraps or has images there, and only
+P1 editing applies (spglib's space groups are for 3D cells).
 Every operation returns the new structure payload plus an ``index_map`` (old
 atom index -> new index, or None when the atom is gone) so the browser can
 keep its selection, and an ``op_summary`` sentence.
@@ -118,15 +121,18 @@ def check_symprec(value) -> float:
 
 
 def atoms_from_payload(p: Dict[str, Any]):
-    """ase.Atoms from a read_structure() payload (3D cells only)."""
+    """ase.Atoms from a read_structure() payload. A slab, polymer or molecule
+    keeps its pbc and Cartesian positions (its non-periodic cell vectors are the
+    drawing box; its origin and the file's own vacuum vectors ride in ``info``)."""
     from ase import Atoms
-    if not all(p["pbc"]):
-        raise EditError("the editor works on 3D crystals; this structure is "
-                        f"{p['dimensionality']}")
     numbers = [int(n) % 100 for n in p["numbers"]]   # CRYSTAL ECP numbers (247 = Ag)
     if any(n == 0 for n in numbers):
         raise EditError("the structure holds ghost or dummy atoms, which a CIF cannot carry")
-    return Atoms(numbers=numbers, cell=p["cell"], scaled_positions=p["frac"], pbc=True)
+    if all(p["pbc"]):
+        return Atoms(numbers=numbers, cell=p["cell"], scaled_positions=p["frac"], pbc=True)
+    a = Atoms(numbers=numbers, cell=p["cell"], positions=p["cart"], pbc=[bool(x) for x in p["pbc"]])
+    a.info.update(S.nonperiodic_info(p))
+    return a
 
 
 def new_cell(cellpar: Sequence[float], sites: Sequence[Dict[str, Any]],
@@ -199,7 +205,7 @@ class EditSession:
         self.rev = next_rev()
         self.meta = {"label": label or f"Opened {name}", "t": time.time(), "n_atoms": len(self.atoms),
                      "rev": self.rev, "merge": None, "count": 1}
-        if locked:                         # the document's mode: not an undo step
+        if locked and all(self.atoms.pbc):  # the document's mode: not an undo step (P1 off 3D)
             self.locked = True
             self._capture()
             self.sticky = (True, self.symprec)
@@ -313,8 +319,10 @@ class EditSession:
         if sym is None:
             sym = self.symmetry()
         p = S._payload(a.cell.array, a.get_scaled_positions(wrap=False), a.positions,
-                       a.numbers, (True, True, True), {"kind": "edit", "path": self.name},
+                       a.numbers, tuple(bool(x) for x in a.pbc), {"kind": "edit", "path": self.name},
                        symmetry_data=sym)
+        if not all(a.pbc):
+            p.update(S.nonperiodic_payload(a))
         p.update({"session": self.id, "name": self.name, "locked": self.locked,
                   "locked_group": self._locked_group(), "symprec": self.symprec,
                   "can_undo": bool(self.history), "can_redo": bool(self.future),
@@ -339,14 +347,21 @@ class EditSession:
         a = self.atoms
         from .compute import HEAVY_ATOMS
         return GATE.run(None, lambda: S.symmetry(a.cell.array, a.get_scaled_positions(), a.numbers,
-                                                 symprec=self.symprec), heavy=len(a) > HEAVY_ATOMS)
+                                                 tuple(bool(x) for x in a.pbc), symprec=self.symprec),
+                        heavy=len(a) > HEAVY_ATOMS)
 
     def _locked_group(self):
         return None if not self.ops else len(self.ops[0])
 
     # -- symmetry helpers ------------------------------------------------------
+    def _need_3d(self, what: str) -> None:
+        if not all(self.atoms.pbc):
+            dim = S._DIM_NAMES[int(sum(bool(x) for x in self.atoms.pbc))].lower()
+            raise EditError(f"{what} needs a 3D crystal; this is a {dim} (edit it in P1)")
+
     def _capture(self):
         import spglib
+        self._need_3d("Symmetry-aware editing")
         a = self.atoms
         sym = spglib.get_symmetry((a.cell.array, a.get_scaled_positions(), a.numbers),
                                   symprec=self.symprec)
@@ -362,7 +377,8 @@ class EditSession:
         """The distinct images of one fractional position under the locked ops."""
         f = np.asarray(frac, float)
         if not self.locked or not self.ops:
-            return f[None, :] % 1.0
+            per = np.asarray(self.atoms.pbc, bool)
+            return np.where(per, f % 1.0, f)[None, :]
         rot, tr = self.ops
         pts = (np.einsum("kij,j->ki", rot, f) + tr) % 1.0
         out: List[np.ndarray] = []
@@ -372,8 +388,8 @@ class EditSession:
         return np.array(out)
 
     def _dist(self, f1, f2) -> float:
-        d = np.asarray(f1) - np.asarray(f2)
-        d -= np.round(d)
+        d = np.asarray(f1, float) - np.asarray(f2, float)
+        d -= np.where(np.asarray(self.atoms.pbc, bool), np.round(d), 0.0)
         return float(np.linalg.norm(d @ self.atoms.cell.array))
 
     def _find(self, frac, number=None) -> Optional[int]:
@@ -614,9 +630,11 @@ class EditSession:
         (Settings' wrapIntoCell); counts the atoms that left the cell."""
         if not (self.wrap if wrap is None else wrap):
             return sf
+        per = np.asarray(self.atoms.pbc, bool)
         for j in sorted(set(moved)):
             w = sf[j] - np.floor(sf[j] + 1e-12)
             w[np.abs(w - 1.0) < 1e-12] = 0.0
+            w = np.where(per, w, sf[j])          # a non-periodic direction never wraps
             if np.any(np.abs(w - sf[j]) > 1e-12):
                 self._wrapped += 1
             sf[j] = w
@@ -727,13 +745,34 @@ class EditSession:
         self._label_info = {"n": n}
         return f"set the coordinates of {n} symmetry-equivalent atoms", imap
 
+    def _set_cell(self, cell, scale_atoms):
+        """set_cell; a slab, polymer or molecule keeps its atoms' heights along its non-periodic
+        directions (that vector is only the drawing box: scaling it must not stretch the atoms)."""
+        a = self.atoms
+        per = np.asarray(a.pbc, bool)
+        if not scale_atoms or per.all():
+            a.set_cell(cell, scale_atoms=bool(scale_atoms))
+            return
+        old_c, old_p = a.cell.array.copy(), a.positions.copy()
+        f = a.get_scaled_positions(wrap=False)
+        new_c = np.asarray(cell, float)
+        rec_old, rec_new = np.linalg.inv(old_c).T, np.linalg.inv(new_c).T
+        pos = f[:, per] @ new_c[per] if per.any() else np.zeros_like(old_p)
+        for k in np.nonzero(~per)[0]:
+            nu_o = rec_old[k] / np.linalg.norm(rec_old[k])
+            nu_n = rec_new[k] / np.linalg.norm(rec_new[k])
+            fk = (old_p @ nu_o - pos @ nu_n) / float(new_c[k] @ nu_n)
+            pos = pos + np.outer(fk, new_c[k])
+        a.set_cell(new_c, scale_atoms=False)
+        a.positions = pos
+
     def op_set_cell(self, cellpar=None, scale_atoms=True, matrix=None):
         from ase.geometry import cellpar_to_cell
         if matrix is not None:
             m = np.asarray(matrix, float)
             if m.shape != (3, 3) or not np.all(np.isfinite(m)) or abs(np.linalg.det(m)) < 1e-6:
                 raise EditError("a cell matrix is three linearly independent vectors")
-            self.atoms.set_cell(m, scale_atoms=bool(scale_atoms))
+            self._set_cell(m, scale_atoms)
             return self._recaptured(
                 "cell changed, atoms kept at their fractional positions" if scale_atoms else
                 "cell changed, atoms kept at their Cartesian positions"), list(range(len(self.atoms)))
@@ -742,7 +781,7 @@ class EditSession:
         cp = [float(x) for x in cellpar]
         if len(cp) != 6 or min(cp[:3]) <= 0:
             raise EditError("give a, b, c (> 0) and alpha, beta, gamma")
-        self.atoms.set_cell(cellpar_to_cell(cp), scale_atoms=bool(scale_atoms))
+        self._set_cell(cellpar_to_cell(cp), scale_atoms)
         # a new metric can lose operations (cubic -> Fmmm): re-capture when locked
         return self._recaptured(
             "cell changed, atoms kept at their fractional positions" if scale_atoms else
@@ -754,7 +793,7 @@ class EditSession:
             return text + f"; symmetry re-captured ({len(self.ops[0])} operations)"
         return text
 
-    def op_supercell(self, n=(2, 2, 2), matrix=None):
+    def op_supercell(self, n=(2, 2, 2), matrix=None, vacuum=None):
         """``n``: a diagonal supercell (ase's repeat, as before); ``matrix``
         (Phase 4, Build › Supercell): new vectors M @ cell for an integer M with
         a positive determinant, built like the New-tab result (builders.py)."""
@@ -763,12 +802,18 @@ class EditSession:
             from ase import Atoms
             try:
                 r = builders.supercell(cell=self.atoms.cell.array, frac=self.atoms.get_scaled_positions(wrap=False),
-                                       numbers=self.atoms.numbers, pbc=tuple(bool(p) for p in self.atoms.pbc), matrix=matrix)
+                                       numbers=self.atoms.numbers, pbc=tuple(bool(p) for p in self.atoms.pbc), matrix=matrix,
+                                       vacuum=vacuum)
             except ValueError as exc:
                 raise EditError(str(exc))
             if len(r["numbers"]) > MAX_ATOMS:
                 raise EditError(f"more than {MAX_ATOMS} atoms: too big for the editor")
+            info = dict(self.atoms.info)
             self.atoms = Atoms(numbers=r["numbers"], cell=r["cell"], scaled_positions=r["frac"], pbc=r["pbc"])
+            if not all(r["pbc"]):
+                # a repeated axis: its vacuum vector becomes the new block's period (no copy on a copy next time)
+                from . import structures as S
+                self.atoms.info.update(S.repeated_info(info, r["info"]["repeats"], r["info"]["spacing"]))
             m = r["info"]["matrix"]
             diag = all(m[i][j] == 0 for i in range(3) for j in range(3) if i != j)
             what = f"{m[0][0]}x{m[1][1]}x{m[2][2]}" if diag else f"det {r['info']['det']}"
@@ -776,6 +821,8 @@ class EditSession:
         n = [int(x) for x in n]
         if min(n) < 1 or np.prod(n) > 64:
             raise EditError("supercell multiples must be 1-64 in total")
+        if not all(self.atoms.pbc) and vacuum is not None:
+            return self.op_supercell(matrix=np.diag(n).tolist(), vacuum=vacuum)
         if not all(self.atoms.pbc):
             from . import builders
             try:
@@ -846,6 +893,7 @@ class EditSession:
     def _standardize(self, primitive: bool):
         import spglib
         from ase import Atoms
+        self._need_3d("Symmetrize and the cell transforms")
         a = self.atoms
         res = spglib.standardize_cell((a.cell.array, a.get_scaled_positions(), a.numbers),
                                       to_primitive=primitive, no_idealize=False,
@@ -884,6 +932,7 @@ class EditSession:
         elif kind == "niggli":
             import spglib
             from ase import Atoms
+            self._need_3d("A Niggli reduction")
             red = spglib.niggli_reduce(self.atoms.cell.array)
             if red is None:
                 raise EditError("spglib could not Niggli-reduce this cell")
@@ -919,7 +968,9 @@ class EditSession:
     def apply_clean(self, new_atoms, summary, base_rev=None):
         self.check_rev(base_rev)
         before = self._state()
+        keep = {k: v for k, v in (self.atoms.info or {}).items() if str(k).startswith("mace_")}
         self.atoms = new_atoms.copy()
+        self.atoms.info.update(keep)              # a slab's drawing-box origin and file vacuum
         try:
             summary = self._recaptured(summary)   # Clean without FixSymmetry can lower it
         except Exception:
@@ -930,14 +981,21 @@ class EditSession:
         return self.payload(summary, list(range(len(self.atoms))), sym=sym)
 
     # -- output ---------------------------------------------------------------------
+    def boxed_atoms(self):
+        """A copy a 3D file format can carry: a slab, polymer or molecule in a
+        box with S.SAVE_VACUUM Å of vacuum along each non-periodic direction."""
+        return S.boxed(self.atoms) if not all(self.atoms.pbc) else self.atoms.copy()
+
     def cif_text(self, mode: str = "p1") -> str:
         """The structure as a CIF: ``p1`` (every atom) or ``symmetrized`` (spglib
         refined cell, space group and asymmetric unit)."""
         import io
         import warnings
         import ase.io
-        a = self.atoms.copy()
+        a = S.boxed(self.atoms) if not all(self.atoms.pbc) else self.atoms.copy()   # (also for server._SessLike)
         if mode == "symmetrized":
+            if not all(self.atoms.pbc):
+                raise EditError("a symmetrized CIF needs a 3D crystal; save this one as P1")
             return _symmetrized_cif(a, self.symprec, self.name)
         if mode != "p1":
             raise EditError("CIF mode is p1 or symmetrized")

@@ -23,6 +23,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+from mace.utils import plot_labels as _L
+
 _E12 = 12
 
 
@@ -96,7 +98,8 @@ def read_f25(path: Path, max_values: int = 4_000_000) -> List[Dict[str, Any]]:
     return blocks
 
 
-_KEYWORD_LABEL = {"POTM": ("Electrostatic potential", "hartree/e"), "CLAS": ("Classical potential", "hartree/e")}
+# the units in plot markup (mace.utils.plot_labels)
+_KEYWORD_LABEL = {"POTM": ("Electrostatic potential", _L.unit("Ha/e")), "CLAS": ("Classical potential", _L.unit("Ha/e"))}
 
 
 def map_kinds(f25: Path) -> List[Dict[str, str]]:
@@ -137,7 +140,7 @@ def _label(kinds: List[Dict[str, str]], k: int, n: int):
     if k < len(kinds):
         kw = kinds[k]["keyword"]
         if kw == "ECHG":
-            return ("Spin density", "e/bohr³") if kinds[k]["density"] == "spin" else ("Charge density", "e/bohr³")
+            return ("Spin density", _L.unit("e/bohr3")) if kinds[k]["density"] == "spin" else ("Charge density", _L.unit("e/bohr3"))
         if kw in _KEYWORD_LABEL:
             return _KEYWORD_LABEL[kw]
     # no properties output beside it: CRYSTAL's fort.25 does not say what a map is

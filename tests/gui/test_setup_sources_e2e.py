@@ -211,9 +211,11 @@ def test_d12_setup_batch(session, browser, zoom):
     st = drv.execute_script("const s = window.__mace.setup.state(); return {mode: s.mode, calc: s.calc, cmd: s.result.command}")
     assert st["mode"] == "opt2d12" and st["calc"] == "SP"
     assert "--d12-file" in st["cmd"], st
-    # a deck has no wavefunction: SP, OPT, FREQ only
-    rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-calc [data-calc]')].map((b) => b.dataset.calc)")
+    # a deck has no wavefunction: SP, OPT, FREQ only; the rest grayed with the reason (1.1.6 final: shown, not hidden)
+    rows = drv.execute_script("return [...document.querySelectorAll('#inspector .su-calc [data-calc]:not([aria-disabled=true])')].map((b) => b.dataset.calc)")
     assert rows == ["SP", "OPT", "FREQ"], rows
+    why = drv.execute_script("return document.querySelector('#inspector .su-calc [data-calc=BAND]').title")
+    assert why == "Needs a finished OPT or SP output (.out); this is a deck", why
     assert "Si_sp.d12" in text(drv, "#inspector .su-parent")
     assert text(drv, "#inspector [data-field=functional] .su-badge") == "from parent .d12"
     drv.find_element("css selector", "#inspector .su-calc [data-calc='OPT']").click()

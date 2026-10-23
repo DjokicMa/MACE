@@ -88,7 +88,7 @@ export function createMeasure(E, S, V) {
       const prev = atoms[atoms.length - 1];
       const from = s.frac[prev.i].map((x, k) => x + prev.image[k]);
       // minImage(from, f_j): the lattice shift that brings j nearest to the atom before it
-      atoms.push({ i: j, image: G.minImage(s.cell, from, s.frac[j]).image });
+      atoms.push({ i: j, image: G.minImage(s.cell, from, s.frac[j], s.pbc).image });
     }
     e.measurements.push(make(e, atoms));
     changed(e);

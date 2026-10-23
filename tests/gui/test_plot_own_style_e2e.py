@@ -134,13 +134,20 @@ def test_toolbar_style_menu_and_cli_command(drv):
     before = drv.execute_script(FIG)["font"]
     drv.find_element("css selector", "#plot-host .pk-style").click()
     items = drv.execute_script("return [...document.querySelectorAll('.pk-menu button')].map((b) => b.dataset.v)")
-    assert {"style:presentation", "spin:mace", "bdash", "dos:element", "dspin:mirrored", "dtotal", "cli"} <= set(items), items
+    assert {"style:presentation", "spin:mace", "cli"} <= set(items) and not {"bdash", "dos:element"} & set(items), items
+    # the band and DOS lines are their own menu (Traces ▾), not part of this one
+    drv.execute_script("document.querySelector('.pk-menu').close()")
+    drv.find_element("css selector", "#plot-host .pk-cat[data-cat=traces]").click()
+    items = drv.execute_script("return [...document.querySelectorAll('.pk-menu button')].map((b) => b.dataset.v)")
+    assert {"bdash", "dos:element", "dspin:mirrored", "dtotal"} <= set(items) and "style:presentation" not in items, items
+    drv.execute_script("document.querySelector('.pk-menu').close()")
+    drv.find_element("css selector", "#plot-host .pk-style").click()
     drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = '';"
                        "document.querySelector('.pk-menu button[data-v=\"style:presentation\"]').click()")
     drawn(drv)
     f = drv.execute_script(FIG)
     assert f["opts"]["style"] == "presentation" and f["font"] > before
-    drv.find_element("css selector", "#plot-host .pk-style").click()
+    drv.find_element("css selector", "#plot-host .pk-cat[data-cat=traces]").click()
     drv.execute_script("document.querySelector('#plot-host .pv-plot').dataset.drawn = '';"
                        "document.querySelector('.pk-menu button[data-v=\"dos:total\"]').click()")
     drawn(drv)

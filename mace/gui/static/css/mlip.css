@@ -1,0 +1,26 @@
+/* Settings › ML potentials and its dialogs (js/lazy/mlip_setup.js): theme tokens only */
+.mlip-pane { display: flex; flex-direction: column; gap: var(--s-3); }
+.mlip-pane table { width: 100%; border-collapse: collapse; }
+.mlip-pane th, .mlip-pane td { text-align: left; padding: var(--s-1) var(--s-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+.mlip-pane th { color: var(--text-2); font-weight: 500; }
+.mlip-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.mlip-status { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.mlip-status.ready { color: var(--success, var(--text)); }
+.mlip-note { margin: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--warning); border-radius: var(--r-sm); background: var(--surface-2); }
+.mlip-dlg { width: min(780px, 94vw); }
+.mlip-dlg .dlg-body { display: flex; flex-direction: column; gap: var(--s-3); }
+.mlip-dlg label.row { display: flex; flex-direction: column; gap: var(--s-1); }
+.mlip-dlg label.row input[type=text] { width: 100%; }
+.mlip-pkgs { display: flex; flex-direction: column; gap: var(--s-1); margin: 0; padding: 0; list-style: none; }
+.mlip-pkgs li { display: flex; flex-direction: column; }
+.mlip-pkgs .models { margin-left: 1.6em; color: var(--text-2); font-size: var(--fs-sm); }
+.mlip-plan { margin: 0; color: var(--text-2); }
+.mlip-plan.bad { color: var(--danger, var(--text)); }
+.mlip-warn { margin: 0; padding-left: 1.25em; }
+.mlip-warn li::marker { color: var(--warning); }
+.mlip-log { margin: 0; max-height: 32vh; min-height: 6em; overflow: auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: var(--fs-sm)/1.4 var(--font-mono); white-space: pre-wrap; }
+.mlip-result { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2); }
+.mlip-result.bad { border-color: var(--danger, var(--warning)); }
+.mlip-license { max-height: 30vh; overflow: auto; }
+.mlip-academic { color: var(--warning); }

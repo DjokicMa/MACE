@@ -23,10 +23,11 @@ import os
 import re
 import secrets
 import signal
+import stat
 import socket
 import sys
 import time
-import webbrowser
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -55,6 +56,8 @@ STOP_LINES = {
     "idle": "mace gui: stopped after {hours} without use and with no task running (Settings > Server).",
     "cpu-limit": ("mace gui: stopped before this node's CPU-time limit ({minutes} min per process) ended it. "
                   "Start it again for a fresh limit; your drafts are kept in the browser."),
+    "session-closed": ("mace gui: stopped because the session that started it closed (ssh without a terminal sends no "
+                       "hangup). To keep it running after you log out: nohup mace gui ... & or mace gui --keep."),
     "managed-disconnect": "mace gui: the connection closed and no task was running; stopped.",
     "managed-stop": "mace gui: stopped by mace gui connect.",
     "managed-done": "mace gui: the last task ended and nobody reattached; stopped.",
@@ -102,9 +105,18 @@ def build_parser() -> argparse.ArgumentParser:
                "computer with the ssh command it prints, or start it from your computer in one "
                f"step with `mace gui connect` (see mace gui connect --help). See {DOCS}.")
     p.add_argument("--dir", "-d", default=".", help="directory to serve (default: .)")
-    p.add_argument("--port", "-p", type=int, default=DEFAULT_PORT if default_port is None else default_port,
-                   help=f"port (default: MACE_GUI_PORT, else {DEFAULT_PORT}; 0 picks a free one). "
-                        "On a shared node choose your own, e.g. export MACE_GUI_PORT=8xxx")
+    p.add_argument("--port", "-p", type=int, default=default_port,
+                   help=f"port (default: MACE_GUI_PORT, else {DEFAULT_PORT} on your own computer and a port of your "
+                        "own on a shared node: 20000 + your user id mod 10000, the next free one if that is taken; "
+                        "0 picks a free one). A port you name is used as is")
+    p.add_argument("--keep", action="store_true",
+                   help="keep serving after the session that started it closes (by default a server started over "
+                        "ssh without a terminal stops when that connection ends; nohup does the same as --keep)")
+    p.add_argument("--new-session", action="store_true",
+                   help="start another server even when one of yours already serves this folder")
+    p.add_argument("--sessions", action="store_true",
+                   help="list your running MACE GUI sessions (any node of this cluster that shares your home "
+                        "folder) with the line that forwards each one, and exit")
     p.add_argument("--host", default="127.0.0.1",
                    help="interface to bind (default 127.0.0.1). Any other address also needs "
                         "--insecure-network")
@@ -120,7 +132,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gateway", default=os.environ.get("MACE_GUI_GATEWAY", "").strip() or None,
                    help="your cluster's login host, shown in the port-forwarding hint "
                         f"(default MACE_GUI_GATEWAY, else [gui] gateway in site.toml, else {GATEWAY_PLACEHOLDER})")
-    p.add_argument("--open", action="store_true", help="open a browser on this machine")
+    p.add_argument("--open", action="store_true",
+                   help="open MACE GUI on this machine: in its own window of a Chromium-family browser (Brave, "
+                        "Chrome, Chromium, Edge, Vivaldi), else in a browser tab")
+    p.add_argument("--browser", choices=("app", "tab"), default=None,
+                   help="with --open: app (its own window, no tabs or address bar; the default when one of those "
+                        "browsers is installed) or tab (the default browser; also the default when $BROWSER is "
+                        "set). [gui] open in site.toml sets your default")
     p.add_argument("--gpu", type=int, metavar="N",
                    help="with --open: the NVIDIA GPU the browser that this starts renders on "
                         "(default: GPU 0, the one that usually drives the display; N >= 1 uses PRIME "
@@ -157,13 +175,17 @@ def browser_gpu_env(gpu: Optional[int]) -> dict:
             "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": f"NVIDIA-G{gpu - 1}"}
 
 
-def open_browser(url: str, gpu: Optional[int] = None) -> bool:
-    """webbrowser.open, with the GPU offload environment for the browser it starts."""
+def open_browser(url: str, gpu: Optional[int] = None, mode: Optional[str] = None) -> bool:
+    """The URL in this computer's browser (appwindow.open_url: its own app
+    window by default, mode "tab" for a browser tab; the browser's own output
+    goes to a log file, not this terminal), with the GPU offload environment
+    for the browser it starts."""
+    from . import appwindow
     extra = browser_gpu_env(gpu)
     saved = {k: os.environ.get(k) for k in extra}
     os.environ.update(extra)
     try:
-        return webbrowser.open(url)
+        return appwindow.open_url(url, mode, say=print)
     finally:
         for k, v in saved.items():
             if v is None:
@@ -210,7 +232,45 @@ def default_gateway() -> Optional[str]:
             gw = val.strip() if isinstance(val, str) else ""
         except Exception:
             gw = ""
+    if not gw:
+        gw = config_alias_for_domain() or ""
     return gw if gw and GATEWAY_RE.match(gw) else None
+
+
+def node_domain() -> str:
+    """This node's domain (dev-node-01.cluster.example.edu -> cluster.example.edu), or ''."""
+    try:
+        full = socket.getfqdn() or socket.gethostname()
+    except OSError:
+        return ""
+    labels = full.split(".")
+    return ".".join(labels[1:]).lower() if len(labels) > 2 else ""
+
+
+def config_alias_for_domain(domain: Optional[str] = None, path: Optional[Path] = None) -> Optional[str]:
+    """The one Host alias of ~/.ssh/config (shared home folders carry it to the node) whose HostName is in this
+    node's domain: the cluster's login host under the name you chose for it. None when there is none or several."""
+    domain = node_domain() if domain is None else domain
+    if not domain:
+        return None
+    p = path or Path(os.path.expanduser("~")) / ".ssh" / "config"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    hits, aliases = [], []
+    for line in text.splitlines() + ["Host __end__"]:
+        m = re.match(r"\s*Host(?:\s+|\s*=\s*)(.+)", line, re.I)
+        if m:
+            aliases = [w.strip('"') for w in m.group(1).split() if re.fullmatch(r"[A-Za-z0-9._-]+", w.strip('"'))]
+            continue
+        m = re.match(r"\s*HostName(?:\s+|\s*=\s*)(\S+)", line, re.I)
+        if m and aliases:
+            hn = m.group(1).strip('"').lower()
+            if hn == domain or hn.endswith("." + domain):
+                hits.append(aliases[0])
+            aliases = []
+    return hits[0] if len(set(hits)) == 1 else None
 
 
 def connect_line(gateway: Optional[str], root: Optional[str] = None) -> str:
@@ -245,13 +305,18 @@ def ssh_hint(port: int, gateway: Optional[str], root: Optional[str] = None) -> L
         "Or with ssh alone (leave it running), then open the URL above:",
         f"  ssh -N -J {gw} -L {port}:127.0.0.1:{port} {user}@{node}",
         "(if the port is taken on your computer, change the first number and the URL's port)",
-        f"(it listens only on {node}'s 127.0.0.1: a tunnel must end at 127.0.0.1:{port} on {node}, as this line does;",
+        "Windows: if PowerShell says ssh is not recognized, mace gui connect (above) finds Windows' OpenSSH itself,",
+        "or run ssh by its full path: & \"$env:SystemRoot\\System32\\OpenSSH\\ssh.exe\" with the same arguments.",
+        f"(it listens only on {node}'s own loopback, 127.0.0.1 and ::1: a tunnel must end at 127.0.0.1:{port} on {node}, as this line does;",
         f"one that ends at {node}:{port} never reaches it and the browser keeps loading)",
         "If your cluster's nodes accept logins only from the login node, add --hop nested (see docs/gui.md).",
     ]
     if not gateway:
-        lines.append(f"(replace {GATEWAY_PLACEHOLDER} with your cluster's login host; export MACE_GUI_GATEWAY=host, "
-                     "pass --gateway, or set [gui] gateway in site.toml to fill it in)")
+        dom = node_domain()
+        lines.append(f"(replace {GATEWAY_PLACEHOLDER} with your cluster's login host, the name you ssh to from your "
+                     "computer"
+                     + (f"; this node is in {dom}, where it often is" if dom else "")
+                     + "; export MACE_GUI_GATEWAY=host, pass --gateway, or set [gui] gateway in site.toml to fill it in)")
     return lines
 
 
@@ -350,6 +415,176 @@ def write_state_file(path: Path, data: Dict[str, Any]) -> None:
         fh.write("\n")
 
 
+def session_watch_wanted(args, stdin_fd: int = 0) -> bool:
+    """Whether this foreground server should stop when the session that started it goes away.
+
+    Over `ssh node "mace gui"` without a terminal, sshd sends no hangup when the connection ends: the server
+    would keep its port and memory on a shared node for good. Its standard input is then a pipe or socket from
+    sshd, and it reaches end of file at that moment. Not watched: a terminal (the hangup handler stops it), a
+    stdin that is /dev/null or a file (cron, `nohup ... < /dev/null &`, systemd: started to run alone), nohup
+    (SIGHUP ignored), --keep, mace gui connect (--managed) and the batch job (--http-control).
+    """
+    if os.name != "posix" or args.keep or args.managed or args.http_control:
+        return False
+    if os.environ.get("MACE_GUI_KEEP") == "1":
+        return False
+    try:
+        mode = os.fstat(stdin_fd).st_mode
+    except OSError:
+        return False
+    if not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode)):
+        return False
+    try:
+        if hasattr(signal, "SIGHUP") and signal.getsignal(signal.SIGHUP) is signal.SIG_IGN:
+            return False
+    except (ValueError, OSError):
+        return False
+    return not _closed_at_start(stdin_fd, mode)
+
+
+def _closed_at_start(fd: int, mode: int) -> bool:
+    """Standard input is already at end of file: it was launched with a closed pipe (a test runner, a cron-like
+    parent), so there is no session to watch."""
+    import select
+    try:
+        poller = select.poll()
+        poller.register(fd, select.POLLIN | select.POLLHUP)
+        events = poller.poll(0)
+        if not events:
+            return False
+        flags = events[0][1]
+        if stat.S_ISFIFO(mode):
+            return bool(flags & select.POLLHUP) and not flags & select.POLLIN
+        import socket as _socket
+        dup = _socket.socket(fileno=os.dup(fd))
+        try:
+            return dup.recv(1, _socket.MSG_PEEK | _socket.MSG_DONTWAIT) == b""
+        finally:
+            dup.close()
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def start_session_watch(state, stdin_fd: int = 0) -> threading.Thread:
+    """Stop the server (state.request_stop, so the registry record, URL files and ports go as usual) when
+    standard input reaches end of file. Whatever arrives on it is discarded."""
+    def run():
+        while True:
+            try:
+                data = os.read(stdin_fd, 65536)
+            except InterruptedError:
+                continue
+            except OSError:
+                data = b""
+            if not data:
+                break
+        state.request_stop("session-closed")
+    t = threading.Thread(target=run, name="mace-gui-session-watch", daemon=True)
+    t.start()
+    return t
+
+
+def _port_open(port: int) -> bool:
+    """Something accepts connections on 127.0.0.1:port (a record's process id may have been reused)."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+def sessions_report(gateway: Optional[str], sessions: List[Dict[str, Any]], out=print) -> None:
+    """Your running sessions, each with the line that forwards its port to your computer."""
+    from . import registry
+    user = getpass.getuser()
+    if not sessions:
+        out("No MACE GUI of yours is running (on this computer, or on another node that shares your home folder).")
+        return
+    out(f"Your running MACE GUI sessions ({len(sessions)}):")
+    for d in sessions:
+        out("  " + registry.describe(d))
+        node = d.get("host") or node_name()[0]
+        gw = gateway or default_gateway()
+        gw = gw if gw and "@" in gw else f"{user}@{gw or GATEWAY_PLACEHOLDER}"
+        out(f"    forward: ssh -N -J {gw} -L {d['port']}:127.0.0.1:{d['port']} {user}@{node}")
+        if d.get("here"):
+            out(f"    new sign-in link: mace gui login-url --port {d['port']}")
+        else:
+            out(f"    (on {node}: run mace gui login-url --port {d['port']} there for a new sign-in link)")
+
+
+def already_running(d: Dict[str, Any], args) -> None:
+    """A session of yours already serves this folder: say so, with a new sign-in link and the forwarding line."""
+    from . import registry
+    user = getpass.getuser()
+    port = int(d["port"])
+    print("MACE GUI is already running for you on this folder:")
+    print("  " + registry.describe(d))
+    link = None
+    try:
+        from . import loginurl
+        for st in loginurl.servers():
+            if int(st.get("port", 0)) == port and st.get("token"):
+                link = loginurl.new_link(st)
+    except Exception:
+        link = None
+    if link:
+        print("New sign-in link (works once):")
+        print(f"  {link}")
+    else:
+        print(f"New sign-in link: mace gui login-url --port {port}")
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SLURM_JOB_ID"):
+        print("From your computer, forward its port (leave this running), then open the link:")
+        for ln in _forward(port, d.get("host"), args.gateway):
+            print(f"  {ln}")
+    print(f"To stop it: File > Sign Out and Stop Server in MACE GUI" + (f", or kill {d['pid']}" if d.get("pid") else "")
+          + ". To start a second one anyway: mace gui --new-session. All of yours: mace gui --sessions.")
+
+
+def _forward(port: int, node: Optional[str], gateway: Optional[str]) -> List[str]:
+    from . import ports
+    return ports.forward_lines(port, node or node_name()[0], getpass.getuser(), gateway or default_gateway())[:1]
+
+
+def add_ipv6_loopback(httpd, port: int):
+    """A second listener for the IPv6 loopback ::1 on the same port, serving the same handler, or None.
+
+    The server is on 127.0.0.1. Tools that reach it through the name `localhost` (VS Code's port
+    forwarding runs on Node, which tries ::1 first; browsers on Windows do too) otherwise connect to
+    nothing, and the page keeps loading. ::1 is as private as 127.0.0.1: no other computer reaches it.
+    """
+    if not socket.has_ipv6:
+        return None
+    base = type(httpd)
+
+    class _Loopback6(base):
+        address_family = socket.AF_INET6
+
+        def server_bind(self):
+            try:
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            except (AttributeError, OSError):
+                pass
+            super().server_bind()
+    try:
+        h6 = _Loopback6(("::1", port), httpd.RequestHandlerClass)
+    except OSError:
+        return None             # no IPv6 loopback here, or ::1:port belongs to another program
+    threading.Thread(target=h6.serve_forever, kwargs={"poll_interval": 0.5}, name="mace-gui-loopback6",
+                     daemon=True).start()
+    return h6
+
+
+def _stop_loopback6(h6) -> None:
+    if h6 is None:
+        return
+    try:
+        threading.Thread(target=h6.shutdown, daemon=True).start()
+        h6.server_close()
+    except Exception:
+        pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in TOOLS:
@@ -362,6 +597,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     from .childenv import capture_login_env
     capture_login_env()          # before the server: what jobs submitted from the GUI get (submit.py)
     args = build_parser().parse_args(argv)
+    if args.sessions:
+        from . import registry
+        sessions_report(args.gateway, registry.live(port_open=_port_open))
+        return 0
     server_environment()
     from . import diaglog
     diaglog.install()           # the last server log lines, for Copy Diagnostics
@@ -397,21 +636,63 @@ def main(argv: Optional[List[str]] = None) -> int:
     from . import update_gui
     restarted = os.environ.pop("MACE_GUI_RESTARTED", "") == "1"    # Update Now and Restart (update_gui.py)
     handoff = update_gui.take_handoff()
+    from . import ports, registry
+    if not args.managed and not restarted and handoff is None:
+        mine = registry.live(port_open=_port_open)
+        again = registry.serving(str(root), mine)
+        if again is not None and not args.new_session:
+            already_running(again, args)
+            return 0
+        others = [d for d in mine if d is not again]
+        if others:
+            print("mace gui: you also have " + ("these sessions" if len(others) > 1 else "this session") + " running:",
+                  file=sys.stderr)
+            for d in others:
+                print("  " + registry.describe(d), file=sys.stderr)
+    defaulted = args.port is None
+    wanted = None
+    if defaulted:
+        wanted, _why = ports.default_port()
+        picked = ports.pick(wanted, args.host, free=ports.is_free_loopback)
+        if picked is None:
+            print(f"mace gui: ports {wanted}-{wanted + ports.PROBE_TRIES} are all busy here. Pick one with "
+                  "--port, or --port 0 for any free one.", file=sys.stderr)
+            return 2
+        args.port = picked
+        args.port_note = None if picked == wanted else (
+            f"Port {wanted} is busy here; using {picked}. Drafts saved under port {wanted} won't be offered on "
+            f"{picked}.")
     token = handoff["token"] if handoff else choose_token(args.token)
-    try:
-        httpd, state = make_server(root, args.host, args.port, token,
-                                   args.allow_host, args.verbose, roots=args.root)
-        state.restarted = restarted
-        update_gui.resume(state, handoff)
-    except OSError as exc:
-        if args.managed:
-            print("MACE_GUI_ERROR port-busy", flush=True)
-            print(f"mace gui: cannot listen on {args.host}:{args.port}: {exc}", file=sys.stderr)
-            return 98
-        print(f"mace gui: cannot listen on {args.host}:{args.port}: {exc}. Pick your own port "
-              "(--port 8xxx, or export MACE_GUI_PORT=8xxx in ~/.bashrc so your browser drafts "
-              "stay on one port); --port 0 picks a free one for a one-off run.", file=sys.stderr)
-        return 2
+    httpd = state = None
+    for attempt in range(4 if defaulted else 1):
+        try:
+            httpd, state = make_server(root, args.host, args.port, token,
+                                       args.allow_host, args.verbose, roots=args.root)
+            state.restarted = restarted
+            update_gui.resume(state, handoff)
+            break
+        except OSError as exc:
+            if defaulted and attempt < 3:       # taken between the check and the bind
+                nxt = ports.pick(args.port + 1, args.host, free=ports.is_free_loopback)
+                if nxt is not None:
+                    args.port = nxt
+                    args.port_note = (f"Port {wanted} is busy here; using {nxt}. Drafts saved under port {wanted} "
+                                      f"won't be offered on {nxt}.")
+                    continue
+            if args.managed:
+                print("MACE_GUI_ERROR port-busy", flush=True)
+                print(f"mace gui: cannot listen on {args.host}:{args.port}: {exc}", file=sys.stderr)
+                return 98
+            print(f"mace gui: cannot listen on {args.host}:{args.port}: {exc}. Another program (or another user "
+                  "of this node) has that port. Leave --port off for a port of your own, or pick one "
+                  "(--port N, or export MACE_GUI_PORT=N in ~/.bashrc so your browser drafts stay on one "
+                  "port); --port 0 picks a free one for a one-off run. mace gui --sessions lists your own servers.",
+                  file=sys.stderr)
+            return 2
+    from mace import __version__ as _mace_version
+    h6 = add_ipv6_loopback(httpd, httpd.server_address[1]) if args.host in ("127.0.0.1", "localhost") else None
+    reg = registry.Registration(httpd.server_address[1], str(state.root), managed=args.managed,
+                                version=_mace_version, root_fn=lambda: state.root).start()
     # from here on SIGTERM, a hangup and Ctrl+C all stop the server through
     # the finally below, so the URL file and the temporary folders never stay
     stops = [signal.SIGTERM]
@@ -429,6 +710,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     for sig in stops:
         signal.signal(sig, _stop)
     install_request_stop(httpd, state)
+    if session_watch_wanted(args):
+        start_session_watch(state)
     from .server import start_watchdog
     start_watchdog(state)
     url_files: List[Path] = []
@@ -451,6 +734,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             _profile_writes.drain(2.0)
         except Exception:
             pass
+        reg.close()
+        _stop_loopback6(h6)
         httpd.server_close()
         state.close()
         for path in url_files:
@@ -637,9 +922,16 @@ def _serve(args, httpd, state, remember) -> int:
         lines += [""] + VSCODE_HINT
     elif os.environ.get("SSH_CONNECTION") or os.environ.get("SLURM_JOB_ID"):
         lines += [""] + ssh_hint(port, args.gateway, str(state.root))
-    if args.port != DEFAULT_PORT:
+    from . import ports
+    normal = ports.default_port()[0]
+    if getattr(args, "port_note", None):
+        lines += [args.port_note]
+    elif port != normal:
         # drafts live in the browser per origin (http://127.0.0.1:<port>)
         lines += ["Drafts saved under another port won't be offered on this one."]
+    elif normal != DEFAULT_PORT:
+        lines += [f"Port {port} is yours on shared nodes (20000 + your user id mod 10000), so you and the others "
+                  "on this node never share one."]
     lines += ["Press Ctrl+C to stop."]
     try:
         print("\n".join(lines), flush=True)
@@ -653,7 +945,7 @@ def _serve(args, httpd, state, remember) -> int:
         if blocked:
             print(blocked, file=sys.stderr)
         else:
-            open_browser(state.mint_login_url(base), args.gpu)
+            open_browser(state.mint_login_url(base), args.gpu, args.browser)
     _guard_std_streams()
     httpd.serve_forever(poll_interval=0.5)
     return 0

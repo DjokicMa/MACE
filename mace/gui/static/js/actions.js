@@ -31,10 +31,17 @@ export function registerAll(S) {
   const OFF_GAMMA = "One cell only: this mode is not at Γ, so its periodic images would need phases the output does not give";
   const notHere = (c) => (c.docKind === "trajectory" ? CMP_NO : c.docKind === "volume" ? VOL_MOLECULE : c.freqOffGamma ? OFF_GAMMA : "Needs a structure");
   const needsRange = { when: "docKind == structure|freq && !freqOffGamma || docKind == volume && !volNonPeriodic", reason: notHere };
+  // 1.1.6: whole cells (n1×n2×n3) the optimization view repeats too; a fractional range stays the other views'
+  const CELLS_ONLY = "The optimization view repeats whole cells: Display Range › N × M × L…";
+  const needsCells = { when: "docKind == structure|trajectory|freq && !freqOffGamma || docKind == volume && !volNonPeriodic",
+    reason: (c) => (c.docKind === "trajectory" ? CELLS_ONLY : notHere(c)) };
+  const needsFrac = { ...needsRange, reason: (c) => (c.docKind === "trajectory" ? CELLS_ONLY : notHere(c)) };
   const needsLabels = { when: "docKind == structure|freq|volume", reason: notHere };
   // Phase 3: the work is in js/editor (loaded with the first structure); S.ed runs it
   const ed = (id) => (c, a) => S.ed(id, a);
   const editable = (extra = "") => ({ when: `docEditable${extra}`, reason: (c) => S.editReason(c) });
+  // Sym mode (1.1.6): slabs, polymers and molecules edit, in P1 only (spglib's space groups are 3D)
+  const sym3d = { when: "docEditable && doc3d", reason: (c) => S.editReason(c) || "Symmetry-aware editing needs a 3D crystal; slabs, polymers and molecules edit in P1" };
   const selecting = { when: "docKind == structure", reason: (c) => (c.docKind === "trajectory" ? "Trajectories are view-only. Use Edit This Step" : "Needs a structure") };
 
   /* ---------------- File */
@@ -72,9 +79,23 @@ export function registerAll(S) {
   register({ id: "explorer.legend", title: "Export Element Legend…", category: "Explorer", icon: "list",
     enabled: (c) => !!(c.args && (c.args.dir !== undefined || S.pathOf(c.args))), reason: "Right-click structure files or a folder in the Explorer",
     desc: "The elements of the selected files (or the folder's structures)", run: (c, a) => S.legendExplorer(a) });
+  // 1.1.6: one Structure Analysis tool on many files, a few at a time (lazy/analysis_batch.js; mace analyze <tool> FILE... --csv)
+  register({ id: "explorer.analyze", title: "Analyze Structures…", category: "Explorer", icon: "flask-conical",
+    enabled: () => S.structureFiles().length > 0, reason: "No structure files in the folder",
+    desc: "Porosity, powder pattern, topology, ... on every selected structure, with a summary in the Analysis tab",
+    run: (c, a) => S.analyzeStructures(a) });
   register({ id: "file.exportImage", title: "Export Image…", category: "File", keys: ["Mod+Shift+X"], icon: "image",
     when: "docKind == structure", reason: "Needs a structure", desc: "A PNG of the view: up to 4× or a custom size, transparent if you like",
     run: () => S.exportImage() });
+  // 1.1.6: the animated view (a FREQ mode, an optimization) or a trajectory file as GIF, WebM or MP4 (lazy/anim_export.js)
+  register({ id: "file.exportAnimation", title: "Export Animation…", category: "File", icon: "play",
+    aliases: ["gif", "video", "mp4", "webm", "movie"], enabled: () => S.canAnimate(), reason: "Open a FREQ output's modes, an optimization, or an MD or NEB trajectory",
+    desc: "A GIF (or WebM/MP4 with ffmpeg) of the moving view: frame rate, loops, size, background; mace animate on the command line",
+    run: () => S.exportAnimation() });
+  register({ id: "view.printPatterns", title: "Cycle Print Patterns", category: "View", icon: "layers",
+    aliases: ["grayscale", "hatching", "black and white"], desc: "Patterns on the atoms for black-and-white print: off, similar grays only, every element",
+    checked: () => (S.setting("viewport.printPatterns") || "off") !== "off",
+    run: () => { const o = ["off", "auto", "all"], k = o.indexOf(S.setting("viewport.printPatterns") || "off"); S.set("viewport.printPatterns", o[(k + 1) % 3]); } });
   // Export Structure downloads to this computer (decision D8); Save As writes into the served folder
   const dl = "Downloads to this computer (over ssh -L, your laptop); Save As writes into the served folder";
   [["CIF", "CIF (P1)", "cif", "p1", "Every atom, as Save As writes it"], ["CIFSym", "CIF (Symmetrized)", "cif", "symmetrized", "The spglib-refined cell and asymmetric unit"],
@@ -185,9 +206,10 @@ export function registerAll(S) {
     desc: m === "axes" ? "Dragging turns about the structure's up and the screen's horizontal axis: no roll, the structure stays upright"
       : "Dragging turns about any axis, as a trackball", checked: () => (S.setting("viewport.rotation") || "free") === m,
     run: () => S.set("viewport.rotation", m) }));
-  [["off", "Off (Any Angle)"], ["15", "15°"], ["30", "30°"], ["45", "45°"], ["90", "90°"]].forEach(([s, t]) => register({
+  [["off", "Off (Any Angle)"], ["15", "15°"], ["30", "30°"], ["45", "45°"], ["90", "90°"], ["custom", "Custom Angle"]].forEach(([s, t]) => register({
     id: `view.angleSnap.${s}`, title: `Angle Snap: ${t}`, menuTitle: t, category: "View", radio: true, aliases: ["snap", "rotation step"],
-    desc: s === "off" ? "Drags turn the view by any angle" : `Drags turn the view in ${t} steps; the arrow keys turn by ${t}`,
+    desc: s === "off" ? "Drags turn the view by any angle" : s === "custom" ? "Drags turn the view in steps of Settings › Viewport › Custom angle (the Rotate tool's Step)"
+      : `Drags turn the view in ${t} steps; the arrow keys turn by ${t}`,
     checked: () => (S.setting("viewport.angleSnap") || "off") === s, run: () => S.set("viewport.angleSnap", s) }));
   [["center", "View Center"], ["pointer", "Mouse Pointer"]].forEach(([m, t]) => register({ id: `view.zoomToward.${m}`,
     title: `Zoom Toward: ${t}`, menuTitle: t, category: "View", radio: true, aliases: ["wheel", "scroll zoom", "zoom to cursor"],
@@ -244,12 +266,17 @@ export function registerAll(S) {
     desc: "Inspector › Rendering: depth cueing, light, ambient light, outline and background, for this document",
     run: () => S.displayPanel("render") });
   [[1, "1×1×1"], [2, "2×2×2"], [3, "3×3×3"]].forEach(([n, t]) => register({ id: `view.range${n}`, title: `Display Range ${t}`,
-    menuTitle: t, category: "View", radio: true, ...needsRange,
+    menuTitle: t, category: "View", radio: true, ...needsCells,
     checked: () => S.range() === n, run: () => S.setRange(n) }));
+  // 1.1.6: any n1×n2×n3 (js/cells_picker.js), in the structure, optimization, mode and volume views
+  register({ id: "view.rangeCells", title: "Display Range N × M × L…", menuTitle: "N × M × L…", category: "View", radio: true,
+    ...needsCells, icon: "supercell", aliases: ["supercell view", "repeat cells", "nxmxl", "2x2x1", "cells"],
+    desc: "How many cells the view draws along a, b and c (1 to 10 each); the structure does not change",
+    checked: () => S.range() === 0 && S.rangeIsCells(), run: () => S.cellsDialog() });
   register({ id: "view.rangeCustom", title: "Display Range Custom…", menuTitle: "Custom…", category: "View", radio: true,
-    ...needsRange, checked: () => S.range() === 0, run: () => S.lazyDialog("cell_dialog", "openRangeCustom") });
+    ...needsFrac, checked: () => S.range() === 0 && !S.rangeIsCells(), run: () => S.lazyDialog("cell_dialog", "openRangeCustom") });
   register({ id: "view.rangeCycle", title: "Cycle Display Range", category: "View", keys: ["Shift+R"], icon: "supercell",
-    ...needsRange, tipTitle: () => `Display range ${S.rangeText()}`,
+    ...needsCells, tipTitle: () => `Display range ${S.rangeText()}`,
     run: () => S.setRange(S.range() >= 3 || S.range() === 0 ? 1 : S.range() + 1) });
   // Alt+1..4 only while the viewport has focus (spec §1.3): elsewhere Linux
   // browsers switch tabs with them, which the shell keeps from happening
@@ -261,6 +288,30 @@ export function registerAll(S) {
     checked: () => S.panelShown("explorer"), run: () => S.togglePanel("explorer") });
   register({ id: "view.inspector", title: "Inspector", category: "View", keys: ["Mod+Alt+B"], icon: "panel-right",
     checked: () => S.panelShown("inspector"), run: () => S.togglePanel("inspector") });
+  // 1.1.6 (js/inspector_tiers.js): the Inspector's Basic / Advanced detail, kept per view kind, and the way back from Setup
+  register({ id: "view.inspectorAdvanced", title: "Advanced Inspector", category: "View", icon: "sliders-horizontal",
+    aliases: ["basic inspector", "advanced options", "more options", "inspector detail", "niche settings"],
+    desc: "Show the niche settings of this view too (Basic shows the essential ones); kept for each kind of view",
+    checked: () => S.inspectorTier() === "advanced", run: () => S.setInspectorTier(S.inspectorTier() === "advanced" ? "basic" : "advanced") });
+  register({ id: "view.inspectorTab", title: "Show Inspector", category: "View", icon: "panel-right",
+    aliases: ["back to inspector", "close setup", "leave setup", "inspector tab"],
+    desc: "The Inspector in its column (closes Calculation Setup, which shares it)",
+    checked: () => !S.setupOpen() && S.panelShown("inspector"), run: () => S.showInspector() });
+  // 1.1.6 (js/activity_prefs.js): the activity bar's views, hidden, shown and reordered (also by dragging them)
+  register({ id: "view.activityBar", title: "Activity Bar", category: "View", icon: "panel-left",
+    aliases: ["hide activity bar", "left bar", "icon bar"], checked: () => S.activityShown(),
+    run: () => S.set("activity.visible", !S.activityShown()) });
+  register({ id: "view.activity.hideItem", title: "Hide from the Activity Bar", category: "View",
+    enabled: (c) => !!(c.args && c.args.id), reason: "Right-click a view in the activity bar", run: (c, a) => S.activityToggleItem(a.id) });
+  register({ id: "view.activity.moveUp", title: "Move Up", category: "View",
+    enabled: (c) => !!(c.args && c.args.id), reason: "Right-click a view in the activity bar", run: (c, a) => S.activityMove(a.id, -1) });
+  register({ id: "view.activity.moveDown", title: "Move Down", category: "View",
+    enabled: (c) => !!(c.args && c.args.id), reason: "Right-click a view in the activity bar", run: (c, a) => S.activityMove(a.id, 1) });
+  [["view.explorer", "Explorer"], ["view.database", "Database"], ["file.quickOpen", "Search Files"], ["view.tasks", "Tasks"], ["view.jobs", "Jobs"],
+    ["view.workflows", "Workflows"], ["view.cluster", "Cluster"]].forEach(([id, t]) => register({ id: `view.activity.show.${id}`,
+    title: `Activity Bar: ${t}`, menuTitle: t, category: "View", checked: () => S.activityItemShown(id), run: () => S.activityToggleItem(id) }));
+  register({ id: "view.activity.reset", title: "Reset Activity Bar", category: "View", icon: "rotate-ccw",
+    desc: "Every view back in the activity bar, in its first order", run: () => S.activityReset() });
   register({ id: "view.inspectorDrawer", title: "Inspector Drawer", category: "View", keys: ["Mod+Alt+I"], icon: "panel-right",
     desc: "Below 1100px the inspector opens over the viewport", run: () => S.togglePanel("inspector") });
   // the Inspector's (or Calculation Setup's) sections at once; Shift-click (or Alt-click) on a section head does the same.
@@ -432,11 +483,16 @@ export function registerAll(S) {
     when: "docEditable", reason: (c) => S.editReason(c), aliases: ["tidy", "relax", "springs", "gfnff", "ml potential", "pre-optimize"],
     desc: "Pre-relax the structure (springs, GFN-FF or an ML potential) to preview, then accept or discard",
     run: () => S.builder("clean_panel", "open") });
+  // 1.1.6 (js/lazy/bonds_dialog.js): the drawn structure's bond rule, as Materials Studio's Calculate Bonds
+  register({ id: "build.calculateBonds", title: "Calculate Bonds…", category: "Build", icon: "bonds", when: "docKind == structure", reason: "Needs a structure",
+    aliases: ["recalculate bonds", "bond criteria", "bond tolerance", "bond length", "pair rules", "connectivity"],
+    desc: "The tolerance, the shortest bond, metal-metal pairs and per element pair rules; for this structure or as the default",
+    run: () => S.builder("bonds_dialog", "open") });
   register({ id: "build.symMode", title: "Symmetry-Aware Editing", category: "Build", keys: ["Mod+Alt+Y"], icon: "symmetry",
-    ...editable(), desc: "Edits act on whole symmetry orbits", checked: () => S.symMode() === "sym", run: ed("build.symMode") });
+    ...sym3d, desc: "Edits act on whole symmetry orbits", checked: () => S.symMode() === "sym", run: ed("build.symMode") });
   register({ id: "build.symModeP1", title: "Symmetry Mode: P1", menuTitle: "P1", category: "Build", radio: true, ...editable(),
     desc: "Every atom is independent", checked: () => S.symMode() === "p1", run: ed("build.symModeP1") });
-  register({ id: "build.symModeSym", title: "Symmetry Mode: Sym", menuTitle: "Sym", category: "Build", radio: true, ...editable(),
+  register({ id: "build.symModeSym", title: "Symmetry Mode: Sym", menuTitle: "Sym", category: "Build", radio: true, ...sym3d,
     desc: "Edits act on whole symmetry orbits", checked: () => S.symMode() === "sym", run: ed("build.symModeSym") });
   register({ id: "build.editStructure", title: "Start Editing", category: "Build", icon: "move", aliases: ["open in structure editor"],
     ...editable(), desc: "Edit this structure in place (the first edit does this too)", run: () => S.openEditor() });
@@ -444,14 +500,19 @@ export function registerAll(S) {
   /* ---------------- Tools */
   const TOOLS = [["select", "Select", "V", "mouse-pointer-2", "Click an atom; Shift-click or drag to add"],
     ["lasso", "Lasso", "L", "lasso-select"], ["orbit", "Orbit", "O", "rotate-3d", "Drag to rotate"],
+    ["rotate", "Rotate", "R", "rotate-cw", "Compass wheels turn the selection or the view about an axis, by drag or by a typed angle"],
     ["pan", "Pan", "H", "hand"], ["zoom", "Zoom", "Z", "zoom-in"], ["move", "Move", "G", "move"],
     ["add", "Add Atom", "A", "add-atom"], ["replace", "Replace", "E", "replace-atom"],
     ["measure", "Measure", "M", "ruler", "2 atoms: distance, 3: angle, 4: dihedral"], ["bond", "Bond", "B", "link-2"]];
   const EDIT_TOOLS = new Set(["move", "add", "replace", "bond", "measure"]);
+  // Rotate's wheels act on the structure view (its atoms, or its camera about an axis): the run, Modes,
+  // volume and orbital views turn by dragging and with View › Rotate 90° (1.1.6: it was offered there and did nothing)
+  const ROTATE_REASON = (c) => (/^(trajectory|freq|volume)$/.test(c.docKind || "")
+    ? "Rotate works in a structure document; drag to turn this view, or use View › Rotate 90° (Alt+arrows)" : "Needs a structure");
   TOOLS.forEach(([t, title, key, ic, desc]) => register({ id: `tool.${t}`, title: `${title} Tool`, menuTitle: title,
     category: "Tools", keys: [key], icon: ic, desc, radio: true,
-    when: t === "replace" ? "!hasSelection && tool != add" : t === "measure" ? "docKind == structure" : EDIT_TOOLS.has(t) ? "docEditable" : undefined,
-    reason: EDIT_TOOLS.has(t) ? (c) => S.editReason(c) || "Select atoms first" : undefined,
+    when: t === "replace" ? "!hasSelection && tool != add" : t === "measure" || t === "rotate" ? "docKind == structure" : EDIT_TOOLS.has(t) ? "docEditable" : undefined,
+    reason: EDIT_TOOLS.has(t) ? (c) => S.editReason(c) || "Select atoms first" : t === "rotate" ? ROTATE_REASON : undefined,
     checked: () => S.tool() === t, run: t === "move" ? ed("tool.move") : () => S.setTool(t) }));
   register({ id: "tool.addElement", title: "Add Atom: Element…", category: "Tools", keys: ["E"], icon: "atom",
     when: "tool == add", reason: "Needs the Add Atom tool", desc: "Type the element to add; Enter goes back to the viewport",
@@ -469,6 +530,18 @@ export function registerAll(S) {
 
   /* ---------------- Calculation (plan B4, B11): js/setup/panel.js */
   const inSetup = { when: "setupOpen", reason: "Open Calculation Setup first" };
+  // mace calc in the GUI (js/lazy/calc_panel.js): UFF/UFF4MOF, EQeq, xTB, DFTB+, ML potentials
+  register({ id: "calc.calculators", title: "Calculators…", category: "Calculation", icon: "calculator",
+    when: "docKind == structure", reason: "Needs a structure",
+    aliases: ["uff", "uff4mof", "eqeq", "charges", "xtb", "gfn2", "gfn-ff", "dftb", "force field", "ml potential",
+      "mace-mp", "orb", "mattersim", "molecular dynamics", "md", "frequencies", "single point"],
+    desc: "Single point, optimization, frequencies, MD or charges with a force field, xTB, DFTB+ or an ML potential",
+    run: () => S.lazyDialog("calc_panel", "open") });
+  // Settings › ML potentials (js/lazy/mlip_setup.js): install the ML environment, download weights
+  register({ id: "calc.mlip", title: "ML Potentials…", category: "Calculation", icon: "sparkles",
+    aliases: ["mlip", "mace-mpa", "mace-torch", "chgnet", "install ml", "ml environment", "weights", "machine learning"],
+    desc: "Set up the ML-potential environment, use an existing one, download model weights",
+    run: () => S.settingsDialog("mlip") });
   register({ id: "calc.setup", title: "Calculation Setup…", category: "Calculation", keys: ["Mod+Shift+R"], icon: "flask-conical",
     aliases: ["deck", "d12", "cif2d12", "opt2d12", "opt2d3", "band", "doss", "freq"], checked: () => S.setupOpen(),
     desc: "The CLI's own questions as a form; the deck it writes, previewed", run: (c, a) => S.toggleSetup(a && a.open ? true : undefined) });
@@ -500,6 +573,22 @@ export function registerAll(S) {
     aliases: ["workflow", "chain", "pipeline", "progression", "mace workflow --spec", "opt sp band doss"],
     desc: "A chain of calculations for many structures (OPT → SP → BAND → DOSS …), previewed exactly; you confirm before anything is submitted",
     run: (c, a) => S.newWorkflow(a) });
+  // opt2d12's 4 ELASTIC ... 7 CPHF and Phonopy's displaced supercells: Setup on the output, at that entry
+  // (js/setup/modules.js; before 1.1.6 final these were the Set Up tabs of the Analysis dialogs)
+  const outPath = (a) => { const p = (a && a.path) || S.activePath() || ""; return /\.(out|log)$/i.test(p) ? p : ""; };
+  register({ id: "calc.mechanics", title: "Mechanical Properties Deck…", category: "Calculation", icon: "ruler",
+    aliases: ["elastcon", "elapiezo", "piezocon", "piezocp", "photoela", "elastic", "eos", "qha", "cphf", "cpks", "mace opt2d12 --calc-type ELASTIC"],
+    desc: "Calculation Setup on this output at 4 ELASTIC (5 EOS, 6 QHA, 7 CPHF): the deck mace opt2d12 --calc-type ELASTIC writes",
+    run: (c, a) => S.setupModule("ELASTIC", outPath(a)) });
+  register({ id: "calc.phonopy", title: "Phonopy Displacements…", category: "Calculation", icon: "audio-waveform",
+    aliases: ["phonopy", "finite displacement", "displaced cells", "phonon displacements", "mace opt2d12 --calc-type PHONOPY"],
+    desc: "Calculation Setup on this output at 8 PHONOPY: the displaced supercell decks mace opt2d12 --calc-type PHONOPY writes",
+    run: (c, a) => S.setupModule("PHONOPY", outPath(a)) });
+  // Calculation › Regular / Properties Calculations › a type: Setup on the file in front at that type
+  register({ id: "calc.setupType", title: "Set Up Calculation Type", category: "Calculation", palette: false,
+    enabled: (c) => !!(c.args && c.args.calc) && !S.calcBlocked(c.args.calc),
+    reason: (c) => (c.args && c.args.calc ? S.calcBlocked(c.args.calc) : "Pick a type under Calculation › Regular or Properties Calculations"),
+    run: (c, a) => S.setupCalc(a.calc) });
   register({ id: "calc.batch", title: "Batch Setup…", category: "Calculation", icon: "list-checks",
     aliases: ["batch", "many decks", "follow-ups", "commands.sh"], desc: "Decks for many CIFs or follow-ups at once, through the CLI's batch routes",
     run: (c, a) => S.batch(a) });
@@ -518,6 +607,23 @@ export function registerAll(S) {
   register({ id: "analysis.modes", title: "Vibrational Modes", category: "Analysis", icon: "waves",
     when: "docFileKind == out && docIsFreq", reason: "Needs a FREQ .out with normal modes",
     aliases: ["freq", "phonon", "normal modes", "animate", "imaginary"], run: () => S.openModes() });
+  // 1.1.6: phonopy, mechanical properties and the transport relaxation time
+  // (js/lazy/phonopy_dialog.js, elastic_dialog.js, tau_dialog.js; CLI: mace analyze phonopy | analyze elastic | tau).
+  // Their decks are written in Calculation Setup (calc.mechanics, calc.phonopy below); these read the runs.
+  const mxPath = (a) => (a && a.path) || S.activePath() || "";
+  register({ id: "analysis.phonopy", title: "Phonons with Phonopy…", category: "Analysis", icon: "audio-waveform",
+    aliases: ["phonopy", "phonon dispersion", "force sets", "collect forces", "thermal properties", "mace analyze phonopy"],
+    desc: "A displaced set's jobs, then its forces to phonon bands, DOS and thermal properties (the set: Calculation › Regular Calculations › 8 phonopy)",
+    run: (c, a) => S.builder("phonopy_dialog", "open", { path: mxPath(a) }) });
+  register({ id: "analysis.elastic", title: "Mechanical Properties Results…", category: "Analysis", icon: "ruler",
+    aliases: ["elastic constants", "elastic tensor", "bulk modulus", "young's modulus", "piezoelectric tensor", "photoelastic", "equation of state",
+      "quasi-harmonic", "thermal expansion", "mace analyze elastic"],
+    desc: "The tensors, moduli, EOS fits and QHA properties of a finished ELASTCON, ELAPIEZO, PIEZOCON, PHOTOELA, EOS or QHA run (the decks: Calculation › Regular Calculations › 4 ELASTIC ... 7 CPHF)",
+    run: (c, a) => S.builder("elastic_dialog", "open", { path: mxPath(a) }) });
+  register({ id: "analysis.tau", title: "Transport Relaxation Time…", category: "Analysis", icon: "sigma",
+    aliases: ["tau", "relaxtim", "relaxation time", "deformation potential", "mobility", "boltztra", "mace tau"],
+    desc: "τ for BOLTZTRA from deformation-potential theory (strained runs or given m*, E1, C), with its provenance",
+    run: (c, a) => S.builder("tau_dialog", "open", { path: mxPath(a) }) });
   // volumes (plan E5): a density colored by a potential (MEP), and differences of grids
   register({ id: "analysis.volumeMep", title: "Color Density by Potential…", category: "Analysis", icon: "sun",
     when: "docKind == volume && hasTwoCubes", reason: "Open a density volume, with a potential cube in the folder",
@@ -565,6 +671,17 @@ export function registerAll(S) {
     run: () => S.compareSub("disp") });
   register({ id: "analysis.coordination", title: "Coordination Analysis", category: "Analysis", icon: "hexagon", when: "docKind == structure", reason: "Needs a structure",
     aliases: ["cn", "coordination number", "econ"], palette: false, run: () => S.showCoordination() });
+  // Structure Analysis (1.1.6, js/lazy/analysis_panel.js; `mace analyze <tool>` on the command line)
+  [["porosity", "Porosity and Pores…", "hexagon", ["pores", "zeo++", "void fraction", "surface area", "free sphere", "adsorbate", "probe"]],
+    ["pxrd", "Powder Pattern (PXRD)…", "table", ["xrd", "diffraction", "powder", "peaks", "2theta"]],
+    ["fit", "Peaks, Indexing and Pawley/Rietveld…", "table", ["rietveld", "pawley", "indexing", "refinement", "lattice"]],
+    ["topology", "Topology and Interpenetration…", "layers", ["rcsr", "net", "topology", "interpenetration", "sbu"]],
+    ["polyhedra", "Coordination Polyhedra…", "hexagon", ["distortion", "quadratic elongation", "polyhedron volume", "cshm"]],
+    ["bonds", "Bond and Angle Distributions…", "ruler", ["bond lengths", "angles", "histogram"]],
+    ["morphology", "Crystal Morphology…", "unit-cell", ["wulff", "bfdh", "crystal shape", "habit"]],
+    ["planes", "Miller Planes and Cleavage…", "slab", ["lattice plane", "hkl", "cleave", "cleavage"]],
+  ].forEach(([tab, title, icon, aliases]) => register({ id: `analysis.structure.${tab}`, title, category: "Analysis: Structure",
+    icon, when: "docKind == structure", reason: "Needs a structure", aliases, run: () => S.builder("analysis_panel", "open", { tab }) }));
   register({ id: "analysis.resetPlot", title: "Reset Plot Options", category: "Analysis", icon: "rotate-ccw",
     when: "docKind == plot", reason: "Open a plot first", aliases: ["reset plot"], run: () => S.resetPlot() });
   // Plot Gallery (1.1.6): many outputs' plots of one kind in panes, as `mace plotting --gallery`
@@ -640,6 +757,10 @@ export function registerAll(S) {
   register({ id: "explorer.openAsText", title: "Open as Text", category: "Explorer", icon: "file-text", ...fileArgs,
     enabled: (c) => !!S.pathOf(c.args) && S.isText(S.pathOf(c.args)), reason: "Not a text file",
     run: (c, a) => S.openAsText(S.pathOf(a)) });
+  // 1.1.6: an ELASTIC, EOS, QHA or CPHF output opens as its results document; this opens its geometry
+  register({ id: "explorer.openAsStructure", title: "Open as Structure", category: "Explorer", icon: "box", ...fileArgs,
+    enabled: (c) => S.opensAsResults(S.pathOf(c.args)), reason: "Only ELASTIC, EOS, QHA and CPHF outputs open as results",
+    run: (c, a) => S.openStructure(S.pathOf(a)) });
   register({ id: "explorer.compareWithActive", title: "Compare With Active", category: "Explorer", icon: "layers",
     enabled: (c) => S.canCompare(S.pathOf(c.args)), reason: "Needs an open structure and another structure file",
     run: (c, a) => S.compareWith(S.pathOf(a)) });
@@ -682,6 +803,17 @@ export function registerAll(S) {
     reason: "Right-click a CIF, a .d12 deck or a folder of them",
     run: (c, a) => S.newWorkflow(a.dir !== undefined ? { dir: a.dir } : { paths: [S.pathOf(a)] }) });
   register({ id: "explorer.submitFolder", title: "Submit Folder…", category: "Explorer", icon: "play", ...dirArgs, run: (c, a) => S.submit(a) });
+  // a phonopy set's folder or one of its files: the set's jobs and phonons (Analysis › Phonons with Phonopy)
+  const PHONOPY_FILE = /(^|\/)(mace_phonopy\.json|phonopy_disp\.yaml|phonopy(_params)?\.yaml|FORCE_SETS|band\.yaml|total_dos\.dat|thermal_properties\.yaml|mesh\.yaml)$/;
+  const phonopySet = (a) => {
+    // opt2d12's <stem>_ph222_<functional>_optimized (1.1.6), or a 1.1.5 phonopy_<stem>_<dim>
+    if (a && a.dir !== undefined) return /(^|\/)(phonopy_[^/]+|[^/]+_ph(\d+|m[-\d]+)_[^/]+)$/.test(a.dir) ? a.dir : "";
+    const p = S.pathOf(a) || "";
+    return PHONOPY_FILE.test(p) ? (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ".") : "";
+  };
+  register({ id: "explorer.phonopy", title: "Phonons with Phonopy…", category: "Explorer", icon: "audio-waveform",
+    enabled: (c) => !!phonopySet(c.args), reason: "Right-click a phonopy set (a <stem>_ph222_... folder) or one of its files",
+    run: (c, a) => S.builder("phonopy_dialog", "open", { path: phonopySet(a) }) });
   register({ id: "explorer.setup", title: "Set Up Calculation", category: "Explorer", icon: "flask-conical",
     enabled: (c) => ["cif", "out", "d12"].includes(S.kindOf(S.pathOf(c.args))), reason: "Needs a CIF, an .out or a .d12",
     run: (c, a) => S.setupFor(S.pathOf(a)) });
@@ -725,7 +857,7 @@ export function registerAll(S) {
 /* The rotation part of the toolbar's View Along ▾ menu and View › Rotation: the drag's mode, its angle snap,
  * where the wheel zooms, the snap to an axis. */
 export const ROTATION_MENU = [{ head: "Rotation" }, "view.rotation.free", "view.rotation.axes", "-",
-  { head: "Angle snap" }, "view.angleSnap.off", "view.angleSnap.15", "view.angleSnap.30", "view.angleSnap.45", "view.angleSnap.90", "-",
+  { head: "Angle snap" }, "view.angleSnap.off", "view.angleSnap.15", "view.angleSnap.30", "view.angleSnap.45", "view.angleSnap.90", "view.angleSnap.custom", "-",
   { head: "Zoom toward" }, "view.zoomToward.center", "view.zoomToward.pointer", "-",
   "view.snapNearestAxis"];
 
@@ -738,13 +870,14 @@ export const CONTEXT = {
   empty: ["viewport.addAtomHere", "edit.paste", "select.all", "-",
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
     "view.snapNearestAxis", "view.reset", "view.pivotCell", "view.pivotSelection",
-    { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom"] }, "-",
+    { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCells", "view.rangeCustom"] }, "build.calculateBonds", "-",
     "file.exportImage", "file.exportLegend"],
-  explorer: ["explorer.open", "explorer.openToSide", "explorer.openAsText", "explorer.compareWithActive", "explorer.plot",
-    "explorer.compareConvergence", "explorer.gallery", "explorer.legend", "-",
+  explorer: ["explorer.open", "explorer.openToSide", "explorer.openAsText", "explorer.openAsStructure", "explorer.compareWithActive", "explorer.plot",
+    "explorer.compareConvergence", "explorer.gallery", "explorer.legend", "explorer.phonopy", "explorer.analyze", "-",
     "explorer.copyPath", "explorer.reveal", "explorer.history", "-", "explorer.setup", "explorer.submit", "explorer.runHere", "explorer.workflow", "explorer.dbBuild"],
   // a folder's menu (Areas B, C and D agree on the order): Batch Setup, Submit Folder, Create or Update Database
-  folder: ["explorer.batch", "explorer.submitFolder", "explorer.workflow", "explorer.dbBuild", "-", "explorer.gallery", "explorer.legend"],
+  folder: ["explorer.batch", "explorer.submitFolder", "explorer.workflow", "explorer.dbBuild", "-", "explorer.gallery", "explorer.legend", "explorer.phonopy",
+    "explorer.analyze"],
   tab: ["tab.close", "tab.closeOthers", "tab.closeRight", "-", "tab.moveToOtherGroup", "tab.moveLeft", "tab.moveRight", "-", "tab.copyPath", "tab.reveal"],
 };
 
@@ -753,7 +886,7 @@ export const CONTEXT = {
  * (measured with real keys, plan T16); F10 reaches them. */
 export const MENUS = [
   { label: "File", items: ["file.new", "file.open", "file.openFolder", { label: "Open Recent", sub: "recent" }, "file.importClipboard", "-",
-    "file.save", "file.saveAs", "file.saveAll", "file.revert", "-", "file.exportImage", "file.exportLegend", "file.exportLegendOpen",
+    "file.save", "file.saveAs", "file.saveAll", "file.revert", "-", "file.exportImage", "file.exportAnimation", "file.exportLegend", "file.exportLegendOpen",
     { label: "Export Structure", sub: ["file.export.CIF", "file.export.CIFSym", "file.export.POSCAR", "file.export.XYZ", "file.export.extXYZ", "-", "file.export.QE"] },
     "file.copyImage", "-", "file.closeTab", "file.closeAll", "-", "file.settings", "-", "file.signOut"] },
   { label: "Edit", noAlt: true, items: ["edit.undo", "edit.redo", "-", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "-",
@@ -766,13 +899,13 @@ export const MENUS = [
     "view.cell", "view.boundary", "view.bonds",
     { label: "Show Labels", sub: ["view.labels.off", "view.labels.element", "view.labels.index", "view.labels.both", "view.labels.wyckoff", "-", "view.labelsCycle"] },
     "view.axes", "view.measurements", "view.polyhedra",
-    { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom", "-", "view.rangeCycle"] },
+    { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCells", "view.rangeCustom", "-", "view.rangeCycle"] },
     { label: "Style", sub: ["view.style.ballstick", "view.style.spacefill", "view.style.stick", "view.style.wireframe"] }, "-",
     { label: "Editor Groups", sub: ["view.splitRight", "view.moveToOtherGroup", "view.focusOtherGroup", "view.focusLeftGroup", "view.focusRightGroup", "view.closeGroup", "-", "view.linkCameras"] },
     "view.explorer", { label: "Explorer Sections", sub: ["view.sidebar.show.editors", "view.sidebar.show.files", "view.sidebar.show.db",
       "view.sidebar.show.recent", "-", "view.resetSidebar"] },
-    "view.inspector", { label: "Inspector Sections", sub: ["view.expandSections", "view.collapseSections"] },
-    "view.bottom", "view.hideAllPanels", "view.zen", "view.cluster", "view.workflows", "-",
+    "view.inspector", "view.inspectorAdvanced", { label: "Inspector Sections", sub: ["view.expandSections", "view.collapseSections"] },
+    "view.bottom", "view.activityBar", "view.hideAllPanels", "view.zen", "view.cluster", "view.workflows", "-",
     { label: "Theme", sub: [...themeMenu(), "-", "view.themePicker", "view.themeCycle"] }, "view.elementColors",
     { label: "Zoom UI", sub: ["view.zoomIn", "view.zoomOut", "view.zoomReset"] }] },
   { label: "Select", items: ["select.all", "select.none", "select.invert", "-", "select.byElement", "select.equivalents",
@@ -780,16 +913,23 @@ export const MENUS = [
     "select.saveSet", { label: "Selection Sets", sub: ["select.sets"] }] },
   { label: "Build", noAlt: true, items: ["build.addAtom", "build.replace", "build.delete", "-", "build.supercell", "build.slab",
     { label: "Point Defect", sub: ["build.defect.vacancy", "build.defect.substitution", "build.defect.interstitial", "build.defect.antisite"] },
-    "build.transform", "build.symmetrize", "-", "build.clean", "-", "build.symMode"] },
-  { label: "Tools", items: ["tool.select", "tool.lasso", "tool.orbit", "tool.pan", "tool.zoom", "tool.move", "tool.add",
+    "build.transform", "build.symmetrize", "-", "build.clean", "build.calculateBonds", "-", "build.symMode"] },
+  { label: "Tools", items: ["tool.select", "tool.lasso", "tool.orbit", "tool.rotate", "tool.pan", "tool.zoom", "tool.move", "tool.add",
     "tool.replace", "tool.measure", "tool.bond", "-", "tool.measureSelection", "tool.clearMeasurements", "-",
     "tool.coordination", "tool.compare"] },
   { label: "Calculation", items: ["calc.setup", "calc.preview", "calc.saveJson", "calc.preflight", "calc.copyCli", "-",
+    // the calculation types, grouped and numbered as the CLI's menus (setup/schema calc_groups); entries the
+    // file in front cannot have are grayed with the reason. Filled when the menu opens (shell.js)
+    { label: "Regular Calculations", calcGroup: "regular", sub: [] }, { label: "Properties Calculations", calcGroup: "properties", sub: [] },
+    "-", "calc.calculators", "calc.mlip", "-",
     "calc.submit", "calc.runHere", "calc.batch", "calc.newWorkflow", "view.jobs", "view.workflows", "-",
     { label: "Open Example Config", sub: [] }, "calc.resetSettings", "-", "calc.autoPreview"] },
   { label: "Analysis", items: ["analysis.band", "analysis.dos", "analysis.ir", "analysis.raman", "analysis.modes", "-",
+    "analysis.phonopy", "analysis.elastic", "analysis.tau", "-",
     "analysis.volumeMep", "analysis.volumeDiff", "-",
-    "analysis.coordination", "-", "analysis.trajectory", "analysis.compareInput", "analysis.compareGroups", "analysis.energy", "analysis.bondTable", "analysis.displacements",
+    "analysis.coordination", { label: "Structure Analysis", sub: ["analysis.structure.porosity", "analysis.structure.pxrd", "analysis.structure.fit",
+      "analysis.structure.topology", "-", "analysis.structure.polyhedra", "analysis.structure.bonds", "analysis.structure.morphology",
+      "analysis.structure.planes", "-", "explorer.analyze"] }, "-", "analysis.trajectory", "analysis.compareInput", "analysis.compareGroups", "analysis.energy", "analysis.bondTable", "analysis.displacements",
     { label: "Run", sub: ["analysis.runPlot", "analysis.convergence", "analysis.scf", "analysis.cellRun", "analysis.trackMeasurement", "-", "analysis.compareRuns"] }, "-",
     "analysis.gallery", "-", "analysis.db", "db.build", { label: "Export Table", sub: ["analysis.exportCsv", "analysis.exportJson", "analysis.exportExcel", "analysis.exportLaTeX", "analysis.exportHTML"] }, "analysis.resetPlot"] },
   { label: "Help", items: ["help.shortcuts", "help.commands", "help.docs", "help.cluster", "help.tunnel", "-", "help.copyDiagnostics", "help.report", "-", "help.checkUpdates",
@@ -807,7 +947,7 @@ export function registerMnemonics(isMac, open) {
 /* The toolbar (§1.4), left to right. */
 export const TOOLBAR = [
   ["file.open", "file.save"], ["edit.undo", "edit.redo"],
-  { radio: ["tool.select", "tool.lasso", "tool.orbit", "tool.pan", "tool.zoom", "tool.move", "tool.add", "tool.replace", "tool.measure", "tool.bond"] },
+  { radio: ["tool.select", "tool.lasso", "tool.orbit", "tool.rotate", "tool.pan", "tool.zoom", "tool.move", "tool.add", "tool.replace", "tool.measure", "tool.bond"] },
   ["view.cell", "view.bonds", "view.labelsCycle", "view.boundary", "view.axes", "view.projection"],
   { split: "viewAlong" }, { split: "range" }, { segment: "sym" },
   "spacer", { text: "build.clean", label: "Clean…" }, { text: "calc.setup", label: "Setup", primary: true },

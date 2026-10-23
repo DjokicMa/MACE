@@ -65,13 +65,38 @@ def _safe_sniff(entry: PlotterEntry, path: str) -> bool:
         return False
 
 
+def _f25_with_dat(path: str) -> bool:
+    from . import f25
+    try:
+        return f25.is_f25_name(path) and f25.has_dat_twin(path)
+    except OSError:
+        return False
+
+
+def _f25_matches(entry: PlotterEntry, path: str) -> bool:
+    """A fort.25 an entry with ``f25`` takes: a band f25 for band (and band + DOS with its DOS beside it),
+    a DOS f25 for DOS."""
+    from . import f25
+    if not entry.f25 or not f25.is_f25_name(path):
+        return False
+    try:
+        if entry.f25 == "bandos":
+            from .bandos_cli import has_partner
+            return f25.plot_kind(path, "band") is not None and has_partner(path)
+        return f25.plot_kind(path, entry.f25) is not None
+    except OSError:
+        return False
+
+
 def discover(directory: str = ".") -> Dict[PlotKind, List[str]]:
     """Discover plottable files under ``directory``, grouped by PlotKind.
 
     For each registered entry: glob its ``patterns`` (case-sensitive, as the
     original code path), dedup + sort, then — if the entry defines a ``sniff`` —
     keep only the candidates whose content passes the gate. Entries with no
-    ``patterns`` cannot be globbed and yield an empty bucket.
+    ``patterns`` cannot be globbed and yield an empty bucket. Entries that take a fort.25
+    (``f25``) also list the ``*.f25`` / ``fort.25`` files of their kind, except where a
+    BAND.DAT/DOSS.DAT of the same run is beside them (the DAT holds the last run's data).
     """
     base = Path(directory)
     results: Dict[PlotKind, List[str]] = {}
@@ -84,6 +109,10 @@ def discover(directory: str = ".") -> Dict[PlotKind, List[str]]:
         found = sorted(set(found))
         if entry.sniff is not None:
             found = [f for f in found if _safe_sniff(entry, f)]
+        if entry.f25:
+            from . import f25 as _f25
+            twins = sorted({g for pat in _f25.GLOBS for g in glob.glob(str(base / pat))})
+            found = sorted(set(found) | {f for f in twins if _f25_matches(entry, f) and not _f25_with_dat(f)})
         results[entry.kind] = found
 
     return results
@@ -94,12 +123,15 @@ def classify_file(path: str) -> Optional[PlotKind]:
 
     An entry matches when its filename pattern matches (if it has patterns) AND
     its content sniff passes (if it has a sniff). A ``.out`` that matches the
-    FREQ glob but fails the FREQ content gate is therefore *not* FREQ.
+    FREQ glob but fails the FREQ content gate is therefore *not* FREQ. A fort.25 is
+    classified by its blocks (BAND, DOSS) for the entries that take one.
     """
     p = Path(path)
     name = p.name
 
     for entry in entries():
+        if entry.f25 and _f25_matches(entry, str(p)):
+            return entry.kind
         if entry.patterns is not None:
             if not any(fnmatch.fnmatch(name, pat) for pat in entry.patterns):
                 continue

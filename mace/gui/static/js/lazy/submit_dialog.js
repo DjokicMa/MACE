@@ -263,6 +263,7 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
     }
     const o = state.opts.slurm, p = state.preview;
     const tpl = (p && p.templates) || [];
+    const groups = caps.exclude_groups || [];      // the named exclusions the CLI takes on this cluster (the server lists them)
     return `<div class="sub-row"><span class="sub-k">Options</span><div class="sub-v sub-opts">
       <label class="tog"${isFolder ? "" : ' title="Job arrays submit a whole folder. Use Batch Setup to collect these decks in their own folder."'}><input type="checkbox" data-o="array"${o.array ? " checked" : ""}${isFolder ? "" : " disabled"}><span>Submit as job arrays</span></label>
       <label class="f inline">Max running at once <input class="field num" type="number" min="1" step="1" data-o="max_running" value="${H.esc(o.max_running)}"${o.array ? "" : " disabled"} aria-label="Max running at once"></label>
@@ -274,7 +275,8 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
         <label class="tog"><input type="radio" name="sub-ex" value="none"${o.exclude.kind === "none" ? " checked" : ""}><span>none</span></label>
         <label class="tog"><input type="radio" name="sub-ex" value="nodes"${o.exclude.kind === "nodes" ? " checked" : ""}><span>these nodes</span></label>
         <label class="tog"><input type="radio" name="sub-ex" value="type"${o.exclude.kind === "type" ? " checked" : ""}><span>a node type</span></label>
-        <input class="field" data-o="exclude-value" value="${H.esc(o.exclude.value || "")}"${o.exclude.kind === "none" ? " disabled" : ""} aria-label="Exclude" spellcheck="false"></fieldset>
+        ${groups.map((g) => `<label class="tog"><input type="radio" name="sub-ex" value="${H.esc(g.kind)}"${o.exclude.kind === g.kind ? " checked" : ""}><span>${H.esc(g.label)}</span></label>`).join("")}
+        <input class="field" data-o="exclude-value" value="${H.esc(o.exclude.value || "")}"${["none", ...groups.map((g) => g.kind)].includes(o.exclude.kind) ? " disabled" : ""} aria-label="Exclude" spellcheck="false"></fieldset>
       ${p && (p.existing_scripts || []).length ? `<label class="tog"><input type="checkbox" data-o="overwrite_sh"${o.overwrite_sh ? " checked" : ""}><span>Regenerate job scripts (--overwrite-sh)</span></label>` : ""}
       </div></div>`;
   }
@@ -294,8 +296,8 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
       ${caps.sbatch ? "" : '<span class="muted small">No SLURM on this machine</span>'}</div></div>`;
     if (state.mixed !== null || (p && p.mixed)) {
       html += `<div class="sub-row"><span class="sub-k">Decks to submit</span><div class="sub-v"><select class="field" data-o="mixed" aria-label="Decks to submit">
-        <option value="">choose…</option><option value="1"${state.mixed === "1" ? " selected" : ""}>D12 decks only</option>
-        <option value="2"${state.mixed === "2" ? " selected" : ""}>D3 decks only</option><option value="3"${state.mixed === "3" ? " selected" : ""}>D12 and D3 decks</option></select></div></div>`;
+        <option value="">choose…</option><option value="1"${state.mixed === "1" ? " selected" : ""}>1 - D12 decks only</option>
+        <option value="2"${state.mixed === "2" ? " selected" : ""}>2 - D3 decks only</option><option value="3"${state.mixed === "3" ? " selected" : ""}>3 - D12 and D3 decks</option></select></div></div>`;
     }
     html += optionsHtml();
     html += resourcesRow(p);

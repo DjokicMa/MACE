@@ -206,7 +206,8 @@ def test_radii_setting_changes_the_spheres(drv):
     drv.execute_script("window.__mace.settings.set('radiusSet', 'vdw')")
     time.sleep(0.5)
     na, ti, fe, k = drv.execute_script(R)
-    assert na == pytest.approx(2.27) and ti is None and k == pytest.approx(0.28)
+    # Ti, which 3Dmol's table lacks, takes Alvarez's radius (radii.js VDW_FILL, 1.1.6), not the default sphere
+    assert na == pytest.approx(2.27) and ti == pytest.approx(2.46) and k == pytest.approx(0.28)
     drv.execute_script("window.__mace.settings.set('radiusSet', 'ionic')")
     time.sleep(0.5)
     assert drv.execute_script(R)[0] == pytest.approx(1.02)

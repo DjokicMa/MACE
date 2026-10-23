@@ -155,7 +155,7 @@ def test_step_forms_reuse_calculation_setup(srv):
     draft = _draft("forms")
     st, r = _task(srv, "workflow/step-form", {"draft": draft, "step": "SP_2", "answers": {"functional": "PBE0"}})
     assert st == 200, r
-    assert r["mode"] == "opt2d12" and r["parent"] == "OPT_1" and set(r["editable"]) == {"functional", "dispersion"}
+    assert r["mode"] == "opt2d12" and r["parent"] == "OPT_1" and {"functional", "dispersion", "basis_set", "tolerance", "dft_grid", "maxcycle"} <= set(r["editable"])
     form = {f["id"]: f for f in r["form"]}
     assert form["functional"]["value"] == "PBE0" and form["functional"]["changed"]
     assert {"PBE0", "HSE06", "B3LYP"} <= {o["head"] for o in form["functional"]["options"]}
@@ -191,8 +191,11 @@ def test_step_forms_reuse_calculation_setup(srv):
     st, r = _task(srv, "workflow/step-form", {"draft": cp, "step": "CHARGE+POTENTIAL_3"})
     assert st == 200 and r["mode"] == "opt2d3" and "ECH3" in r["deck"] and "POT3" in r["deck"], r
     assert len([f for f in r["form"] if f["id"].endswith("#2")]) >= 2
-    # a later d12 step inherits its parent's settings: only the method can change
-    st, r = _task(srv, "workflow/step-form", {"draft": draft, "step": "SP_2", "answers": {"tolerance": "Tight"}})
+    # a later d12 step inherits its parent's settings and can change what its step type has (the method, the
+    # basis set, the DFT grid, the SCF block, spin polarization and the k-point mesh;
+    # tests/gui/test_workflow_builder_step_options_api.py): not another step type's (an SP has no OPTGEOM)
+    st, r = _task(srv, "workflow/step-form", {"draft": draft, "step": "SP_2",
+                                              "answers": {"opt_type": "Atomic positions only"}})
     assert st == 400 and "inherit" in r["error"]
 
 
@@ -342,3 +345,38 @@ def test_d12_start_preview_equals_run(srv):
     finally:
         con.close()
     assert n == 2
+
+
+def test_d12_preview_counts_the_finished_outputs_the_run_counts(srv):
+    """The preview and the launch count a deck's .out as finished by one
+    rule (mace.workflow.manual_progress.finished_output): a finished run of
+    the deck as it is now. A deck changed after its output, or whose .out
+    is a symlink, runs in both."""
+    import os
+    data = H.REPO_ROOT / "tests" / "data" / "existing_calcs"
+    d = srv.root / "finished12"
+    d.mkdir()
+    (srv.root / "finished12_outs").mkdir()
+    for n in ("done", "edited", "linked"):
+        shutil.copy2(data / "dia_opt.d12", d / f"{n}_opt.d12")
+    shutil.copy2(data / "dia_opt.out", d / "done_opt.out")
+    shutil.copy2(data / "dia_opt.out", d / "edited_opt.out")
+    later = (d / "edited_opt.out").stat().st_mtime + 3600
+    os.utime(d / "edited_opt.d12", (later, later))
+    shutil.copy2(data / "dia_opt.out", srv.root / "finished12_outs" / "linked_opt.out")
+    (d / "linked_opt.out").symlink_to(srv.root / "finished12_outs" / "linked_opt.out")
+    draft = {"inputs": {"type": "d12", "files": [f"finished12/{n}_opt.d12" for n in ("done", "edited", "linked")]},
+             "template": "opt_sp", "sequence": ["OPT", "SP"], "steps": {}, "execution": {}}
+    st, prev = _preview(srv, draft)
+    assert st == 200 and prev["code"] == 0, prev.get("cli_log")
+    assert [f["deck"] for f in prev["finished"]] == ["done_opt.d12"]
+    # done's SP goes out at launch, from its output
+    assert sorted(f["deck_name"] for f in prev["first_step"]) == ["done_sp.d12", "edited_opt.d12", "linked_opt.d12"]
+    st, res = _run(srv, prev["preview_id"])
+    assert st == 200 and res["code"] == 0 and res["script_drift"] == [], res
+    con = sqlite3.connect(d / f".mace_context_{res['workflow_id']}" / "materials.db")
+    try:
+        opt = dict(con.execute("SELECT material_id, status FROM calculations WHERE calc_type='OPT'").fetchall())
+    finally:
+        con.close()
+    assert opt == {"done": "completed", "edited": "submitted", "linked": "submitted"}

@@ -103,8 +103,11 @@ def test_restart_on_another_port_restores_everything(tmp_path, stop, browser_b):
         # two Recent files, one pinned; MgO at 2x2x2 (its own range); the Symmetry section collapsed
         assert open_doc(drv, "structures/Si.cif") == "structure"
         assert open_doc(drv, "structures/MgO.cif") == "structure"
-        H.wait(drv, "return !!document.querySelector('#inspector [data-quick=\"2\"]')", 10)
-        click(drv, '#inspector [data-quick="2"]')
+        # 1.1.6: the Range section's N x M x L picker (its presets) replaced the 2x2x2 button
+        H.wait(drv, "return !!document.querySelector('#inspector .cells-preset')", 10)
+        # (picked by script: a toast of the opens above may cover the select at the window's bottom right)
+        drv.execute_script("""const s = document.querySelector('#inspector .cells-preset'); s.value = '2,2,2';
+          s.dispatchEvent(new Event('change', {bubbles: true}))""")
         H.wait(drv, "return document.getElementById('tb-range-label').textContent === '2×2×2'", 5)
         click(drv, '#inspector .insp-section[data-key="symmetry"] .insp-head')
         drv.execute_script("window.__mace.run('file.recent.pin', {path: 'structures/Si.cif'})")

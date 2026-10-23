@@ -61,7 +61,7 @@ export async function open(H, text, onImport) {
       placeholder="Paste a POSCAR, CIF, XYZ or extXYZ here"></textarea>
     <p class="note" id="import-detect" role="status" aria-live="polite"></p>
     <div class="row" id="import-box-row" hidden><label class="tog"><input type="checkbox" id="import-box" checked>
-      <span>Put it in a box (10 Å of vacuum); unchecked, it opens as a molecule (view-only)</span></label></div>
+      <span>Put it in a box (10 Å of vacuum); unchecked, it opens as a molecule (edited in P1)</span></label></div>
     <div class="err" role="alert"></div>`;
   const ta = body.querySelector("#import-text"), note = body.querySelector("#import-detect");
   const boxRow = body.querySelector("#import-box-row"), box = body.querySelector("#import-box"), err = body.querySelector(".err");

@@ -10,6 +10,10 @@ finished-job events, and a guarded cancel.
 * A job seen pending or running that leaves the queue gives one ``sacct``
   call and one ``jobs.finished`` server event {id, name, state, workdir,
   out_rel} (the toast and the Problems entry listen to it).
+* A pending job whose reason is ``JobHeldUser`` or ``JobHeldAdmin`` is held:
+  its row says ``held`` ("user" or "admin"). Release runs ``scontrol release J``
+  only for a job of yours that squeue lists as held by you (an administrator's
+  hold is theirs to lift), and never for the job MACE GUI runs in.
 * Cancel runs ``scancel A_T`` / ``scancel J`` only after five checks: the id
   is a job or a task id; a fresh squeue lists it among your own jobs; a bare
   id is not a job array (``squeue -r -j`` shows no ``<id>_<t>`` tasks, also
@@ -254,7 +258,8 @@ def describe(root: Path, rows: List[Dict[str, str]], scope: str, own_ids: Sequen
                     "limit": r["limit"], "nodes": r["nodes"], "cpus": r["cpus"],
                     "workdir_rel": _rel(root, wd) if wd and inside else None, "deck_rel": deck, "out_rel": out_rel,
                     "log_rel": log_rel or None,
-                    "tracked": tracked.get(jid), "own_gui_job": jid in own_ids or arr in own_ids})
+                    "tracked": tracked.get(jid), "own_gui_job": jid in own_ids or arr in own_ids,
+                    "held": held_by(r["state"], r["reason"])})
     return out
 
 
@@ -547,6 +552,59 @@ def queue_budget_view(root: Path, rows: List[Dict[str, Any]], scope: str = "fold
     except Exception:
         pass
     return out
+
+
+def held_by(state: str, reason: str) -> Optional[str]:
+    """"user" or "admin" for a pending job SLURM holds (reason JobHeldUser / JobHeldAdmin), else None."""
+    if state != "PENDING":
+        return None
+    r = (reason or "").strip()
+    if r == "JobHeldUser":
+        return "user"
+    if r.startswith("JobHeld"):
+        return "admin"
+    return None
+
+
+def release(root: Path, ids: Sequence[str]) -> Dict[str, Any]:
+    """scontrol release for the held jobs of yours among `ids`; the others with the reason."""
+    env = _env()
+    if not _which("scontrol", env) or not _which("squeue", env):
+        return {"released": [], "refused": [{"id": str(i), "reason": "no SLURM on this machine"} for i in ids]}
+    me = user()
+    from mace.queue.slurm_ids import own_job_ids
+    own_gui = own_job_ids(login_env())
+    allowed, refused = [], []
+    for raw in ids:
+        jid = str(raw).strip()
+        if not ID_RE.match(jid):
+            refused.append({"id": jid, "reason": f"{jid} is not a job id (digits, or <array>_<task>)"})
+            continue
+        r = _run([_which("squeue", env), "-h", "-r", "-u", me, "-j", jid, "-o", "%i|%T|%r"], env)
+        rows = [l.split("|") for l in (r.stdout.splitlines() if r and r.returncode == 0 else []) if l.strip()]
+        rows = [x for x in rows if len(x) >= 3 and (x[0].strip() == jid or x[0].strip().startswith(jid + "_"))]
+        if not rows:
+            refused.append({"id": jid, "reason": f"{jid} is not one of your queued jobs"})
+            continue
+        if jid in own_gui or jid.split("_")[0] in own_gui:
+            refused.append({"id": jid, "reason": "This is the job MACE GUI runs in"})
+            continue
+        by = {held_by(x[1].strip(), x[2].strip()) for x in rows}
+        if by == {"admin"} or "admin" in by:
+            refused.append({"id": jid, "reason": f"{jid} is held by an administrator; only they can release it"})
+            continue
+        if by != {"user"}:
+            refused.append({"id": jid, "reason": f"{jid} is not held"})
+            continue
+        allowed.append(jid)
+    released = []
+    for jid in allowed:
+        r = _run([_which("scontrol", env), "release", jid], env, timeout=30)
+        if r is not None and r.returncode == 0:
+            released.append(jid)
+        else:
+            refused.append({"id": jid, "reason": (r.stderr.strip() if r is not None else "scontrol did not answer")[:300]})
+    return {"released": released, "refused": refused, "argv": ["scontrol", "release", *allowed] if allowed else None}
 
 
 def cancel(root: Path, ids: Sequence[str]) -> Dict[str, Any]:

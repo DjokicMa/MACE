@@ -38,6 +38,8 @@ export function createDrafts(E, S) {
       v: 1, t: Date.now(), name: ed.name, path: ed.path || null, frame: ed.frame ?? -1, diskStamp: ed.diskStamp || null,
       cell: s.cell, z: b64(new Uint8Array(new Uint16Array(s.numbers).buffer)), frac: b64(new Uint8Array(frac.buffer)),
       symMode: ed.symMode, symprec: ed.symprec, measurements: ed.measurements,
+      // 1.1.6: a slab, polymer or molecule keeps its periodicity, box origin and file vacuum (older drafts: 3D)
+      ...(s.pbc && !s.pbc.every(Boolean) ? { pbc: s.pbc, origin: s.origin || null, vacuum_vectors: s.vacuum_vectors || null } : {}),
       bondOverrides: [...ed.bondOverrides], selectionSets: ed.selectionSets,
       // Phase 4: a built or dropped document's provenance and hints (old drafts have none)
       meta: ed.docMeta || (ed.structure && ed.structure.doc_meta) || null, saveName: ed.doc.saveName || null,
@@ -88,5 +90,5 @@ export function createDrafts(E, S) {
 export function decode(d) {
   const z = Array.from(new Uint16Array(unb64(d.z).buffer)), f = new Float64Array(unb64(d.frac).buffer), frac = [];
   for (let i = 0; i < z.length; i++) frac.push([f[3 * i], f[3 * i + 1], f[3 * i + 2]]);
-  return { numbers: z, frac, cell: d.cell };
+  return { numbers: z, frac, cell: d.cell, ...(d.pbc ? { pbc: d.pbc, origin: d.origin, vacuum_vectors: d.vacuum_vectors } : {}) };
 }

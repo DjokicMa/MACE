@@ -75,7 +75,7 @@
 .orb-n { flex: none; }
 .orb-tag { flex: none; font-size: var(--fs-xs); font-weight: 700; padding: 0 4px; border-radius: 4px; color: var(--on-accent); background: var(--accent); }
 .orb-deg { flex: none; font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
-.orb-occ { margin-left: auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orb-occ { margin-left: auto; flex: 0 0 auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .orb-ef { position: relative; height: 0; margin: 6px 0; border-top: 1px dashed var(--danger); }
 .orb-ef span { position: absolute; right: 4px; top: -0.75em; padding: 0 4px; font-size: var(--fs-xs); color: var(--danger); background: var(--surface-2); }
 .orb-parts button[aria-disabled="true"] { color: var(--text-3); cursor: not-allowed; }
@@ -90,3 +90,16 @@
 .orb .po-row.chk { display: flex; }
 .orb .orb-cells { display: flex; align-items: center; gap: var(--s-1); }
 .orb .orb-cells > span:first-child { width: 64px; flex: none; }
+
+/* The Slice section (1.1.6): the plane's indices, the common planes, the mini unit-cell preview */
+.vo-ints .vo-int3 { display: flex; gap: var(--s-1); min-width: 0; }
+.vo-ints .vo-int3 input { width: 3.4em; min-width: 0; }
+.vo-presets { display: flex; flex-wrap: wrap; gap: 4px; margin: var(--s-1) 0 var(--s-2); }
+.vo-chip { padding: 1px 6px; font-size: var(--fs-xs); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); cursor: pointer; }
+.vo-chip:hover { background: var(--surface-3); }
+.vo-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.vo-preview-wrap { margin: 0 0 var(--s-2); }
+.vo-preview { display: block; width: 100%; height: 170px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); cursor: grab; touch-action: none; }
+.vo-preview:active { cursor: grabbing; }
+.vo-preview:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.vo-hint { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--text-2); }

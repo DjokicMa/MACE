@@ -223,6 +223,11 @@ def status_view(root: Path, folder_rel: Optional[str], workflow_id: str,
                 n["script_rel"] = _rel(root, sh) if sh.is_file() else None
             if n.get("eta") and n["eta"].get("output"):
                 n["eta"]["output"] = _rel(root, n["eta"]["output"])
+            if n.get("tau"):
+                # a TAU step's result: its folder, for the summary and the tau_<carrier>_<axis>.json files
+                n["tau"]["dir_rel"] = _rel(root, n["tau"].get("dir"))
+                n["tau"]["summary_rel"] = _rel(root, Path(n["tau"]["dir"]) / "tau_summary.json") \
+                    if n["tau"].get("dir") else None
     st["states"] = STATES
     from .workflow_actions import clone_info
     st["clone"] = clone_info(root, folder, wid)
@@ -231,7 +236,8 @@ def status_view(root: Path, folder_rel: Optional[str], workflow_id: str,
 
 def signature(st: Dict[str, Any]) -> str:
     """What the view shows of a workflow, minus the time-dependent ETA."""
-    cells = [(m["material_id"], n["step"], n["state"], n.get("attempts"), n.get("job_id"))
+    cells = [(m["material_id"], n["step"], n["state"], n.get("attempts"), n.get("job_id"),
+              (n.get("group") or {}).get("done"))
              for m in st.get("materials") or [] for n in m.get("nodes") or []]
     return json.dumps([st.get("state"), st.get("control", {}).get("state"), cells], default=str)
 

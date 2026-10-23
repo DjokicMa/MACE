@@ -8,7 +8,8 @@
  * - ionic: Shannon (1976) effective ionic radii, six-coordinate, of each element's commonest ion; an
  *   element without one takes its covalent radius.
  * - vdw: 3Dmol's own van der Waals table (Bondi-type), as the classic views drew before 1.1.6; an element
- *   it lacks (every transition metal from Sc to Co, Y to Mo, La to Lu) takes 3Dmol's default sphere. */
+ *   it lacks (every transition metal from Sc to Co, Y to Rh, La to Lu, Hf to Ir, the early actinides) takes
+ *   Alvarez's radius (VDW_FILL, 1.1.6) instead of 3Dmol's default sphere. */
 import { SYMBOLS, COVALENT } from "../geom/core.js";
 
 export const ATOMIC = {
@@ -36,11 +37,17 @@ export const IONIC = {
   Pt: 0.8, Au: 1.37, Hg: 1.02, Tl: 1.5, Pb: 1.19, Bi: 1.03, Th: 0.94, U: 0.89,
 };
 
+/* The elements 3Dmol's van der Waals table lacks (Sc-Co, Y-Rh, La-Lu, Hf-Ir, Ac-Pa, Np-Es): Alvarez's
+ * radii ("A cartography of the van der Waals territories", Dalton Trans. 42, 8617, 2013; ase.data.vdw_alvarez),
+ * so a transition metal or a lanthanide is no longer 3Dmol's default 1.5 Å sphere (1.1.6). Pm and Fm onward have
+ * no radius anywhere and keep the default. */
+export const VDW_FILL = { Sc: 2.58, Ti: 2.46, V: 2.42, Cr: 2.45, Mn: 2.45, Fe: 2.44, Co: 2.4, Y: 2.75, Zr: 2.52, Nb: 2.56, Mo: 2.45, Tc: 2.44, Ru: 2.46, Rh: 2.44, La: 2.98, Ce: 2.88, Pr: 2.92, Nd: 2.95, Sm: 2.9, Eu: 2.87, Gd: 2.83, Tb: 2.79, Dy: 2.87, Ho: 2.81, Er: 2.83, Tm: 2.79, Yb: 2.8, Lu: 2.74, Hf: 2.63, Ta: 2.53, W: 2.57, Re: 2.49, Os: 2.48, Ir: 2.41, Ac: 2.8, Th: 2.93, Pa: 2.88, Np: 2.82, Pu: 2.81, Am: 2.83, Cm: 3.05, Bk: 3.4, Cf: 3.05, Es: 2.7 };
+
 export const SETS = ["atomic", "covalent", "ionic", "vdw"];
 
 /** {symbol: radius in Å} of a set; `vdw0` is 3Dmol's own table (the vdw set, and the fallback of atomic). */
 export function table(set, vdw0) {
-  if (set === "vdw" || !SETS.includes(set)) return { ...vdw0 };
+  if (set === "vdw" || !SETS.includes(set)) return { ...VDW_FILL, ...vdw0 };
   const out = {};
   SYMBOLS.forEach((sym, z) => {
     if (!z || sym === "X") return;

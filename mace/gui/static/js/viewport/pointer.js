@@ -3,7 +3,8 @@
  *   wheel: zoom toward the view center, or (Settings › Viewport › Zoom
  *   toward: Mouse pointer) toward the cursor; middle-drag: pan; right-drag: orbit
  *   (about the view's center, marked while the drag lasts);
- *   Alt+left-drag: orbit from any tool (laptop trackpads);
+ *   Alt+left-drag: orbit from any tool (laptop trackpads); Ctrl (⌘) held
+ *   while orbiting inverts the angle snap (a snapping turn goes free, a free one snaps);
  *   right-click without dragging (< 4 px): the context menu —
  * and the left button per tool: Select (click picks, drag draws a box,
  * double-click selects the symmetry orbit, triple-click the fragment), Lasso
@@ -128,7 +129,8 @@ export function attachPointer(el, deps) {
     if (k === "orbit" || k === "right") {
       // the rotation center shows while the drag turns the view (gone on release)
       if (!drag.pivot && deps.pivot) { drag.pivot = true; deps.pivot(true); }
-      deps.cam().orbit(dx, dy, e.shiftKey && k === "orbit" && deps.tool() === "orbit" && !e.altKey);
+      // Ctrl (⌘) held inverts the angle snap for the rest of the drag (Settings › Viewport › Angle snap)
+      deps.cam().orbit(dx, dy, e.shiftKey && k === "orbit" && deps.tool() === "orbit" && !e.altKey, mod(e));
     }
     else if (k === "pan") deps.cam().pan(dx, dy);
     else if (k === "zoom") zoomBy(Math.exp(-dy * 0.01), drag.x0, drag.y0);

@@ -23,10 +23,16 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import presets as P
+from mace.utils import plot_labels as L
 
-HARTREE_EV = 27.211386245988
-ENERGY_UNITS = {"eV": 1, "meV": 1000, "Ha": 1 / HARTREE_EV, "kJ/mol": 96.48533212331, "kcal/mol": 23.060547830619}
-UNIT_LABEL = {"eV": "eV", "meV": "meV", "Ha": "Ha", "kJ/mol": "kJ/mol", "kcal/mol": "kcal/mol"}
+from mace.constants import CALORIE_J, EV_TO_KJ_MOL, HARTREE_TO_EV as HARTREE_EV  # noqa: E402
+ENERGY_UNITS = {"eV": 1, "meV": 1000, "Ha": 1 / HARTREE_EV, "kJ/mol": EV_TO_KJ_MOL, "kcal/mol": EV_TO_KJ_MOL / CALORIE_J}
+# the units as the axes draw them (plot_labels.UNITS: cm<sup>−1</sup>)
+UNIT_LABEL = {u: L.unit(u) for u in ("eV", "meV", "Ha", "kJ/mol", "kcal/mol", "cm-1", "THz")}
+# phonon frequencies (a phonon fort.25's band and DOS): value in the unit = value in eV x factor (plotbase.js PHONON_UNITS)
+CM_PER_MEV = 8.065543937
+CM_PER_THZ = 33.35640952
+PHONON_UNITS = {"cm-1": 1000 * CM_PER_MEV, "THz": 1000 * CM_PER_MEV / CM_PER_THZ, "meV": 1000}
 
 # tokens.css at a light plot (the :root block; --line is --border): what the GUI's band plots read
 FONT_SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif'
@@ -48,7 +54,27 @@ FORMATS = ("png", "svg", "pdf")
 # the GUI's band/DOS options (plot.js DEFAULTS.bands) at their defaults
 # (hidden None: the projections drawn are the 2-4 that carry the DOS, presets.pick_projections)
 DEFAULT_OPTS = {"emin": -6, "emax": 6, "shift": 0, "spin": "both", "width": 1.5, "hidden": None, "unit": "eV",
-                "ylog": False, "xlog": False, "xr": None, "yr": None}
+                "ylog": False, "xlog": False, "xr": None, "yr": None,
+                "fermi_line": True, "k_labels": True, "spin_labels": True}
+
+
+def phonon_window(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]]) -> List[float]:
+    """bandfig.js phononWindow: the frequencies' range (eV) with 5% around it, an unstable mode kept. The DOS
+    counts where it has states (its grid runs to the PDOS input's upper limit, often far above the top mode)."""
+    vals: List[float] = []
+    if band:
+        for col in list(band.get("up") or []) + list(band.get("down") or []):
+            vals += [v for v in col if v is not None]
+    if dos:
+        energy = [v for v in dos.get("energy") or []]
+        cols = [c for p in dos.get("projections") or [] for c in (p.get("up"), p.get("down")) if c]
+        held = [e for k, e in enumerate(energy) if e is not None and any(k < len(c) and c[k] for c in cols)]
+        vals += held or [v for v in energy if v is not None]
+    if not vals:
+        return [0, 0.1]
+    lo, hi = min(vals), max(vals)
+    pad = max(0.05 * (hi - lo), 0.001)
+    return [min(lo, 0) - pad, hi + pad]
 
 
 def tokens(pid: Optional[str] = "default") -> Dict[str, str]:
@@ -205,19 +231,11 @@ def dos_range(dos: Dict[str, Any], lo: float, hi: float, opts: Dict[str, Any], l
 
 
 # ---------------------------------------------------------------- bands
-def shift_text(shift: float) -> str:
-    """bandfig.js shiftText: ' + 0.50 eV' for a Fermi shift (toFixed(2)), '' without one."""
-    if not shift:
-        return ""
-    q = Decimal(abs(shift)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return f" {'+' if shift > 0 else '−'} {q} eV"
-
-
-def energy_title(ref: Optional[str], shift: float) -> str:
-    """bandfig.js energyTitle: the data move by -s, so the zero is E_F + s (E_vac + s on the vacuum
-    scale), as the matplotlib figures' energy_axis_label."""
-    zero = "E<sub>vac</sub>" if ref == "vacuum" else "E<sub>F</sub>"
-    return f"E − ({zero}{shift_text(shift)})" if shift else f"E − {zero}"
+# bandfig.js shiftText and energyTitle: labels.js / plot_labels (' + 0.50 eV'; E − E<sub>F</sub>, or with a Fermi
+# shift s, which moves the data by -s, E − (E<sub>F</sub> + s), E<sub>vac</sub> on the vacuum scale), as the
+# matplotlib figures' energy_axis_label
+shift_text = L.shift_text
+energy_title = L.energy_title
 
 
 def join_bands(x: Sequence[Any], bands: Sequence[Sequence[Any]], shift: float):
@@ -473,11 +491,20 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
     abs_shown = False
     dos_mode = None
     ref_d = band or dos
-    ref, ef, shift = ref_d.get("reference"), ref_d.get("fermi") or 0, o.get("shift") or 0
-    f = ENERGY_UNITS.get(o.get("unit")) or 1
-    unit = UNIT_LABEL.get(o.get("unit")) or "eV"
+    # a phonon fort.25 (domain "phonon"): see bandfig.js bandFigure
+    ph = ref_d.get("domain") == "phonon"
+    ref, ef, shift = ref_d.get("reference"), 0 if ph else ref_d.get("fermi") or 0, 0 if ph else o.get("shift") or 0
+    # a frequency unit (cm-1, THz) on an electronic plot: eV, the factor and the label alike
+    u_name = (o.get("unit") if o.get("unit") in PHONON_UNITS else "cm-1") if ph else \
+        (o.get("unit") if o.get("unit") in ENERGY_UNITS else "eV")
+    f = (PHONON_UNITS if ph else ENERGY_UNITS).get(u_name) or 1
+    unit = UNIT_LABEL.get(u_name) or "eV"
+    ds = 1 / f if ph else 1
     tf = lambda y: None if y is None else y * f  # noqa: E731
-    log_e = bool(o.get("ylog")) and not dos
+    # Plot options › Reference/Labels: the dotted E_F line (and its key), the k-point labels, the spin halves' words
+    show_ef, show_k, show_spin = (not ph) and o.get("fermi_line") is not False, o.get("k_labels") is not False, o.get("spin_labels") is not False
+    # the energy axis is never logarithmic (energies are signed): "ylog" is the DOS axis (GUI parity, bandfig.js)
+    log_e = False
     lg = (lambda ys: [None if (y is None or y == 0) else abs(y) for y in ys]) if log_e else (lambda ys: ys)  # noqa: E731
     abs_shown = log_e
     grid = css("--line")
@@ -486,9 +513,9 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
     annotations: List[Dict[str, Any]] = []
     keys: List[Dict[str, Any]] = []
     ink = css("--plot-ink") or css("--text")
-    yr = o.get("yr") or [(ef + o["emin"]) * f, (ef + o["emax"]) * f]
+    yr = o.get("yr") or ([v * f for v in phonon_window(band, dos)] if ph else [(ef + o["emin"]) * f, (ef + o["emax"]) * f])
     fermi_line = {"color": css("--text-2"), "width": 1.2, "dash": "dot"}     # dotted: dashed reads as spin down
-    yaxis = {"title": {"text": f"{'|' if log_e else ''}{energy_title(ref, shift)}{'|' if log_e else ''} ({unit})"},
+    yaxis = {"title": {"text": f"{'|' if log_e else ''}{'Frequency' if ph else energy_title(ref, shift)}{'|' if log_e else ''} ({unit})"},
              "type": "log" if log_e else "linear"}
     if log_e:
         yaxis["autorange"] = True
@@ -514,8 +541,8 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
             lay["xaxis"]["range"] = o["xr"]
         tl = band_tick_layout(band, lay["xaxis"]["range"], dos, env.get("width"), env.get("marginR", 14))
         lay["xaxis"]["tickvals"] = tl["xaxis.tickvals"]
-        lay["xaxis"]["ticktext"] = tl["xaxis.ticktext"]
-        lay["margin"]["b"] = tl["margin.b"]
+        lay["xaxis"]["ticktext"] = tl["xaxis.ticktext"] if show_k else ["" for _ in tl["xaxis.ticktext"]]
+        lay["margin"]["b"] = tl["margin.b"] if show_k else 42
         if o.get("spin") != "down" or not band.get("spin_polarized"):
             xs, ys, idx = join_bands(band["x"], band["up"], shift)
             ys = lg([tf(y) for y in ys])
@@ -537,7 +564,7 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
             traces.append({"x": xs, "y": ys, "customdata": idx, "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter",
                            "name": "spin down (β)", "showlegend": False, "meta": "down", "legendrank": 2,
                            "line": {"color": spin["down"], "width": o["width"], "dash": spin["dash"], "simplify": False}, "hoverinfo": "none"})
-        if not log_e:
+        if not log_e and show_ef:
             shapes.append({"type": "line", "xref": "x domain", "x0": 0, "x1": 1, "yref": "y", "y0": ef * f, "y1": ef * f,
                            "editable": True, "name": "fermi", "line": dict(fermi_line)})
     smooth = P.smooth_sigma(look_.get("dos_smooth"))
@@ -546,14 +573,14 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
         ax, xr = ("xaxis2", "x2") if band else ("xaxis", "x")
         dlog = bool(o.get("ylog"))
         axis = {"domain": [0.73, 1] if band else [0, 1],
-                "title": {"text": "|DOS| (states/eV, log)" if dlog else "DOS (states/eV)"}, "gridcolor": grid,
+                "title": {"text": f"|DOS| (states/{unit}, log)" if dlog else f"DOS (states/{unit if ph else 'eV'})"}, "gridcolor": grid,
                 "zeroline": True, "zerolinecolor": ink, "zerolinewidth": 1.2, "showline": True, "mirror": True, "linecolor": grid,
                 "type": "log" if dlog else "linear"}
         if dlog:
             axis["autorange"] = True
             abs_shown = True
         else:
-            axis["range"] = dos_range(dos, shift + yr[0] / f, shift + yr[1] / f, o, look)
+            axis["range"] = [v * ds for v in dos_range(dos, shift + yr[0] / f, shift + yr[1] / f, o, look)]
         lay[ax] = axis
         if not band and o.get("xr"):
             lay[ax]["range"] = o["xr"]
@@ -568,7 +595,10 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
         nfill = P.neutral_fill(spin["bands"], preset)
         ys = [tf(e - shift) for e in dos["energy"]]
         sm = (lambda xs: P.gauss_smooth(xs, dos["energy"], smooth)) if smooth else (lambda xs: xs)  # noqa: E731
-        dx = (lambda xs: [None if (v is None or v == 0) else abs(v) for v in xs]) if o.get("ylog") else (lambda xs: xs)  # noqa: E731
+        # Log DOS: a zero (a gap) is no point, and the total is not filled: plotly joins a "tozerox" fill's
+        # segments across the gap (a wedge drawn over the gap), and zero is off a log axis anyway.
+        dx0 = (lambda xs: [None if (v is None or v == 0) else abs(v) for v in xs]) if o.get("ylog") else (lambda xs: xs)  # noqa: E731
+        dx = (lambda xs: [None if v is None else v * ds for v in dx0(xs)]) if ph else dx0  # noqa: E731
         pos = lambda xs: [None if v is None else abs(v) for v in xs]  # noqa: E731
         drawn = [(p, k) for k, p in enumerate(dos["projections"])
                  if look["byLabel"].get(p["label"]) and look["byLabel"][p["label"]]["show"] and p["label"] not in look["hidden"]]
@@ -587,12 +617,13 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                                           "name": f"{name} ↑" if both else name, "legendgroup": p["label"], "legend": dl,
                                           "showlegend": False, "legendrank": 10 + k,
                                           "line": {"color": col, "width": lw, "dash": dash, "simplify": False},
-                                          "fill": "tozerox" if total else "none",
-                                          "fillcolor": (fills["up"] if both else nfill) if total else None, "hoverinfo": "none"}))
+                                          "fill": "tozerox" if total and not dlog else "none",
+                                          "fillcolor": (fills["up"] if both else nfill) if total and not dlog else None,
+                                          "hoverinfo": "none"}))
                 curves.append((x, ys))
             if both and o.get("spin") != "up":
                 x = dx(sm(pos(down_of(dos, p)) if side == "overlaid" else down_of(dos, p)))
-                mir = total and side == "mirrored"
+                mir = total and side == "mirrored" and not dlog
                 traces.append(_drop_none({"x": x, "y": ys, "xaxis": xr, "yaxis": "y", "mode": "lines", "type": "scatter",
                                           "meta": "dos", "name": f"{name} ↓", "legendgroup": p["label"], "legend": dl,
                                           "showlegend": False, "legendrank": 10 + k,
@@ -612,14 +643,14 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                                     "legendrank": 100 + i, "customdata": [p["label"]], "hoverinfo": "skip", "showlegend": True,
                                     "marker": {"symbol": "square", "size": 11, "color": fill, "line": {"color": edge, "width": 1}},
                                     "legendgrouptitle": {"text": "Projections", "font": group_title(css)} if i == 0 else None}))
-        if side == "mirrored" and o.get("spin") == "both" and not dlog:
+        if side == "mirrored" and o.get("spin") == "both" and not dlog and show_spin:
             z = (0 - rng[0]) / (rng[1] - rng[0])     # beside the zero line, each on its own side
             annotations.append({"xref": f"{xr} domain", "yref": "paper", "x": z, "y": 1, "xanchor": "left", "xshift": 3, "yanchor": "bottom",
                                 "showarrow": False, "text": "<b>↑ up</b>", "font": {"size": 11, "color": spin["up"]}, "name": "spin-up-label"})
             annotations.append({"xref": f"{xr} domain", "yref": "paper", "x": z, "y": 1, "xanchor": "right", "xshift": -3, "yanchor": "bottom",
                                 "showarrow": False, "text": "<b>down ↓</b>", "font": {"size": 11, "color": spin["down"]}, "name": "spin-down-label"})
-            lay["margin"]["t"] = max(lay["margin"]["t"], 24)
-        if not log_e:
+            lay["margin"]["t"] = max(lay["margin"]["t"], 46 if (env.get("width") or 900) < 640 else 24)
+        if not log_e and show_ef:
             shapes.append({"type": "line", "xref": f"{xr} domain", "x0": 0, "x1": 1, "yref": "y", "y0": ef * f, "y1": ef * f,
                            "editable": not band, "name": "fermi2", "line": dict(fermi_line)})
         y0, y1 = min(yr[0], yr[1]), max(yr[0], yr[1])
@@ -651,9 +682,9 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                            "legendgrouptitle": {"text": title, "font": group_title(css)} if grouped and i == 0 else None})
     keys[:0] = ([key_of(k, i, "spin", "Spin", "key-spin") for i, k in enumerate(hk["spin"])]
                 + [key_of(k, i, "bands", "Bands", "key-band") for i, k in enumerate(hk["bands"] or [])])
-    if env.get("fermiKey") and not log_e:
+    if env.get("fermiKey") and not log_e and show_ef:
         keys.append({"x": [None], "y": [None], "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter", "meta": "key-fermi",
-                     "name": f"E<sub>F</sub>{shift_text(shift)}", "legend": "legend", "line": dict(fermi_line), "hoverinfo": "skip",
+                     "name": L.fermi_key(shift), "legend": "legend", "line": dict(fermi_line), "hoverinfo": "skip",
                      "legendrank": 5000})
     traces += keys
     if not dos:

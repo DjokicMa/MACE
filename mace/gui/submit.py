@@ -62,7 +62,8 @@ EXCLUDE_NODES_RE = re.compile(r"^[A-Za-z0-9,\-\[\]]{1,512}$")
 EXCLUDE_TYPE_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 DECK_SUFFIXES = (".d12", ".d3")
 SLURM_TOOLS = ("sbatch", "squeue", "scancel", "sacct", "scontrol", "sinfo", "sacctmgr")
-QUEUED_STATES = ("submitted", "pending", "running", "queued")
+# held: recorded and waiting for a queue slot (mace/queue/budget.py), submitted by MACE later
+QUEUED_STATES = ("submitted", "pending", "running", "queued", "held")
 NO_PREVIEW_TEMPLATES = ("custom", "interactive")
 JOB_ID_RE = re.compile(r"Submitted batch job (\d+)")
 IDS_LINE_RE = re.compile(r"(?:Job ID\(s\)|Submitted \d+ job\(s\)):\s*(.+)")
@@ -224,6 +225,12 @@ def _opt_int(v, lo, hi, name) -> Optional[int]:
     return n
 
 
+def exclude_groups() -> Dict[str, str]:
+    """{kind: switch} of the named exclusions `mace submit` takes (node_exclusion.SUBMIT_GROUPS)."""
+    from mace.utils import node_exclusion
+    return {k: sw for k, (sw, _label) in node_exclusion.SUBMIT_GROUPS.items()}
+
+
 def build_commands(root: Path, where: str, sel: Selection, options: Dict[str, Any],
                    mixed_choice: Optional[str] = None, dry_run: bool = False) -> List[Command]:
     """The whitelisted argv (and stdin) for this selection; never --nosubmit."""
@@ -286,9 +293,11 @@ def build_commands(root: Path, where: str, sel: Selection, options: Dict[str, An
         if not EXCLUDE_TYPE_RE.match(value):
             raise SubmitError("Exclude a node type: letters, digits, _ and - only")
         flags += ["--exclude-type", value]
+    elif kind in exclude_groups():              # a named group: the CLI's switch (it says where it does not apply)
+        flags.append(exclude_groups()[kind])
     elif kind != "none":
-        raise SubmitError("Exclude is none, nodes or type")
-    if options.get("overwrite_sh"):
+        raise SubmitError("Exclude is none, nodes, type or one of the named groups")
+    if options.get("overwrite_sh") and not progress:      # --progress writes no script beside a deck
         flags.append("--overwrite-sh")
     stdin = None
     if sel.mixed:
@@ -352,11 +361,13 @@ def _inside(p: Path, root: Path) -> bool:
         return False
 
 
-def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]:
+def stage_plan(sel: Selection, root: Path, progress: bool = False) -> Tuple[List[Tuple[Path, str]], int]:
     """[(real path, how)], bytes: what the mirror copies (how: file, stub
     (a one-byte stand-in for a wavefunction, empty when the real one is
     empty), outhead (the start of the CRYSTAL output a deck is sized from,
-    when [resources] auto is on), db, tree, marker)."""
+    when [resources] auto is on), db, tree, marker). ``progress`` (--progress):
+    a deck's own output too, whole (a finished one is not run again: its next
+    step is made from it), and stand-ins for the files its step folder gets."""
     items: List[Tuple[Path, str]] = []
     seen = set()
 
@@ -369,6 +380,10 @@ def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]
         add(d, "file")
         add(d.with_suffix(".sh"), "file")
         add(d.with_suffix(".f9"), "stub")
+        if progress:
+            add(d.with_suffix(".out"), "file")
+            add(d.with_suffix(".f20"), "stub")
+            add(d.with_suffix(".ext"), "stub")
         # an EXTERNAL deck's fort.34 source: the CLI warns when it is missing
         if d.suffix.lower() == ".d12":
             from mace.submission.external_geometry import deck_keyword, fort34_source
@@ -438,8 +453,9 @@ def _out_head(p: Path) -> bytes:
     return b"".join(out)
 
 
-def stage(sel: Selection, root: Path, mirror_root: Path, budget_free: Optional[int] = None) -> int:
-    items, size = stage_plan(sel, root)
+def stage(sel: Selection, root: Path, mirror_root: Path, budget_free: Optional[int] = None,
+          progress: bool = False) -> int:
+    items, size = stage_plan(sel, root, progress)
     free = budget_free if budget_free is not None else shutil.disk_usage(mirror_root.parent).free
     cap = min(STAGE_CAP, free // 2)
     if size > cap:
@@ -546,8 +562,8 @@ def out_bucket(p: Path) -> str:
 
 def queued_rows(dbs: Sequence[Path], decks: Sequence[Path]) -> List[Dict[str, Any]]:
     """Rows of these databases (read-only) whose input file is one of the
-    decks and whose status is submitted/pending/running (a pending row only
-    with a job id: without one it was never queued)."""
+    decks and whose status is submitted/pending/running/held (a pending row
+    only with a job id: without one it was never queued)."""
     want = {str(d.resolve()) for d in decks} | {str(d) for d in decks}
     names = {d.name for d in decks}
     out = []
@@ -560,7 +576,8 @@ def queued_rows(dbs: Sequence[Path], decks: Sequence[Path]) -> List[Dict[str, An
             continue
         try:
             rows = con.execute("SELECT calc_id, input_file, status, slurm_job_id FROM calculations "
-                               "WHERE lower(status) IN (?, ?, ?, ?)", QUEUED_STATES).fetchall()
+                               f"WHERE lower(status) IN ({', '.join('?' * len(QUEUED_STATES))})",
+                               QUEUED_STATES).fetchall()
         except sqlite3.Error:
             rows = []
         finally:
@@ -765,6 +782,9 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
     env = submit_env()
     real_cmds = build_commands(root, where, sel, options, mixed_choice)
     decks = submitted_decks(sel, mixed_choice) if where == "slurm" else list(sel.decks)
+    # --progress runs each deck in its workflow's step folder: nothing beside a deck is overwritten
+    # (a finished output is not run again), and its job script there is a new one
+    progress = where == "slurm" and bool(str(options.get("progress") or "").strip())
     warnings: List[str] = []
     if network:
         warnings.append("Submitting is turned off while MACE GUI is open to the network")
@@ -779,9 +799,11 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
                               "argv": [["mace", *c.argv] for c in real_cmds],
                               "stdin": real_cmds[0].stdin if real_cmds else None,
                               "cwd_rel": _rel(root, sel.cwd), "decks": [_rel(root, d) for d in decks],
-                              "conflicts": conf, "warnings": warnings, "mixed": sel.mixed,
+                              "conflicts": dict(conf, finished=[], wavefunction=[]) if progress else conf,
+                              "warnings": warnings, "mixed": sel.mixed,
                               "templates": templates_for(sorted({deck_calc_type(d) for d in decks})) if where == "slurm" else [],
-                              "existing_scripts": [_rel(root, d.with_suffix(".sh")) for d in decks if d.with_suffix(".sh").exists()],
+                              "existing_scripts": [] if progress else [_rel(root, d.with_suffix(".sh")) for d in decks
+                                                                       if d.with_suffix(".sh").exists()],
                               "n_decks": len(decks)}
     if where == "local":
         # mace run --dry-run on the selected decks, in the real folder: it writes nothing (spike S3)
@@ -796,7 +818,7 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
                     needs={})
         return p, result
     # --- SLURM: the staged mirror + the recording shim
-    staged = stage(sel, root, mirror)
+    staged = stage(sel, root, mirror, progress=progress)
     mcwd = mirror / _rel(root, sel.cwd)
     shim_dir = work / "shim"
     log_file = work / "shim.log"
@@ -873,6 +895,8 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
     job_writes = []
     for d in decks:
         job_writes += [_rel(root, d.with_suffix(".out")), _rel(root, d.with_suffix(".f9"))]
+    if progress:            # beside the job scripts in the step folders
+        job_writes = [w for rel in scripts if ".mace_arrays/" not in rel for w in (rel[:-3] + ".out", rel[:-3] + ".f9")]
     intercepted = [c["argv"] for c in calls if c.get("intercepted")]
     passed = [c["argv"] for c in calls if c.get("passed")]
     warnings += [w for w in _cli_warnings(log) if w not in warnings]
@@ -885,7 +909,8 @@ def preview(root: Path, root_gen: Any, where: str, sel: Selection, options: Dict
                   suggestions=suggestions(root, decks, env))
     if tracked and (sel.cwd / "materials.db").is_file():
         result["writes"] = sorted(set(result["writes"]) | {_rel(root, sel.cwd / "backups") + "/materials_backup_<TS>.db"})
-    needs = {"overwrite": bool(conf["finished"] or conf["wavefunction"]), "duplicate": bool(conf["queued"])}
+    needs = {"overwrite": bool(conf["finished"] or conf["wavefunction"]) and not progress,
+             "duplicate": bool(conf["queued"])}
     p = Preview(id="", created=time.time(), where=where, cmds=real_cmds, decks=decks, fp=fp, result=result,
                 needs=needs, scripts=scripts, modified=modified, tracked=tracked)
     return p, result
@@ -1154,6 +1179,10 @@ def run(store: Store, p: Preview, root: Path, ctx=None, problems=None, on_output
         drift = []
         for rel, text in p.scripts.items():
             real = root / rel
+            if not real.exists():
+                # in a workflow's step folder (--progress): the real run's workflow id is not the preview's
+                found = sorted(root.glob(NORM_RULES[2][0].sub("*", rel)), key=os.path.getmtime)
+                real = found[-1] if found else real
             try:
                 now = normalize(real.read_text())
             except OSError:
@@ -1182,6 +1211,7 @@ def _opt_of(argv: Sequence[str], name: str) -> Optional[str]:
 
 # ------------------------------------------------------------------ capabilities
 def capabilities(network: bool) -> Dict[str, Any]:
+    from mace.utils import node_exclusion
     env = submit_env()
     from mace.queue.slurm_ids import own_job_ids
     from mace.submission.local_run import gateway_reason
@@ -1194,4 +1224,4 @@ def capabilities(network: bool) -> Dict[str, Any]:
     return {**tools, "in_slurm_job": bool(le.get("SLURM_JOB_ID")), "slurm_job_id": le.get("SLURM_JOB_ID") or None,
             "own_job_ids": sorted(own_job_ids(le)), "user": user,
             "local_run_hint": gateway_reason(le, socket.gethostname()), "network": network,
-            "auto_preview_max": AUTO_PREVIEW_MAX}
+            "auto_preview_max": AUTO_PREVIEW_MAX, "exclude_groups": node_exclusion.submit_groups(env)}

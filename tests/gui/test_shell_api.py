@@ -148,6 +148,8 @@ def test_colors_only_in_tokens():
         if p.name == "tokens.css" or p.parent.name in ("icons", "brand") or p.name in SHARED_PALETTE_DATA:
             continue
         text = re.sub(r"&#\d+;", "", p.read_text())
+        # the browser reads theme-color before any CSS: literal, kept equal to --surface by test_app_window
+        text = re.sub(r'<meta name="theme-color" content="#[0-9a-fA-F]{6}" media="[^"]*">', "", text)
         text = re.sub(r'href="[^"]*"|#[a-z][\w-]*', "", text)   # ids and fragment links
         hits += [(p.name, m.group(0)) for m in hexcolor.finditer(text)]
     assert not hits, hits
@@ -177,7 +179,7 @@ def test_boot_is_one_request_with_everything_the_page_starts_with(served):
     assert set(boot) == {"info", "files", "templates", "settings", "mace_defaults", "profile", "palettes", "folder"}
     assert boot["palettes"]["palettes"] == {} and boot["palettes"]["path"].endswith("mace/element_colors.json")
     assert any(f["path"] == "structures/MgO.cif" for f in boot["files"]["files"])
-    assert len(body) < 3000
+    assert len(body) < 3200   # 1.1.6 final: the polyhedra and pore-surface settings added ~60 bytes
 
 
 def test_static_cache_is_bounded(tmp_path, monkeypatch):
@@ -384,9 +386,9 @@ def test_open_gpu_starts_the_browser_with_prime_offload(monkeypatch):
     """Spec 9.3: `mace gui --open --gpu 1` starts the browser on GPU1 (PRIME
     render offload, proven with nvidia-smi on the workstation); the default
     leaves the environment alone, and the server's own environment is restored."""
-    from mace.gui import cli
+    from mace.gui import appwindow, cli
     seen = {}
-    monkeypatch.setattr(cli.webbrowser, "open", lambda url: seen.update(
+    monkeypatch.setattr(appwindow, "open_url", lambda url, *a, **k: seen.update(
         {k: os.environ.get(k) for k in ("__NV_PRIME_RENDER_OFFLOAD", "__NV_PRIME_RENDER_OFFLOAD_PROVIDER")}) or True)
     monkeypatch.delenv("__NV_PRIME_RENDER_OFFLOAD", raising=False)
     cli.open_browser("http://x", 1)

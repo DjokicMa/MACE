@@ -15,6 +15,7 @@
  * The options are plotkit's (units, per, relative to, log, range, width),
  * kept per document; the defaults come from Settings › Plots. */
 import * as PK from "../plotkit.js";
+import * as L from "../labels.js";
 
 const TABS = [["energy", "Energy"], ["convergence", "Convergence"], ["scf", "SCF"], ["cell", "Cell"], ["tracked", "Tracked"]];
 const CRIT = [["max_grad", "Max gradient", "maxgrad"], ["rms_grad", "RMS gradient", "toldeg"], ["max_disp", "Max displacement", "maxdisp"],
@@ -234,7 +235,7 @@ export function createRunPlot(host, H) {
           const bl = gp.map((p) => o.relTo !== "absolute" && p.e < ref[segOf(p)] - 1e-10);
           below += bl.filter(Boolean).length;
           traces.push({ x: gp.map((p) => p.x), y: gp.map(val), customdata: gp.map((p) => p.frame), mode: "lines+markers", type: "scatter",
-            name: `${name ? name + ": " : ""}${Object.keys(groups).length === 1 ? "E − E_ref" : `segment ${Number(sg) + 1}, relative to its ${o.relTo}`}`,
+            name: `${name ? name + ": " : ""}${Object.keys(groups).length === 1 ? `E ${L.MINUS} ${L.SYMBOLS.E_ref}` : `segment ${Number(sg) + 1}, relative to its ${o.relTo}`}`,
             meta: `e${ri}_${sg}`, legendgroup: `r${ri}`, showlegend: gi === 0 || runs.length === 1,
             line: { color: pal[ri * 2 % 6], width: o.width, dash },
             marker: { size: 8, symbol: bl.map((b) => (b ? "triangle-down" : "circle")), color: bl.map((b) => (b ? css("--danger") : pal[ri * 2 % 6])) },
@@ -374,12 +375,12 @@ export function createRunPlot(host, H) {
     const traces = [];
     [["a", "a"], ["b", "b"], ["c", "c"]].forEach(([k, n], i) => traces.push({ x: pts.map((p) => p.point), y: pts.map((p) => val(p, k)), customdata: pts.map((p) => p.frame),
       name: `${n} (${pct ? "%" : "Å"})`, meta: `cell-${k}`, mode: "lines+markers", type: "scatter", xaxis: "x", yaxis: "y", line: { color: pal[i], width: o.width } }));
-    traces.push({ x: pts.map((p) => p.point), y: pts.map((p) => val(p, "volume")), customdata: pts.map((p) => p.frame), name: `volume (${pct ? "%" : "Å³"})`, meta: "cell-volume",
+    traces.push({ x: pts.map((p) => p.point), y: pts.map((p) => val(p, "volume")), customdata: pts.map((p) => p.frame), name: `volume (${pct ? "%" : L.unit("A3")})`, meta: "cell-volume",
       mode: "lines+markers", type: "scatter", xaxis: "x", yaxis: "y3", line: { color: pal[3], width: o.width, dash: "dot" } });
     [["alpha", "α"], ["beta", "β"], ["gamma", "γ"]].forEach(([k, n], i) => traces.push({ x: pts.map((p) => p.point), y: pts.map((p) => val(p, k)), customdata: pts.map((p) => p.frame),
       name: `${n} (${pct ? "%" : "°"})`, meta: `cell-${k}`, mode: "lines+markers", type: "scatter", xaxis: "x2", yaxis: "y2", line: { color: pal[i], width: o.width, dash: "dash" } }));
     lay.yaxis = { ...lay.yaxis, title: { text: pct ? "a, b, c (% from first)" : "a, b, c (Å)" }, domain: [0.55, 1], type: "linear" };
-    lay.yaxis3 = { title: { text: pct ? "V (% from first)" : "V (Å³)" }, overlaying: "y", side: "right", showgrid: false };
+    lay.yaxis3 = { title: { text: pct ? "V (% from first)" : L.withUnit("V", "A3") }, overlaying: "y", side: "right", showgrid: false };
     lay.xaxis = { ...lay.xaxis, anchor: "y", title: { text: "" } };
     lay.xaxis2 = { title: { text: XT }, anchor: "y2", gridcolor: grid, showline: true, mirror: true, linecolor: grid, matches: "x" };
     lay.yaxis2 = { title: { text: pct ? "α, β, γ (% from first)" : "α, β, γ (°)" }, domain: [0, 0.42], anchor: "x2", gridcolor: grid, showline: true, mirror: true, linecolor: grid };
@@ -510,7 +511,11 @@ export function createRunPlot(host, H) {
     const b = e.target.closest("[data-tab]");
     if (b && doc) showTab(b.dataset.tab);
     const c = e.target.closest("[data-cellmode]");
-    if (c && doc) set({ relTo: c.dataset.cellmode }, c.dataset.cellmode === "first" ? "% from first" : "Absolute");
+    if (c && doc) {
+      // the segment is drawn once per tab switch: move the checked state with the choice
+      host.querySelectorAll("[data-cellmode]").forEach((m) => m.setAttribute("aria-checked", String(m === c)));
+      set({ relTo: c.dataset.cellmode }, c.dataset.cellmode === "first" ? "% from first" : "Absolute");
+    }
   });
   $(".rp-tabs").addEventListener("keydown", (e) => {
     const tabs = [...host.querySelectorAll("[data-tab]")].filter((b) => !b.hidden), k = tabs.indexOf(document.activeElement);

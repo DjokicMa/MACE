@@ -168,9 +168,10 @@ COMP = """const s = args[0], c = G.components(s, args[1]);
   return {comp: Array.from(c.comp), dims: c.dims, axes: c.axes};"""
 
 
-# TiPbO3 (sg 87) at the drawn bond tolerance, without metal-metal bonds: Ti-O chains along c
-# (1D), as ase's rank determination also finds; AgTe: whatever the oracle says
-@pytest.mark.parametrize("name,want", [("tipbo3.cif", {1}), ("molcrystal.cif", {0}), ("molecule.cif", {0}),
+# TiPbO3 (sg 87) at the drawn bond tolerance, without metal-metal bonds: since 1.1.6 Pb bonds to O
+# out to the sum of the Shannon ionic radii (heavy-element bonds), so the Ti-O chains along c are
+# joined into one 3D net, as ase's rank determination also finds; AgTe: whatever the oracle says
+@pytest.mark.parametrize("name,want", [("tipbo3.cif", {3}), ("molcrystal.cif", {0}), ("molecule.cif", {0}),
                                        ("agte.cif", None)])
 def test_components_dimension_matches_ase(page, name, want):
     s = payload(page, f"real/{name}")

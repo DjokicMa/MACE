@@ -206,7 +206,8 @@ def test_axe_on_the_spin_orbit_section(fresh, theme):
     and PBE0, the CLI's "SOC deck:" lines), off with the CLI's reason (OPT), and STUTSC grayed
     out with its reason (Hf)."""
     from test_setup_e2e import READY
-    from test_setup_soc_api import HFO_CIF, PBTE_CIF, SOC_READY
+    from test_setup_soc_api import HFO_CIF, PBTE_CIF
+    from test_setup_soc_e2e import SOC_READY         # the external basis picked in the one Basis set row
     drv, root = fresh[0], fresh[2]
     d = root / "soc"
     if not d.is_dir():

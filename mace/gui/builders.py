@@ -10,6 +10,7 @@ editor applies the matching in-place operation (editor.py).
 """
 from __future__ import annotations
 
+import itertools
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -119,16 +120,66 @@ def check_periodic(m, pbc) -> None:
                              f"(row and column {i + 1}: 1 on the diagonal, 0 elsewhere)")
 
 
-def supercell(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, True), matrix=None, **_):
+def nonperiodic_repeats(m, pbc, vacuum=None):
+    """(M, counts, spacing vectors) of a supercell of a slab, polymer or molecule (1.1.6):
+    along a non-periodic direction the structure repeats only when M asks for more than
+    one there (diagonal, nothing beside it) and ``vacuum`` gives that direction's
+    spacing vector (Å, the GUI's active vacuum mode); M comes back with 1 there."""
+    m = np.array(m, dtype=np.int64)
+    pbc = [bool(p) for p in pbc]
+    reps, vecs = [1, 1, 1], [None, None, None]
+    if vacuum is None or all(pbc):
+        return m, reps, vecs
+    if not isinstance(vacuum, (list, tuple)) or len(vacuum) != 3:
+        raise ValueError("vacuum: one spacing vector (or null) per lattice direction")
+    for i in range(3):
+        if pbc[i] or vacuum[i] is None:
+            continue
+        try:
+            v = np.asarray(vacuum[i], float).reshape(3)
+        except (TypeError, ValueError):
+            raise ValueError(f"vacuum along {'abc'[i]}: a vector of three numbers (Å)")
+        if not np.all(np.isfinite(v)) or not 0.1 <= float(np.linalg.norm(v)) <= 1000.0:
+            raise ValueError(f"vacuum along {'abc'[i]}: a spacing of 0.1 to 1000 Å")
+        if m[i, i] > 1 and not any(m[i, j] or m[j, i] for j in range(3) if j != i):
+            reps[i], vecs[i] = int(m[i, i]), v
+            m[i, i] = 1
+    return m, reps, vecs
+
+
+def check_supercell(m, pbc, vacuum=None):
+    """check_periodic, after the non-periodic repeats a vacuum spacing allows."""
+    mm, reps, _ = nonperiodic_repeats(m, pbc, vacuum)
+    if all(pbc):
+        return
+    if not any(pbc) and any(r > 1 for r in reps) and np.array_equal(mm, np.eye(3, dtype=np.int64)):
+        return                                  # a molecule repeated at the vacuum spacing
+    check_periodic(mm, pbc)
+
+
+def supercell(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, True), matrix=None, vacuum=None, **_):
     """The supercell with new vectors M @ cell: every atom at every lattice
     point, image by image (atoms inside each image in their old order), new
     fractional coordinates wrapped into [0, 1) along the periodic directions
-    (a slab or polymer repeats along those only; check_periodic)."""
+    (a slab or polymer repeats along those only; check_periodic). With
+    ``vacuum`` (1.1.6) a multiple along a non-periodic direction repeats the
+    whole structure there at that spacing vector (nonperiodic_repeats)."""
     m = check_matrix(matrix)
     if not all(pbc):
-        check_periodic(m, pbc)
+        check_supercell(m, pbc, vacuum)
+    m, reps, vecs = nonperiodic_repeats(m, pbc, vacuum)
     cell = np.asarray(cell, float).reshape(3, 3)
     frac = np.asarray(frac, float).reshape(-1, 3)
+    for k in range(3):
+        if vecs[k] is None:
+            continue
+        # the spacing must clear the structure along the axis's normal (a reversed or short one stacks copies on it)
+        nu = np.cross(cell[(k + 1) % 3], cell[(k + 2) % 3])
+        nu = nu / np.linalg.norm(nu) * (1.0 if float(nu @ cell[k]) >= 0 else -1.0)
+        h = frac @ cell @ nu
+        if float(vecs[k] @ nu) <= float(np.ptp(h)) + 1e-6:
+            raise ValueError(f"vacuum along {'abc'[k]}: the spacing ({float(vecs[k] @ nu):.2f} Å across) does not clear "
+                             f"the structure ({float(np.ptp(h)):.2f} Å thick); the copies would overlap")
     numbers = np.asarray(numbers, dtype=np.int64)
     pts = lattice_points(m, ctx)
     ctx.progress(0.6, "building coordinates")
@@ -146,8 +197,25 @@ def supercell(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, Tr
     w -= np.floor(w + 1e-12)
     w[np.abs(w - 1.0) < 1e-12] = 0.0
     new[:, per] = w
-    out = result(m @ cell, new, np.tile(numbers, n_img), pbc, summary=f"{n_img * n_at} atoms ({n_img} × {n_at})")
-    out["info"] = {"det": n_img, "matrix": m.tolist()}
+    new_cell, nums = m @ cell, np.tile(numbers, n_img)
+    n_rep = int(np.prod(reps))
+    if n_rep > 1:
+        cart = new @ new_cell
+        offs = [sum(r[k] * vecs[k] for k in range(3) if vecs[k] is not None) if any(r) else np.zeros(3)
+                for r in itertools.product(*(range(c) for c in reps))]
+        cart = np.concatenate([cart + o for o in offs])
+        nums = np.tile(nums, n_rep)
+        new_cell = new_cell.copy()
+        for k in range(3):
+            if vecs[k] is not None:
+                new_cell[k] = new_cell[k] + (reps[k] - 1) * vecs[k]
+        new = np.linalg.solve(new_cell.T, cart.T).T
+    full = m.copy()
+    for k in range(3):
+        full[k, k] *= reps[k]
+    out = result(new_cell, new, nums, pbc, summary=f"{n_img * n_at * n_rep} atoms ({n_img * n_rep} × {n_at})")
+    out["info"] = {"det": n_img * n_rep, "matrix": full.tolist(), "repeats": reps,
+                   "spacing": [None if v is None else np.asarray(v, float).tolist() for v in vecs]}
     ctx.progress(0.9, "packing")
     return out
 
@@ -702,23 +770,28 @@ def symmetrize(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, T
 # ---------------------------------------------------------------- Clean geometry in the pool (T8)
 def clean_job(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, True), keep_symmetry=True,
               relax_cell=False, symprec=1e-3, time_limit=10.0, max_steps=2000, charge=0, uhf=0, method="springs",
-              symmetrize_tol=None, fmax=None, threads=1, mlip_lease=None, **_):
+              symmetrize_tol=None, fmax=None, threads=1, mlip_lease=None, bonds=None, bonds_held="shown", **_):
     """Clean geometry in a worker, through ``mace.preopt.core.preoptimize``
     (the CLI's ``mace preopt`` runs the same pipeline). For the springs the
     one hook (once per FIRE step) is, as before, the cancel check and the
     progress (steps or elapsed time, whichever is further along); a GFN-FF or
     ML run polls the pure cancel check and reports progress separately. The
     document's charge (and spin) travel with the job and are recorded in the
-    report: the spring model ignores them, the other tiers need them."""
+    report: the spring model ignores them, the other tiers need them. ``bonds``: the
+    document's bond settings (structures.bond_rule), so the springs hold the bonds its
+    viewer draws; ``bonds_held`` (Clean › Bonds held): that rule, the lenient one or none."""
     from ase import Atoms
     from mace.preopt import core
-    atoms = Atoms(numbers=[int(z) for z in numbers], cell=np.asarray(cell, float), scaled_positions=np.asarray(frac, float), pbc=True)
+    from . import structures
+    atoms = Atoms(numbers=[int(z) for z in numbers], cell=np.asarray(cell, float), scaled_positions=np.asarray(frac, float),
+                  pbc=[bool(p) for p in pbc])          # a slab, polymer or molecule keeps its periodicity (1.1.6)
     springs = method == "springs"
     r = core.preoptimize(atoms, method, charge=int(charge), uhf=int(uhf), keep_symmetry=bool(keep_symmetry),
                          symprec=max(float(symprec), 1e-5), symmetrize_tol=symmetrize_tol, relax_cell=bool(relax_cell),
                          fmax=fmax, steps=int(max_steps) if (springs or max_steps) else None,
                          time_limit=float(time_limit), threads=int(threads), canceled=lambda: ctx.canceled,
-                         progress=lambda f, m: ctx.progress(f, m), mlip_lease=mlip_lease, route="gui")
+                         progress=lambda f, m: ctx.progress(f, m), mlip_lease=mlip_lease, route="gui",
+                         bond_rule=structures.bond_rule(bonds), bonds_held=bonds_held)
     ctx.check()
     a = r.atoms
     out = result(a.cell.array, a.get_scaled_positions(wrap=False), a.numbers, pbc, summary="clean")

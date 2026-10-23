@@ -15,7 +15,6 @@ import contextlib
 import io
 import re
 import sys
-from itertools import product
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -27,8 +26,8 @@ for _sub in ("Crystal_d12", "Crystal_d3"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# Two atoms are bonded (drawn, tabulated, cleaned) when closer than
-# BOND_SCALE x the sum of their covalent radii, metal-metal pairs excepted.
+# The bond table (Compare, the run's bonds) keeps BOND_SCALE x the sum of the bond radii; the drawn
+# bonds, Clean and mace analyze use the viewer's rule (bond_pairs: BOND_TOLERANCE, Calculate Bonds…).
 BOND_SCALE = 1.2
 
 # CRYSTAL's dummy length for a non-periodic direction
@@ -153,7 +152,7 @@ def _payload(cell, frac_or_none, cart, numbers, pbc, source, extra=None, symmetr
         "dimensionality": _DIM_NAMES[int(sum(pbc))],
         "numbers": numbers,
         "symbols": [sym[n] for n in numbers],
-        "radii": [float(r) for r in _covalent(numbers)],
+        "radii": [float(r) for r in _bond_radii(numbers)],
         "metal": [bool(m) for m in _is_metal(numbers)],
         "cart": cart.tolist(),
         "frac": frac.tolist(),
@@ -354,12 +353,25 @@ def d12_atoms(path: Path):
     parsed = CrystalInputParser(str(path)).parse()
     dim = parsed.get("dimensionality", "CRYSTAL")
     if dim != "CRYSTAL":
+        low = _low_dim_deck_atoms(parsed, dim)
+        if low is not None:                 # a P1 slab, polymer or molecule: its atoms are all listed (1.1.6)
+            return low, 1
+        # the words fit every reader of a deck (the GUI, mace preopt, mace calc): each reads the .out
         out = Path(path).with_suffix(".out")
+        group = _LOW_GROUP_WORD.get(dim, "group")
+        number = parsed.get(_LOW_GROUP_KEY.get(dim, "")) or parsed.get("spacegroup")
+        what = (f"{Path(path).name} is a {dim} deck in {group} {number}" if number not in (None, "")
+                else f"{Path(path).name} is a {dim} deck in a {group} other than 1")
+        why = (f"MACE expands SLAB, POLYMER and MOLECULE decks only in group 1 (every atom listed); "
+               f"the others need CRYSTAL's {group} tables")
         if out.is_file():
-            raise OpenInstead(f"{Path(path).name} is a {dim} deck, which MACE GUI does not draw from the deck; "
-                              f"{out.name}, the output of its run, shows the structure", out)
-        raise ValueError("MACE GUI reads 3D (CRYSTAL) decks; open the .out of a "
-                         "SLAB/POLYMER/MOLECULE run instead")
+            raise OpenInstead(f"{what}: {why}. {out.name}, the output of its run, has the structure: "
+                              "use that file instead", out)
+        packed = out.with_name(out.name + ".xz")
+        if packed.is_file():
+            raise ValueError(f"{what}: {why}. Its run's output is compressed: unpack it (xz -dk {packed.name}) "
+                             f"and use {out.name} instead")
+        raise ValueError(f"{what}: {why}. Use the .out of its run instead (CRYSTAL prints every atom there)")
     if "cell_parameters" not in parsed or "atoms" not in parsed:
         why = parsed.get("geometry_unparsed") or "no CRYSTAL geometry block after the title"
         raise ValueError(f"cannot read the geometry of {Path(path).name}: {why}")
@@ -399,6 +411,36 @@ def d12_atoms(path: Path):
     return atoms, sg
 
 
+_LOW_GROUP_WORD = {"SLAB": "layer group", "POLYMER": "rod group", "MOLECULE": "point group"}
+_LOW_GROUP_KEY = {"SLAB": "layer_group", "POLYMER": "rod_group", "MOLECULE": "point_group"}
+
+
+def _low_dim_deck_atoms(parsed: Dict[str, Any], dim: str):
+    """A SLAB / POLYMER / MOLECULE deck in group 1 (every atom listed: periodic directions
+    fractional, the others Cartesian Å) as ase Atoms with its pbc; None for another group."""
+    from ase import Atoms
+    group = parsed.get(_LOW_GROUP_KEY.get(dim, ""))
+    if group is None and dim != "MOLECULE":
+        group = parsed.get("spacegroup")
+    try:
+        group = int(group)
+    except (TypeError, ValueError):
+        return None
+    atoms = parsed.get("atoms") or []
+    if group != 1 or not atoms:
+        return None
+    n = {"SLAB": 2, "POLYMER": 1, "MOLECULE": 0}[dim]
+    cp = parsed.get("cell_parameters") or {}
+    params = {"a": cp.get("a") or 1.0, "b": cp.get("b") or 1.0, "c": 1.0, "alpha": 90.0, "beta": 90.0,
+              "gamma": cp.get("gamma") or 90.0}
+    numbers = [int(a["atomic_number"]) for a in atoms]
+    pos = [[float(a["x"]), float(a["y"]), float(a["z"])] for a in atoms]
+    s = _block_structure({"params": params, "numbers": numbers, "positions": pos}, n)
+    a = Atoms(numbers=s["numbers"], positions=s["cart"], cell=s["cell"], pbc=s["pbc"])
+    a.info["mace_origin"] = [float(x) for x in s["origin"]]
+    return a
+
+
 def read_d12(path: Path) -> Dict[str, Any]:
     """A 3D deck: asymmetric unit + space group expanded with ase (d12_atoms).
 
@@ -415,8 +457,12 @@ def read_d12(path: Path) -> Dict[str, Any]:
     edits = deckscan.scan(Path(path).read_text(errors="replace"))["geometry_edits"]
     if edits:
         source["geometry_edits"] = edits
-    return _payload(atoms.cell.array, atoms.get_scaled_positions(wrap=False),
-                    atoms.positions, atoms.numbers, (True, True, True), source)
+    pbc = tuple(bool(x) for x in atoms.pbc)
+    out = _payload(atoms.cell.array, atoms.get_scaled_positions(wrap=False),
+                   atoms.positions, atoms.numbers, pbc, source)
+    if not all(pbc):
+        out.update(nonperiodic_payload(atoms))
+    return out
 
 
 def companion_stamp(path: Path) -> Tuple:
@@ -575,8 +621,12 @@ def _block_structure(block: Dict[str, Any], dim: int) -> Optional[Dict[str, Any]
     # padding only when asked, so the vacuum direction never dominates.
     p = dict(params)
     span = np.ptp(pos[:, dim:], axis=0) if dim < 3 else []
+    given = {}
     for i, key in enumerate(("a", "b", "c")):
         if i >= dim:
+            # the file's own length along it (CRYSTAL prints its formal 500 Å), kept as its vacuum vector
+            if params.get(key) and float(params[key]) > (span[i - dim] if len(span) else 0.0):
+                given[i] = float(params[key])
             p[key] = float(max(span[i - dim], 0.5)) if len(span) else 0.5
     if dim == 0:
         p.update(alpha=90.0, beta=90.0, gamma=90.0)
@@ -592,8 +642,9 @@ def _block_structure(block: Dict[str, Any], dim: int) -> Optional[Dict[str, Any]
     for i in range(dim, 3):
         origin += cell[i] / np.linalg.norm(cell[i]) * float(
             (cart @ (cell[i] / np.linalg.norm(cell[i]))).min())
+    vv = [cell[i] / np.linalg.norm(cell[i]) * given[i] if i in given else None for i in range(3)]
     return {"cell": cell, "frac": None, "cart": cart, "numbers": numbers, "pbc": pbc,
-            "origin": origin}
+            "origin": origin, "vacuum_vectors": vv}
 
 
 def read_out_frames(path: Path) -> Dict[str, Any]:
@@ -656,7 +707,8 @@ def frame_payload(frame: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, An
     s = frame["structure"]
     return _payload(s["cell"], s["frac"], s["cart"], s["numbers"], s["pbc"], source,
                     {"energy_au": frame["energy_au"], "frame_label": frame["label"],
-                     "origin": np.asarray(s.get("origin", np.zeros(3))).tolist()})
+                     "origin": np.asarray(s.get("origin", np.zeros(3))).tolist(),
+                     **_vacuum_vectors_of(s)})
 
 
 def read_out(path: Path, frame: int = -1) -> Dict[str, Any]:
@@ -721,9 +773,37 @@ ASE_ONLY = {"mol": "mol", "pdb": "proteindatabank", "gen": "gen"}
 # before / after comparison (VESTA-style)
 # --------------------------------------------------------------------------
 
+# Pyykkö & Atsumi's single-bond radii (Chem. Eur. J. 15, 186, 2009) from Bk (97) to Og (118),
+# where ase.data.covalent_radii (Cordero et al. 2008) has its 0.2 Å placeholder
+_PYYKKO_HEAVY = (1.68, 1.68, 1.65, 1.67, 1.73, 1.76, 1.61, 1.57, 1.49, 1.43, 1.41, 1.34, 1.29, 1.28, 1.21,
+                 1.22, 1.36, 1.43, 1.62, 1.75, 1.65, 1.57)
+# The bond radius of the heavy cations whose ionic bonds are much longer than their covalent
+# radius (Ag-Cl 2.89 Å in AgCl, Pb-O 2.8 Å in PbTiO3: 1.17-1.35 x the covalent sum): Shannon's
+# six-coordinate ionic radius + 0.785 Å, the mean (Shannon - Cordero) of the common anions, so a
+# cation-anion pair reaches the ionic sum. The same values as geom/core.js BOND_EXTRA (whose
+# third decimal tells them from the covalent radii there); metal-metal pairs are never bonds here.
+BOND_EXTRA = {46: 1.645, 47: 1.935, 48: 1.735, 49: 1.585, 78: 1.586, 79: 1.635, 80: 1.805, 81: 2.285,
+              82: 1.975, 83: 1.815}
+
+
 def _covalent(numbers):
+    """Covalent radii (Å) by atomic number (CRYSTAL's 2xx ECP numbers too), complete to Og."""
     from ase.data import covalent_radii
-    return np.array([covalent_radii[n] for n in numbers])
+    out = []
+    for n in numbers:
+        z = int(n) % 100 or int(n) if int(n) > 118 else int(n)
+        out.append(_PYYKKO_HEAVY[z - 97] if 97 <= z <= 118 else float(covalent_radii[z]) if 0 <= z < len(covalent_radii) else 0.2)
+    return np.array(out, float)
+
+
+def _bond_radii(numbers):
+    """The radii bonds are drawn and tabulated with: covalent, or BOND_EXTRA for a heavy cation."""
+    rad = _covalent(numbers)
+    for k, n in enumerate(numbers):
+        z = int(n) % 100 or int(n) if int(n) > 118 else int(n)
+        if z in BOND_EXTRA:
+            rad[k] = BOND_EXTRA[z]
+    return rad
 
 
 # H, He, B, C, N, O, F, Ne, Si, P, S, Cl, Ar, Ge, As, Se, Br, Kr, Sb, Te, I,
@@ -739,25 +819,387 @@ def _is_metal(numbers):
     return np.array([int(n) not in _NONMETALS for n in numbers], bool)
 
 
+# --------------------------------------------------------------------------
+# slabs, polymers and molecules (1.1.6): what the editor keeps beside the atoms
+# --------------------------------------------------------------------------
+SAVE_VACUUM = 15.0     # Å of vacuum a CIF or POSCAR of a slab, polymer or molecule gets (the slab builder's default)
+
+
+def _vacuum_vectors_of(s: Dict[str, Any]) -> Dict[str, Any]:
+    vv = s.get("vacuum_vectors")
+    if not vv or not any(v is not None for v in vv):
+        return {}
+    return {"vacuum_vectors": [None if v is None else np.asarray(v, float).tolist() for v in vv]}
+
+
+def nonperiodic_info(p: Dict[str, Any]) -> Dict[str, Any]:
+    """What an edit session of a non-3D payload keeps in ``atoms.info``: the drawing
+    box's origin and the file's own vacuum vectors."""
+    out = {"mace_origin": [float(x) for x in (p.get("origin") or [0.0, 0.0, 0.0])]}
+    vv = p.get("vacuum_vectors")
+    if vv and any(v is not None for v in vv):
+        out["mace_vacuum_vectors"] = [None if v is None else [float(x) for x in v] for v in vv]
+    return out
+
+
+def nonperiodic_payload(atoms) -> Dict[str, Any]:
+    """The payload keys of a non-3D session's structure (the inverse of nonperiodic_info)."""
+    info = atoms.info or {}
+    out = {"origin": [float(x) for x in info.get("mace_origin", [0.0, 0.0, 0.0])]}
+    if info.get("mace_vacuum_vectors"):
+        out["vacuum_vectors"] = info["mace_vacuum_vectors"]
+    return out
+
+
+def repeated_info(info, repeats, spacing) -> Dict[str, Any]:
+    """The ``mace_`` keys of a slab, polymer or molecule repeated along its non-periodic axes
+    (builders.supercell's info: repeats, spacing): along a repeated axis the vacuum vector becomes the
+    new block's period (repeats x the spacing used), so a further repeat continues the same lattice
+    instead of landing on the copies already made."""
+    out = {k: v for k, v in (info or {}).items() if str(k).startswith("mace_")}
+    if not any(int(r) > 1 and spacing[k] is not None for k, r in enumerate(repeats or [])):
+        return out
+    vv = list(out.get("mace_vacuum_vectors") or [None, None, None])
+    for k in range(3):
+        if int(repeats[k]) > 1 and spacing[k] is not None:
+            vv[k] = [float(x) * int(repeats[k]) for x in spacing[k]]
+    out["mace_vacuum_vectors"] = vv
+    return out
+
+
+def vacuum_cell(atoms, vacuum: float = SAVE_VACUUM):
+    """A copy of a slab, polymer or molecule for an extended XYZ (which keeps the pbc): each
+    non-periodic cell vector is the structure's vacuum vector (the file's own, a CRYSTAL output's 500 Å,
+    when it holds the atoms), else spans the atoms plus ``vacuum`` Å as boxed() does; the positions
+    stay. read_any reads it back as the same slab with that vacuum. The ``mace_`` keys are dropped."""
+    a = atoms.copy()
+    a.info = {k: v for k, v in (atoms.info or {}).items() if not str(k).startswith("mace_")}
+    pbc = [bool(x) for x in atoms.pbc]
+    if all(pbc):
+        return a
+    box = np.array(atoms.cell.array, float)
+    cell = box.copy()
+    file_vectors = (atoms.info or {}).get("mace_vacuum_vectors") or [None, None, None]
+    cart = np.asarray(atoms.positions, float)
+    for k in range(3):
+        if pbc[k]:
+            continue
+        v = vacuum_vector(box, cart, k, "cell", file_vectors=file_vectors) if file_vectors[k] is not None else None
+        held = v is not None and np.allclose(v, file_vectors[k])
+        cell[k] = v if held else vacuum_vector(box, cart, k, "gap", vacuum)
+    a.set_cell(cell, scale_atoms=False)
+    return a
+
+
+def _low_dim_extxyz(cell, cart, numbers, pbc, source) -> Dict[str, Any]:
+    """An extended XYZ slab, polymer or molecule (pbc not all T) drawn as its CRYSTAL output is: each
+    non-periodic cell vector keeps its direction and spans the atoms (from the lowest one, the drawing
+    box's origin), the file's own vector kept as the vacuum vector when it holds the atoms."""
+    cell = np.array(cell, float)
+    cart = np.asarray(cart, float)
+    box, vv = cell.copy(), [None, None, None]
+    origin = np.zeros(3)
+    rec = np.linalg.inv(cell).T
+    for k in range(3):
+        if pbc[k]:
+            continue
+        u = cell[k] / np.linalg.norm(cell[k])
+        nu = rec[k] / np.linalg.norm(rec[k])
+        cos = float(u @ nu) or 1.0
+        h = cart @ nu if len(cart) else np.zeros(1)
+        height = float(h.max() - h.min())
+        if float(cell[k] @ nu) > height + 1e-6:
+            vv[k] = cell[k].tolist()
+        box[k] = u * max(height, 0.5) / cos
+        origin += u * float((cart @ u).min() if len(cart) else 0.0)
+    out = _payload(box, None, cart, numbers, pbc, source)
+    out["origin"] = origin.tolist()
+    if any(v is not None for v in vv):
+        out["vacuum_vectors"] = vv
+    return out
+
+
+def _open_directions(cell: np.ndarray, pbc) -> np.ndarray:
+    """``cell`` with each zero vector along a non-periodic axis replaced by a unit
+    vector normal to the other two (right-handed), or to the one that is there,
+    or the Cartesian axis when there is none: a zero vector cannot be stretched
+    into a vacuum box."""
+    cell = np.array(cell, float)
+    for k in range(3):
+        if pbc[k] or np.linalg.norm(cell[k]) > 1e-6:
+            continue
+        d = np.cross(cell[(k + 1) % 3], cell[(k + 2) % 3])
+        if np.linalg.norm(d) < 1e-6:
+            there = [v / np.linalg.norm(v) for v in cell if np.linalg.norm(v) > 1e-6]
+            if there:
+                v = there[0]
+                e = np.eye(3)[int(np.argmin(np.abs(v)))]
+                d = e - (e @ v) * v
+            else:
+                d = np.eye(3)[k]
+        cell[k] = d / np.linalg.norm(d)
+    return cell
+
+
+def boxed(atoms, vacuum: float = SAVE_VACUUM):
+    """A 3D-periodic copy of a slab, polymer or molecule for a format that has no
+    pbc (CIF, POSCAR): each non-periodic cell vector keeps its direction and spans
+    the atoms plus ``vacuum`` Å (measured perpendicular to the other two vectors),
+    the atoms centered in it. A non-periodic vector that is missing (a plain XYZ
+    has no cell at all) gets the direction normal to the other two. A periodic
+    copy comes back unchanged."""
+    a = atoms.copy()
+    a.info = {k: v for k, v in (atoms.info or {}).items() if not str(k).startswith("mace_")}
+    pbc = [bool(x) for x in atoms.pbc]
+    if all(pbc):
+        return a
+    cell = _open_directions(np.array(atoms.cell.array, float), pbc)
+    pos = np.array(atoms.positions, float)
+    for k in range(3):
+        if pbc[k]:
+            continue
+        u = cell[k] / max(np.linalg.norm(cell[k]), 1e-12)
+        j, m = [x for x in range(3) if x != k]
+        nrm = np.cross(cell[j], cell[m])
+        nrm = nrm / np.linalg.norm(nrm) if np.linalg.norm(nrm) > 1e-9 else u
+        if float(u @ nrm) < 0:
+            nrm = -nrm
+        cos = float(u @ nrm) or 1.0
+        h = pos @ nrm
+        height = float(h.max() - h.min()) if len(h) else 0.0
+        cell[k] = u * (height + vacuum) / cos
+        # the atoms' lowest point at vacuum/2 along the normal (from the cell origin)
+        pos -= u * ((float(h.min()) if len(h) else 0.0) - vacuum / 2) / cos
+    a.set_cell(cell, scale_atoms=False)
+    a.positions = pos
+    a.pbc = True
+    return a
+
+
+# Pauling electronegativities by atomic number (0: none), as geom/core.js PAULING
+PAULING = (0.0,
+           2.2, 0, 0.98, 1.57, 2.04, 2.55, 3.04, 3.44, 3.98, 0, 0.93, 1.31, 1.61, 1.9, 2.19, 2.58, 3.16, 0,
+           0.82, 1, 1.36, 1.54, 1.63, 1.66, 1.55, 1.83, 1.88, 1.91, 1.9, 1.65, 1.81, 2.01, 2.18, 2.55, 2.96, 3,
+           0.82, 0.95, 1.22, 1.33, 1.6, 2.16, 1.9, 2.2, 2.28, 2.2, 1.93, 1.69, 1.78, 1.96, 2.05, 2.1, 2.66, 2.6,
+           0.79, 0.89, 1.1, 1.12, 1.13, 1.14, 1.13, 1.17, 1.2, 1.2, 1.1, 1.22, 1.23, 1.24, 1.25, 1.1, 1.27,
+           1.3, 1.5, 2.36, 1.9, 2.2, 2.2, 2.28, 2.54, 2, 1.62, 2.33, 2.02, 2, 2.2, 2.2,
+           0.7, 0.9, 1.1, 1.3, 1.5, 1.38, 1.36, 1.28, 1.3, 1.3)
+
+
+# The Vacuum modes of a slab, polymer or molecule (geom/core.js vacuumAxis is the same rule): the
+# spacing vector a repeat along a non-periodic direction uses. bbox: the atoms' extent + 1 Å each
+# side; open: none (nothing repeats); cell: the file's own vector there; crystal: 500 Å; gap: the
+# atoms' extent + gap Å.
+VACUUM_MODES = ("bbox", "open", "cell", "crystal", "gap")
+BBOX_PAD, CRYSTAL_VACUUM = 1.0, 500.0
+
+
+def vacuum_vector(cell, cart, k: int, mode: str = "bbox", gap: float = 10.0, file_vectors=None):
+    """The spacing vector (Å, along cell vector k) of non-periodic axis k, None in open mode."""
+    cell = np.asarray(cell, float)
+    if abs(np.linalg.det(cell)) < 1e-12:
+        cell = np.eye(3)
+    rec = np.linalg.inv(cell).T
+    u = cell[k] / np.linalg.norm(cell[k])
+    nu = rec[k] / np.linalg.norm(rec[k])
+    cos = float(u @ nu) or 1.0
+    h = np.asarray(cart, float).reshape(-1, 3) @ nu
+    height = float(h.max() - h.min()) if len(h) else 0.0
+    if mode == "open":
+        return None
+    if mode == "crystal":
+        return u * CRYSTAL_VACUUM
+    if mode == "gap":
+        return u * (height + float(gap)) / cos
+    if mode == "cell":
+        f = file_vectors[k] if file_vectors else None
+        # the file's vector when it holds the atoms (its height along the normal beyond their extent: a
+        # stale one, shorter than a repeated structure, would put the copies on top of each other)
+        if f is not None and np.linalg.norm(f) > 1e-6 and float(np.asarray(f, float) @ nu) > height + 1e-6:
+            return np.asarray(f, float)
+        ch = float(np.linalg.norm(cell[k])) * cos
+        return cell[k].copy() if height + 1e-6 < ch < 499 else u * (height + 10.0) / cos
+    return u * (height + 2 * BBOX_PAD) / cos
+
+
+def bonded_shells(atoms, scale: float = 1.15, shifts: bool = False) -> List[List[Tuple]]:
+    """Each atom's bonded neighbors [(j, d)] as geom/core.js bondedShells finds them: bond radii,
+    metal-metal pairs at their covalent radii, and an atom with any metal/non-metal bond keeps
+    only those (Mg in MgO its six O, Cu in Cu its twelve Cu); the atoms' own pbc. shifts:
+    [(j, d, (s1, s2, s3))], the cell offset of each neighbor's image."""
+    nums = [int(n) for n in atoms.numbers]
+    metal = _is_metal(nums)
+    pos, cell = atoms.positions, atoms.cell.array
+    adj: List[List[Tuple]] = [[] for _ in nums]
+    # the bond rule with every metal-metal pair (kept below only for an atom with no other bond)
+    for i, j, t in bond_pairs(cell, pos, nums, atoms.pbc, tolerance=scale, metal_metal=True):
+        d = float(np.linalg.norm(pos[j] + np.asarray(t) @ cell - pos[i]))
+        adj[i].append((j, d, t))
+        adj[j].append((i, d, tuple(-x for x in t)))
+    for i in range(len(nums)):
+        if any(bool(metal[i]) != bool(metal[x[0]]) for x in adj[i]):
+            adj[i] = [x for x in adj[i] if not (metal[i] and metal[x[0]])]
+        adj[i].sort(key=lambda x: x[1])
+    return adj if shifts else [[(j, d) for j, d, _ in nb] for nb in adj]
+
+
+# the nonmetals a polyhedron's vertices can be (geom/core.js ANION_Z): H, C, N, O, F, P, S, Cl, As, Se, Br, Te, I
+ANION_Z = frozenset((1, 6, 7, 8, 9, 15, 16, 17, 33, 34, 35, 52, 53))
+
+
+def _en(z: int) -> float:
+    return PAULING[z] if 0 <= z < len(PAULING) else 0.0
+
+
+def polyhedron_ligands(nums, adj, i: int) -> list:
+    """A candidate center's ligands (geom/core.js ligandsOf): its bonded neighbors more
+    electronegative than itself that are anions (ANION_Z), with no neighbor more electronegative
+    than they are; any other neighbor is a cation-cation contact (Si 2.7 Å from an olivine's Mg)."""
+    e = _en(nums[i])
+    if e <= 0:
+        return []
+    return [x for x in adj[i] if _en(nums[x[0]]) > e and nums[x[0]] in ANION_Z
+            and all(_en(nums[y[0]]) <= _en(nums[x[0]]) for y in adj[x[0]])]
+
+
+def polyhedron_candidates(nums, adj) -> List[int]:
+    """The atoms with 4 to 12 ligands (geom/core.js polyhedronCandidates)."""
+    return [i for i in range(len(nums)) if 4 <= len(polyhedron_ligands(nums, adj, i)) <= 12]
+
+
+def polyhedron_spacers(nums, adj, cand=None) -> set:
+    """The candidate elements left out by default (geom/core.js polyhedronSpacers): an atom whose
+    ligands include three (a face) of a candidate of another element with fewer ligands, the A
+    site of a perovskite. ``adj`` with shifts."""
+    cand = set(polyhedron_candidates(nums, adj) if cand is None else cand)
+    lig = {i: polyhedron_ligands(nums, adj, i) for i in cand}
+    around: Dict[int, list] = {}
+    for i in cand:
+        for j, _, t in lig[i]:
+            around.setdefault(j, []).append((i, tuple(-x for x in t)))
+    out = set()
+    for i in sorted(cand):
+        if nums[i] in out:
+            continue
+        shared: Dict[tuple, int] = {}
+        for j, _, t in lig[i]:
+            for c, tc in around.get(j, ()):
+                if nums[c] == nums[i] or len(lig[c]) >= len(lig[i]):
+                    continue
+                key = (c, t[0] + tc[0], t[1] + tc[1], t[2] + tc[2])
+                shared[key] = shared.get(key, 0) + 1
+        if any(m >= 3 for m in shared.values()):
+            out.add(nums[i])
+    return out
+
+
+def polyhedron_centers(atoms, scale: float = 1.15, only=None) -> List[int]:
+    """The atoms a coordination polyhedron is drawn around: the rule of geom/core.js
+    polyhedronCenters, the single definition the viewer's Polyhedral style and the analyses
+    share. Cations with 4-12 ligands (bonded neighbors more electronegative); by default
+    neither carbon nor the large cations whose polyhedra share faces with a smaller one of
+    another element (a perovskite's A site). only: the center elements (atomic numbers) to
+    draw from the candidates."""
+    nums = [int(n) for n in atoms.numbers]
+    adj = bonded_shells(atoms, scale, shifts=True)
+    cand = polyhedron_candidates(nums, adj)
+    if only is not None:
+        keep = set(only)
+        return [i for i in cand if nums[i] in keep]
+    spacers = polyhedron_spacers(nums, adj, cand)
+    return [i for i in cand if nums[i] != 6 and nums[i] not in spacers]
+
+
+# --------------------------------------------------------------------------
+# the bond rule (1.1.6): the server's twin of geom/core.js bondRule, bondedPair and periodicBonds
+# --------------------------------------------------------------------------
+BOND_TOLERANCE = 1.15     # geom/core.js BOND_TOL.default: Settings › Viewport › Bond tolerance
+BOND_MIN = 0.1            # geom/core.js BOND_MIN: the shortest bond, Å
+BOND_PAIR_MAX = 10.0      # geom/core.js PAIR_MAX: the longest pair rule, Å
+
+
+def _element_z(sym) -> int:
+    """geom/core.js zOf: "fe", "Fe" -> 26; anything else (or past Lr) -> 0."""
+    t = str(sym or "").strip().lower()
+    return next((z for z, x in enumerate(_symbols()) if 0 < z <= 103 and x.lower() == t), 0)
+
+
+def bond_rule(values: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """A document's bond rule from its settings values (the browser's keys bondTolerance, bondMin,
+    bondMetalMetal, bondPairs, as Build › Calculate Bonds… sets them) -> the keyword arguments of
+    bond_pairs. A missing or malformed value takes the default, a malformed pair rule is skipped
+    (geom/core.js bondRule and pairRules)."""
+    v = values if isinstance(values, dict) else {}
+    num = lambda x: x if isinstance(x, (int, float)) and not isinstance(x, bool) and np.isfinite(x) else None  # noqa: E731
+    t, m = num(v.get("bondTolerance")), num(v.get("bondMin"))
+    pairs = {}
+    for name, r in (v.get("bondPairs") or {}).items() if isinstance(v.get("bondPairs"), dict) else ():
+        a, _, b = str(name).partition("-")
+        za, zb = _element_z(a), _element_z(b)
+        if not za or not zb or not isinstance(r, dict):
+            continue
+        lim = lambda x: x if num(x) is not None and 0 <= x <= BOND_PAIR_MAX else None  # noqa: E731
+        e = {"never": r.get("never") is True, "min": lim(r.get("min")), "max": lim(r.get("max")) or None}
+        if e["never"] or e["min"] is not None or e["max"] is not None:
+            pairs[(min(za, zb), max(za, zb))] = e
+    return {"tolerance": t if t is not None and t > 0 else BOND_TOLERANCE,
+            # the browser's "Bonds between metals": on, or (off) a structure of metals only
+            "metal_metal": True if v.get("bondMetalMetal") is True else None,
+            "bond_min": m if m is not None and m >= 0 else BOND_MIN, "pairs": pairs}
+
+
+def bond_pairs(cell, cart, numbers, pbc, tolerance: float = BOND_TOLERANCE, metal_metal: Optional[bool] = None,
+               bond_min: float = BOND_MIN, pairs: Optional[Dict] = None,
+               max_pairs: Optional[int] = None) -> List[Tuple[int, int, Tuple[int, int, int]]]:
+    """(i, j, image) for each bond, each pair once: |r_j + image.cell - r_i| = d with
+    bond_min < d < tolerance x (R_i + R_j), as the viewer draws them (geom/core.js bondedPair).
+    R: the bond radii (_bond_radii); two metals take their covalent radii and are bonded only with
+    ``metal_metal`` (True: always; None: in a structure of metals only, an alloy; False: never).
+    ``pairs`` {(z_a, z_b): {never, min, max}} (bond_rule) replaces that for one pair of elements:
+    never bonded, or bonded from its min (else bond_min) to its max (else the formula, metal
+    pairs excepted as above). Images only along the periodic directions of ``pbc``.
+    mace analyze (topology.bonds), Clean and Compare's bond table share this one rule; the
+    parity test pins it to core.js periodicBonds (tests/test_bond_rule.py)."""
+    from ase import Atoms
+    from ase.neighborlist import neighbor_list
+    nums = [int(n) for n in numbers]
+    if not nums:
+        return []
+    z = np.array([n % 100 or n if n > 118 else n for n in nums])
+    rb, rc, metal = _bond_radii(nums), _covalent(nums), _is_metal(nums)
+    mm_on = metal.all() if metal_metal is None else bool(metal_metal)
+    pairs = pairs or {}
+    reach = max([e["max"] for e in pairs.values() if not e["never"] and e["max"]] or [0.0])
+    cutoff = max(tolerance * 2 * float(rb.max()), reach) or 1.0
+    ii, jj, dd, SS = neighbor_list("ijdS", Atoms(positions=np.asarray(cart, float), cell=np.asarray(cell, float),
+                                                 pbc=[bool(p) for p in pbc]), cutoff)
+    mm = metal[ii] & metal[jj]
+    ok = ~mm | mm_on
+    lo = np.full(len(ii), float(bond_min))
+    hi = tolerance * np.where(mm, rc[ii] + rc[jj], rb[ii] + rb[jj])
+    for (za, zb), e in pairs.items():
+        sel = ((z[ii] == za) & (z[jj] == zb)) | ((z[ii] == zb) & (z[jj] == za))
+        if e["never"]:
+            ok[sel] = False
+            continue
+        if e["max"]:
+            hi[sel], ok[sel] = e["max"], True
+        if e["min"] is not None:
+            lo[sel] = e["min"]
+    ok &= (dd > lo) & (dd < hi)
+    out = []
+    for i, j, t in zip(ii[ok], jj[ok], SS[ok]):
+        key = (int(i), int(j), tuple(int(x) for x in t))
+        # each bond once, as core.js lists it: i < j, or the atom's own image on the positive side
+        if key[0] < key[1] or (key[0] == key[1] and key[2] > (0, 0, 0)):
+            out.append(key)
+    return out[:max_pairs] if max_pairs is not None else out
+
+
 def _neighbor_pairs(cell, cart, numbers, pbc, scale=BOND_SCALE, max_pairs=4000):
-    """(i, j, image) with |r_j + image.cell - r_i| < scale * (R_i + R_j)."""
-    cell = np.asarray(cell)
-    rad = _covalent(numbers)
-    metal = _is_metal(numbers)
-    both_metal = metal[:, None] & metal[None, :]
-    rng = [(-1, 0, 1) if p else (0,) for p in pbc]
-    pairs = []
-    for img in product(*rng):
-        shift = np.asarray(img) @ cell
-        d = np.linalg.norm(cart[None, :, :] + shift - cart[:, None, :], axis=2)
-        cut = scale * (rad[:, None] + rad[None, :])
-        ii, jj = np.nonzero((d < cut) & (d > 0.1) & ~both_metal)
-        for i, j in zip(ii, jj):
-            if (i, j, img) < (j, i, tuple(-x for x in img)):
-                pairs.append((int(i), int(j), img))
-                if len(pairs) >= max_pairs:
-                    return pairs
-    return pairs
+    """(i, j, image) with |r_j + image.cell - r_i| < scale * (R_i + R_j): the bond rule (bond_pairs) at
+    the bond table's BOND_SCALE, metal-metal pairs only in a structure of metals only."""
+    return bond_pairs(cell, cart, numbers, pbc, tolerance=scale, max_pairs=max_pairs)
 
 
 def _kabsch(x0, x1):
@@ -1139,6 +1581,10 @@ def sniff(name: str, head: bytes) -> Optional[str]:
     known one, else what the first lines look like. None when neither tells."""
     base = Path(str(name)).name
     low = base.lower()
+    if low.endswith(".xyz"):
+        # an extended XYZ saved as .xyz (ase writes one): its cell and pbc are on the comment line
+        lines = head.decode("utf-8", "replace").splitlines()
+        return "extxyz" if len(lines) > 1 and 'Lattice="' in lines[1] else "xyz"
     for ext, fmt in ((".cif", "cif"), (".d12", "d12"), (".out", "out"), (".log", "out"), (".extxyz", "extxyz"),
                      (".xyz", "xyz"), (".vasp", "poscar"), (".poscar", "poscar")):
         if low.endswith(ext):
@@ -1184,7 +1630,13 @@ def read_fort34(path: Path) -> Dict[str, Any]:
         raise ValueError(f"{Path(path).name} is not a readable fort.34: {exc}") from exc
     dim, lat, cart = f["dim"], f["lattice"], np.asarray(f["cart"], float)
     source = {"kind": "fort34", "path": str(path), "symmetry_operators": f["nsym"],
-              "asymmetric_atoms": f["nirr"]}
+              "asymmetric_atoms": f["nirr"], "operator_convention": f.get("convention")}
+    if f.get("convention_ambiguous"):
+        g = f.get("groups") or {}
+        source["warning"] = ("its screw-axis operators read either way round give the two enantiomorphs "
+                             f"(space groups {g.get('row') or '?'} and {g.get('column') or '?'}) and the file "
+                             "names no group to choose: drawn with x' = R x + t (CRYSTAL23's convention); check the handedness "
+                             "against the run's .out")
     if dim == 3:
         return _payload(lat, None, cart, [n % 100 for n in f["numbers"]], (True,) * 3, source)
     pos = cart.copy()
@@ -1197,11 +1649,13 @@ def read_fort34(path: Path) -> Dict[str, Any]:
     s = _block_structure({"params": params, "numbers": f["numbers"], "positions": pos}, dim)
     out = _payload(s["cell"], s["frac"], s["cart"], s["numbers"], s["pbc"], source)
     out["origin"] = np.asarray(s.get("origin", np.zeros(3))).tolist()
+    out.update(_vacuum_vectors_of(s))
     return out
 
 
 def _read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
     import warnings
+    path = Path(path)                 # a str from a caller outside the GUI (path.suffix below)
     if fmt == "fort34":
         return read_fort34(path)
     if fmt == "cif":
@@ -1230,6 +1684,11 @@ def _read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
         atoms = ase.io.read(source, format=ase_fmt)
     numbers = [int(n) for n in atoms.numbers]
     has_cell = atoms.cell.rank == 3 and abs(atoms.cell.volume) > 1e-6
+    if has_cell and fmt == "extxyz" and not atoms.pbc.all():
+        # an extended XYZ that says pbc="T T F" (1.1.6), or "F F F" with a Lattice: a slab, polymer or
+        # molecule, its non-periodic cell vectors the file's own vacuum (before, it opened as a 3D crystal)
+        return _low_dim_extxyz(atoms.cell.array, atoms.positions, numbers, [bool(x) for x in atoms.pbc],
+                               {"kind": fmt, "path": str(path)})
     if not has_cell and box:
         atoms.center(vacuum=5.0)               # 5 Å each side: 10 Å between periodic images
         atoms.pbc = True

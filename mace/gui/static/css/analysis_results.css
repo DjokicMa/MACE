@@ -1,0 +1,92 @@
+/* The bottom panel's Analysis tab (js/lazy/analysis_results.js): the results on the left, the one picked on the right */
+.bottom-pane.analysis.active { height: 100%; }
+.anr { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--s-2); }
+.anr-bar { display: flex; align-items: center; gap: var(--s-1); flex-wrap: wrap; flex: none; }
+.anr-scope { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); border-radius: 999px; padding: 2px var(--s-3);
+  font: inherit; font-size: var(--fs-sm); cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anr-scope:hover { color: var(--text); background: var(--surface-2); }
+.anr-scope[aria-selected="true"] { color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
+.anr-scope:focus-visible, .anr-row:focus-visible, .anr-feat:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.anr-n { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.anr-hint { margin-left: auto; font-size: var(--fs-xs); }
+.anr-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(210px, 24%) 1fr; gap: var(--s-3); }
+.anr-list, .anr-detail { min-height: 0; overflow: auto; }
+.anr-list { border-right: 1px solid var(--border); padding-right: var(--s-2); }
+.anr-row { padding: var(--s-1) var(--s-2); border-radius: var(--r-sm); cursor: pointer; border: 1px solid transparent; display: flex; flex-direction: column; gap: 1px; }
+.anr-row + .anr-row { margin-top: 2px; }
+.anr-row:hover { background: var(--surface-2); }
+.anr-row[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.anr-r1 { display: flex; gap: var(--s-2); align-items: baseline; min-width: 0; font-size: var(--fs-md); }
+.anr-doc { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.anr-tag { font-size: var(--fs-xs); color: var(--text-2); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 0 var(--s-1); }
+.anr-when { margin-left: auto; color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.anr-r2 { color: var(--text-2); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anr-r3 { display: flex; flex-wrap: wrap; gap: 2px var(--s-3); font-size: var(--fs-sm); }
+.anr-k, .anr-set { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.anr-k > span, .anr-set > span { color: var(--text-2); }
+.anr-head { display: flex; align-items: center; gap: var(--s-1) var(--s-3); flex-wrap: wrap; }
+.anr-head h3 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.anr-sets, .anr-keys { display: flex; flex-wrap: wrap; gap: 2px var(--s-4); font-size: var(--fs-sm); margin-top: var(--s-1); }
+.anr-keys { font-size: var(--fs-md); margin-bottom: var(--s-2); }
+.anr-head .anr-when { margin-left: 0; }
+.anr-acts { display: flex; flex-wrap: wrap; gap: var(--s-1); align-items: center; margin-left: auto; }
+.anr-acts .tb-btn-text { height: 24px; padding: 0 var(--s-2); }
+.anr-del { color: var(--danger); }
+.anr-cli { display: block; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); overflow-wrap: anywhere; margin-top: var(--s-2); }
+.anr-note { font-size: var(--fs-xs); color: var(--text-2); margin: var(--s-2) 0 0; max-width: 80em; }
+.anr-table-wrap { overflow-x: auto; }
+.anr-detail .an-table { width: auto; min-width: 60%; }
+.anr-detail .an-table th, .anr-detail .an-table td { white-space: nowrap; padding: 2px var(--s-2); }
+/* the porosity table's last column (a center, or what the totals equal) wraps rather than scroll */
+.anr-pores tfoot td:last-child { white-space: normal; min-width: 6em; }
+.anr-feat { cursor: pointer; }
+.anr-feat:hover td { background: var(--surface-2); }
+.anr-feat[aria-selected="true"] td { background: var(--accent-soft); }
+.anr-feat[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.anr-pores tfoot th { text-align: left; font-weight: 600; color: var(--text); background: none; position: static; }
+.anr-pores tfoot td, .anr-pores tfoot th { border-top: 1px solid var(--border-strong); border-bottom: 0; }
+.anr-pores tfoot .anr-avg th, .anr-pores tfoot .anr-avg td { border-top: 0; color: var(--text-2); font-weight: 400; }
+.anr-bar-p { height: 3px; background: var(--surface-3); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.anr-bar-p > span { display: block; height: 100%; background: var(--accent); }
+.anr-batch tr.s-failed td:first-child { color: var(--danger); }
+.anr-batch tr.s-running td:first-child { color: var(--info); }
+.anr-batch .tb-btn-text { height: 22px; }
+/* the swatches of the porosity table (analysis.css has them for the panel) */
+.anr .an-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border-strong); vertical-align: -1px; }
+.anr .an-swatch.acc { background: var(--pore-acc); }
+.anr .an-swatch.nac { background: var(--pore-nac); }
+@media (max-width: 900px) { .anr-main { grid-template-columns: 1fr; grid-template-rows: minmax(80px, 35%) 1fr; } .anr-list { border-right: 0; border-bottom: 1px solid var(--border); } }
+/* Inspector › 3D Overlays (js/lazy/analysis_overlays.js) */
+.ovm { display: flex; flex-direction: column; gap: 2px; }
+.ovm-row { display: flex; align-items: center; gap: var(--s-1); border-radius: var(--r-sm); padding: 1px; border: 1px solid transparent; }
+.ovm-row[aria-current="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.ovm-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: var(--text); font: inherit; font-size: var(--fs-sm); padding: 2px var(--s-1);
+  cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ovm-name:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.ovm-eye[aria-pressed="false"] { color: var(--text-3); }
+.ovm-edit { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-1) var(--s-2) var(--s-2) var(--s-6); font-size: var(--fs-sm); }
+.ovm-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); }
+.ovm-f { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--text-2); }
+.ovm-f.ovm-own { color: var(--text); font-weight: 600; }
+.ovm-color.ovm-own input[type="color"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ovm-f input[type="color"] { width: 22px; height: 20px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: none; }
+.ovm-f input[type="range"] { width: 90px; }
+.ovm-f output { font-variant-numeric: tabular-nums; min-width: 2.4em; }
+.ovm-foot { justify-content: space-between; }
+.ovm-feats summary, .ovm-adv summary { cursor: pointer; color: var(--text-2); }
+.ovm-adv input[type="number"] { width: 6.5em; }
+.ovm-mesh { margin: 0; font-variant-numeric: tabular-nums; }
+.ovm-feats ul { list-style: none; margin: var(--s-1) 0 0; padding: 0; max-height: 160px; overflow: auto; }
+.ovm-feats li { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.ovm-feats label { display: inline-flex; align-items: center; gap: var(--s-1); font-variant-numeric: tabular-nums; }
+.ovm-feats .icon-btn[aria-pressed="true"] { color: var(--accent); }
+.ovm .an-swatch, .ovm-edit .an-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border-strong); }
+.ovm-edit .an-swatch.acc { background: var(--pore-acc); }
+.ovm-edit .an-swatch.nac { background: var(--pore-nac); }
+/* Analyze Structures… (js/lazy/analysis_batch.js) */
+.anb { display: flex; flex-direction: column; gap: var(--s-2); }
+.anb .an-row input[type="number"] { width: 6em; }
+.anb-files { border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--s-2); display: flex; flex-direction: column; gap: var(--s-1); }
+.anb-files input[type="search"] { flex: 1 1 10em; min-width: 8em; }
+.anb-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: var(--fs-sm); }
+.anb-list label { display: flex; align-items: center; gap: var(--s-2); padding: 1px 0; overflow-wrap: anywhere; }
