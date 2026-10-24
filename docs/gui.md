@@ -5178,6 +5178,18 @@ opacity. Pores start from Settings › Viewport › Pore surfaces; what you chan
 here stays with that structure's overlay (in bold), and Reset takes it back to
 the Settings. The controls under the Porosity results change the Settings.
 
+Pores, Miller planes and a net belong to the cell, so they are drawn in each
+cell of the display range (the N × M × L cells picker or a display-range
+preset), as the atoms are; a slab or polymer has no copies along its open
+axes. The surface is built once and each cell draws a copy moved by its
+lattice vector, so a 3×3×3 range costs about what one cell does. The channels
+are cut at the cell faces and join the next cell's (in every style), each
+closed pocket is drawn whole once per cell (a cage on a cell corner around
+that corner) in the same color in every cell, and a Miller plane lying on a
+cell face is drawn once. A crystal shape is one particle and is not repeated.
+Overlays are drawn in at most 64 cells; a larger range says so in the row's
+editor.
+
 Styles (1.1.6) for pores, a crystal shape and planes: **Solid** (at the
 opacity: below 1 it is translucent), **Wireframe**, **Solid + edges** (the
 triangle edges a shade darker over the surface) and **Points** (the vertices
@@ -5198,8 +5210,18 @@ the default for new results; the Inspector's 3D Overlays section (and the
 Volume view's Surface section) changes one overlay, and only that one is made
 again.
 
+The pore surfaces have their own default, Settings › Viewport › **Pore surface
+mesh quality** (Preview unless you choose another; Settings › Viewport › Mesh
+quality does not change it): they are the heaviest surfaces the view draws,
+two walls each, repeated over every cell of a supercell. **Preview** is a tier
+below Draft for pore surfaces only (a volume has no Preview). Raise one
+overlay's in the Inspector; that structure's overlay keeps your choice for its
+next result, and Export Image's Publication option makes the picture's
+surfaces fine whatever the view uses.
+
 | Preset | For | Pore surfaces (render grid, refine, smoothing, triangle cap) | Volume grid |
 |---|---|---|---|
+| Preview | pore surfaces only: many cells, slow graphics (the pores' default) | 24, ×1, 1.4, 60 k | – |
 | Draft | screening many materials | 40, ×1, 0.7, 150 k | 0.25 M points |
 | Standard | the default (the surfaces before presets) | 72, ×1, 0.7, 600 k | Settings › Volume quality |
 | High | a close look | 96, ×2, 0.8, 1.2 M | 2 M points |
@@ -5217,6 +5239,12 @@ holds the numbers; a number typed there wins over the preset (within hard
 limits: render grid 160, refine ×4, 3 M triangles; volumes 8 M points) and
 Reset takes it back. On LTA (N₂, 0.25 Å grid) Draft gives 51 k triangles,
 Standard 72 k, High 292 k in about 5 s and Publication 517 k in about 11 s.
+On the example suite's sodalite (N₂, 0.25 Å grid) a cell is small enough that
+the analysis grid, not the preset, limits Draft and Standard (both 33 k
+triangles); Preview gives 15 k and Publication 289 k. Over a 3×3×3 range the
+surfaces cost no extra build, but every copy is drawn each frame: in a browser
+rendering in software, Preview adds about 0.08 s a frame to the atoms' 0.13 s,
+Draft and Standard about 0.4 s and Publication about 2 s.
 
 Export Image can **Re-mesh the pore surfaces at Publication quality for this
 image**: the surfaces are made again densely for the picture only and the

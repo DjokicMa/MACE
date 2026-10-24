@@ -650,6 +650,9 @@ function renderPanelControls() {
     const shown = panelShown(n), [label, cmd] = PANEL_INFO[n];
     const edge = $(`.edge-tab[data-panel="${n}"]`);
     if (edge) { edge.hidden = shown || !!layout.zen; edge.setAttribute("aria-label", `Show ${label}${keyText(cmd)}`); }
+    // a document's own side panel (the orbital picker) keeps clear of a shown edge tab (volume.css)
+    const center = $("#center");
+    if (center) center.classList.toggle(`edge-${n}`, !!edge && !edge.hidden);
     const x = $(`.panel-hide[data-panel="${n}"]`);
     if (x) x.setAttribute("aria-label", `Hide ${label}${keyText(cmd)}`);
   }
@@ -4298,8 +4301,15 @@ async function revert(d = active) {
   const n = docs.findIndex((x) => x.path === path);
   if (n >= 0 && i >= 0 && n !== i) { const [x] = docs.splice(n, 1); docs.splice(Math.min(i, docs.length), 0, x); renderTabs(); }
 }
-/** The image of the structure viewer (Export Image…, Copy Image). */
+/** The image of the structure viewer (Export Image…, Copy Image); a Volume document's: its own viewer, the color
+ *  bar of a surface colored by a potential drawn in (volume.js drawBar), none of the structure's options. */
 function exportCtx() {
+  if (volumeActive()) {
+    const vv = M().state.viewers["viewer-volume"];
+    return { viewer: vv, el: document.getElementById("viewer-volume"), scene: null, bg: () => M().viewerBg(), triadEl: $("#axis-triad-vol"),
+      stem: stemOf(active), view: "volume", volume: true, overlay: (g, W, Hh, k) => volumeView.drawBar(g, W, Hh, k),
+      viewState: { projection: "orthographic" } };
+  }
   const v = M().state.viewers["viewer-main"];
   return { viewer: v, scene: E ? E.scene() : null, bg: () => M().viewerBg(), triadEl: $("#axis-triad"),
     stem: stemOf(active), view: viewName(),
@@ -4338,7 +4348,7 @@ function viewName() {
 }
 async function exportImage() {
   if (active && active.kind === "trajectory") return exportCompareSvg();
-  if (!M().state.viewers["viewer-main"]) return;
+  if (!M().state.viewers[volumeActive() ? "viewer-volume" : "viewer-main"]) return;
   const m = await lazy("export_image");
   m.open(H, exportCtx());
 }
@@ -4361,7 +4371,7 @@ async function exportAnimation() {
     traj: d.kind === "trajectory" && trajSteps() > 1 ? { steps: () => trajSteps(), step: (k) => trajStep(k, true), current: () => Number(($("#o-frame") || {}).value || 0) } : null });
 }
 async function copyImage() {
-  if (!M().state.viewers["viewer-main"]) return false;
+  if (!M().state.viewers[volumeActive() ? "viewer-volume" : "viewer-main"]) return false;
   const m = await lazy("export_image");
   return m.copy(H, exportCtx());
 }

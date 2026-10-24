@@ -86,7 +86,9 @@ function editor(o) {
   const lk = MQ.look(op, o.kind === "pores" ? "auto" : "double");
   const style = () => sel("style", "Style", MQ.STYLES, lk.style) + (o.kind === "pores" ? sel("shading", "Shading", MQ.SHADINGS, lk.shading) : "")
     + sel("sides", o.kind === "pores" ? "Walls" : "Sides", o.kind === "pores" ? MQ.PORE_SIDES : MQ.SIDES, lk.sides);
-  const quality = () => `<div class="ovm-line">${sel("quality", "Mesh quality", MQ.PRESETS.map((x) => [x, MQ.PRESET_LABEL[x]]), MQ.presetOf(op.quality))}</div>`;
+  // a pore surface's own presets (Preview too), the other overlays' the shared ones
+  const quality = () => `<div class="ovm-line">${o.kind === "pores" ? sel("quality", "Mesh quality", MQ.PORE_PRESETS.map((x) => [x, MQ.PRESET_LABEL[x]]), MQ.porePresetOf(op.quality, MQ.PORE_DEFAULT))
+    : sel("quality", "Mesh quality", MQ.PRESETS.map((x) => [x, MQ.PRESET_LABEL[x]]), MQ.presetOf(op.quality))}</div>`;
   const opacity = (v, d) => `<label class="ovm-f${ov("opacity")}">Opacity <input type="range" min="0.05" max="1" step="0.05" value="${v ?? d}" data-o="opacity" aria-label="Opacity">
     <output>${Number(v ?? d).toFixed(2)}</output></label>`;
   const color = (k, tok, label, text = false) => `<label class="ovm-f ovm-color${ov(k)}" title="${esc(label)} color${k in o.over ? " (changed here)" : ""}"><input type="color" data-o="${k}" value="${hex(op[k]) || token(tok)}" aria-label="${esc(label)} color">${text ? ` ${esc(label)}` : ""}</label>`;
@@ -113,6 +115,8 @@ function editor(o) {
   } else if (o.kind === "planes") {
     h += `<div class="ovm-line">${color("color", "--pore-surface", "Planes", true)}</div><div class="ovm-line">${style()}</div><div class="ovm-line">${opacity(op.opacity, 0.4)}</div>`;
   }
+  // drawn in each cell of the display range, up to a limit (viewport/cell_tiles.js)
+  if (o.cellsAsked > o.cells) h += `<div class="ovm-line"><span class="insp-hint">Drawn in the first ${o.cells} of the range's ${o.cellsAsked} cells</span></div>`;
   const own = Object.keys(o.over || {}).length;
   h += `<div class="ovm-line ovm-foot"><span class="insp-hint">${o.kind === "pores" ? "Starts from Settings › Viewport › Pore surfaces" : "This document's overlay"}${own ? `; ${own} changed here` : ""}</span>
     ${own ? `<button type="button" class="tb-btn-text" data-a="reset">Reset</button>` : ""}</div>`;
@@ -123,11 +127,11 @@ function meshInfo(o) {
   const esc = ui.H.esc, op = o.opts || {}, made = o.madeAt || { quality: MQ.DEFAULT };
   const tri = made.triangles, want = MQ.knobs("pores", { quality: op.quality, ...Object.fromEntries(Object.keys(MQ.PORE_LIMITS).map((k) => [k, op[k]])) });
   const grid = made.render_grid ? `${made.render_grid.join("×")} grid, ` : "";
-  let status = `Made at ${MQ.PRESET_LABEL[MQ.presetOf(made.quality)]}${made.custom ? " (custom)" : ""}: ${grid}${tri != null ? `${MQ.fmtCount(tri)} triangles` : ""}`;
+  let status = `Made at ${MQ.PRESET_LABEL[MQ.porePresetOf(made.quality)]}${made.custom ? " (custom)" : ""}: ${grid}${tri != null ? `${MQ.fmtCount(tri)} triangles` : ""}`;
   if (o.remeshing) {
     const e = tri != null ? MQ.estimate(want, made, tri) : null;
     status = `Re-meshing at ${MQ.PRESET_LABEL[want.quality]}${e ? ` (about ${MQ.fmtCount(e.triangles)} triangles, ${(e.bytes / 1e6).toFixed(0)} MB)` : ""}…`;
-  } else if (o.failed) status += ` · ${MQ.PRESET_LABEL[MQ.presetOf(o.failed.quality)]} failed`;
+  } else if (o.failed) status += ` · ${MQ.PRESET_LABEL[MQ.porePresetOf(o.failed.quality)]} failed`;
   const own = (k) => (k in o.over ? " ovm-own" : "");
   const knob = (k) => {
     const [lo, hi] = MQ.PORE_LIMITS[k], [label, help] = MQ.KNOB_LABEL[k];

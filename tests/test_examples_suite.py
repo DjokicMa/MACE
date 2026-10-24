@@ -244,15 +244,19 @@ def test_mechanics_results_of_every_dimensionality(copy):
 
 
 def test_orbitals_of_a_spin_polarized_closed_shell_run_draw_alpha(copy):
-    """CRYSTAL23 writes zero BETA coefficients for EC (SPIN, alpha = beta): ALPHA is drawn, BETA refused."""
-    from mace.orbitals.dataset import OrbitalRun, OrbitalsError
+    """CRYSTAL23 writes zero BETA coefficients for EC (SPIN, alpha = beta): the file's BETA fails the
+    self-check, and BETA is drawn with the ALPHA orbitals (same levels, no net spin), saying so."""
+    import numpy as np
+    from mace.orbitals.dataset import OrbitalRun
     run = OrbitalRun.from_path(copy / "5-molecule-0d/EC/ORBITALS/EC_orbitals_orb.molden")
     kd = run.load(1)
-    assert kd.failed_spins == ["BETA"] and kd.status == "ok"
-    _, data, _ = run.grid(1, "ALPHA", [kd.homo("ALPHA")], max_points=100_000)
-    assert data.size and abs(data).max() > 0
-    with pytest.raises(OrbitalsError, match="BETA orbitals"):
-        run.grid(1, "BETA", [1], max_points=100_000)
+    assert kd.status == "ok" and not kd.failed_spins and kd.beta_from_alpha
+    assert "β = α" in kd.spin_note()
+    homo = kd.homo("ALPHA")
+    _, alpha, _ = run.grid(1, "ALPHA", [homo], max_points=100_000)
+    _, beta, _ = run.grid(1, "BETA", [homo], max_points=100_000)
+    assert alpha.size and abs(alpha).max() > 0
+    np.testing.assert_allclose(beta, alpha)
 
 
 def test_polyacetylene_start_geometry_has_the_literature_bonds():

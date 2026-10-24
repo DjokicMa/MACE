@@ -304,6 +304,36 @@ def test_the_real_phonon_file_in_the_plotly_figure(tmp_path):
     assert thz["title"]["text"] == "Frequency (THz)" and 40 < thz["range"][1] < 47
 
 
+def test_a_phonon_legend_has_no_spin_and_the_smoothing_is_in_the_axis_unit():
+    """Phonons have no spin: no Spin group (an electronic closed-shell run keeps its "α = β (closed shell)"),
+    the DOS's group is the phonon DOS, a dispersion alone has no legend, and the smoothing width is said in
+    the frequency unit drawn (0.003 eV is 24.2 cm⁻¹), applied on the readers' eV scale like the data."""
+    from mace.plotting import plotly_bands as PB
+    from mace.plotting import presets as P
+    band, dos = results.band_data(PH_F25), results.dos_data(PH_F25)
+    for unit, sig in (("cm-1", "24.2 cm<sup>−1</sup>"), ("THz", "0.725 THz"), ("meV", "3 meV")):
+        o = {**PB.opts_for(), "unit": unit}
+        fig = PB.figure(band, dos, {"dos_smooth": 0.003}, o)
+        data, lay = fig["data"], fig["layout"]
+        assert not [t for t in data if t.get("meta") in ("key-spin", "key-band")]
+        assert not [t for t in data if "closed shell" in str(t.get("name"))]
+        keys = [t for t in data if t.get("meta") == "key-proj"]
+        assert [t["name"] for t in keys] == ["Total"] and keys[0]["legendgrouptitle"]["text"] == "Phonon DOS"
+        assert [a["text"] for a in lay["annotations"] if a.get("name") == "dos-smooth"] == [f"smoothed, σ = {sig}"]
+        alone = PB.figure(None, dos, {"dos_smooth": 0.003}, o)["layout"]
+        assert [a["text"] for a in alone["annotations"] if a.get("name") == "dos-smooth"] == [f"Gaussian smoothing σ = {sig} (display only)"]
+        disp = PB.figure(band, None, {}, o)
+        assert disp["layout"]["showlegend"] is False and not [t for t in disp["data"] if str(t.get("meta", "")).startswith("key")]
+        assert "title" not in disp["layout"]["legend"]
+    # the smoothing runs on the readers' eV grid with sigma in eV: the same curve as sigma in cm-1 on a cm-1 grid
+    e, y, cm = list(dos["energy"]), list(dos["projections"][0]["up"]), 8065.543937
+    assert np.allclose(P.gauss_smooth(y, e, 0.003), P.gauss_smooth(y, [v * cm for v in e], 0.003 * cm), rtol=1e-9, atol=1e-12)
+    # an electronic closed-shell band plot keeps its Spin key, and eV keeps the width as set
+    el = {**band, "domain": "electronic"}
+    assert [t["name"] for t in PB.figure(el, None, {}, PB.opts_for())["data"] if t.get("meta") == "key-spin"] == ["α = β (closed shell)"]
+    assert PB.sigma_text(0.05, 1, "eV") == "0.05 eV" and PB.sigma_text(0.003, 8065.543937, "cm-1") == "24.2 cm-1"
+
+
 def test_cli_draws_the_real_phonon_file_with_plotly_and_refuses_matplotlib(tmp_path):
     pytest.importorskip("plotly")
     for name in ("dia_phonon_f25.fort.25", "dia_phonon_f25.d12"):
@@ -419,6 +449,10 @@ def test_reference_labels_and_phonon_figures_match_the_gui(tmp_path):
         cases.append(_case(pb, None, o={"unit": unit}))
         cases.append(_case(None, pd, o={"unit": unit}))
     cases.append(_case(pb, pd, o={"shift": 1.0, "ylog": True}))
+    # the smoothing note in the frequency unit, and no Spin group (phonons have no spin)
+    for unit in ("cm-1", "THz"):
+        cases.append(_case(pb, pd, o={"unit": unit}, look={"dos_smooth": 0.003}))
+        cases.append(_case(None, pd, o={"unit": unit}, look={"dos_smooth": 0.003}, width=520))
     _compare(cases, tmp_path)
 
 

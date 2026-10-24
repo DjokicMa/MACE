@@ -2514,6 +2514,16 @@ additions made after it together; coming from 1.1.5, read Upgrading first.
 
 ### Changed
 
+- **Pore surfaces are drawn at Preview mesh quality by default.** Analysis ›
+  Porosity's channels and pockets are the heaviest surfaces the 3D view draws
+  (two walls each, now repeated over every cell of a supercell), so they have
+  a mesh quality of their own, Settings › Viewport › Pore surface mesh
+  quality, apart from the Mesh quality the other surfaces use. It starts at
+  the new **Preview** tier (pore surfaces only, below Draft: a 24-point grid,
+  smoothed more), and the Inspector's 3D Overlays section raises one overlay
+  to any preset, which that structure's overlay keeps. Export Image still
+  makes the surfaces at Publication for the picture.
+
 - **Finite-displacement phonons with phonopy are opt2d12's choice 8 (`--calc-type PHONOPY`),
   and their analysis is `mace analyze phonopy DIR`.** The calculation menu lists 8 after 7
   CPHF, and the GUI's Calculation › Regular Calculations and Setup number it 8 as well. The
@@ -2831,6 +2841,55 @@ additions made after it together; coming from 1.1.5, read Upgrading first.
   DOS and band + DOS figures, with both backends.
 
 ### Fixed
+
+- **Phonon plots no longer show a spin legend.** The phonon dispersion, the
+  phonon DOS and the phonon band + DOS figure (`mace plotting
+  --phonon-band-dos` and the GUI's paired phonon plot) showed "Spin /
+  α = β (closed shell)". Phonons have no spin: the DOS's legend group is now
+  "Phonon DOS" (Total, or the projections), a dispersion alone has no
+  legend, and the GUI's note line and `mace plotting`'s console say "6 phonon
+  branches" instead of "closed shell" and the Fermi-level hint. Electronic
+  band and DOS legends are unchanged.
+- **The DOS smoothing note is in the plot's unit.** A phonon DOS said
+  "smoothed, σ = 0.003 eV" on a cm⁻¹ axis; it now says "σ = 24.2 cm⁻¹" (or
+  THz, meV, or the electronic plot's unit). The smoothing itself was already
+  right: σ is set in eV and applied to the eV-scale data.
+- **Color by Potential's color bar is honest.** The bar on a density surface
+  colored by its potential always said "red = negative (electron-rich)" and
+  put a "0" tick in the middle. It is now a thin vertical bar at the view's
+  right edge, like the slice colorbars. It shows round ticks at their true
+  places, the unit (Ha e⁻¹) and colors taken from the surface's own
+  gradient. Sign words appear only when the range has both signs. A range of
+  one sign says so ("all positive on this surface"). `mace plotting`'s
+  dual-cube figure says the same in its caption, and its colorbar now shows
+  the unit.
+- **The automatic potential range no longer starts at a false 0.** A surface
+  point on the grid's first plane read the interpolator's fill value 0
+  (a round-off just outside the grid; hexagonal and fcc cells), so an
+  all-positive potential got the range 0 to max (h-BN, diamond). The range
+  is now the surface's own, in the GUI and in `mace plotting`.
+- **Export Image and Copy Image work on a Volume document.** They were
+  structure-only. The PNG holds the view with its axis triad and the
+  potential color bar. The off-screen render no longer runs CSS transitions
+  under Reduce motion, so the viewer is never read at a stale size.
+- **The orbital picker clears the Explorer's edge tab.** With the Explorer
+  hidden, the tab on the editor's left edge covered the picker's first
+  column ("Cells" read "ells"). The picker now leaves room for the tab. The
+  plot, output, text and volume views were checked and were already clear.
+- **The Inspector's Brillouin zone grows with the Inspector.** The zone's
+  box was 260 px high at any width. It is now near square, so a wider
+  Inspector shows a larger zone. The canvas is redrawn sharp at the new size
+  and fitted again.
+- **Pore surfaces, Miller planes and nets are drawn over the whole display
+  range.** Structure Analysis' overlays of the cell were drawn in one unit
+  cell only, even with the structure shown 3×3×3 (the N × M × L cells picker
+  or a display-range preset). They are now drawn in each cell of the range,
+  as the atoms are, except along a slab's or polymer's open axes: the mesh is
+  built once and each cell draws a copy moved by its lattice vector, so 27
+  cells cost about one cell's build. The channels join across the cell faces
+  (also in Wireframe), each pocket is whole once per cell with its own color
+  in every copy, and a Miller plane on a cell face is not drawn twice. A
+  crystal shape is not periodic and stays one.
 
 - **Orbitals: β is drawn for a spin-polarized run with α = β.** The Orbitals picker said "Self-check
   passed (β failed: not drawn)" for every spin-polarized closed-shell run (MACE's default, SPINLOCK;

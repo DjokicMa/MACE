@@ -4,8 +4,11 @@
  *
  * Quality: Draft (screening many materials), Standard (the look before
  * presets, the default), High, Publication (dense triangulation for a
- * figure; seconds and more memory). Each preset is a set of knobs the
- * Inspector shows under Advanced; the server's copy of the pore and grid
+ * figure; seconds and more memory). The pore surfaces, the heaviest the
+ * view draws (two walls each, over every cell of a supercell), have a tier
+ * below Draft, Preview, which is their default whatever the other surfaces
+ * use (Settings › Viewport › Pore surface mesh quality, pores.quality).
+ * Each preset is a set of knobs the Inspector shows under Advanced; the server's copy of the pore and grid
  * numbers is mace/analysis/mesh_quality.py (tests/test_mesh_quality.py keeps
  * the two in step); the wireframe spacing, isosurface smoothing and sphere
  * detail are the page's own.
@@ -20,17 +23,25 @@ import { keepBuilt } from "./shape_cache.js";
 export const PRESETS = ["draft", "standard", "high", "publication"];
 export const DEFAULT = "standard";
 export const KEY = "mesh.quality";
-export const PRESET_LABEL = { draft: "Draft", standard: "Standard", high: "High", publication: "Publication" };
+// the pore surfaces' presets (one tier below Draft) and their default, a setting of their own
+export const PORE_PRESETS = ["preview", ...PRESETS];
+export const PORE_DEFAULT = "preview";
+export const PORE_KEY = "pores.quality";
+export const PRESET_LABEL = { preview: "Preview", draft: "Draft", standard: "Standard", high: "High", publication: "Publication" };
 export const PRESET_HELP = {
+  preview: "Pore surfaces only: the coarsest, for many cells or slow graphics",
   draft: "Coarse and fast: for screening many materials",
   standard: "The default surfaces",
   high: "Finer surfaces for a close look",
   publication: "Dense triangulation for a figure: can take seconds and more memory",
 };
 export const presetOf = (v) => (PRESETS.includes(v) ? v : DEFAULT);
+/** A pore surface's preset (Preview too); ``d``: an unknown one's. */
+export const porePresetOf = (v, d = DEFAULT) => (PORE_PRESETS.includes(v) ? v : d);
 
 /* the pore surfaces (porosity.py _render_fields / pore_meshes), as mesh_quality.py PORES */
 export const PORES = {
+  preview: { grid: 24, upsample: 1, smooth: 1.4, max_triangles: 60000 },
   draft: { grid: 40, upsample: 1, smooth: 0.7, max_triangles: 150000 },
   standard: { grid: 72, upsample: 1, smooth: 0.7, max_triangles: 600000 },
   high: { grid: 96, upsample: 2, smooth: 0.8, max_triangles: 1200000 },
@@ -49,8 +60,8 @@ export const LEGACY_POINTS = { low: 250000, medium: 1000000, high: 2000000 };
 /* a CRYSTAL23 ORBITALS grid (gui/orbitals.py): the reader's spacing */
 export const ORBITAL = { draft: "preview", standard: "normal", high: "fine", publication: "fine" };
 /* the wireframe's and the points' vertex spacing on a pore surface (Å), and a net's sphere detail (3Dmol's 2) */
-export const WIRE_STEP = { draft: 0.9, standard: 0.6, high: 0.45, publication: 0.35 };
-export const SPHERE = { draft: 1, standard: undefined, high: 3, publication: 4 };
+export const WIRE_STEP = { preview: 1.2, draft: 0.9, standard: 0.6, high: 0.45, publication: 0.35 };
+export const SPHERE = { preview: 1, draft: 1, standard: undefined, high: 3, publication: 4 };
 export const KNOB_LABEL = {
   grid: ["Render grid", "Points per cell axis, at most"],
   upsample: ["Refine", "The render grid may be this many times finer than the analysis grid (pores) or the cube's (volumes)"],
@@ -63,7 +74,7 @@ export const KNOB_LABEL = {
 /** {quality, <knob>...} of a spec, the knobs clamped into their limits (kind: "pores" | "volume"). */
 export function knobs(kind, spec = {}) {
   const table = kind === "pores" ? PORES : VOLUME, lim = kind === "pores" ? PORE_LIMITS : VOLUME_LIMITS;
-  const q = presetOf(spec && spec.quality), out = { quality: q, ...table[q] };
+  const q = kind === "pores" ? porePresetOf(spec && spec.quality) : presetOf(spec && spec.quality), out = { quality: q, ...table[q] };
   for (const [k, [lo, hi]] of Object.entries(lim)) {
     const v = spec ? spec[k] : undefined;
     if (v === undefined || v === null || v === "" || !Number.isFinite(Number(v))) continue;

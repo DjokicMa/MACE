@@ -270,8 +270,7 @@ def handle(handler, method: str, route: str, payload):
         params = body.get("params") or {}
         mesh = body.get("mesh") if isinstance(body.get("mesh"), dict) else {}
         from mace.analysis import mesh_quality
-        mesh_quality.pores(mesh)                    # a wrong knob is the request's error (400)
-        label = mesh_quality.preset(mesh.get("quality")).capitalize()
+        label = mesh_quality.pores(mesh)["quality"].capitalize()     # a wrong knob is the request's error (400)
 
         def rjob(ctx):
             return _clean({"tool": "porosity", "render": remesh(stc, params, mesh, ctx)})

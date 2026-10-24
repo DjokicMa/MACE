@@ -5,7 +5,7 @@ gitignored corpus).
 A molecule's density opens as an isosurface whose vertex count follows the
 level; a spin density shows both lobes; the hexagonal slab's surface sits on
 its atoms (the skewed voxel matrix is right); a density colored by its
-potential gets the CLI's range and colors (chemistry: red = negative), a
+potential gets the CLI's range and colors (chemistry: red = negative, said by its color bar), a
 custom range and the Red = negative box change it, and a cube of another cell
 is refused. A potential cube's isosurfaces and slice follow Settings ›
 Potential colors (chemistry by default, physics on request), live."""
@@ -216,7 +216,7 @@ def test_mep_colors_range_and_refusal(fresh):
     H.wait(drv, "const s = window.__mace.volumeView.state(); return s && s.color === 'vol/mol_POT.CUBE' && s.vmin !== null", 90)
     st = vstate(drv)
     assert st["vmin"] == -st["vmax"] and st["vmax"] > 0
-    legend = drv.execute_script("return document.querySelector('#volume-host .vv-legend').textContent")
+    legend = drv.execute_script("return document.querySelector('#volume-host .vv-bar').getAttribute('aria-label')")
     assert "red = negative (electron-rich)" in legend and st["chem"] is True
     # the CLI's chemistry colors: +range blue, -range red
     hexes = drv.execute_script("const v = window.__mace.volumeView, s = v.state(); return [v.gradientHex(s.vmax), v.gradientHex(s.vmin)]")
@@ -241,7 +241,7 @@ def test_mep_colors_range_and_refusal(fresh):
     H.wait(drv, "return window.__mace.volumeView.state().chem === false", 5)
     hx = drv.execute_script("const v = window.__mace.volumeView, s = v.state(); return v.gradientHex(s.vmax)")
     assert ((hx >> 16) & 255) > (hx & 255)
-    assert "red = positive (electron-poor)" in drv.execute_script("return document.querySelector('#volume-host .vv-legend').textContent")
+    assert "red = positive (electron-poor)" in drv.execute_script("return document.querySelector('#volume-host .vv-bar').getAttribute('aria-label')")
     # a custom range
     click(drv, drv.find_element(By.CSS_SELECTOR, "[data-vo-range=custom]"))
     inp = H.wait(drv, "const e = document.querySelector('#vo-vmax'); return e && !e.disabled && e", 5)

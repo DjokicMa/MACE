@@ -468,6 +468,13 @@ def half_keys(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], sid
     return {"spin": dk, "bands": bk}
 
 
+def sigma_text(sigma_ev: float, f: float, unit: str) -> str:
+    """A DOS smoothing width (eV) in the plot's unit (``f``: the unit per eV, ``unit``: its label): as set on
+    an eV axis, else to three significant digits: "0.05 eV", "24.2 cm⁻¹" (bandfig.js sigmaText)."""
+    v = float(f"{sigma_ev * f:.3g}") if f and f != 1 else sigma_ev
+    return f"{P.js_num(v)} {unit or 'eV'}"
+
+
 def legend_box(names: Sequence[str], groups: int, width: Optional[float], height: Optional[float]) -> Dict[str, float]:
     """A DOS-alone legend's box as a fraction of the plot {"fw", "fh"} (bandfig.js legendBox)."""
     chars = max([0] + [len(re.sub(r"<[^>]+>", "", str(n))) for n in names])
@@ -642,7 +649,7 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                                     "name": st["name"], "meta": "key-proj", "legend": "legend", "legendgroup": "proj",
                                     "legendrank": 100 + i, "customdata": [p["label"]], "hoverinfo": "skip", "showlegend": True,
                                     "marker": {"symbol": "square", "size": 11, "color": fill, "line": {"color": edge, "width": 1}},
-                                    "legendgrouptitle": {"text": "Projections", "font": group_title(css)} if i == 0 else None}))
+                                    "legendgrouptitle": {"text": "Phonon DOS" if ph else "Projections", "font": group_title(css)} if i == 0 else None}))
         if side == "mirrored" and o.get("spin") == "both" and not dlog and show_spin:
             z = (0 - rng[0]) / (rng[1] - rng[0])     # beside the zero line, each on its own side
             annotations.append({"xref": f"{xr} domain", "yref": "paper", "x": z, "y": 1, "xanchor": "left", "xshift": 3, "yanchor": "bottom",
@@ -664,15 +671,17 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                                     "yanchor": "top" if low else "bottom", "showarrow": False, "text": P.DOS_LAYOUT["no_data"],
                                     "font": {"size": 9, "color": css("--text-3")}, "name": "no-data"})
         if smooth:
+            # the width in the axis's unit (set in eV and applied on the readers' eV scale, a phonon DOS's too)
+            sig = sigma_text(smooth, f, unit)
             annotations.append({"xref": f"{xr} domain", "yref": "y domain", "x": 0.99, "y": 0.01, "xanchor": "right", "yanchor": "bottom",
                                 "showarrow": False,
-                                "text": f"smoothed, σ = {P.js_num(smooth)} eV" if band else f"Gaussian smoothing σ = {P.js_num(smooth)} eV (display only)",
+                                "text": f"smoothed, σ = {sig}" if band else f"Gaussian smoothing σ = {sig} (display only)",
                                 "font": {"size": 10, "color": css("--text-2")}, "name": "dos-smooth"})
     # the Spin group (keys in the colors and line styles drawn) and, beside it, the bands' own group when
-    # the bands are drawn otherwise than the DOS
+    # the bands are drawn otherwise than the DOS; phonons have no spin: no Spin group (the DOS's own group only)
     closed_words = "α = β (non-magnetic)" if band and not band.get("spin_polarized") and band.get("spin_identical") else "α = β (closed shell)"
     grouped = bool(dos)
-    hk = half_keys(band, dos, side, o, spin, closed_words)
+    hk = {"spin": [], "bands": None} if ph else half_keys(band, dos, side, o, spin, closed_words)
 
     def key_of(k: Dict[str, Any], i: int, group: str, title: str, meta: str) -> Dict[str, Any]:
         return _drop_none({"x": [None], "y": [None], "xaxis": "x", "yaxis": "y", "mode": "lines", "type": "scatter", "name": k["name"],
@@ -688,7 +697,10 @@ def band_figure(band: Optional[Dict[str, Any]], dos: Optional[Dict[str, Any]], o
                      "legendrank": 5000})
     traces += keys
     if not dos:
-        lay["legend"] = legend_top(title={"text": "Spin", "side": "left", "font": group_title(css)})
+        # a phonon dispersion alone: one set of branches, no legend
+        lay["legend"] = legend_top() if ph else legend_top(title={"text": "Spin", "side": "left", "font": group_title(css)})
+        if not keys:
+            lay["showlegend"] = False
     elif band:
         lay["legend"] = legend_side(traceorder="grouped", tracegroupgap=8)
     else:

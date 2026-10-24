@@ -50,6 +50,24 @@ def test_knobs_take_the_preset_and_clamp_hand_values():
             assert MQ.PORES[a][key] <= MQ.PORES[b][key]
 
 
+def test_pore_surfaces_have_a_preview_tier_and_their_own_default():
+    # Preview: below Draft, the pore surfaces only (a volume asked for it gets Standard)
+    assert MQ.PORE_PRESETS == ("preview",) + MQ.PRESETS
+    assert re.search(r'export const PORE_PRESETS = \["preview", \.\.\.PRESETS\]', JS)
+    assert MQ.pores({"quality": "preview"}) == {"quality": "preview", "custom": False, **MQ.PORES["preview"]}
+    assert MQ.volume({"quality": "preview"})["quality"] == "standard" and "preview" not in MQ.VOLUME
+    for key in ("grid", "upsample", "max_triangles"):
+        assert MQ.PORES["preview"][key] <= MQ.PORES["draft"][key]
+    # the GUI draws them at their own setting (pores.quality), not the shared mesh.quality
+    default = re.search(r'export const PORE_DEFAULT = "(\w+)";', JS).group(1)
+    assert default in MQ.PORE_PRESETS and default != MQ.DEFAULT
+    settings_js = (REPO_ROOT / "mace" / "gui" / "static" / "js" / "settings.js").read_text()
+    assert re.search(rf'"pores\.quality": "{default}"', settings_js)
+    assert re.search(r'"pores\.quality": \["preview", "draft", "standard", "high", "publication"\]', settings_js)
+    schema = (REPO_ROOT / "mace" / "gui" / "static" / "js" / "lazy" / "settings_schema.js").read_text()
+    assert '"pores.quality", "Pore surface mesh quality"' in schema
+
+
 @pytest.fixture(scope="module")
 def lta():
     pytest.importorskip("scipy")
@@ -79,8 +97,8 @@ def test_standard_is_the_surface_before_presets(lta, analysed):
 
 
 def test_finer_presets_give_more_triangles(analysed):
-    tri = {q: analysed["_remesh"]({"quality": q})["meshes"]["quality"]["triangles"] for q in MQ.PRESETS}
-    assert tri["draft"] <= tri["standard"] < tri["high"] < tri["publication"], tri
+    tri = {q: analysed["_remesh"]({"quality": q})["meshes"]["quality"]["triangles"] for q in MQ.PORE_PRESETS}
+    assert tri["preview"] < tri["draft"] <= tri["standard"] < tri["high"] < tri["publication"], tri
     # a hand knob wins over the preset and is reported as custom
     m = analysed["_remesh"]({"quality": "draft", "max_triangles": 20_000})["meshes"]
     assert m["quality"]["custom"] and m["quality"]["triangles"] <= tri["draft"]

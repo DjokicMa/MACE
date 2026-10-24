@@ -85,7 +85,7 @@ export function registerAll(S) {
     desc: "Porosity, powder pattern, topology, ... on every selected structure, with a summary in the Analysis tab",
     run: (c, a) => S.analyzeStructures(a) });
   register({ id: "file.exportImage", title: "Export Image…", category: "File", keys: ["Mod+Shift+X"], icon: "image",
-    when: "docKind == structure", reason: "Needs a structure", desc: "A PNG of the view: up to 4× or a custom size, transparent if you like",
+    when: "docKind == structure|volume", reason: "Needs a structure or a volume", desc: "A PNG of the view: up to 4× or a custom size, transparent if you like",
     run: () => S.exportImage() });
   // 1.1.6: the animated view (a FREQ mode, an optimization) or a trajectory file as GIF, WebM or MP4 (lazy/anim_export.js)
   register({ id: "file.exportAnimation", title: "Export Animation…", category: "File", icon: "play",
@@ -105,7 +105,7 @@ export function registerAll(S) {
       when: "docKind == structure", desc: `${what}. ${dl}`, run: () => S.exportStructure(fmt, mode) }));
   later("file.export.QE", "Quantum ESPRESSO Input", "File: Export Structure", [], "", "needs the Quantum ESPRESSO backend");
   register({ id: "file.copyImage", title: "Copy Image to Clipboard", category: "File", keys: ["Mod+Shift+C"], icon: "copy",
-    when: "docKind == structure", reason: "Needs a structure", run: () => S.copyImage() });
+    when: "docKind == structure|volume", reason: "Needs a structure or a volume", run: () => S.copyImage() });
   register({ id: "file.closeTab", title: "Close Tab", category: "File", keys: ["Alt+W"], icon: "x",
     when: "hasDoc", reason: "No document is open", run: () => S.closeDoc(S.activeDoc()) });
   register({ id: "file.closeAll", title: "Close All Tabs", category: "File", when: "hasDoc",

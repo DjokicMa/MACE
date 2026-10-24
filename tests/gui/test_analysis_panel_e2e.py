@@ -230,8 +230,8 @@ def test_pore_meshes_and_their_controls(app):
     assert st == 200 and sorted(body["rejected"]) == ["pores.accessible", "pores.opacity", "pores.style"]
     defaults = drv.execute_script("const d = window.__mace.settings.defaults(); return Object.fromEntries(Object.entries(d).filter(([k]) => k.startsWith('pores.')))")
     from mace.gui import settings as S
-    # 1.1.6: shading, walls and the near walls while dragging joined the five
-    assert len(defaults) == 8 and all(S.check(k, v) is None for k, v in defaults.items()), defaults
+    # 1.1.6: shading, walls, the near walls while dragging and the surfaces' own mesh quality joined the five
+    assert len(defaults) == 9 and defaults["pores.quality"] == "preview" and all(S.check(k, v) is None for k, v in defaults.items()), defaults
     # Settings › Viewport changes the surfaces and the controls back
     drv.execute_script("window.__mace.settings.set('pores.style', 'solid'); window.__mace.settings.set('pores.opacity', 0.5);"
                        "window.__mace.settings.set('pores.colorPockets', false)")

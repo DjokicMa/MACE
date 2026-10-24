@@ -7,10 +7,18 @@
  * the document it was computed for only (not the one active when it
  * arrives): switching documents hides it, and an edit of that document
  * after the computation hides it too, so a surface never sits on a
- * structure it was not computed for. */
+ * structure it was not computed for.
+ *
+ * The overlays of the cell (pores, Miller planes, a net) are drawn in each
+ * cell of the display range, as the atoms are (cell_tiles.js): built once
+ * for the cell and moved to the others. The channels are cut at the cell
+ * faces and each pocket is whole in the cell its center lies in, so the
+ * copies join without a doubled face; the crystal shape is not periodic
+ * and stays one. */
 
 import { keepBuilt, skipDepthPass } from "./shape_cache.js";
 import * as MQ from "./mesh_quality.js";
+import { tile, tileShifts, farFaceTiles } from "./cell_tiles.js";
 
 const KINDS = ["pores", "mesh", "planes", "net"];
 // "Color pockets individually": --pore-pocket-1 ... (tokens.css; Okabe–Ito, color-blind safe)
@@ -29,11 +37,26 @@ function b64(s, Type) {
 /* The wireframe's mesh: the vertices merged on a grid of ``h`` Å (vertex
  * clustering), so its lines are about that far apart instead of the
  * surface grid's few tenths of an Å, which drew as a solid. ``lab``: each
- * vertex's group (its feature and pocket), never merged across groups. */
-function coarsen(P, N, F, lab, h) {
+ * vertex's group (its feature and pocket), never merged across groups.
+ * ``frame`` ({o, L, pbc}: the cell): a vertex on a periodic face of the
+ * cell (a channel cut there) merges only with the vertices of that face,
+ * on the grid seen from the opposite face, so the face's vertices stay on
+ * it and meet the next cell's copy of the opposite face. */
+function coarsen(P, N, F, lab, h, frame = null) {
   const key = new Map(), sum = [], nrm = [], cnt = [], map = new Int32Array(P.length / 3), group = [];
+  const fr = frame ? frameOf(frame) : null;
   for (let v = 0; v < P.length / 3; v++) {
-    const k = `${Math.floor(P[3 * v] / h)},${Math.floor(P[3 * v + 1] / h)},${Math.floor(P[3 * v + 2] / h)},${lab[v]}`;
+    let x = P[3 * v], y = P[3 * v + 1], z = P[3 * v + 2], side = "";
+    if (fr) {
+      const r = [x - fr.o[0], y - fr.o[1], z - fr.o[2]];
+      for (let k = 0; k < 3; k++) {
+        if (!fr.pbc[k]) continue;
+        const f = r[0] * fr.Li[0][k] + r[1] * fr.Li[1][k] + r[2] * fr.Li[2][k];
+        if (f < FACE) side += `${k}-`;
+        else if (f > 1 - FACE) { side += `${k}+`; x -= fr.L[k][0]; y -= fr.L[k][1]; z -= fr.L[k][2]; }
+      }
+    }
+    const k = `${Math.floor(x / h)},${Math.floor(y / h)},${Math.floor(z / h)},${lab[v]}${side}`;
     let i = key.get(k);
     if (i === undefined) { i = cnt.length; key.set(k, i); sum.push(0, 0, 0); nrm.push(0, 0, 0); cnt.push(0); group.push(lab[v]); }
     map[v] = i;
@@ -52,6 +75,23 @@ function coarsen(P, N, F, lab, h) {
   return [P2, N2, Uint32Array.from(F2), Uint32Array.from(group)];
 }
 const NONE = 65535;              // a vertex of no feature (porosity.py's "feature" array)
+const FACE = 1e-4;               // a vertex this close (fractional) to a cell face lies on it
+
+/* The cell a pore mesh was made in: its origin, lattice rows (the render grid's voxels times its
+ * intervals: porosity.py _render_fields) and their inverse (fractional = (r - o) L⁻¹). */
+function frameOf({ o, L, pbc }) {
+  const [a, b, c] = L;
+  const det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+  const Li = [[b[1] * c[2] - b[2] * c[1], -(a[1] * c[2] - a[2] * c[1]), a[1] * b[2] - a[2] * b[1]],
+    [-(b[0] * c[2] - b[2] * c[0]), a[0] * c[2] - a[2] * c[0], -(a[0] * b[2] - a[2] * b[0])],
+    [b[0] * c[1] - b[1] * c[0], -(a[0] * c[1] - a[1] * c[0]), a[0] * b[1] - a[1] * b[0]]].map((r) => r.map((x) => x / (det || 1)));
+  return { o, L, pbc, Li };
+}
+/** The cell of a pore result's render grid ({o, L}), or null. */
+function gridCell(d) {
+  if (!d || !d.shape || !d.voxels) return null;
+  return { o: d.origin || [0, 0, 0], L: d.voxels.map((r, k) => r.map((x) => x * (d.shape[k] - 1))) };
+}
 
 /* A pore mesh's vertex groups: its feature (a channel or pocket of the
  * results' feature table, porosity.py) in the high 16 bits, its pocket
@@ -68,17 +108,18 @@ function labels(m, nv) {
  * way of drawing. The server's normals point out of the pore and its
  * triangles wind that way (``inward`` turns both around). */
 const decoded = new WeakMap();
-function chunks(m, inward, wire, step = MQ.WIRE_STEP.standard, flat = false) {
-  const memo = decoded.get(m) || {}, mk = `${inward}${wire}${wire ? step : ""}${flat}`;
+function chunks(m, inward, wire, step = MQ.WIRE_STEP.standard, flat = false, frame = null) {
+  const fk = frame && wire ? `|${frame.pbc.map(Number).join("")}` : "";
+  const memo = decoded.get(m) || {}, mk = `${inward}${wire}${wire ? step : ""}${flat}${fk}`;
   if (memo[mk]) return memo[mk];
   if (flat) {
-    memo[mk] = MQ.flatParts(chunks(m, inward, wire, step));
+    memo[mk] = MQ.flatParts(chunks(m, inward, wire, step, false, frame));
     decoded.set(m, memo);
     return memo[mk];
   }
   let P = b64(m.positions, Float32Array), N = b64(m.normals, Int8Array), F = b64(m.faces, Uint32Array);
   let lab = labels(m, P.length / 3);
-  if (wire) [P, N, F, lab] = coarsen(P, N, F, lab, step);
+  if (wire) [P, N, F, lab] = coarsen(P, N, F, lab, step, frame);
   const nv = P.length / 3, local = new Int32Array(nv).fill(-1), stamp = new Int32Array(nv).fill(-1);
   const order = inward ? [0, 2, 1] : [0, 1, 2], sn = inward ? -1 / 127 : 1 / 127;
   const out = [];
@@ -135,8 +176,10 @@ const DIM = 0.35;
  * look; ``step``: the wireframe's and points' spacing). Translucent
  * surfaces are drawn without writing depth, so the atoms and walls behind
  * them stay visible in any order 3Dmol draws them. ``hidden``: features
- * left out; ``hl``: a feature drawn in ``hlColor`` with the rest dimmed. */
-function meshShapes(vw, m, { color, opacity, lk, step, palette, hidden, hl, hlColor }) {
+ * left out; ``hl``: a feature drawn in ``hlColor`` with the rest dimmed.
+ * ``tiles``: the shifts of the display range's cells (each shape built once,
+ * its copies moved there); ``frame``: the cell, for the wireframe's faces. */
+function meshShapes(vw, m, { color, opacity, lk, step, palette, hidden, hl, hlColor, tiles = null, frame = null }) {
   const $3 = window.$3Dmol;
   skipDepthPass(vw);
   const flat = lk.shading === "flat";
@@ -149,7 +192,7 @@ function meshShapes(vw, m, { color, opacity, lk, step, palette, hidden, hl, hlCo
   if (lk.style === "edges") passes.push([true, 1, $3.DoubleSide, "wire", "edges"]);
   const out = [];
   passes.forEach(([inward, op, side, how, pass]) => {
-    let parts = how === "fill" ? chunks(m, inward, false, step, flat) : chunks(m, inward, true, step);
+    let parts = how === "fill" ? chunks(m, inward, false, step, flat) : chunks(m, inward, true, step, false, frame);
     if (how === "points") parts = MQ.pointParts(parts, step / 4);
     parts = parts.filter((c) => !(hidden && hidden.has(c.feature)));
     const lit = hl == null ? [] : parts.filter((c) => c.feature === hl);
@@ -164,7 +207,7 @@ function meshShapes(vw, m, { color, opacity, lk, step, palette, hidden, hl, hlCo
       for (let i = 1; i < list.length; i++) s.addCustom(spec(list[i]));
       // a shape color repaints every group with it: each group keeps its own
       if (palette && !isHl) s.color = undefined;
-      keepBuilt(s, (r, sh) => { if (sh.opacity < 1) (r.children || []).forEach((c) => { if (c.material) c.material.depthWrite = false; }); });
+      keepBuilt(tile(s, tiles), (r, sh) => { if (sh.opacity < 1) (r.children || []).forEach((c) => { if (c.material) c.material.depthWrite = false; }); });
       if (pass) s.macePass = pass;
       if (isHl) s.maceHighlight = true;
       out.push(s);
@@ -178,8 +221,8 @@ function meshShapes(vw, m, { color, opacity, lk, step, palette, hidden, hl, hlCo
  * with (``base``: Settings › Viewport › pores.* for pores) and its own
  * changes on top (``over``: the Inspector's 3D Overlays section), drawn only
  * while its document is on screen and unedited since. */
-export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = null, onError = null }) {
-  const items = new Map();     // "doc|kind" -> { key, kind, doc, rev, data, base, over, meta, shapes, visible, hidden, hl, t, pending, meshes }
+export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = null, onError = null, display = null }) {
+  const items = new Map();     // "doc|kind" -> { key, kind, doc, rev, data, base, over, meta, shapes, visible, hidden, hl, t, pending, meshes, tiles }
   const listeners = new Set();
   const lastShown = {};        // kind -> key of the newest one shown
   let stamp = 0;
@@ -211,6 +254,15 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
     return false;
   }
   const optsOf = (it) => ({ ...(it.base || {}), ...(it.over || {}) });
+  /* The cells of the display range an overlay of a document is drawn in (``display(doc)``: {cell, pbc, box}, the
+   * structure and the cell box the structure view draws; none: the cell alone), its lattice ``cell`` (rows, Å). */
+  function tilesOf(it, cell) {
+    let dsp = null;
+    try { dsp = display ? display(it.doc) : null; } catch (e) { dsp = null; }
+    const pbc = (dsp && dsp.pbc) || [true, true, true];
+    const C = cell === undefined ? dsp && dsp.cell : cell;
+    return { ...tileShifts(dsp && C ? C : null, pbc, dsp && dsp.box), pbc, cell: C || null };
+  }
 
   function draw(it, render = true) {
     const vw = v();
@@ -218,14 +270,19 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
     drop(it);
     if (!it.visible || foreign(it)) { if (render) vw.render(); return; }
     const kind = it.kind, d = it.data, o = optsOf(it);
-    const add = (s) => { if (s) it.shapes.push(keepBuilt(s)); };
-    const q = MQ.presetOf(o.quality);
+    // the cells of the display range it is drawn in: the pores' own cell (their render grid), the net's, the structure's
+    const gc = kind === "pores" ? gridCell(d) : null;
+    const T = kind === "mesh" ? tilesOf(it, null) : tilesOf(it, kind === "pores" ? (gc ? gc.L : null) : kind === "net" ? d.cell : undefined);
+    it.tiles = T;
+    const addAt = (s, shifts) => { if (s) it.shapes.push(keepBuilt(tile(s, shifts))); };
+    const add = (s) => addAt(s, T.shifts);
+    const q = kind === "pores" ? MQ.porePresetOf(o.quality, MQ.PORE_DEFAULT) : MQ.presetOf(o.quality);
     if (kind === "pores") {
       ask(it, o);
       const op = Math.min(1, Math.max(0.05, Number(o.opacity ?? 0.5) || 0.5));
       const ms = d.meshes || {};
       const common = { opacity: op, lk: MQ.look(o, "auto"), step: MQ.WIRE_STEP[q], hidden: it.hidden, hl: it.hl,
-        hlColor: o.hlColor || css("--pore-highlight", "") };
+        hlColor: o.hlColor || css("--pore-highlight", ""), tiles: T.shifts, frame: gc ? { ...gc, pbc: T.pbc } : null };
       if (o.accessible !== false && ms.accessible) {
         meshShapes(vw, ms.accessible, { ...common, color: o.accColor || css("--pore-acc", "") }).forEach(add);
       }
@@ -251,9 +308,13 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
       MQ.styled(vw, [{ vertexArr, normalArr, faceArr }], MQ.look(o), { color: o.color || css("--accent", ""), opacity: o.opacity ?? 0.5,
         step: 0.01 }).forEach(add);
     } else if (kind === "planes") {
+      const fr = T.cell ? frameOf({ o: [0, 0, 0], L: T.cell.length === 9 ? [T.cell.slice(0, 3), T.cell.slice(3, 6), T.cell.slice(6)] : T.cell, pbc: T.pbc }) : null;
       d.forEach((pl) => {
         const P = pl.polygon;
         if (!P || P.length < 3) return;
+        // a plane on a far face of the cell is the next cell's plane on the near face: drawn once, in the last cell
+        const frac = fr ? P.map((r) => [0, 1, 2].map((k) => r[0] * fr.Li[0][k] + r[1] * fr.Li[1][k] + r[2] * fr.Li[2][k])) : [];
+        const shifts = farFaceTiles(T, frac, T.pbc, 1e-6).shifts;
         const c = [0, 1, 2].map((k) => P.reduce((s, q) => s + q[k], 0) / P.length);
         const vertexArr = [{ x: c[0], y: c[1], z: c[2] }], normalArr = [], faceArr = [];
         P.forEach((q) => vertexArr.push({ x: q[0], y: q[1], z: q[2] }));
@@ -263,7 +324,7 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
         vertexArr.forEach(() => normalArr.push({ x: n[0] / l, y: n[1] / l, z: n[2] / l }));
         for (let i = 1; i <= P.length; i++) faceArr.push(0, i, i === P.length ? 1 : i + 1);
         MQ.styled(vw, [{ vertexArr, normalArr, faceArr }], MQ.look(o), { color: o.color || css("--pore-surface", ""), opacity: o.opacity ?? 0.4,
-          step: 0.01 }).forEach(add);
+          step: 0.01 }).forEach((s) => addAt(s, shifts));
       });
     } else if (kind === "net") {
       const cell = d.cell, f2c = (f) => [0, 1, 2].map((k) => f[0] * cell[0][k] + f[1] * cell[1][k] + f[2] * cell[2][k]);
@@ -281,7 +342,7 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
   }
 
   /* ---- mesh quality: a pore surface made again by the server at another one (only that overlay) */
-  const specOf = (o) => ({ quality: MQ.presetOf(o.quality), ...Object.fromEntries(Object.keys(MQ.PORE_LIMITS).map((k) => [k, o[k]])) });
+  const specOf = (o) => ({ quality: MQ.porePresetOf(o.quality, MQ.PORE_DEFAULT), ...Object.fromEntries(Object.keys(MQ.PORE_LIMITS).map((k) => [k, o[k]])) });
   const madeAt = (d) => (d && d.meshes && d.meshes.quality) || { quality: MQ.DEFAULT };
   const specKey = (sp) => JSON.stringify(MQ.knobs("pores", sp));
   function keepMeshes(it, d) {
@@ -447,13 +508,22 @@ export function createOverlay({ viewer, activeDocId, cssVar, docRev, remesh = nu
     return [...items.values()].filter((it) => it.doc === doc).sort((a, b) => b.t - a.t)
       .map((it) => ({ key: it.key, kind: it.kind, doc: it.doc, meta: it.meta, visible: it.visible, stale: stale(it),
         opts: optsOf(it), over: { ...it.over }, hidden: [...it.hidden], hl: it.hl, data: it.data, drawn: it.shapes.length,
-        madeAt: it.kind === "pores" ? madeAt(it.data) : null, remeshing: !!it.pending, failed: it.failed || null }));
+        madeAt: it.kind === "pores" ? madeAt(it.data) : null, remeshing: !!it.pending, failed: it.failed || null,
+        cells: it.tiles ? it.tiles.shifts.length : 1, cellsAsked: it.tiles ? it.tiles.total : 1 }));
   }
   function get(key) { return items.get(key) || null; }
   function onChange(f) { listeners.add(f); return () => listeners.delete(f); }
 
   // the structure layer redrew (it removed every shape): draw ours again
-  const onScene = () => { for (const it of items.values()) { it.shapes = []; if (!foreign(it)) draw(it, false); } const vw = v(); if (vw) vw.render(); };
+  // (a new display range: the Inspector says in how many cells)
+  const cellsKey = () => [...items.values()].map((it) => (it.tiles ? `${it.tiles.shifts.length}/${it.tiles.total}` : "")).join();
+  const onScene = () => {
+    const was = cellsKey();
+    for (const it of items.values()) { it.shapes = []; if (!foreign(it)) draw(it, false); }
+    const vw = v();
+    if (vw) vw.render();
+    if (cellsKey() !== was) changed("cells", null);
+  };
   const onSwitch = () => {
     for (const it of items.values()) { if (foreign(it)) drop(it); else draw(it, false); }
     const vw = v();

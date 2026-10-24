@@ -128,3 +128,36 @@ def test_phonon_fort25_path_from_its_records_and_deck(app):
     assert st["failed"] and "no CRYSTAL output" in st["failed"], st
     assert drv.execute_script("return document.querySelector('#inspector .po-bz .kp-bz-gl').hidden") is True
     assert not H.errors(drv), H.errors(drv)
+
+
+def test_zone_grows_with_the_inspector(app):
+    """The zone's box is near square, its height following its width (a wider Inspector, a larger zone; it was
+    260 px high at any width): the GL canvas takes the new size at the screen's pixel ratio (no blur) and is
+    fitted again, and a drag still turns it."""
+    drv = app
+    open_plot(drv, "dia/diamond_band.BAND.DAT")
+    assert zone(drv)["loaded"]
+    sizes = []
+    try:
+        for w in (340, 600):
+            drv.execute_script("document.querySelector('.shell').style.setProperty('--w-inspector', arguments[0] + 'px')", w)
+            prev = sizes[-1][0] if sizes else -1
+            H.wait(drv, """const g = document.querySelector('#inspector .po-bz .kp-bz-gl'), s = g.parentElement.__bz.state();
+              return g.clientWidth !== arguments[0] && s.fitted === `${g.clientWidth}x${g.clientHeight}`""", 20, prev)
+            time.sleep(0.3)
+            sizes.append(drv.execute_script("""const g = document.querySelector('#inspector .po-bz .kp-bz-gl'), c = g.querySelector('canvas');
+              return [g.clientWidth, g.clientHeight, c.width, c.height, c.getBoundingClientRect().width, window.devicePixelRatio]"""))
+        (w0, h0, *_), (w1, h1, cw, ch, css_w, dpr) = sizes
+        assert w1 > w0 + 200 and h1 > h0 + 150, sizes                       # the height follows the width
+        assert abs(h1 - w1 * 0.9) <= 2 and abs(h0 - max(220, w0 * 0.9)) <= 2, sizes
+        assert abs(cw - round(css_w * dpr)) <= 2 * dpr and ch >= round(h1 * dpr) - 2 * dpr, sizes   # sharp, not stretched
+        drv.execute_script("document.querySelector('#inspector details.po-cat[data-cat=\"bz\"]').scrollIntoView({block: 'start'})")
+        time.sleep(0.3)
+        canvas = drv.find_element("css selector", "#inspector .po-bz .kp-bz-gl canvas")
+        before = drv.execute_script("return arguments[0].toDataURL()", canvas)
+        H.drag(drv, canvas, [(w1 // 2, h1 // 2), (w1 // 2 + 60, h1 // 2 + 30)])
+        time.sleep(0.5)
+        assert drv.execute_script("return arguments[0].toDataURL()", canvas) != before      # a drag turns the zone
+    finally:
+        drv.execute_script("document.querySelector('.shell').style.removeProperty('--w-inspector')")
+    assert not H.errors(drv), H.errors(drv)

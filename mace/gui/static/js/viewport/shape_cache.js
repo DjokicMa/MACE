@@ -11,13 +11,19 @@
  * material at opacity 0) and then the color. A surface MACE draws without writing
  * depth (pores.js) gets nothing from that pre-pass, so skipDepthPass(viewer) leaves
  * it out for those materials only (3Dmol internal: Renderer.unrollBufferMaterial,
- * which sets each object's transparentDepth). */
+ * which sets each object's transparentDepth).
+ *
+ * A shape drawn over the display range's cells (cell_tiles.js: ``maceTiles``) is built
+ * once too: each build adds the copies of its mesh at the other cells. */
+
+import { cloneTiles } from "./cell_tiles.js";
 
 const colorKey = (c) => (c == null ? "" : typeof c === "object" ? `${c.r},${c.g},${c.b}` : String(c));
 const signature = (s) => [s.hidden, s.opacity, s.wireframe, s.side, s.linewidth, colorKey(s.color),
-  s.geo ? s.geo.groups : 0, s.geo ? s.geo.vertices : 0].join("|");
+  s.geo ? s.geo.groups : 0, s.geo ? s.geo.vertices : 0, s.maceTiles ? s.maceTiles.length : 1].join("|");
 
-/** The shape, its mesh built once; ``after(obj, shape)`` runs on each build (e.g. a material tweak). */
+/** The shape, its mesh built once (and moved to each of its ``maceTiles``); ``after(obj, shape)`` runs on each
+ * build (e.g. a material tweak). */
 export function keepBuilt(s, after) {
   if (!s || s.maceKept) return s;
   const globj = s.globj;
@@ -27,6 +33,7 @@ export function keepBuilt(s, after) {
     if (r && r.parent === group && this.maceSig === sig) return;
     globj.call(this, group, ...rest);
     this.maceSig = sig;
+    if (this.maceTiles && this.renderedShapeObj) cloneTiles(this.renderedShapeObj, this.maceTiles);
     if (after && this.renderedShapeObj) after(this.renderedShapeObj, this);
   };
   return s;

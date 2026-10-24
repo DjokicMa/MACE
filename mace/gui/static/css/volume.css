@@ -14,11 +14,19 @@
 .vv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .vv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }
 .vv-msg[hidden], .vv-bar[hidden], .vv-slice[hidden] { display: none; }
-.vv-bar { position: absolute; left: var(--s-4); bottom: var(--s-3); width: min(360px, 60%); z-index: 2; padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 90%, transparent); }
-.vv-grad { height: 10px; border-radius: 3px; border: 1px solid var(--border); }
-.vv-ticks { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
-.vv-legend { color: var(--text-2); }
+/* the potential color bar (volume.js renderBar; drawBar puts the same into an exported PNG): thin and vertical at the
+   right edge, clear of the Inspector's edge tab, as the slice and piezo colorbars */
+.vv-bar { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); z-index: 2; padding: 8px; max-width: 46%;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 90%, transparent);
+  font-size: 11px; line-height: 1.3; color: var(--text-2); pointer-events: auto; }
+.vv-cb-title { color: var(--text); font-weight: 600; }
+.vv-cb-unit { color: var(--text-2); font-weight: 400; }
+.vv-cb-end, .vv-cb-note { white-space: nowrap; }
+.vv-cb-body { position: relative; height: 150px; margin: 6px 0; display: flex; }
+.vv-grad { width: 10px; height: 100%; flex: none; border: 1px solid var(--border); box-sizing: border-box; }
+.vv-ticks { position: relative; flex: 1; min-width: 3.5em; }
+.vv-ticks span { position: absolute; left: 8px; transform: translateY(50%); white-space: nowrap; font-size: 11px; line-height: 1; }
+.vv-ticks span::before { content: ""; position: absolute; left: -8px; top: 50%; width: 4px; border-top: 1px solid currentColor; }
 .vv-slice { flex: none; height: 38%; min-height: 160px; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .vv-slice-head { padding: var(--s-1) var(--s-4); }
 .vv-slice-plot { flex: 1; min-height: 0; }
@@ -30,6 +38,8 @@
 .vv-main > .vv-view { flex: 1; min-width: 0; }
 .vv-orb { flex: none; width: 320px; max-width: 45%; overflow-y: auto; border-right: 1px solid var(--border); background: var(--surface); }
 .vv-orb[hidden] { display: none; }
+/* the Explorer hidden: its edge tab (16 px, shell.css .edge-tab) sits on the picker's left edge, so the picker keeps clear */
+#center.edge-explorer .vv-orb { padding-left: 16px; }
 .vv-orb { display: flex; flex-direction: column; }
 .orb { flex: 1 0 auto; display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-3); height: 100%; box-sizing: border-box; }
 .orb > * { flex-shrink: 0; }

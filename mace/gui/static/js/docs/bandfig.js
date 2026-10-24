@@ -258,6 +258,11 @@ export function halfKeys(band, dos, side, o, spin, closedWords) {
     || (bk.length === dk.length && bk.every((k, i) => k.color === dk[i].color && k.dash === dk[i].dash));
   return same ? { spin: band.spin_polarized || side === "one" ? bk : dk, bands: null } : { spin: dk, bands: bk };
 }
+/** A DOS smoothing width (eV) in the plot's unit (`f`: the unit per eV, `unit`: its label): as set on an eV
+ *  axis, else to three significant digits: "0.05 eV", "24.2 cm⁻¹" (plotly_bands.sigma_text). */
+export function sigmaText(sigmaEv, f, unit) {
+  return `${f && f !== 1 ? Number((sigmaEv * f).toPrecision(3)) : sigmaEv} ${unit || "eV"}`;
+}
 /** The DOS-alone legend's box as a fraction of the plot {fw, fh}: from its entries and their words. */
 export function legendBox(names, groups, width, height) {
   const chars = Math.max(0, ...names.map((n) => String(n).replace(/<[^>]+>/g, "").length));
@@ -421,7 +426,7 @@ export function bandFigure(band, dos, o, env) {
       keys.push({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "markers", type: "scatter", name: st.name, meta: "key-proj",
         legend: "legend", legendgroup: "proj", legendrank: 100 + i, customdata: [p.label], hoverinfo: "skip", showlegend: true,
         marker: { symbol: "square", size: 11, color: fill, line: { color: edge, width: 1 } },
-        legendgrouptitle: i === 0 ? { text: "Projections", font: GROUP_TITLE(css) } : undefined });
+        legendgrouptitle: i === 0 ? { text: ph ? "Phonon DOS" : "Projections", font: GROUP_TITLE(css) } : undefined });
     });
     // which half is which: words over a mirrored DOS
     if (side === "mirrored" && o.spin === "both" && !dlog && showSpin) {
@@ -449,17 +454,19 @@ export function bandFigure(band, dos, o, env) {
           showarrow: false, text: PX.DOS_LAYOUT.no_data, font: { size: 9, color: css("--text-3") }, name: "no-data" });
       }
     });
-    // the smoothing is said in the plot (display only)
+    // the smoothing is said in the plot (display only), its width in the axis's unit: the sigma is set in eV and
+    // applied on the readers' eV scale (dos.energy), a phonon DOS's too; 0.003 eV reads 24.2 cm⁻¹ on a cm⁻¹ axis
     if (smooth) {
+      const sig = sigmaText(smooth, f, unit);
       annotations.push({ xref: `${xr} domain`, yref: "y domain", x: 0.99, y: 0.01, xanchor: "right", yanchor: "bottom", showarrow: false,
-        text: band ? `smoothed, σ = ${smooth} eV` : `Gaussian smoothing σ = ${smooth} eV (display only)`,
+        text: band ? `smoothed, σ = ${sig}` : `Gaussian smoothing σ = ${sig} (display only)`,
         font: { size: 10, color: css("--text-2") }, name: "dos-smooth" });
     }
   }
   // the Spin group (keys in the colors and line styles drawn) and, beside it, the bands' own group when
-  // the bands are drawn otherwise than the DOS
+  // the bands are drawn otherwise than the DOS; phonons have no spin: no Spin group (the DOS's own group only)
   const closedWords = band && !band.spin_polarized && band.spin_identical ? "α = β (non-magnetic)" : "α = β (closed shell)";
-  const hk = halfKeys(band, dos, side, o, spin, closedWords);
+  const hk = ph ? { spin: [], bands: null } : halfKeys(band, dos, side, o, spin, closedWords);
   const grouped = !!dos;
   const keyOf = (k, i, group, title, meta) => ({ x: [null], y: [null], xaxis: "x", yaxis: "y", mode: "lines", type: "scatter", name: k.name, meta,
     legend: "legend", legendgroup: grouped ? group : undefined, legendrank: (group === "bands" ? 50 : 1) + i, hoverinfo: "skip", showlegend: true,
@@ -476,7 +483,9 @@ export function bandFigure(band, dos, o, env) {
   traces.push(...keys);
   // where the legend goes
   if (!dos) {
-    lay.legend = legendTop({ title: { text: "Spin", side: "left", font: GROUP_TITLE(css) } });
+    // a phonon dispersion alone: one set of branches, no legend
+    lay.legend = ph ? legendTop() : legendTop({ title: { text: "Spin", side: "left", font: GROUP_TITLE(css) } });
+    if (!keys.length) lay.showlegend = false;
   } else if (band) {
     lay.legend = legendSide({ traceorder: "grouped", tracegroupgap: 8 });
   } else {

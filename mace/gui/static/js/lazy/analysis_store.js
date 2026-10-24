@@ -27,7 +27,7 @@ export const OVERLAY_TITLE = { pores: "Pores", net: "Net", mesh: "Crystal shape"
 /* how pore surfaces are drawn by default: Settings › Viewport › pores.* */
 export const PORE_KEYS = { accessible: ["pores.accessible", true], inaccessible: ["pores.inaccessible", true],
   opacity: ["pores.opacity", 0.5], style: ["pores.style", "solid"], colorPockets: ["pores.colorPockets", false],
-  shading: ["pores.shading", "smooth"], sides: ["pores.sides", "auto"] };
+  shading: ["pores.shading", "smooth"], sides: ["pores.sides", "auto"], quality: [MQ.PORE_KEY, MQ.PORE_DEFAULT] };
 /* every overlay's mesh quality: Settings › Viewport › Mesh quality (1.1.6) */
 export const MESH_KEYS = { quality: [MQ.KEY, MQ.DEFAULT] };
 
@@ -65,6 +65,13 @@ function make(H) {
       // the edit revision of the document an overlay was computed for: an edit since hides it
       docRev: (id) => { const d = S.docById ? S.docById(id) : null; return d && S.editRev ? S.editRev(d) : null; },
       remesh: (it, spec) => remesh(it, spec),
+      // the structure and the cell box of the display range (the N × M × L cells, the range presets): the overlays
+      // of the cell are drawn in each of its cells
+      display: (id) => {
+        const d = S.docById ? S.docById(id) : null, s = d && st.H.structureOf ? st.H.structureOf(d) : null;
+        const vo = S.viewOpts ? S.viewOpts() : null;
+        return s && s.cell && vo ? { cell: s.cell, pbc: s.pbc || [true, true, true], box: vo.box } : null;
+      },
       onError: (e) => { try { S.toast(`Pore surfaces: ${e.message || e}`, "error"); } catch (x) { /* no shell */ } },
     });
     st.overlay.onChange((why, it) => emit("overlay", { why, key: it ? it.key : null }));
@@ -234,8 +241,8 @@ function make(H) {
     if (file) source = { path: file, frame: -1 };
     else if (doc) source = await S.sourceOf(doc);
     const rev = doc && S.editRev ? S.editRev(doc) : null;
-    // pore surfaces at Settings › Viewport › Mesh quality from the start (the overlay then asks for nothing)
-    const sent = tool === "porosity" && params.render !== false && !params.mesh ? { ...params, mesh: { quality: meshOpts().quality } } : params;
+    // pore surfaces at Settings › Viewport › Pore surface mesh quality from the start (the overlay then asks for nothing)
+    const sent = tool === "porosity" && params.render !== false && !params.mesh ? { ...params, mesh: { quality: poreOpts().quality } } : params;
     const body = { tool, source, params: sent, doc: doc ? doc.id : null, ...extra };
     if (file) body.doc = `file:${file}`;
     const r = await S.apiTask("analysis/run", body, onUpdate);

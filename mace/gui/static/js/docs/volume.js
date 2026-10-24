@@ -13,6 +13,7 @@ import { keepBuilt } from "../viewport/shape_cache.js";
 import * as MQ from "../viewport/mesh_quality.js";
 import * as PS from "../viewport/periodic_surface.js";
 import * as L from "../labels.js";
+import * as MR from "../maprange.js";
 
 const BAND = 2;    // a slice plane is drawn this many voxels thick in the 3D view
 
@@ -440,16 +441,83 @@ export function createVolumeView(host, optsHost, H) {
     const r = Math.min(0.08, Math.max(0.03, 0.004 * size));
     P.forEach((p, k) => planeShapes.push(vw.addCylinder({ start: xyz(p), end: xyz(P[(k + 1) % P.length]), radius: r, color: c.edge, fromCap: 1, toCap: 1 })));
   }
+  /* The color bar of a surface colored by a potential (1.1.6 fix): thin and vertical at the view's right edge, as the
+   * slice and piezo colorbars, with round ticks at their true places in the potential's unit (Ha e⁻¹) and the gradient
+   * sampled from the surface's own 3Dmol gradient. Sign words only where the range holds both signs; a range of one
+   * sign says so (maprange.js potentialWords; the CLI's caption, crystal_cubeviz_plotly.potential_scale_words). The
+   * same model is drawn into Export Image's PNG (drawBar). */
+  const BAR = { w: 10, h: 150, right: 28, pad: 8, font: 11, gap: 4 };
+  function barModel(d) {
+    if (!d || !d.colorVd || d.opts.vmin === null || d.opts.vmax === null) return null;
+    const lo = Math.min(d.opts.vmin, d.opts.vmax), hi = Math.max(d.opts.vmin, d.opts.vmax), chem = chemOf(d);
+    const g = gradient(d), hex = (v) => "#" + (g.valueToHex(v) >>> 0).toString(16).padStart(6, "0").slice(-6);
+    const span = hi - lo || 1;
+    const stops = Array.from({ length: 25 }, (_, i) => ({ f: i / 24, c: hex(lo + (span * i) / 24) }));
+    const ticks = MR.niceTicks(lo, hi, 5).map((v) => ({ v, f: (v - lo) / span, text: MR.tickText(v) }));
+    const words = MR.potentialWords(lo, hi, chem), auto = d.opts.range === "auto";
+    const unit = L.plain((d.colorMeta && d.colorMeta.unit) || "a.u.");
+    const top = words.spans ? "positive (e⁻-poor)" : "", bottom = words.spans ? "negative (e⁻-rich)" : "";
+    const note = words.spans ? "" : words.note === "zero" ? "all zero" : auto ? `${words.note} on this surface` : `range ${words.note}`;
+    const label = `Potential (${unit}) from ${MR.tickText(lo)} to ${MR.tickText(hi)}: ${words.spans ? `${words.low}, ${words.high}` : `${note}, ${words.low}, ${words.high}`}`;
+    return { lo, hi, chem, stops, ticks, words, title: "Potential", unit: `(${unit})`, top, bottom, note, label };
+  }
   function renderBar(d) {
-    const bar = $(".vv-bar");
-    if (!d.colorVd || d.opts.vmin === null) { bar.hidden = true; return; }
+    const bar = $(".vv-bar"), m = barModel(d);
+    if (!m) { bar.hidden = true; return; }
     bar.hidden = false;
-    const css = M().cssVar, red = css("--mep-red"), white = css("--mep-mid"), blue = css("--mep-blue"), chem = chemOf(d);
-    const [left, right] = chem ? [red, blue] : [blue, red];
-    bar.innerHTML = `<div class="vv-grad" style="background: linear-gradient(90deg, ${left}, ${white}, ${right})"></div>
-      <div class="vv-ticks mono"><span>${d.opts.vmin.toExponential(2)}</span><span>0</span><span>${d.opts.vmax.toExponential(2)}</span></div>
-      <div class="vv-legend small">Potential (a.u.) · ${chem ? "red = negative (electron-rich) · blue = positive (electron-poor)"
-        : "red = positive (electron-poor) · blue = negative (electron-rich)"}</div>`;
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", m.label);
+    bar.title = m.label;
+    const grad = `linear-gradient(to top, ${m.stops.map((s) => `${s.c} ${(s.f * 100).toFixed(1)}%`).join(", ")})`;
+    bar.innerHTML = `<div class="vv-cb-title">${esc(m.title)}<br><span class="vv-cb-unit">${esc(m.unit)}</span></div>
+      ${m.top ? `<div class="vv-cb-end">${esc(m.top)}</div>` : ""}
+      <div class="vv-cb-body"><div class="vv-grad" style="background: ${grad}"></div>
+        <div class="vv-ticks mono">${m.ticks.map((t) => `<span style="bottom: ${(t.f * 100).toFixed(2)}%">${esc(t.text)}</span>`).join("")}</div></div>
+      ${m.bottom ? `<div class="vv-cb-end">${esc(m.bottom)}</div>` : ""}
+      ${m.note ? `<div class="vv-cb-note">${esc(m.note)}</div>` : ""}
+      <div class="vv-legend" hidden>${esc(m.label)}</div>`;
+  }
+  /** The color bar into a picture (Export Image, Copy Image): `g` a 2D context of W x H pixels, `k` pixels per view px. */
+  function drawBar(g, W, H, k) {
+    const m = barModel(doc);
+    if (!m || $(".vv-bar").hidden) return;
+    const css = M().cssVar, fam = css("--font-sans") || "sans-serif", fs = BAR.font * k;
+    const font = (w = 400) => `${w} ${fs}px ${fam}`;
+    g.save();
+    g.font = font();
+    const tickW = Math.max(0, ...m.ticks.map((t) => g.measureText(t.text).width));
+    const lines = [[m.title, 600], [m.unit, 400]], ends = [m.top, m.bottom, m.note].filter(Boolean);
+    g.font = font(600);
+    let w = g.measureText(m.title).width;
+    g.font = font();
+    for (const t of [m.unit, ...ends]) w = Math.max(w, g.measureText(t).width);
+    w = Math.max(w, (BAR.w + 4 + BAR.gap) * k + tickW);
+    const lh = fs * 1.3, pad = BAR.pad * k, bh = BAR.h * k;
+    const ph = pad * 2 + lines.length * lh + (m.top ? lh : 0) + fs * 0.6 + bh + fs * 0.6 + (m.bottom ? lh : 0) + (m.note ? lh : 0);
+    const pw = w + pad * 2, x0 = W - BAR.right * k - pw, y0 = (H - ph) / 2;
+    g.globalAlpha = 0.9; g.fillStyle = css("--surface") || "#ffffff";
+    g.beginPath(); (g.roundRect ? g.roundRect(x0, y0, pw, ph, 6 * k) : g.rect(x0, y0, pw, ph)); g.fill();
+    g.globalAlpha = 1; g.strokeStyle = css("--border") || "#cccccc"; g.lineWidth = Math.max(1, k); g.stroke();
+    g.textBaseline = "top"; g.textAlign = "left";
+    let y = y0 + pad;
+    g.fillStyle = css("--text") || "#111111"; g.font = font(600); g.fillText(m.title, x0 + pad, y); y += lh;
+    g.fillStyle = css("--text-2") || "#555555"; g.font = font(); g.fillText(m.unit, x0 + pad, y); y += lh;
+    if (m.top) { g.fillText(m.top, x0 + pad, y); y += lh; }
+    y += fs * 0.6;
+    const gx = x0 + pad, lin = g.createLinearGradient(0, y + bh, 0, y);
+    m.stops.forEach((s) => lin.addColorStop(s.f, s.c));
+    g.fillStyle = lin; g.fillRect(gx, y, BAR.w * k, bh);
+    g.strokeStyle = css("--border") || "#cccccc"; g.strokeRect(gx, y, BAR.w * k, bh);
+    g.fillStyle = css("--text-2") || "#555555"; g.textBaseline = "middle";
+    for (const t of m.ticks) {
+      const ty = y + bh * (1 - t.f);
+      g.fillRect(gx + BAR.w * k, ty - k / 2, 4 * k, k);
+      g.fillText(t.text, gx + (BAR.w + 4 + BAR.gap) * k, ty);
+    }
+    y += bh + fs * 0.6; g.textBaseline = "top";
+    if (m.bottom) { g.fillText(m.bottom, x0 + pad, y); y += lh; }
+    if (m.note) g.fillText(m.note, x0 + pad, y);
+    g.restore();
   }
 
   /* ---------------------------------------------------------------- slice */
@@ -1052,6 +1120,9 @@ export function createVolumeView(host, optsHost, H) {
     // the part of the view the picture covers, for the tests
     drawnSpan: () => { if (!viewer) return null; viewer.render(); return drawnSpan(viewer); },
     gradientHex: (x) => (doc && doc.colorVd ? gradient(doc).valueToHex(x) : null),
+    /** The potential color bar's model (null without one) and its drawing into an exported picture (shell.js exportCtx). */
+    colorBar: () => barModel(doc),
+    drawBar: (g, W, H, k) => drawBar(g, W, H, k),
     /** The [+, −] isosurface colors drawn (CSS colors), for the tests. */
     signColors: () => (doc && doc.meta ? colors(doc) : null),
     viewer: () => viewer,

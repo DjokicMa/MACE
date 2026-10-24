@@ -4,9 +4,13 @@ One notion of "how fine" for the pore surfaces (Analysis › Porosity), the
 cube isosurfaces (density, spin, potential, orbitals, differences) and the
 other mesh-like overlays: Draft (screening many materials), Standard (the
 look before presets existed, the default), High and Publication (dense
-triangulation for a figure; seconds and more memory). Each preset is a set
-of numeric knobs the GUI shows under Advanced; a knob given by hand wins over
-the preset, inside the hard limits below, so no request can hang the page.
+triangulation for a figure; seconds and more memory). The pore surfaces have
+one tier below Draft, Preview (a coarse grid, smoothed more): they are the
+heaviest surfaces the view draws (two walls each, repeated over every cell of
+a supercell), so the GUI draws them at Preview by default (Settings ›
+Viewport › Pore surface mesh quality). Each preset is a set of numeric knobs
+the GUI shows under Advanced; a knob given by hand wins over the preset,
+inside the hard limits below, so no request can hang the page.
 The page's copy of these numbers is static/js/viewport/mesh_quality.js
 (tests/test_mesh_quality.py keeps the two in step).
 """
@@ -14,6 +18,8 @@ from typing import Any, Dict, Mapping, Optional
 
 PRESETS = ("draft", "standard", "high", "publication")
 DEFAULT = "standard"
+# the pore surfaces' presets: one tier below Draft (pores only)
+PORE_PRESETS = ("preview",) + PRESETS
 
 # The pore surfaces (porosity._render_fields / pore_meshes):
 #   grid           render grid points per cell axis, at most
@@ -22,6 +28,7 @@ DEFAULT = "standard"
 #   smooth         Gaussian smoothing of the render field, in render-grid voxels
 #   max_triangles  the surfaces' triangle budget (a coarser grid for the channels beyond it)
 PORES: Dict[str, Dict[str, float]] = {
+    "preview": {"grid": 24, "upsample": 1, "smooth": 1.4, "max_triangles": 60_000},
     "draft": {"grid": 40, "upsample": 1, "smooth": 0.7, "max_triangles": 150_000},
     "standard": {"grid": 72, "upsample": 1, "smooth": 0.7, "max_triangles": 600_000},
     "high": {"grid": 96, "upsample": 2, "smooth": 0.8, "max_triangles": 1_200_000},
@@ -49,9 +56,9 @@ LEGACY_POINTS = {"low": 250_000, "medium": 1_000_000, "high": 2_000_000}
 ORBITAL = {"draft": "preview", "standard": "normal", "high": "fine", "publication": "fine"}
 
 
-def preset(name: Optional[str]) -> str:
-    """A known preset name (an unknown or empty one is Standard)."""
-    return name if name in PRESETS else DEFAULT
+def preset(name: Optional[str], table: Optional[Mapping[str, Any]] = None) -> str:
+    """A known preset name (of ``table``, default every surface's; an unknown or empty one is Standard)."""
+    return name if name in (PRESETS if table is None else table) else DEFAULT
 
 
 def _clamp(v, lo, hi, cast):
@@ -66,7 +73,7 @@ def _clamp(v, lo, hi, cast):
 
 def _knobs(table, limits, spec: Optional[Mapping[str, Any]]):
     spec = spec or {}
-    name = preset(spec.get("quality"))
+    name = preset(spec.get("quality"), table)
     out = dict(table[name])
     for k, (lo, hi) in limits.items():
         v = spec.get(k)

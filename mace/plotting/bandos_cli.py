@@ -160,6 +160,12 @@ def _dos(path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _say_spin(band=None, dos=None) -> None:
+    if (band or dos or {}).get("domain") == "phonon":       # phonons have no spin
+        if band is not None:
+            print(f"  {len(band['up'])} phonon branches")
+        if dos is not None:
+            print(f"  phonon DOS; projections {', '.join(p['label'] for p in dos['projections'])}")
+        return
     if band is not None:
         state = "spin-polarized" if band.get("spin_polarized") else \
             "spin-polarized, α = β (non-magnetic): one set drawn" if band.get("spin_identical") else "closed shell"

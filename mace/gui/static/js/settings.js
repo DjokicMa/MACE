@@ -97,6 +97,8 @@ export const DEFAULTS = Object.freeze({
   "pores.accessible": true, "pores.inaccessible": true, "pores.opacity": 0.5, "pores.style": "solid", "pores.colorPockets": false,
   // 1.1.6: the pores' shading and sides, a drag without their faint near walls (off), and every 3D surface's mesh quality
   "pores.shading": "smooth", "pores.sides": "auto", "pores.dropNearWhileDragging": false, "mesh.quality": "standard",
+  // 1.1.6: the pore surfaces' own mesh quality (the heaviest surfaces: Preview, below Draft, unless chosen)
+  "pores.quality": "preview",
   // export (plan E9; PLAN_viewer P6 owns these keys at the merge): PNG resolution, physical units, SVG shading
   "export.dpi": 150, "export.units": "in", "export.vectorShading": "flat",
   // Submit (PLAN_submit): remember the Submit dialog's options (cluster.pollSeconds, above, also sets how often Jobs asks SLURM)
@@ -132,6 +134,7 @@ const CHOICES = {
   // 1.1.6: the pore surfaces' look and every 3D surface's mesh quality (viewport/mesh_quality.js)
   "pores.style": ["solid", "wireframe", "edges", "points"], "pores.shading": ["smooth", "flat"], "pores.sides": ["auto", "single", "double"],
   "mesh.quality": ["draft", "standard", "high", "publication"],
+  "pores.quality": ["preview", "draft", "standard", "high", "publication"],
 };
 /* polyCenters (settings.py check): "auto", "" (none) or element symbols separated by commas */
 export const POLY_CENTERS = /^(auto|([A-Z][a-z]?(,[A-Z][a-z]?)*)?)$/;

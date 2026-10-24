@@ -157,6 +157,8 @@ ENUMS = {
     "pores.sides": ("auto", "single", "double"),
     # 1.1.6: every 3D surface's mesh quality (mace/analysis/mesh_quality.py PRESETS)
     "mesh.quality": ("draft", "standard", "high", "publication"),
+    # the pore surfaces' own (mesh_quality.py PORE_PRESETS: Preview below Draft)
+    "pores.quality": ("preview", "draft", "standard", "high", "publication"),
 }
 
 

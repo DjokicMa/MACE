@@ -1678,6 +1678,14 @@ def interpolate_cube_at_vertices(cube_data, cube_origin, cube_voxels, cube_voxel
         fill_value=0.0  # Use 0 for points outside grid
     )
 
+    # A vertex on the grid's first or last plane comes back from the inverse transform a round-off outside it
+    # (-3.6e-15 on a hexagonal cell): onto the plane, or it would read the fill value 0 (an MEP range from 0)
+    for i, coords in enumerate((x_coords, y_coords, z_coords)):
+        lo, hi = float(coords[0]), float(coords[-1])
+        col = grid_indices[:, i]
+        col[(col < lo) & (col > lo - 1e-6)] = lo
+        col[(col > hi) & (col < hi + 1e-6)] = hi
+
     # Interpolate values
     interpolated_values = interpolator(grid_indices)
 
@@ -1969,6 +1977,10 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
     else:
         colorscale = 'Viridis'
         colorbar_title = f"{color_cube.get_data_type_label()}"
+    # the colorbar names its unit (a potential's Ha e⁻¹: the slices' and the GUI's color bar's)
+    unit = cube_value_unit(color_cube)
+    if unit:
+        colorbar_title += f"<br>({unit})"
 
     # Create mesh with vertex colors
     print(f"  Creating mesh...")
@@ -2042,7 +2054,7 @@ def plot_dual_cube_isosurface(shape_cube: CubeFile, color_cube: CubeFile,
     # Add interpretation annotation for potential
     if color_cube.data_type == 'potential':
         fig.add_annotation(
-            text=_potential_caption(rdbu=True),
+            text=_potential_range_caption(vmin, vmax),
             xref='paper', yref='paper',
             x=0.5, y=1.02,
             showarrow=False,
@@ -2155,6 +2167,27 @@ def use_potential_colors(scheme):
 def potential_colorscale():
     """The diverging colorscale of a potential: RdBu (red low) in chemistry, RdBu_r (red high) in physics."""
     return 'RdBu_r' if _POTENTIAL["scheme"] == "physics" else 'RdBu'
+
+
+def potential_scale_words(vmin, vmax, scheme=None):
+    """What the ends of a surface's potential color range mean (the GUI's color bar, js/maprange.js
+    potentialWords, says the same): {"spans", "low", "high", "note"}. Sign words only where the range
+    holds both signs; a range of one sign says so ("all positive") and names its ends lowest/highest."""
+    physics = (scheme or _POTENTIAL["scheme"]) == "physics"
+    low_c, high_c = ("blue", "red") if physics else ("red", "blue")
+    vmin, vmax = float(vmin), float(vmax)
+    if vmin < 0 < vmax:
+        return {"spans": True, "low": f"{low_c} = negative (electron-rich)", "high": f"{high_c} = positive (electron-poor)", "note": ""}
+    note = "all positive" if vmin >= 0 and vmax > 0 else "all negative" if vmax <= 0 and vmin < 0 else "zero"
+    return {"spans": False, "low": f"{low_c} = lowest", "high": f"{high_c} = highest", "note": note}
+
+
+def _potential_range_caption(vmin, vmax):
+    """The caption of a surface colored by a potential over [vmin, vmax] (potential_scale_words)."""
+    w = potential_scale_words(vmin, vmax)
+    if w["spans"]:
+        return _potential_caption(rdbu=True)
+    return f'<b>{w["note"].capitalize()}</b> on this surface ({vmin:.3g} to {vmax:.3g}): {w["low"]}, {w["high"]}'
 
 
 def _potential_caption(has_pos=True, has_neg=True, rdbu=False):

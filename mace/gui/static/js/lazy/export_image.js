@@ -108,10 +108,11 @@ function triadImage(svgEl) {
 
 /**
  * Draw the image: {width, height, transparent, triad, labels, cell} -> data URL.
- * `X` is what the shell lends: {viewer, scene, bg(), triadEl}.
+ * `X` is what the shell lends: {viewer, scene, bg(), triadEl}; a Volume document's also {el: its viewer's element,
+ * overlay(g, W, H, k): what the view draws over the 3D picture (the potential's color bar)}.
  */
 export async function render(X, o) {
-  const v = X.viewer, el = document.getElementById("viewer-main"), canvas = v.getCanvas();
+  const v = X.viewer, el = X.el || document.getElementById("viewer-main"), canvas = v.getCanvas();
   const viewRect = canvas.getBoundingClientRect();
   const triad = o.triad ? await triadImage(X.triadEl) : null;
   // the canvas holds devicePixelRatio x the UI scale's zoom pixels per own px (app.js sharpUnderZoom)
@@ -134,7 +135,8 @@ export async function render(X, o) {
   let url = "";
   try {
     if (o.transparent) v.setBackgroundColor(X.bg(), 0);
-    el.setAttribute("style", `${saved};position:fixed;left:-100000px;top:0;width:${o.width / dpr}px;height:${o.height / dpr}px`);
+    // no transition (Reduce motion makes every change a 0.01 ms one): the size is the new one when it is read
+    el.setAttribute("style", `${saved};position:fixed;left:-100000px;top:0;width:${o.width / dpr}px;height:${o.height / dpr}px;transition:none`);
     v.resize();
     await frame(); await frame();
     v.render();
@@ -142,6 +144,9 @@ export async function render(X, o) {
     url = v.getCanvas().toDataURL("image/png");
     if (pat) over = pat.overlayCanvas(v, o.width, o.height, o.patterns, dpr);
   } finally {
+    // back in place without a transition (a Volume viewer, absolutely placed, read 100 000 px wide meanwhile), then as it was
+    el.setAttribute("style", `${saved};transition:none`);
+    void el.offsetWidth;
     el.setAttribute("style", saved);
     if (o.transparent) v.setBackgroundColor(X.bg(), 1);
     restoreScene();
@@ -156,7 +161,7 @@ export async function render(X, o) {
   const k = o.width / Math.max(1, viewRect.width);
   const leg = o.legend && o.legend !== "none" && X.legend
     ? await legendImage(X, o.transparent ? null : X.bg(), k, pat ? pat.mapFor(v, o.patterns) : null) : null;
-  if (!img || (!triad && !leg && !over && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
+  if (!img || (!triad && !leg && !over && !X.overlay && img.naturalWidth === o.width && img.naturalHeight === o.height)) return url;
   const out = document.createElement("canvas");
   out.width = o.width; out.height = o.height;
   const g = out.getContext("2d");
@@ -166,6 +171,7 @@ export async function render(X, o) {
     const [x, y] = corner(o.legend, o.width, o.height, leg.w, leg.h, 12 * k);
     g.drawImage(leg.img, x, y, leg.w, leg.h);
   }
+  if (X.overlay) X.overlay(g, o.width, o.height, k);
   if (triad) {
     // the triad keeps its share of the picture
     const x = (triad.left - viewRect.left) * k, h = triad.h * k;
@@ -205,10 +211,10 @@ export async function open(H, X) {
   const body = document.createElement("div");
   body.className = "export-dlg";
   if (X.format) p.format = X.format;          // a plot's PNG or SVG button
-  const refuse = X.viewState && X.viewState.projection === "perspective" ? "SVG export is orthographic; press 5" : "";
+  const refuse = X.volume ? "a structure view only" : X.viewState && X.viewState.projection === "perspective" ? "SVG export is orthographic; press 5" : "";
   // Analysis overlays (pore surfaces, a crystal shape, planes, a net) are WebGL meshes: PNG only
   let overlays = false, pores = false;
-  try { const A = window.__maceAnalysis; overlays = !X.plot && !!A && ["pores", "mesh", "planes", "net"].some((k) => A.overlay.count(k) > 0); pores = overlays && A.overlay.count("pores") > 0; } catch (e) { overlays = false; }
+  try { const A = window.__maceAnalysis; overlays = !X.plot && !X.volume && !!A && ["pores", "mesh", "planes", "net"].some((k) => A.overlay.count(k) > 0); pores = overlays && A.overlay.count("pores") > 0; } catch (e) { overlays = false; }
   if (refuse && p.format === "svg") p.format = "png";
   body.innerHTML = `<label class="f">Format<select class="field" data-k="format" aria-label="Format">
       <option value="png"${p.format !== "svg" ? " selected" : ""}>PNG</option>
@@ -253,7 +259,9 @@ export async function open(H, X) {
     body.querySelector(".dpi-custom").hidden = q("dpisel").value !== "custom";
     body.querySelector(".physical").hidden = svg || r.size !== "physical";
     for (const k of ["triad", "labels", "cell", "transparent", "legend"]) { const el = q(k); if (X.plot && el) el.closest("label").hidden = true; }
-    body.querySelector(".patterns-f").hidden = svg || !!X.plot;          // a PNG of the 3D view
+    // a Volume document: its viewer as shown (the color bar drawn in), none of the structure view's options
+    for (const k of ["labels", "cell", "legend"]) { const el = q(k); if (X.volume && el) el.closest("label").hidden = true; }
+    body.querySelector(".patterns-f").hidden = svg || !!X.plot || !!X.volume;          // a PNG of the 3D view
     body.querySelector(".remesh-f").hidden = svg || !pores;
     const nm = q("name");
     if (svg && /\.png$/i.test(nm.value)) nm.value = nm.value.replace(/\.png$/i, ".svg");
@@ -299,7 +307,8 @@ export async function open(H, X) {
     let name = q("name").value.trim() || `${X.stem}_${X.view}.png`;
     if (!/\.png$/i.test(name)) name += ".png";
     performance.mark("ui:export:start");
-    const draw = () => render(X, { width: wh[0], height: wh[1], ...r, legend: X.plot ? "none" : r.legend });
+    const draw = () => render(X, { width: wh[0], height: wh[1], ...r, legend: X.plot || X.volume ? "none" : r.legend,
+      ...(X.volume ? { patterns: "off", labels: false } : {}) });
     let raw;
     if (X.plot) raw = await X.plot.renderPng(wh[0], wh[1]);
     else if (r.remesh && pores) {

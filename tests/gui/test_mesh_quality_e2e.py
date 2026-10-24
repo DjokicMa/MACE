@@ -2,8 +2,9 @@
 one overlay re-meshes that overlay only (the net next to it keeps its
 shapes), going back is instant, every style draws without an error and an
 unchanged one is never rebuilt, Export Image at Publication quality puts the
-on-screen mesh back, Settings › Mesh quality is what a new result is made
-at and survives a reload, the optional "drop the faint near walls while
+on-screen mesh back, Settings › Pore surface mesh quality (Preview by
+default, apart from the other surfaces' Mesh quality) is what a new pore
+result is made at and survives a reload, the optional "drop the faint near walls while
 dragging" hides them during a drag only, and a cube's quality and styles
 work in the Volume view."""
 import shutil
@@ -88,6 +89,9 @@ REBUILDS = """const v = window.MACE.state.viewers['viewer-main'], $3 = window.$3
 
 def test_a_preset_remeshes_that_overlay_only_and_back_is_instant(app):
     drv = app[0]
+    # the pore surfaces' own default is Preview; this module measures the presets from Standard
+    assert drv.execute_script("return window.__mace.settings.get('pores.quality')") == "preview"
+    drv.execute_script("window.__mace.settings.set('pores.quality', 'standard')")
     porosity(drv)
     drv.execute_script("document.querySelector('#analysis-panel .an-tab[data-tab=topology]').click()")
     drv.execute_script("document.querySelector('#analysis-panel .an-form button[type=submit]').click()")
@@ -189,9 +193,10 @@ def test_export_at_publication_puts_the_view_mesh_back(app):
     U.no_errors(drv)
 
 
-def test_settings_mesh_quality_is_what_a_new_result_is_made_at_and_it_persists(app):
+def test_settings_pore_quality_is_what_a_new_result_is_made_at_and_it_persists(app):
     drv, base = app[0], app[1]
-    drv.execute_script("window.__mace.settings.set('mesh.quality', 'draft')")
+    # the pores' own setting, not the other surfaces' Mesh quality
+    drv.execute_script("window.__mace.settings.set('pores.quality', 'draft'); window.__mace.settings.set('mesh.quality', 'high')")
     porosity(drv, ready=lambda: drv.execute_script(
         """window.__asked = 0; window.__unask = window.__maceAnalysis.overlay.onChange((why) => { if (why === 'remesh') window.__asked++; });"""))
     close_panel(drv)
@@ -199,8 +204,8 @@ def test_settings_mesh_quality_is_what_a_new_result_is_made_at_and_it_persists(a
     assert p["opts"]["quality"] == "draft" and drv.execute_script("return window.__asked") == 0, p
     drv.execute_script("window.__unask()")
     H.load(drv, base)
-    assert drv.execute_script("return window.__mace.settings.get('mesh.quality')") == "draft"
-    drv.execute_script("window.__mace.settings.set('mesh.quality', 'standard')")
+    assert drv.execute_script("return window.__mace.settings.get('pores.quality')") == "draft"
+    drv.execute_script("window.__mace.settings.set('mesh.quality', 'standard'); window.__mace.settings.set('pores.quality', 'standard')")
     U.no_errors(drv)
 
 

@@ -1594,14 +1594,16 @@ export function createPlotView(host, optsHost, H) {
           // one short line; the longer guidance is in the help icon's tooltip
           const meV = band && Math.max(1, Math.round(band.spin_max_diff * 1000));
           const sw = BF.dashWord(envOf(d.opts).look.spin_down_style || "dash");
-          notes.push(band ? (band.spin_polarized ? `spin-polarized (α and β up to ${meV} meV apart): α solid, β <span class="pv-bword">${sw}</span>`
+          // phonons: frequencies, no spin and no Fermi level
+          if (isPhonon(d)) notes.push(band ? `${band.up.length} phonon branches` : "phonon DOS");
+          else notes.push(band ? (band.spin_polarized ? `spin-polarized (α and β up to ${meV} meV apart): α solid, β <span class="pv-bword">${sw}</span>`
             : band.spin_identical ? `spin-polarized · α = β (non-magnetic, ≤${meV} meV)` : "closed shell")
             : dos.spin_polarized ? "spin-polarized" : dos.spin_summed ? "spin-polarized · α = β (non-magnetic): total α + β drawn" : "closed shell");
           if (band && band.truncated) notes.push(`the ${band.up.length} bands nearest E<sub>F</sub> of ${band.n_bands}`);
           // the bands more than ±25 eV from E_F are not loaded: say so when the window reaches past them
           // (mace plotting and Copy CLI Command draw them)
           // (kept up to date when the window or the Fermi shift changes: beyondNote, in redraw)
-          notes.push((band || dos).reference === "vacuum" ? "vacuum scale · dotted = E<sub>F</sub>, drag to shift" : "dotted = Fermi level, drag to shift");
+          if (!isPhonon(d)) notes.push((band || dos).reference === "vacuum" ? "vacuum scale · dotted = E<sub>F</sub>, drag to shift" : "dotted = Fermi level, drag to shift");
           if (band && band.spin_identical) help.push(`α and β agree within ${meV} meV, so one set of bands is drawn`);
           if (dos && dos.spin_polarized) help.push("DOS: ↑ to the right, ↓ mirrored to the left (total hatched)");
           if (dos && dos.window) help.push(`DOS computed from ${dos.window[0].toFixed(2)} to ${dos.window[1].toFixed(2)} eV${dos.edge_pileup ? " (its edge bin, the states beyond it, is left out)" : ""}`);
@@ -1611,7 +1613,7 @@ export function createPlotView(host, optsHost, H) {
             help.unshift(dos.reach_note);
           }
           if ((band || dos).reference === "vacuum") help.push("energies on the vacuum scale (POTC run found); the dotted line is E_F");
-          help.push("dragging the dotted line shifts the energy reference");
+          if (!isPhonon(d)) help.push("dragging the dotted line shifts the energy reference");
         } else if (d.data && d.data.spectra) {
           const s = d.data.spectra[0];
           if (d.source === "modes") notes.push(sourceNote(d));
